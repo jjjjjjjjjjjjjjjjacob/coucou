@@ -55,7 +55,6 @@ import {
   ApplicationError,
   UseFormReturn,
 } from "@/lib/types";
-import { useTracking } from "@/app/hooks/use-tracking";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { resolveQrCodeColors } from "../../../../../shared/qr-code-colors";
@@ -70,7 +69,6 @@ export default function RsvpPage({
   const searchParams = useSearchParams();
   const { user } = useUser();
   const { openUserProfile } = useClerk();
-  const { trackPageView, trackRSVPSubmission, trackError } = useTracking();
 
   const status = useQuery(api.rsvps.statusForUserEvent, {
     eventId: eventId as Id<"events">,
@@ -158,16 +156,6 @@ export default function RsvpPage({
       return;
     }
   }, [password, eventId, router]);
-
-  // Track page view
-  useEffect(() => {
-    if (event) {
-      trackPageView("RSVP Page", {
-        eventId,
-        eventName: event.name,
-      });
-    }
-  }, [event, eventId, trackPageView]);
 
   // Resolve list by password
   useEffect(() => {
@@ -406,25 +394,12 @@ export default function RsvpPage({
         customFields: filteredCustomFields,
       });
 
-      trackRSVPSubmission({
-        eventId,
-        eventName: event?.name,
-        listKey: listKey || undefined,
-      });
-
       toast.success("RSVP submitted");
       router.replace(`/events/${eventId}/status`);
     } catch (error: unknown) {
       const errorDetails = error as ApplicationError | Error;
       const message = errorDetails?.message || "Failed to submit request";
       setMessage(message);
-
-      trackError("RSVP Submission Failed", {
-        eventId,
-        eventName: event?.name,
-        listKey: listKey || undefined,
-        error: message,
-      });
 
       toast.error("Request failed", { description: message });
     } finally {

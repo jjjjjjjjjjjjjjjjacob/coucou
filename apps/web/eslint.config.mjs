@@ -1,20 +1,16 @@
-import { FlatCompat } from "@eslint/eslintrc";
-
-const compat = new FlatCompat({
-  baseDirectory: import.meta.dirname,
-});
+import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 
 const config = [
   {
     ignores: ["**/.next/**"],
   },
-  ...compat.config({
-    extends: ["next/core-web-vitals"],
+  ...nextCoreWebVitals,
+  {
     rules: {
       "react-hooks/purity": "off",
       "react-hooks/set-state-in-effect": "off",
     },
-  }),
+  },
 ];
 
 export default config;

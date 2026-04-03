@@ -251,16 +251,6 @@ mock.module("react-qr-code", () => ({
   },
 }));
 
-mock.module("posthog-js", () => ({
-  __esModule: true,
-  default: {
-    init: () => {},
-    identify: () => {},
-    reset: () => {},
-    capture: () => {},
-  },
-}));
-
 // Setup DOM mocks if window is available
 if (typeof window !== "undefined") {
   // Mock window.location

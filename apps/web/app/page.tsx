@@ -1,41 +1,17 @@
 "use client";
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAction } from "convex/react";
 import { api } from "@convex/_generated/api";
-import Link from "next/link";
-import { SignedIn, useAuth, useSession } from "@clerk/nextjs";
-import { useTracking } from "@/app/hooks/use-tracking";
 
 export default function Home() {
-  const { isSignedIn, orgRole, has } = useAuth();
-
-  const isHost = useMemo(() => {
-    if (!isSignedIn) return false;
-    if (orgRole && ["admin", "host"].includes(orgRole)) return true;
-    if (typeof has === "function") return has({ role: "org:admin" });
-    return false;
-  }, [isSignedIn, orgRole, has]);
-  const isDoor = useMemo(() => {
-    if (!isSignedIn) return false;
-    if (orgRole && ["admin", "host", "door"].includes(orgRole)) return true;
-    if (typeof has === "function")
-      return has({ role: "org:admin" }) || has({ role: "org:member" });
-    return false;
-  }, [isSignedIn, orgRole, has]);
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const resolve = useAction(api.credentialsNode.resolveEventByPassword);
-  const { trackPageView, trackEvent, trackError } = useTracking();
-
-  // Track home page view
-  useEffect(() => {
-    trackPageView("Home Page");
-  }, [trackPageView]);
 
   const onSubmit = useCallback(async () => {
     const normalizedPassword = password.trim();
@@ -54,19 +30,12 @@ export default function Home() {
       console.log("[DEBUG] Sending password to backend:", normalizedPassword);
       const res = await resolve({ password: normalizedPassword });
       if (res?.ok && res.eventId) {
-        trackEvent("Event Access", {
-          eventId: res.eventId,
-          method: "password",
-        });
         // Pass the code along in search params to the event page
         const searchParams = new URLSearchParams({
           password: normalizedPassword,
         }).toString();
         router.push(`/events/${res.eventId}?${searchParams}`);
       } else {
-        trackError("Invalid Event Password", {
-          password: normalizedPassword,
-        });
         setMessage("No active event matches that password.");
       }
     } catch (error: unknown) {
@@ -75,7 +44,6 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [password, resolve, router]);
 
   return (

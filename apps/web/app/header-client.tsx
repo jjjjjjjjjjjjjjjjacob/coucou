@@ -15,8 +15,6 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
-import { useTracking } from "@/app/hooks/use-tracking";
-import { useEffect } from "react";
 import DojoPomodoreIcon from "@/components/icons/dojo-pomodoro-icon";
 import { LogOut, LogIn, Settings, DoorOpen, User, Cog } from "lucide-react";
 
@@ -35,15 +33,6 @@ function useRoleFlags() {
 
 export default function HeaderClient() {
   const { isHost, isDoor } = useRoleFlags();
-  const { isSignedIn } = useUser();
-  const { trackUserSignIn, trackUserSignOut } = useTracking();
-
-  // Track sign-in/sign-out state changes
-  useEffect(() => {
-    if (isSignedIn) {
-      trackUserSignIn();
-    }
-  }, [isSignedIn, trackUserSignIn]);
 
   return (
     <header className="fixed top-0 z-50 w-full flex items-center justify-end gap-2 px-2 py-2 sm:px-3 sm:py-3 pointer-events-none">
@@ -98,10 +87,7 @@ export default function HeaderClient() {
             <DropdownMenuSeparator />
             */}
             <SignOutButton>
-              <DropdownMenuItem
-                className="flex items-center gap-2 text-primary! hover:text-primary!"
-                onClick={() => trackUserSignOut()}
-              >
+              <DropdownMenuItem className="flex items-center gap-2 text-primary! hover:text-primary!">
                 <LogOut size={16} className="text-primary" />
                 Sign Out
               </DropdownMenuItem>

@@ -8,7 +8,6 @@ import { ConvexReactClient } from "convex/react";
 import { Toaster } from "@/components/ui/sonner";
 import { HapticProvider } from "@/contexts/haptic-context";
 import { EventBrandingProvider } from "@/contexts/event-branding-context";
-import { PostHogProvider } from "./posthog-provider";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
 const convex = new ConvexReactClient(convexUrl);
@@ -25,18 +24,16 @@ const queryClient = new QueryClient({
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider>
-      <PostHogProvider>
-        <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-          <QueryClientProvider client={queryClient}>
-            <HapticProvider>
-              <EventBrandingProvider>
-                {children}
-                <Toaster position="top-center" />
-              </EventBrandingProvider>
-            </HapticProvider>
-          </QueryClientProvider>
-        </ConvexProviderWithClerk>
-      </PostHogProvider>
+      <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+        <QueryClientProvider client={queryClient}>
+          <HapticProvider>
+            <EventBrandingProvider>
+              {children}
+              <Toaster position="top-center" />
+            </EventBrandingProvider>
+          </HapticProvider>
+        </QueryClientProvider>
+      </ConvexProviderWithClerk>
     </ClerkProvider>
   );
 }

@@ -127,29 +127,29 @@ export default function DataCollection() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-semibold text-primary mb-4">4. Analytics and Usage Data</h2>
+              <h2 className="text-2xl font-semibold text-primary mb-4">4. Operational Diagnostics</h2>
 
               <div className="space-y-6">
                 <div className="bg-purple-50 dark:bg-purple-900/20 p-6 rounded-lg border border-purple-200 dark:border-purple-800">
-                  <h3 className="text-xl font-semibold text-primary mb-3">PostHog Analytics</h3>
+                  <h3 className="text-xl font-semibold text-primary mb-3">Service Reliability Data</h3>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <h4 className="font-semibold mb-2">Collected Data:</h4>
                       <ul className="list-disc pl-6 space-y-1 text-sm">
-                        <li>Page views and navigation patterns</li>
-                        <li>Feature usage and interactions</li>
-                        <li>Error reports and performance metrics</li>
-                        <li>Device type and browser information</li>
-                        <li>Geographic location (country/region level only)</li>
+                        <li>Request metadata needed to deliver web pages and secure access</li>
+                        <li>Application errors and failure states surfaced during normal use</li>
+                        <li>Browser type and device characteristics relevant to compatibility</li>
+                        <li>Performance timing signals needed to diagnose reliability issues</li>
+                        <li>Security-related activity reviewed to prevent abuse</li>
                       </ul>
                     </div>
                     <div>
                       <h4 className="font-semibold mb-2">Privacy Protections:</h4>
                       <ul className="list-disc pl-6 space-y-1 text-sm">
-                        <li>IP addresses are automatically anonymized</li>
-                        <li>No personally identifiable information in analytics</li>
-                        <li>Data is aggregated and anonymized for reporting</li>
-                        <li>12-month automatic data retention limit</li>
+                        <li>No third-party product analytics service is currently enabled</li>
+                        <li>No advertising profiles or cross-site tracking cookies are used</li>
+                        <li>Operational data is used only for reliability, security, and support</li>
+                        <li>Retention is limited to what is needed for incident response and maintenance</li>
                       </ul>
                     </div>
                   </div>
@@ -224,9 +224,9 @@ export default function DataCollection() {
                 </div>
 
                 <div className="border rounded-lg p-4">
-                  <h4 className="font-semibold text-primary mb-2">Analytics Data</h4>
+                  <h4 className="font-semibold text-primary mb-2">Operational Diagnostics</h4>
                   <p className="text-sm text-muted-foreground">
-                    Automatically deleted after 12 months. Aggregated, anonymized insights may be retained longer for business intelligence.
+                    Retained only as long as needed to investigate incidents, prevent abuse, and maintain service reliability.
                   </p>
                 </div>
               </div>
@@ -246,7 +246,7 @@ export default function DataCollection() {
                   </ul>
                   <ul className="list-disc pl-6 space-y-2 text-sm">
                     <li>Withdraw SMS consent at any time (text STOP)</li>
-                    <li>Opt out of analytics tracking</li>
+                    <li>Clear browser cookies and local storage from your device</li>
                     <li>Limit data processing for specific purposes</li>
                     <li>File complaints with data protection authorities</li>
                   </ul>
@@ -265,7 +265,6 @@ export default function DataCollection() {
                     <li><strong>Clerk:</strong> User authentication and account management</li>
                     <li><strong>Twilio:</strong> SMS message delivery on behalf of the hosting business (encrypted phone numbers only)</li>
                     <li><strong>Convex:</strong> Secure database hosting and real-time features</li>
-                    <li><strong>PostHog:</strong> Privacy-focused analytics (anonymized data only)</li>
                   </ul>
                 </div>
 

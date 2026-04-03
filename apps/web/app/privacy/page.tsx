@@ -38,10 +38,10 @@ export default function PrivacyPolicy() {
               <div className="bg-green-50 dark:bg-green-900/20 p-6 rounded-lg border border-green-200 dark:border-green-800">
                 <h3 className="text-xl font-semibold text-primary mb-3">Usage and Technical Information</h3>
                 <ul className="list-disc pl-6 space-y-2">
-                  <li><strong>Analytics Data:</strong> Page views, user interactions (via PostHog)</li>
-                  <li><strong>Device Information:</strong> Browser type, IP address, device identifiers</li>
-                  <li><strong>Usage Patterns:</strong> How you interact with our platform and features</li>
-                  <li><strong>Performance Data:</strong> Error logs, loading times, feature usage</li>
+                  <li><strong>Technical Request Data:</strong> Browser type, IP address, and device information transmitted during normal web requests</li>
+                  <li><strong>Operational Diagnostics:</strong> Error details and performance signals used to keep the platform reliable</li>
+                  <li><strong>Security Signals:</strong> Activity patterns reviewed to detect abuse and protect the platform</li>
+                  <li><strong>Feature Usage Within Core Workflows:</strong> RSVP activity, approvals, attendance records, and similar actions needed to operate the service</li>
                 </ul>
               </div>
             </section>
@@ -110,10 +110,6 @@ export default function PrivacyPolicy() {
                   <p className="text-sm text-muted-foreground">Provides SMS delivery infrastructure. Messages are sent by Jeans on behalf of the event host using Dojo Pomodoro as the messaging platform, with Twilio handling the technical delivery</p>
                 </div>
                 <div className="border rounded-lg p-4">
-                  <h4 className="font-semibold text-primary">PostHog (Analytics)</h4>
-                  <p className="text-sm text-muted-foreground">Provides privacy-focused analytics and insights</p>
-                </div>
-                <div className="border rounded-lg p-4">
                   <h4 className="font-semibold text-primary">Convex (Database)</h4>
                   <p className="text-sm text-muted-foreground">Secure, real-time database for application data</p>
                 </div>
@@ -142,7 +138,7 @@ export default function PrivacyPolicy() {
                 <li><strong>Account Data:</strong> Retained while your account is active</li>
                 <li><strong>Event Data:</strong> Maintained for historical records and analytics</li>
                 <li><strong>SMS Data:</strong> Phone numbers are deleted when consent is withdrawn, while minimal consent records (timestamp, IP address, and the event host associated with consent) are retained for legal compliance</li>
-                <li><strong>Analytics Data:</strong> Anonymized and aggregated for long-term insights</li>
+                <li><strong>Operational Diagnostics:</strong> Retained only as long as needed to investigate issues, prevent abuse, and maintain reliability</li>
                 <li><strong>Legal Requirements:</strong> Some data may be retained longer for compliance purposes</li>
               </ul>
             </section>

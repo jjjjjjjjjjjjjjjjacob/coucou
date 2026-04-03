@@ -2,7 +2,7 @@ import React from 'react'
 import { describe, it, expect } from 'bun:test'
 import { render } from '@testing-library/react'
 
-// Create a simple mock component to avoid PostHog issues
+// Create a simple mock component to keep this render test isolated.
 function MockHome() {
   return React.createElement('div', { 'data-testid': 'home-page' }, 'Home Page')
 }

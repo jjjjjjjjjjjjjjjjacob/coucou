@@ -4,7 +4,6 @@ import { EventBrandingProvider } from '@/contexts/event-branding-context'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // Mock providers that provide the necessary context
-const MockPostHogProvider = ({ children }: { children: React.ReactNode }) => children
 const MockClerkProvider = ({ children }: { children: React.ReactNode }) => children
 const MockConvexProvider = ({ children }: { children: React.ReactNode }) => children
 const queryClient = new QueryClient()
@@ -50,17 +49,15 @@ const MockHapticProvider = ({ children }: { children: React.ReactNode }) => {
 export function TestWrapper({ children }: { children: React.ReactNode }) {
   return (
     <MockClerkProvider>
-      <MockPostHogProvider>
-        <MockConvexProvider>
-          <MockQueryClientProvider>
-            <MockHapticProvider>
-              <EventBrandingProvider>
-                {children}
-              </EventBrandingProvider>
-            </MockHapticProvider>
-          </MockQueryClientProvider>
-        </MockConvexProvider>
-      </MockPostHogProvider>
+      <MockConvexProvider>
+        <MockQueryClientProvider>
+          <MockHapticProvider>
+            <EventBrandingProvider>
+              {children}
+            </EventBrandingProvider>
+          </MockHapticProvider>
+        </MockQueryClientProvider>
+      </MockConvexProvider>
     </MockClerkProvider>
   )
 }

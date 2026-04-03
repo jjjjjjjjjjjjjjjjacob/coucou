@@ -1,19 +1,7 @@
 import React from "react";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { renderWithProviders, screen } from "./test-wrapper";
 import userEvent from "@testing-library/user-event";
-
-beforeEach(() => {
-  mock.module("posthog-js", () => ({
-    __esModule: true,
-    default: {
-      init: () => {},
-      identify: () => {},
-      reset: () => {},
-      capture: () => {},
-    },
-  }));
-});
 
 async function renderAndOpenMenu() {
   const user = userEvent.setup();
@@ -39,4 +27,3 @@ describe("HeaderClient navigation", () => {
     expect(accountLink).toHaveAttribute("href", "/account");
   });
 });
-

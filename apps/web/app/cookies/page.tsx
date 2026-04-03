@@ -50,16 +50,16 @@ export default function CookiesPolicy() {
                 </div>
 
                 <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <h3 className="text-xl font-semibold text-primary mb-3">Analytics Cookies</h3>
-                  <p className="mb-3">We use PostHog for privacy-focused analytics:</p>
+                  <h3 className="text-xl font-semibold text-primary mb-3">No Analytics or Advertising Cookies</h3>
+                  <p className="mb-3">We do not currently use third-party analytics or advertising cookies on Dojo Pomodoro.</p>
                   <ul className="list-disc pl-6 space-y-2">
-                    <li><strong>Usage Analytics:</strong> Track page views, feature usage, and user interactions</li>
-                    <li><strong>Performance Monitoring:</strong> Identify and fix technical issues</li>
-                    <li><strong>Feature Testing:</strong> A/B test new features to improve user experience</li>
-                    <li><strong>Error Tracking:</strong> Monitor and resolve application errors</li>
+                    <li><strong>No Product Analytics Cookies:</strong> We are not using a browser analytics platform to track page views or click behavior</li>
+                    <li><strong>No Advertising Cookies:</strong> We do not use cookies for ad targeting or remarketing</li>
+                    <li><strong>No Cross-Site Tracking:</strong> We do not use cookies to follow your activity across other websites</li>
+                    <li><strong>No Third-Party A/B Testing Cookies:</strong> Feature experiments are not currently powered by third-party tracking cookies</li>
                   </ul>
                   <p className="text-sm text-muted-foreground mt-3">
-                    <strong>Retention:</strong> Analytics data is retained for 12 months and then automatically deleted.
+                    <strong>Retention:</strong> Not applicable while analytics and advertising cookies remain disabled.
                   </p>
                 </div>
 
@@ -91,18 +91,6 @@ export default function CookiesPolicy() {
                     <strong>Purpose:</strong> Login state, multi-factor authentication, security
                     <br />
                     <strong>Privacy Policy:</strong> <a href="https://clerk.com/privacy" className="text-primary hover:underline">clerk.com/privacy</a>
-                  </p>
-                </div>
-
-                <div className="border rounded-lg p-4">
-                  <h4 className="font-semibold text-primary mb-2">PostHog Analytics</h4>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Privacy-focused analytics to understand how users interact with our platform.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    <strong>Purpose:</strong> Usage analytics, performance monitoring, feature testing
-                    <br />
-                    <strong>Privacy Policy:</strong> <a href="https://posthog.com/privacy" className="text-primary hover:underline">posthog.com/privacy</a>
                   </p>
                 </div>
 
