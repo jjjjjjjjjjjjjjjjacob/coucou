@@ -4,6 +4,7 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import type { Event } from "@/lib/types";
 import { EventThemeProvider } from "@/components/event-theme-provider";
+import { resolveSafeApplicationRedirect } from "@/lib/auth-redirects";
 import { SignInClient } from "./sign-in-client";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
@@ -98,8 +99,8 @@ export default async function Page({
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const redirectParam = ensureString(resolvedSearchParams.redirect_url);
-  const redirectUrl = redirectParam || "/";
-  const eventId = extractEventIdFromRedirect(redirectParam);
+  const redirectUrl = resolveSafeApplicationRedirect(redirectParam);
+  const eventId = extractEventIdFromRedirect(redirectUrl);
   const themedEvent = await resolveEventForTheme(eventId);
   const iconUrl = await resolveIconUrl(themedEvent);
 
