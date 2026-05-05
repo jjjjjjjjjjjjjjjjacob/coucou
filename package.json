@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "dev": "turbo run dev --parallel",
@@ -11,8 +12,10 @@
     "build:deploy": "turbo run deploy",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "test:web": "cd apps/web && bun test",
-    "test:convex": "cd apps/convex && bun test"
+    "test:dojo": "cd apps/dojo && bun test",
+    "test:backend": "cd packages/backend && bun test",
+    "sync:convex-production-env": "bun scripts/sync-convex-production-env.mjs",
+    "sync:github-production-secrets": "bun scripts/sync-github-production-secrets.mjs"
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^16.0.8",

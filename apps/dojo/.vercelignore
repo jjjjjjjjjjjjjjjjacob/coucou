@@ -1,0 +1,23 @@
+# Test files
+__tests__
+*.test.*
+*.spec.*
+test-setup.ts
+jest.config.*
+
+# Development files
+.turbo
+.next/cache
+.next/static/chunks/webpack-*
+
+# Coverage
+coverage
+.nyc_output
+
+# IDE
+.vscode
+.idea
+
+# Environment
+.env.local
+.env.*.local

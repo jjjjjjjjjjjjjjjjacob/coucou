@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./*"],
+      "@convex/*": ["../../packages/backend/convex/*"]
+    },
+    "baseUrl": ".",
+    "types": ["bun-types"],
+    "plugins": [{ "name": "next" }]
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "happydom.ts", "test-setup.ts", "../../packages/backend/__test__/"]
+}

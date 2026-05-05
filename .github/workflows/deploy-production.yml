@@ -1,0 +1,51 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  deploy-convex:
+    name: Deploy Convex Production
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY_PRODUCTION }}
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+      COUCOU_CLERK_ORGANIZATION_SLUG: ${{ secrets.COUCOU_CLERK_ORGANIZATION_SLUG }}
+      TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+      TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+      TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
+      TWILIO_MESSAGING_SERVICE_SID: ${{ secrets.TWILIO_MESSAGING_SERVICE_SID }}
+      DEV_TWILIO_ENABLED: ${{ secrets.DEV_TWILIO_ENABLED }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.18"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Sync Convex production environment
+        run: bun run sync:convex-production-env
+
+      - name: Deploy Convex
+        run: bunx convex deploy -y
+        working-directory: packages/backend

@@ -1,0 +1,35 @@
+{
+  "name": "@coucou/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "dependencies": {
+    "@coucou/sdk": "workspace:*",
+    "input-otp": "^1.4.2",
+    "vaul": "^1.1.2"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./auth": "./src/auth/index.ts",
+    "./auth/phone-auth-page": "./src/auth/phone-auth-page.tsx",
+    "./auth/phone-auth-flow": "./src/auth/phone-auth-flow.tsx",
+    "./auth/auth-shell": "./src/auth/auth-shell.tsx",
+    "./auth/brand-mark": "./src/auth/brand-mark.tsx",
+    "./auth/types": "./src/auth/config/types.ts",
+    "./auth/countries": "./src/auth/config/countries.ts",
+    "./tenant-template": "./src/tenant-template/index.ts",
+    "./tenant-template/provider": "./src/tenant-template/provider.tsx",
+    "./tenant-template/use-preset": "./src/tenant-template/use-preset.ts",
+    "./tenant-template/use-mobile": "./src/tenant-template/use-mobile.ts",
+    "./admin": "./src/admin/index.ts",
+    "./workspace-preview-card": "./src/workspace-preview-card.tsx"
+  },
+  "peerDependencies": {
+    "@clerk/nextjs": "^6.9.8",
+    "@radix-ui/react-popover": "^1.1.15",
+    "lucide-react": "^0.556.0",
+    "react": "^19.0.0",
+    "react-qr-code": "^2.0.15"
+  }
+}

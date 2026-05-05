@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+  TURBO_TELEMETRY_DISABLED: "1"
+  NEXT_PUBLIC_CONVEX_URL: "https://placeholder.convex.cloud"
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_Y2xlcmsuZXhhbXBsZSQ"
+  NEXT_PUBLIC_COUCOU_BASE_URL: "https://coucou.now"
+  NEXT_PUBLIC_COUCOU_CLERK_ORGANIZATION_SLUG: "coucou"
+  NEXT_PUBLIC_DOJO_CLERK_ORGANIZATION_ID: "org_dojo"
+  NEXT_PUBLIC_CLUB_CHLORINE_CLERK_ORGANIZATION_ID: "org_club_chlorine"
+
+jobs:
+  static-checks:
+    name: Static Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.18"
+
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run test
+      - run: bun run build

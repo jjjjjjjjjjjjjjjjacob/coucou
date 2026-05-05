@@ -1,0 +1,20 @@
+{
+  "name": "@coucou/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./site-config": "./src/site-config.ts",
+    "./routes": "./src/routes.ts",
+    "./shared/approval-messages": "./src/shared/approval-messages.ts",
+    "./shared/event-branding": "./src/shared/event-branding.ts",
+    "./shared/primary-fields": "./src/shared/primary-fields.ts",
+    "./shared/qr-code-colors": "./src/shared/qr-code-colors.ts",
+    "./theming": "./src/theming/index.ts",
+    "./theming/presets": "./src/theming/presets.ts",
+    "./theming/build-event-theme": "./src/theming/build-event-theme.ts",
+    "./theming/resolve-preset": "./src/theming/resolve-preset.ts"
+  }
+}

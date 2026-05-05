@@ -1,0 +1,22 @@
+# Build artifacts
+.next
+.turbo
+out
+dist
+
+# Dependency directories
+node_modules
+
+# Environment configuration
+.env*
+!.env*.example
+
+# Logs and coverage
+coverage
+*.log
+
+# TypeScript build info
+*.tsbuildinfo
+
+# OS specific files
+.DS_Store
