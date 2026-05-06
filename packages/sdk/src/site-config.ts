@@ -18,6 +18,7 @@ export interface SiteAuthConfiguration {
 
 export interface SiteConfiguration {
   siteKey: SiteKey;
+  workspaceSlug: string;
   brandName: string;
   shortName: string;
   domain: string;
@@ -33,6 +34,7 @@ export interface SiteConfiguration {
 export const siteConfigurations: Record<SiteKey, SiteConfiguration> = {
   dojo: {
     siteKey: "dojo",
+    workspaceSlug: "dojo-pomodoro",
     brandName: "Dojo Pomodoro",
     shortName: "Dojo",
     domain: "https://dojopomodoro.club",
@@ -60,6 +62,7 @@ export const siteConfigurations: Record<SiteKey, SiteConfiguration> = {
   },
   "club-chlorine": {
     siteKey: "club-chlorine",
+    workspaceSlug: "club-chlorine",
     brandName: "Club Chlorine",
     shortName: "Chlorine",
     domain: "https://clubchlorine.party",
@@ -87,6 +90,7 @@ export const siteConfigurations: Record<SiteKey, SiteConfiguration> = {
   },
   coucou: {
     siteKey: "coucou",
+    workspaceSlug: "coucou",
     brandName: "Coucou",
     shortName: "Coucou",
     domain: "https://coucou.now",

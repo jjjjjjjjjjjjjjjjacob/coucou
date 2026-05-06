@@ -10,6 +10,7 @@ import { AdminShell } from "@coucou/ui/admin";
 import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
 import { toast } from "sonner";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
+import { CoucouLogoWordmark } from "@/components/coucou-logo";
 import { MAISON_OBSCUR_TOAST_OPTIONS } from "@/lib/organization-navigation";
 import { getCoucouOrganizationSlug } from "@/lib/workspace-config";
 
@@ -431,6 +432,7 @@ function AdminAuthenticatedShell({ children }: { children: ReactNode }) {
 
   return (
     <AdminShell
+      brand={<CoucouLogoWordmark markSize={20} />}
       sidebar={<AdminSidebar />}
       sidebarFooter={<>{operatorEmail} · staff</>}
     >

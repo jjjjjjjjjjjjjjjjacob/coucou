@@ -8,6 +8,7 @@ import {
   hasNonEmptyValue,
   optionalBackendEnvironmentVariables,
   requiredGitHubProductionSecrets,
+  validateProductionEnvironmentValues,
 } from "./backend-production-env.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -123,6 +124,18 @@ if (missingSecretNames.length > 0) {
   console.error("Missing required GitHub production secrets:");
   for (const secretName of missingSecretNames) {
     console.error(`- ${secretName}`);
+  }
+  console.error("Secret values were not printed.");
+  process.exit(1);
+}
+
+const productionValidationMessages = validateProductionEnvironmentValues(
+  localEnvironmentValues,
+);
+if (productionValidationMessages.length > 0) {
+  console.error("Invalid GitHub production secret values:");
+  for (const validationMessage of productionValidationMessages) {
+    console.error(`- ${validationMessage}`);
   }
   console.error("Secret values were not printed.");
   process.exit(1);

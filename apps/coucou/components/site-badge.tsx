@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { siteConfiguration } from "@/lib/site";
+import { CoucouLogoMark } from "@/components/coucou-logo";
 
 interface SiteBadgeProps {
   className?: string;
@@ -24,7 +24,11 @@ export function SiteBadge({
         className,
       )}
     >
-      {siteConfiguration.accentMark}
+      <CoucouLogoMark
+        decorative={false}
+        label="Coucou"
+        size={size === "lg" ? 28 : 18}
+      />
     </div>
   );
 }

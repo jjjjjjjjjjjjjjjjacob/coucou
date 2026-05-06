@@ -3,8 +3,9 @@
 import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
+import { siteConfiguration } from "@/lib/site";
 
-const workspaceSlug = "dojo";
+const workspaceSlug = siteConfiguration.workspaceSlug;
 const workspaceOrganizationId =
   process.env.NEXT_PUBLIC_DOJO_CLERK_ORGANIZATION_ID ?? "";
 const coucouBaseUrl = (

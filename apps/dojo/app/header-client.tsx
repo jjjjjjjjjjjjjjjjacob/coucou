@@ -20,7 +20,7 @@ import { siteConfiguration } from "@/lib/site";
 import DojoPomodoreIcon from "@/components/icons/dojo-pomodoro-icon";
 import { buildSignInPath } from "@coucou/sdk/routes";
 
-const workspaceSlug = "dojo";
+const workspaceSlug = siteConfiguration.workspaceSlug;
 const workspaceOrganizationId =
   process.env.NEXT_PUBLIC_DOJO_CLERK_ORGANIZATION_ID ?? "";
 const coucouBaseUrl = (

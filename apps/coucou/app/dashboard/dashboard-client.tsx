@@ -19,6 +19,7 @@ import {
   AdminSection,
 } from "@coucou/ui/admin";
 import { DashboardShell } from "@/components/dashboard-shell";
+import { CoucouLogoMark } from "@/components/coucou-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -364,7 +365,13 @@ export function DashboardClient() {
             style={{ borderBottom: "1px solid var(--tt-rule)" }}
           >
             <div className="space-y-1">
-              <div style={{ color: "var(--tt-fg)" }}>Coucou Admin</div>
+              <div
+                className="flex items-center gap-2"
+                style={{ color: "var(--tt-fg)" }}
+              >
+                <CoucouLogoMark size={20} />
+                <span>Coucou Admin</span>
+              </div>
               <div
                 className="max-w-2xl text-[12px] leading-relaxed"
                 style={{ color: "var(--tt-fg-dim)" }}

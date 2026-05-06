@@ -15,7 +15,7 @@ export interface AdminShellProps {
   /**
    * Brand line at the top of the sidebar. Defaults to "Coucou".
    */
-  brand?: string;
+  brand?: ReactNode;
   /**
    * The main content (header + sections).
    */

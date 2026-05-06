@@ -105,4 +105,20 @@ describe("PhoneAuthPage", () => {
     });
     expect(documentReplaceCalls).toEqual([]);
   });
+
+  it("renders a custom brand mark slot when provided", async () => {
+    const { getByTestId } = render(
+      <LoadedPhoneAuthPage
+        preset="coucou"
+        siteAuthConfiguration={siteAuthConfigurations.coucou}
+        redirectUrl="/dashboard"
+        brandMarkSlot={<div data-testid="custom-brand-mark" />}
+      />,
+    );
+
+    expect(getByTestId("custom-brand-mark")).toBeTruthy();
+    await waitFor(() => {
+      expect(routerReplaceCalls).toEqual(["/dashboard"]);
+    });
+  });
 });

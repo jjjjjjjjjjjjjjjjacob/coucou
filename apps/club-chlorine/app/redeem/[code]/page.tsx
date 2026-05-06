@@ -38,7 +38,7 @@ export default async function RedeemServerPage({
     const redemptionResult = await fetchQuery(api.redemptions.validate, {
       code: normalizedCode,
       siteKey: siteConfiguration.siteKey,
-      workspaceSlug: siteConfiguration.siteKey,
+      workspaceSlug: siteConfiguration.workspaceSlug,
     });
     if (redemptionResult && "eventId" in redemptionResult && redemptionResult.eventId) {
       eventId = redemptionResult.eventId;
@@ -56,7 +56,7 @@ export default async function RedeemServerPage({
   const redemptionPreload = await preloadQuery(api.redemptions.validate, {
     code: normalizedCode,
     siteKey: siteConfiguration.siteKey,
-    workspaceSlug: siteConfiguration.siteKey,
+    workspaceSlug: siteConfiguration.workspaceSlug,
   });
 
   // Render the client component

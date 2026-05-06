@@ -7,7 +7,7 @@ async function renderAndOpenMenu() {
   const user = userEvent.setup();
   renderWithProviders(<HeaderClient />);
   const triggerButton = screen.getByRole("button", {
-    name: "DP",
+    name: "Dojo Pomodoro Icon",
   });
   await user.click(triggerButton);
 }

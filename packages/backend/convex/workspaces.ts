@@ -1085,7 +1085,7 @@ export const seedDefaultWorkspaces = mutation({
   args: {},
   handler: async (ctx) => {
     const dojoWorkspaceId = await upsertWorkspaceRecord(ctx, {
-      slug: "dojo",
+      slug: "dojo-pomodoro",
       name: "Dojo Pomodoro",
       kind: "client",
       primaryDomain: "dojopomodoro.club",

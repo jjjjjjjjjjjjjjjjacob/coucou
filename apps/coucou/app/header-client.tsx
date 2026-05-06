@@ -16,6 +16,7 @@ import {
   HeaderHamburgerMenu,
   TenantMasthead,
 } from "@coucou/ui/tenant-template";
+import { CoucouLogoWordmark } from "@/components/coucou-logo";
 
 interface WorkspaceMenuLink {
   href: string;
@@ -134,6 +135,7 @@ export default function HeaderClient({ sticky = false }: HeaderClientProps = {})
       preset={siteConfiguration.preset}
       brandName={siteConfiguration.brandName}
       tagline=""
+      logoSlot={<CoucouLogoWordmark markSize={18} />}
       rightSlot={rightSlot}
       sticky={sticky}
     />

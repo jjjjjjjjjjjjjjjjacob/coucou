@@ -28,6 +28,7 @@ import {
   hasWorkspaceWriteAccess,
 } from "@/lib/workspace-roles";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { CoucouLogoMark } from "@/components/coucou-logo";
 
 const MAISON_STYLE_VARS = resolvePreset({
   siteConfigurationPreset: "maison",
@@ -81,10 +82,15 @@ export function brandInitial(name: string): string {
 
 interface SquareMarkProps {
   initial: string;
+  logo?: boolean;
   size?: "sm" | "md";
 }
 
-export function SquareMark({ initial, size = "md" }: SquareMarkProps) {
+export function SquareMark({
+  initial,
+  logo = false,
+  size = "md",
+}: SquareMarkProps) {
   const dimension = size === "sm" ? 24 : 32;
   return (
     <div
@@ -100,7 +106,7 @@ export function SquareMark({ initial, size = "md" }: SquareMarkProps) {
         lineHeight: 1,
       }}
     >
-      {initial}
+      {logo ? <CoucouLogoMark size={size === "sm" ? 14 : 20} /> : initial}
     </div>
   );
 }
@@ -128,7 +134,10 @@ export function SidebarTenantSwitcher() {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <SquareMark initial={brandInitial(currentBrandName)} />
+              <SquareMark
+                initial={brandInitial(currentBrandName)}
+                logo={currentBrandName === "Coucou"}
+              />
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">
                   {currentBrandName}

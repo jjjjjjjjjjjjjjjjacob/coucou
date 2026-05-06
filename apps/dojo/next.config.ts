@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const coucouBaseUrl = (
   process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
 ).replace(/\/+$/, "");
+const dojoPomodoroWorkspaceSlug = "dojo-pomodoro";
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@coucou/sdk", "@coucou/ui"],
@@ -28,32 +29,32 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/admin",
-        destination: `${coucouBaseUrl}/workspaces/dojo/dashboard`,
+        destination: `${coucouBaseUrl}/workspaces/${dojoPomodoroWorkspaceSlug}/dashboard`,
         permanent: false,
       },
       {
         source: "/admin/:path*",
-        destination: `${coucouBaseUrl}/workspaces/dojo/dashboard/:path*`,
+        destination: `${coucouBaseUrl}/workspaces/${dojoPomodoroWorkspaceSlug}/dashboard/:path*`,
         permanent: false,
       },
       {
         source: "/host",
-        destination: `${coucouBaseUrl}/workspaces/dojo/dashboard`,
+        destination: `${coucouBaseUrl}/workspaces/${dojoPomodoroWorkspaceSlug}/dashboard`,
         permanent: false,
       },
       {
         source: "/host/:path*",
-        destination: `${coucouBaseUrl}/workspaces/dojo/dashboard/:path*`,
+        destination: `${coucouBaseUrl}/workspaces/${dojoPomodoroWorkspaceSlug}/dashboard/:path*`,
         permanent: false,
       },
       {
         source: "/door",
-        destination: `${coucouBaseUrl}/workspaces/dojo/dashboard/door`,
+        destination: `${coucouBaseUrl}/workspaces/${dojoPomodoroWorkspaceSlug}/dashboard/door`,
         permanent: false,
       },
       {
         source: "/door/:path*",
-        destination: `${coucouBaseUrl}/workspaces/dojo/dashboard/door/:path*`,
+        destination: `${coucouBaseUrl}/workspaces/${dojoPomodoroWorkspaceSlug}/dashboard/door/:path*`,
         permanent: false,
       },
     ];

@@ -31,6 +31,11 @@ export interface AuthShellProps {
   siteAuthConfiguration: SiteAuthConfiguration;
   authBranding?: AuthBrandingOverrides | null;
   /**
+   * Optional replacement for the default preset mark. Apps use this for a
+   * real platform logo while tenant auth can keep the generated mark.
+   */
+  brandMarkSlot?: ReactNode;
+  /**
    * When the sign-in is reached via redirect from an event page, the event's
    * themeBackgroundColor/themeTextColor flow through here so the takeover
    * styling extends to the auth surface (every preset token is re-derived
@@ -76,6 +81,7 @@ export function AuthShell({
   preset,
   siteAuthConfiguration,
   authBranding,
+  brandMarkSlot,
   event,
   children,
   className,
@@ -125,12 +131,14 @@ export function AuthShell({
           >
             {/* Brand mark + uppercased brand name + eyebrow */}
             <div className="flex flex-col items-center gap-3 text-center">
-              <BrandMark
-                preset={preset}
-                accentMark={siteAuthConfiguration.accentMark}
-                size={64}
-                style={brandMarkStyle ?? undefined}
-              />
+              {brandMarkSlot ?? (
+                <BrandMark
+                  preset={preset}
+                  accentMark={siteAuthConfiguration.accentMark}
+                  size={64}
+                  style={brandMarkStyle ?? undefined}
+                />
+              )}
               <div
                 className="text-[22px] leading-tight"
                 style={{

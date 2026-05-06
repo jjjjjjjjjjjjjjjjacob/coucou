@@ -7,6 +7,7 @@ import {
   findMissingEnvironmentVariables,
   hasNonEmptyValue,
   requiredBackendEnvironmentVariables,
+  validateProductionEnvironmentValues,
 } from "./backend-production-env.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,17 @@ if (
   for (const variableName of missingEnvironmentVariables) {
     console.error(`- ${variableName}`);
   }
+  process.exit(1);
+}
+
+const productionValidationMessages =
+  validateProductionEnvironmentValues(process.env);
+if (productionValidationMessages.length > 0) {
+  console.error("Invalid Convex production environment values:");
+  for (const validationMessage of productionValidationMessages) {
+    console.error(`- ${validationMessage}`);
+  }
+  console.error("Secret values were not printed.");
   process.exit(1);
 }
 

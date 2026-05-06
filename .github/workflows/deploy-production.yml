@@ -21,7 +21,7 @@ jobs:
     name: Deploy Convex Production
     needs: ci
     runs-on: ubuntu-latest
-    environment: production
+    environment: Production
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY_PRODUCTION }}
       APP_BASE_URL: ${{ secrets.APP_BASE_URL }}

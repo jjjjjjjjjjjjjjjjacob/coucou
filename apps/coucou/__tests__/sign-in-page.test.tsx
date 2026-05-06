@@ -116,6 +116,7 @@ describe("SignInClient", () => {
     expect(
       screen.getByRole("heading", { name: "Sign in to Dojo Pomodoro" }),
     ).toBeTruthy();
+    expect(screen.getByText("DP")).toBeTruthy();
     expect(screen.getByText("Organization login")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Powered by Coucou" })).toBeTruthy();
   });

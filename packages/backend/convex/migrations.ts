@@ -6,6 +6,7 @@ import { internalMutation, mutation } from "./functions";
 import { v } from "convex/values";
 import { buildApprovalMessageBackfillPatch } from "@coucou/sdk/shared/approval-messages";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
+import { upsertWorkspaceRecord } from "./lib/workspaceRecords";
 import {
   DEFAULT_SOCIAL_PLATFORM_CONFIGS,
   detectSocialPlatformKeyFromCustomField,
@@ -31,6 +32,8 @@ type MetadataRecord = Record<string, unknown>;
 
 const dojoPomodoroWorkspaceSlug = "dojo-pomodoro";
 const dojoLegacySiteKey = "dojo";
+const dojoPomodoroWorkspaceName = "Dojo Pomodoro";
+const dojoPomodoroPrimaryDomain = "dojopomodoro.club";
 
 // Create migrations instance and runner
 export const migrations = new Migrations(components.migrations);
@@ -156,18 +159,73 @@ export const backfillListCredentialApprovalMessagesFromEvents =
 export const backfillDojoPomodoroWorkspaceScope = mutation({
   args: {
     dryRun: v.optional(v.boolean()),
+    clerkOrganizationId: v.optional(v.string()),
+    clerkOrganizationSlug: v.optional(v.string()),
   },
-  handler: async (ctx, { dryRun = false }) => {
+  handler: async (
+    ctx,
+    { dryRun = false, clerkOrganizationId, clerkOrganizationSlug },
+  ) => {
     await requireCoucouPlatformMember(ctx);
 
-    const workspace = await ctx.db
+    let workspace = await ctx.db
       .query("workspaces")
       .withIndex("by_slug", (query) =>
         query.eq("slug", dojoPomodoroWorkspaceSlug),
       )
       .unique();
+
+    if (
+      workspace?.clerkOrganizationId &&
+      clerkOrganizationId &&
+      workspace.clerkOrganizationId !== clerkOrganizationId
+    ) {
+      throw new Error(
+        "Dojo Pomodoro workspace is already linked to another Clerk organization",
+      );
+    }
+
+    if (!dryRun && !workspace?.clerkOrganizationId && !clerkOrganizationId) {
+      throw new Error(
+        "clerkOrganizationId is required before migrating Dojo Pomodoro production scope",
+      );
+    }
+
+    let workspaceAction:
+      | "unchanged"
+      | "created"
+      | "updated"
+      | "would-create"
+      | "would-update" = "unchanged";
+    const workspaceNeedsUpdate =
+      workspace !== null &&
+      (workspace.name !== dojoPomodoroWorkspaceName ||
+        workspace.kind !== "client" ||
+        workspace.primaryDomain !== dojoPomodoroPrimaryDomain ||
+        (clerkOrganizationId !== undefined &&
+          workspace.clerkOrganizationId !== clerkOrganizationId) ||
+        (clerkOrganizationSlug !== undefined &&
+          workspace.clerkOrganizationSlug !== clerkOrganizationSlug));
+
     if (!workspace) {
-      throw new Error("Dojo Pomodoro workspace not found");
+      workspaceAction = dryRun ? "would-create" : "created";
+    } else if (workspaceNeedsUpdate) {
+      workspaceAction = dryRun ? "would-update" : "updated";
+    }
+
+    if (!dryRun && (!workspace || workspaceNeedsUpdate)) {
+      const workspaceId = await upsertWorkspaceRecord(ctx, {
+        slug: dojoPomodoroWorkspaceSlug,
+        name: dojoPomodoroWorkspaceName,
+        kind: "client",
+        primaryDomain: dojoPomodoroPrimaryDomain,
+        clerkOrganizationId,
+        clerkOrganizationSlug,
+      });
+      workspace = await ctx.db.get(workspaceId);
+      if (!workspace) {
+        throw new Error("Dojo Pomodoro workspace could not be loaded");
+      }
     }
 
     const existingWorkspaceSite = await ctx.db
@@ -177,27 +235,51 @@ export const backfillDojoPomodoroWorkspaceScope = mutation({
       )
       .unique();
 
-    let workspaceSiteAction: "unchanged" | "created" | "reassigned" =
-      "unchanged";
+    let workspaceSiteAction:
+      | "unchanged"
+      | "created"
+      | "reassigned"
+      | "updated"
+      | "would-create"
+      | "would-reassign"
+      | "would-update" = "unchanged";
     if (!existingWorkspaceSite) {
-      workspaceSiteAction = "created";
+      workspaceSiteAction = dryRun ? "would-create" : "created";
       if (!dryRun) {
+        if (!workspace) {
+          throw new Error("Dojo Pomodoro workspace not found");
+        }
         const now = Date.now();
         await ctx.db.insert("workspaceSites", {
           workspaceId: workspace._id,
           siteKey: dojoLegacySiteKey,
-          domain: "dojopomodoro.club",
+          domain: dojoPomodoroPrimaryDomain,
           appKind: "client",
           createdAt: now,
           updatedAt: now,
         });
       }
-    } else if (existingWorkspaceSite.workspaceId !== workspace._id) {
-      workspaceSiteAction = "reassigned";
+    } else if (!workspace || existingWorkspaceSite.workspaceId !== workspace._id) {
+      workspaceSiteAction = dryRun ? "would-reassign" : "reassigned";
       if (!dryRun) {
+        if (!workspace) {
+          throw new Error("Dojo Pomodoro workspace not found");
+        }
         await ctx.db.patch(existingWorkspaceSite._id, {
           workspaceId: workspace._id,
-          domain: "dojopomodoro.club",
+          domain: dojoPomodoroPrimaryDomain,
+          appKind: "client",
+          updatedAt: Date.now(),
+        });
+      }
+    } else if (
+      existingWorkspaceSite.domain !== dojoPomodoroPrimaryDomain ||
+      existingWorkspaceSite.appKind !== "client"
+    ) {
+      workspaceSiteAction = dryRun ? "would-update" : "updated";
+      if (!dryRun) {
+        await ctx.db.patch(existingWorkspaceSite._id, {
+          domain: dojoPomodoroPrimaryDomain,
           appKind: "client",
           updatedAt: Date.now(),
         });
@@ -237,8 +319,9 @@ export const backfillDojoPomodoroWorkspaceScope = mutation({
 
     return {
       dryRun,
-      workspaceId: workspace._id,
-      workspaceSlug: workspace.slug,
+      workspaceId: workspace?._id ?? null,
+      workspaceSlug: workspace?.slug ?? dojoPomodoroWorkspaceSlug,
+      workspaceAction,
       workspaceSiteAction,
       matchingEventCount: matchingEvents.length,
       patchedEventCount: eventsNeedingPatch.length,

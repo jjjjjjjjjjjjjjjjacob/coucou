@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useUser } from "@clerk/nextjs";
 import { AdminShell } from "@coucou/ui/admin";
+import { CoucouLogoWordmark } from "@/components/coucou-logo";
 import { DashboardSidebar } from "@/components/dashboard-sidebar";
 
 interface DashboardShellProps {
@@ -30,6 +31,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
 
   return (
     <AdminShell
+      brand={<CoucouLogoWordmark markSize={20} />}
       sidebar={<DashboardSidebar />}
       sidebarFooter={<>{operatorEmail} · dashboard</>}
     >

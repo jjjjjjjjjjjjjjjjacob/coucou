@@ -58,6 +58,7 @@
     "@babel/preset-react": "^7.27.1",
     "@babel/preset-typescript": "^7.27.1",
     "@clerk/types": "^4.95.0",
+    "@coucou/backend": "workspace:*",
     "@eslint/eslintrc": "^3",
     "@happy-dom/global-registrator": "^20.0.11",
     "@tailwindcss/postcss": "^4",

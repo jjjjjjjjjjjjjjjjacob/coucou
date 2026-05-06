@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, type ReactNode } from "react";
 import { PhoneAuthPage, type AuthBrandingOverrides } from "@coucou/ui/auth";
 import type { PresetKey } from "@coucou/sdk";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import { siteConfiguration } from "@/lib/site";
+import { CoucouLogoMark } from "@/components/coucou-logo";
 
 interface SignInClientProps {
   redirectUrl: string;
@@ -13,6 +14,7 @@ interface SignInClientProps {
   preset?: PresetKey;
   siteAuthConfiguration?: SiteAuthConfiguration;
   authBranding?: AuthBrandingOverrides | null;
+  brandMarkSlot?: ReactNode;
   postAuthNavigation?: "router" | "document-replace";
 }
 
@@ -23,6 +25,7 @@ export function SignInClient({
   preset = siteConfiguration.preset,
   siteAuthConfiguration = siteConfiguration.auth,
   authBranding = null,
+  brandMarkSlot,
   postAuthNavigation = "router",
 }: SignInClientProps) {
   // When the user reaches sign-in via redirect from an event page, the
@@ -35,6 +38,11 @@ export function SignInClient({
       themeTextColor: eventThemeTextColor ?? undefined,
     };
   }, [eventThemeBackgroundColor, eventThemeTextColor]);
+  const isCoucouPlatformAuthentication =
+    siteAuthConfiguration === siteConfiguration.auth;
+  const resolvedBrandMarkSlot =
+    brandMarkSlot ??
+    (isCoucouPlatformAuthentication ? <CoucouLogoMark size={64} /> : undefined);
 
   return (
     <PhoneAuthPage
@@ -42,6 +50,7 @@ export function SignInClient({
       redirectUrl={redirectUrl}
       preset={preset}
       authBranding={authBranding}
+      brandMarkSlot={resolvedBrandMarkSlot}
       event={eventThemeOverride}
       postAuthNavigation={postAuthNavigation}
     />

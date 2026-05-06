@@ -5,7 +5,7 @@ import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import type { EventThemeColorSource, PresetKey } from "@coucou/sdk";
 import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { AuthShell, type AuthBrandingOverrides } from "./auth-shell";
 import { PhoneAuthFlow } from "./phone-auth-flow";
 
@@ -29,6 +29,10 @@ export interface PhoneAuthPageProps {
    * powered-by toggle). Wired up later via the organizer CMS.
    */
   authBranding?: AuthBrandingOverrides | null;
+  /**
+   * Optional replacement for the default preset mark.
+   */
+  brandMarkSlot?: ReactNode;
   /**
    * Optional event-takeover styling. When the user reaches sign-in via
    * redirect from an event page (the layout's `EventThemeProvider` resolved
@@ -55,6 +59,7 @@ export function PhoneAuthPage({
   redirectUrl,
   postAuthNavigation = "router",
   authBranding,
+  brandMarkSlot,
   event,
   onSuccess,
 }: PhoneAuthPageProps) {
@@ -114,6 +119,7 @@ export function PhoneAuthPage({
         preset={preset}
         siteAuthConfiguration={siteAuthConfiguration}
         authBranding={authBranding}
+        brandMarkSlot={brandMarkSlot}
         event={event}
       >
         <div
@@ -135,6 +141,7 @@ export function PhoneAuthPage({
       preset={preset}
       siteAuthConfiguration={siteAuthConfiguration}
       authBranding={authBranding}
+      brandMarkSlot={brandMarkSlot}
       event={event}
     >
       <PhoneAuthFlow onSuccess={handleSuccess} />
