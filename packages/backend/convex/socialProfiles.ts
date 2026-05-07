@@ -10,6 +10,10 @@ import {
   upsertProfileFieldValue,
 } from "./lib/profileValueRecords";
 import { upsertUserSocialProfile } from "./lib/socialProfileRecords";
+import {
+  eventMatchesTenantScope,
+  resolveTenantWorkspaceScope,
+} from "./lib/workspaceScope";
 
 export const listForCurrentUser = query({
   args: {},
@@ -71,6 +75,93 @@ export const listForCurrentUser = query({
         queryBuilder.eq("clerkUserId", identity.subject),
       )
       .collect();
+  },
+});
+
+export const listForCurrentUserInWorkspace = query({
+  args: {
+    workspaceSlug: v.optional(v.string()),
+    siteKey: v.optional(v.string()),
+  },
+  handler: async (ctx, { workspaceSlug, siteKey }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    if (!workspaceSlug && !siteKey) return [];
+
+    const scope = await resolveTenantWorkspaceScope(ctx, {
+      workspaceSlug,
+      siteKey,
+    });
+    if (!scope) return [];
+
+    const userRsvps = await ctx.db
+      .query("rsvps")
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", identity.subject),
+      )
+      .collect();
+
+    if (userRsvps.length === 0) return [];
+
+    const eventEntries = await Promise.all(
+      Array.from(new Set(userRsvps.map((rsvp) => rsvp.eventId))).map(
+        async (eventId) => ({
+          eventId,
+          event: await ctx.db.get(eventId),
+        }),
+      ),
+    );
+    const inScopeEventIds = new Set<string>();
+    for (const entry of eventEntries) {
+      if (!entry.event) continue;
+      if (eventMatchesTenantScope(entry.event, scope)) {
+        inScopeEventIds.add(entry.eventId);
+      }
+    }
+    if (inScopeEventIds.size === 0) return [];
+
+    const inScopeRsvps = userRsvps.filter((rsvp) =>
+      inScopeEventIds.has(rsvp.eventId),
+    );
+
+    const socialRows = await Promise.all(
+      inScopeRsvps.map((rsvp) =>
+        ctx.db
+          .query("rsvpSocialProfiles")
+          .withIndex("by_rsvp", (queryBuilder) =>
+            queryBuilder.eq("rsvpId", rsvp._id),
+          )
+          .collect(),
+      ),
+    );
+
+    const dedupedByPlatform = new Map<
+      string,
+      {
+        platformKey: string;
+        handle: string;
+        normalizedHandle: string;
+        updatedAt: number;
+      }
+    >();
+    for (const rows of socialRows) {
+      for (const row of rows) {
+        const existing = dedupedByPlatform.get(row.platformKey);
+        if (!existing || row.updatedAt > existing.updatedAt) {
+          dedupedByPlatform.set(row.platformKey, {
+            platformKey: row.platformKey,
+            handle: row.handle,
+            normalizedHandle: row.normalizedHandle,
+            updatedAt: row.updatedAt,
+          });
+        }
+      }
+    }
+
+    return Array.from(dedupedByPlatform.values()).sort(
+      (firstSocialProfile, secondSocialProfile) =>
+        secondSocialProfile.updatedAt - firstSocialProfile.updatedAt,
+    );
   },
 });
 

@@ -167,7 +167,7 @@ export const create = action({
     secondaryTitle: v.optional(v.string()),
     description: v.optional(v.string()),
     acts: v.optional(v.array(eventActValidator)),
-    hosts: v.array(v.string()),
+    hosts: v.optional(v.array(v.string())),
     productionCompany: v.optional(v.string()),
     location: v.string(),
     flyerUrl: v.optional(v.string()),
@@ -177,6 +177,7 @@ export const create = action({
     guestPortalLinkLabel: v.optional(v.string()),
     guestPortalLinkUrl: v.optional(v.string()),
     eventDate: v.number(),
+    eventEndDate: v.number(),
     eventTimezone: v.optional(v.string()),
     status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()),
@@ -216,6 +217,9 @@ export const create = action({
     const now = Date.now();
     if (args.eventDate < now)
       throw new Error("Event date must be in the future");
+    if (args.eventEndDate <= args.eventDate) {
+      throw new Error("Event end must be after the event start");
+    }
 
     // Validate maxAttendees
     if (args.maxAttendees !== undefined) {
@@ -325,6 +329,7 @@ export const create = action({
       guestPortalLinkLabel: normalizedGuestPortalLinkLabel,
       guestPortalLinkUrl: normalizedGuestPortalLinkUrl,
       eventDate: args.eventDate,
+      eventEndDate: args.eventEndDate,
       eventTimezone: args.eventTimezone,
       status: eventStatus,
       maxAttendees: args.maxAttendees ?? 1,
@@ -360,6 +365,7 @@ export const update = action({
         guestPortalLinkLabel: v.optional(v.string()),
         guestPortalLinkUrl: v.optional(v.string()),
         eventDate: v.optional(v.number()),
+        eventEndDate: v.optional(v.number()),
         eventTimezone: v.optional(v.string()),
         maxAttendees: v.optional(v.number()),
         status: v.optional(eventStatusValidator),
@@ -406,6 +412,15 @@ export const update = action({
     });
     if (!currentEvent) {
       throw new ValidationError("Event not found");
+    }
+
+    if (patch?.eventDate !== undefined || patch?.eventEndDate !== undefined) {
+      const targetEventDate = patch.eventDate ?? currentEvent.eventDate;
+      const targetEventEndDate =
+        patch.eventEndDate ?? currentEvent.eventEndDate ?? targetEventDate;
+      if (targetEventEndDate <= targetEventDate) {
+        throw new ValidationError("Event end must be after the event start");
+      }
     }
 
     const targetStatus = (patch?.status ??

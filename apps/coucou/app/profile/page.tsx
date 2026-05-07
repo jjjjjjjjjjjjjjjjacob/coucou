@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Mail, Phone, Calendar, Users, Settings } from "lucide-react";
+import {
+  Mail,
+  Phone,
+  Calendar,
+  Users,
+  Settings,
+  Pencil,
+} from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
@@ -36,8 +43,34 @@ export default function ProfilePage() {
   ) as
     | UserEventSharing[]
     | undefined;
+  const profileFieldValues = useQuery(
+    api.profileValues.listForCurrentUser,
+    !isSignedIn || !isConvexAuthenticated ? "skip" : {},
+  );
+  const profileWorkspaceGrants = useQuery(
+    api.profileValues.listAllGrantsForCurrentUser,
+    !isSignedIn || !isConvexAuthenticated ? "skip" : {},
+  );
+  const userSocialProfiles = useQuery(
+    api.socialProfiles.listForCurrentUser,
+    !isSignedIn || !isConvexAuthenticated ? "skip" : {},
+  );
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
   const updateSharedFields = useMutation(api.rsvps.updateSharedFields);
+  const upsertSocialProfile = useMutation(
+    api.socialProfiles.upsertForCurrentUser,
+  );
+  const revokeWorkspaceGrant = useMutation(
+    api.profileValues.revokeWorkspaceGrantForCurrentUser,
+  );
+  const [editingSocialPlatformKey, setEditingSocialPlatformKey] =
+    React.useState<string | null>(null);
+  const [editingSocialHandle, setEditingSocialHandle] = React.useState("");
+  const [isSavingSocialProfile, setIsSavingSocialProfile] =
+    React.useState(false);
+  const [revokingGrantId, setRevokingGrantId] = React.useState<string | null>(
+    null,
+  );
   const [editingRsvpId, setEditingRsvpId] = React.useState<string | null>(null);
   const [pendingFieldValues, setPendingFieldValues] = React.useState<
     Record<string, string>
@@ -137,6 +170,52 @@ export default function ProfilePage() {
       ...current,
       [fieldKey]: "",
     }));
+  };
+
+  const handleSocialEditStart = (
+    platformKey: string,
+    currentHandle: string,
+  ) => {
+    setEditingSocialPlatformKey(platformKey);
+    setEditingSocialHandle(currentHandle);
+  };
+
+  const handleSocialEditCancel = () => {
+    setEditingSocialPlatformKey(null);
+    setEditingSocialHandle("");
+  };
+
+  const handleSocialEditSave = async (platformKey: string) => {
+    setIsSavingSocialProfile(true);
+    try {
+      await upsertSocialProfile({
+        platformKey,
+        handle: editingSocialHandle,
+      });
+      toast.success("Social profile updated.");
+      setEditingSocialPlatformKey(null);
+      setEditingSocialHandle("");
+    } catch (error) {
+      const errorDetails = error as Error;
+      toast.error(errorDetails.message || "Failed to update social profile.");
+    } finally {
+      setIsSavingSocialProfile(false);
+    }
+  };
+
+  const handleRevokeGrant = async (grantId: Id<"workspaceProfileValueGrants">) => {
+    setRevokingGrantId(grantId);
+    try {
+      await revokeWorkspaceGrant({
+        workspaceProfileValueGrantId: grantId,
+      });
+      toast.success("Sharing revoked.");
+    } catch (error) {
+      const errorDetails = error as Error;
+      toast.error(errorDetails.message || "Failed to revoke sharing.");
+    } finally {
+      setRevokingGrantId(null);
+    }
   };
 
   const handleSaveSharedFields = async () => {
@@ -423,6 +502,214 @@ export default function ProfilePage() {
                           <p className="text-sm text-muted-foreground">
                             You have not shared any custom fields for this event.
                           </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Saved profile information
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Information you have shared via RSVPs is saved here so it can be
+              reused. Sharing with workspaces can be revoked below.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {profileFieldValues === undefined ? (
+              <div className="flex items-center justify-center py-8">
+                <Spinner />
+              </div>
+            ) : profileFieldValues.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No saved profile information yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {profileFieldValues.map((entry) => (
+                  <div
+                    key={entry._id}
+                    className="border rounded-lg p-3 space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          {entry.label || entry.fieldKey}
+                        </p>
+                        <p className="text-sm font-medium">{entry.value}</p>
+                      </div>
+                      {entry.source ? (
+                        <Badge variant="outline" className="capitalize">
+                          {entry.source}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Workspace sharing
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Workspaces you have granted access to your profile information.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {profileWorkspaceGrants === undefined ? (
+              <div className="flex items-center justify-center py-8">
+                <Spinner />
+              </div>
+            ) : profileWorkspaceGrants.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                You have not granted any workspaces access to your profile
+                information.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {profileWorkspaceGrants.map((entry) => (
+                  <div
+                    key={entry.grant._id}
+                    className="border rounded-lg p-3 flex flex-wrap items-start justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        {entry.workspace?.name ??
+                          entry.grant.workspaceSlug ??
+                          "Workspace"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Sharing{" "}
+                        <span className="font-medium">
+                          {entry.profileFieldValue.label ||
+                            entry.profileFieldValue.fieldKey}
+                        </span>
+                        : {entry.profileFieldValue.value}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={revokingGrantId === entry.grant._id}
+                      onClick={() => handleRevokeGrant(entry.grant._id)}
+                    >
+                      {revokingGrantId === entry.grant._id ? (
+                        <Spinner className="mr-2 h-3.5 w-3.5" />
+                      ) : null}
+                      Revoke
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Social profiles
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Social handles linked to your account. These are reused when
+              RSVPing to events that ask for them.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {userSocialProfiles === undefined ? (
+              <div className="flex items-center justify-center py-8">
+                <Spinner />
+              </div>
+            ) : userSocialProfiles.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No social profiles saved yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {userSocialProfiles.map((profile) => {
+                  const isEditing =
+                    editingSocialPlatformKey === profile.platformKey;
+                  return (
+                    <div
+                      key={profile._id}
+                      className="border rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
+                    >
+                      <div className="space-y-0.5">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          {profile.platformKey}
+                        </p>
+                        {isEditing ? (
+                          <Input
+                            value={editingSocialHandle}
+                            onChange={(event) =>
+                              setEditingSocialHandle(event.target.value)
+                            }
+                            placeholder="@handle"
+                            className="w-64"
+                          />
+                        ) : (
+                          <p className="text-sm font-medium">
+                            {profile.handle}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {isEditing ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={handleSocialEditCancel}
+                              disabled={isSavingSocialProfile}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() =>
+                                handleSocialEditSave(profile.platformKey)
+                              }
+                              disabled={isSavingSocialProfile}
+                            >
+                              {isSavingSocialProfile ? (
+                                <Spinner className="mr-2 h-3.5 w-3.5" />
+                              ) : null}
+                              Save
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              handleSocialEditStart(
+                                profile.platformKey,
+                                profile.handle,
+                              )
+                            }
+                          >
+                            <Pencil className="mr-2 h-3.5 w-3.5" />
+                            Edit
+                          </Button>
                         )}
                       </div>
                     </div>

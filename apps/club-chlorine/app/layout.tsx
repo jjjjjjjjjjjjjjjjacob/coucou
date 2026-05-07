@@ -5,7 +5,6 @@ import { buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import "./globals.css";
 import Providers from "./providers";
 import { AppChrome } from "./app-chrome";
-import { RedirectAdminsToCoucou } from "@/components/redirect-admins-to-coucou";
 import { clubChlorineIconPaths, siteConfiguration } from "@/lib/site";
 
 const geistSans = Geist({
@@ -111,7 +110,6 @@ export default function RootLayout({
 }>) {
   const inner = (
     <Providers>
-      <RedirectAdminsToCoucou />
       <div
         {...vaulDrawerWrapperAttribute}
         className="flex min-h-screen flex-col bg-background"

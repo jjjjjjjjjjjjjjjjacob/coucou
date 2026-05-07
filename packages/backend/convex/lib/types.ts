@@ -60,6 +60,7 @@ export type EventPatch = Partial<Pick<Doc<"events">,
   | "guestPortalLinkLabel"
   | "guestPortalLinkUrl"
   | "eventDate"
+  | "eventEndDate"
   | "eventTimezone"
   | "maxAttendees"
   | "status"

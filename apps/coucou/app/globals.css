@@ -178,6 +178,53 @@
   color: var(--tt-fg-mute);
 }
 
+html.maison-dashboard-light {
+  background-color: #F8F7F2 !important;
+}
+
+html.maison-dashboard-light body.maison-app-surface,
+html.maison-dashboard-light .maison-app-surface {
+  --tt-bg: #F8F7F2 !important;
+  --tt-bg-2: #FFFFFF !important;
+  --tt-fg: #171412 !important;
+  --tt-fg-dim: #6F6961 !important;
+  --tt-fg-mute: #9A9288 !important;
+  --tt-rule: rgba(23, 20, 18, 0.10) !important;
+  --tt-rule-strong: rgba(23, 20, 18, 0.18) !important;
+
+  --background: var(--tt-bg) !important;
+  --foreground: var(--tt-fg) !important;
+  --card: var(--tt-bg-2) !important;
+  --card-foreground: var(--tt-fg) !important;
+  --popover: var(--tt-bg-2) !important;
+  --popover-foreground: var(--tt-fg) !important;
+  --primary: var(--tt-fg) !important;
+  --primary-foreground: var(--tt-bg) !important;
+  --secondary: var(--tt-bg-2) !important;
+  --secondary-foreground: var(--tt-fg) !important;
+  --muted: var(--tt-bg-2) !important;
+  --muted-foreground: var(--tt-fg-dim) !important;
+  --accent: var(--tt-bg-2) !important;
+  --accent-foreground: var(--tt-fg) !important;
+  --border: var(--tt-rule-strong) !important;
+  --input: var(--tt-rule-strong) !important;
+  --ring: var(--tt-fg-dim) !important;
+
+  --sidebar: var(--tt-bg) !important;
+  --sidebar-foreground: var(--tt-fg) !important;
+  --sidebar-primary: var(--tt-fg) !important;
+  --sidebar-primary-foreground: var(--tt-bg) !important;
+  --sidebar-accent: var(--tt-bg-2) !important;
+  --sidebar-accent-foreground: var(--tt-fg) !important;
+  --sidebar-border: transparent !important;
+  --sidebar-ring: var(--tt-fg-dim) !important;
+}
+
+html.maison-dashboard-light body.maison-app-surface {
+  background-color: var(--tt-bg) !important;
+  color: var(--tt-fg) !important;
+}
+
 .maison-obscur-toast[data-sonner-toast] {
   background: #0F0F0F !important;
   color: #E8E6E1 !important;

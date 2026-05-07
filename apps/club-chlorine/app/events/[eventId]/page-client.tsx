@@ -1,10 +1,11 @@
 "use client";
-import React, { use, useCallback, useEffect, useMemo } from "react";
+import React, { use, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { Spinner } from "@/components/ui/spinner";
 import {
   TenantTemplateProvider,
@@ -48,20 +49,15 @@ export default function EventPageClient({ params }: EventPageClientProps) {
 
   const queryParamPassword = searchParams?.get("password") ?? "";
 
-  // Preserve any inbound /events/{id}?password=foo deep links by forwarding
-  // them to the new full-page RSVP gate.
-  useEffect(() => {
-    if (!queryParamPassword) return;
-    const passwordSearch = new URLSearchParams({
-      password: queryParamPassword,
-    }).toString();
-    router.replace(`/events/${eventId}/rsvp?${passwordSearch}`);
-  }, [queryParamPassword, eventId, router]);
+  const eventIsOpenForRsvp = event ? isEventOpenForRsvp(event) : false;
 
   const handleRsvpClick = useCallback(() => {
-    if (event?.status !== "active") return;
-    router.push(`/events/${eventId}/rsvp`);
-  }, [event?.status, router, eventId]);
+    if (!eventIsOpenForRsvp) return;
+    const passwordSearch = queryParamPassword
+      ? `?${new URLSearchParams({ password: queryParamPassword }).toString()}`
+      : "";
+    router.push(`/events/${eventId}/rsvp${passwordSearch}`);
+  }, [eventIsOpenForRsvp, queryParamPassword, router, eventId]);
 
   const tenantLandingEvent = useMemo<TenantLandingEvent | null>(() => {
     if (!event) return null;
@@ -102,9 +98,9 @@ export default function EventPageClient({ params }: EventPageClientProps) {
           <TenantButton
             type="button"
             onClick={handleRsvpClick}
-            disabled={event.status !== "active"}
+            disabled={!eventIsOpenForRsvp}
           >
-            {event.status === "active" ? "RSVP" : "RSVP CLOSED"}
+            {eventIsOpenForRsvp ? "RSVP" : "RSVP CLOSED"}
           </TenantButton>
         }
       />

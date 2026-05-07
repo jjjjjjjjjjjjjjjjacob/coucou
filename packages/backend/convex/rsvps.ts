@@ -11,12 +11,17 @@ import {
   normalizePrimaryFieldLookupText,
   normalizeSocialPlatformKey,
 } from "@coucou/sdk/shared/primary-fields";
+import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import {
   insertRsvpIntoAggregate,
   updateRsvpInAggregate,
   deleteRsvpFromAggregate,
   countRsvpsWithAggregate,
 } from "./lib/rsvpAggregate";
+import {
+  eventMatchesTenantScope,
+  resolveTenantWorkspaceScope,
+} from "./lib/workspaceScope";
 import {
   collectRsvpsMatchingFilters,
   filtersRequireDirectRsvpCount,
@@ -84,7 +89,7 @@ export const submitRequest = mutation({
       siteKey: args.siteKey,
     });
     const now = Date.now();
-    if (!event || event.status !== "active")
+    if (!event || !isEventOpenForRsvp(event, now))
       throw new Error("Event not available");
     const eventFieldMap = new Map(
       (event.customFields ?? []).map((field) => [field.key, field]),
@@ -350,33 +355,65 @@ export const getApprovedRsvpWithRedemption = internalQuery({
 export const listForCurrentUser = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
-    const clerkUserId = identity.subject;
-    const rsvps = await ctx.db
-      .query("rsvps")
-      .withIndex("by_user", (q) => q.eq("clerkUserId", clerkUserId))
-      .order("desc")
-      .collect();
+    return await collectUserSharedEvents(ctx, null);
+  },
+});
 
-    if (rsvps.length === 0) return [];
+export const listForCurrentUserInWorkspace = query({
+  args: {
+    workspaceSlug: v.optional(v.string()),
+    siteKey: v.optional(v.string()),
+  },
+  handler: async (ctx, { workspaceSlug, siteKey }) => {
+    if (!workspaceSlug && !siteKey) return [];
+    const scope = await resolveTenantWorkspaceScope(ctx, {
+      workspaceSlug,
+      siteKey,
+    });
+    if (!scope) return [];
+    return await collectUserSharedEvents(ctx, scope);
+  },
+});
 
-    const uniqueEventIds = Array.from(
-      new Set(rsvps.map((rsvp) => rsvp.eventId)),
-    );
-    const eventEntries = await Promise.all(
-      uniqueEventIds.map(async (eventId) => ({
-        eventId,
-        event: await ctx.db.get(eventId),
-      })),
-    );
-    const eventMap = new Map(
-      eventEntries
-        .filter((entry) => entry.event)
-        .map((entry) => [entry.eventId, entry.event!]),
-    );
+async function collectUserSharedEvents(
+  ctx: QueryCtx,
+  scope: { workspaceSlug: string; siteKey: string | null } | null,
+) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return [];
+  const clerkUserId = identity.subject;
+  const rsvps = await ctx.db
+    .query("rsvps")
+    .withIndex("by_user", (q) => q.eq("clerkUserId", clerkUserId))
+    .order("desc")
+    .collect();
 
-    return await Promise.all(rsvps.map(async (rsvp) => {
+  if (rsvps.length === 0) return [];
+
+  const uniqueEventIds = Array.from(
+    new Set(rsvps.map((rsvp) => rsvp.eventId)),
+  );
+  const eventEntries = await Promise.all(
+    uniqueEventIds.map(async (eventId) => ({
+      eventId,
+      event: await ctx.db.get(eventId),
+    })),
+  );
+  const eventMap = new Map(
+    eventEntries
+      .filter((entry) => entry.event)
+      .map((entry) => [entry.eventId, entry.event!]),
+  );
+
+  const filteredRsvps = scope
+    ? rsvps.filter((rsvp) => {
+        const event = eventMap.get(rsvp.eventId);
+        if (!event) return false;
+        return eventMatchesTenantScope(event, scope);
+      })
+    : rsvps;
+
+  return await Promise.all(filteredRsvps.map(async (rsvp) => {
       const event = eventMap.get(rsvp.eventId);
       const customFieldDefinitions = event?.customFields ?? [];
       const customFields = customFieldDefinitions.map((definition) => ({
@@ -416,8 +453,7 @@ export const listForCurrentUser = query({
         invitedByName: rsvp.invitedByName,
       };
     }));
-  },
-});
+}
 
 export const updateSmsPreference = mutation({
   args: {
@@ -1522,55 +1558,84 @@ export const acceptRsvp = mutation({
 
 export const listUserTickets = query({
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const clerkUserId = identity.subject;
-
-    // Get all RSVPs for the user
-    const userRsvps = await ctx.db
-      .query("rsvps")
-      .withIndex("by_user", (q) => q.eq("clerkUserId", clerkUserId))
-      .collect();
-
-    // Get event details and redemption codes for each RSVP
-    const ticketsWithDetails = await Promise.all(
-      userRsvps.map(async (rsvp) => {
-        const event = await ctx.db.get(rsvp.eventId);
-
-        // Get redemption code if user is approved/attending
-        let redemptionInfo = null;
-        if (rsvp.status === "approved" || rsvp.status === "attending") {
-          const redemption = await ctx.db
-            .query("redemptions")
-            .withIndex("by_event_user", (q) =>
-              q.eq("eventId", rsvp.eventId).eq("clerkUserId", clerkUserId),
-            )
-            .unique();
-
-          if (redemption) {
-            redemptionInfo = {
-              code: redemption.code,
-              listKey: redemption.listKey,
-              redeemedAt: redemption.redeemedAt,
-            };
-          }
-        }
-
-        return {
-          rsvp,
-          event,
-          redemption: redemptionInfo,
-        };
-      }),
-    );
-
-    // Sort by event date (newest first)
-    return ticketsWithDetails.sort((a, b) => {
-      if (!a.event || !b.event) return 0;
-      return b.event.eventDate - a.event.eventDate;
-    });
+    return await collectUserTickets(ctx, null);
   },
 });
+
+export const listUserTicketsInWorkspace = query({
+  args: {
+    workspaceSlug: v.optional(v.string()),
+    siteKey: v.optional(v.string()),
+  },
+  handler: async (ctx, { workspaceSlug, siteKey }) => {
+    if (!workspaceSlug && !siteKey) return [];
+    const scope = await resolveTenantWorkspaceScope(ctx, {
+      workspaceSlug,
+      siteKey,
+    });
+    if (!scope) return [];
+    return await collectUserTickets(ctx, scope);
+  },
+});
+
+async function collectUserTickets(
+  ctx: QueryCtx,
+  scope: { workspaceSlug: string; siteKey: string | null } | null,
+) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    if (scope) return [];
+    throw new Error("Unauthorized");
+  }
+  const clerkUserId = identity.subject;
+
+  const userRsvps = await ctx.db
+    .query("rsvps")
+    .withIndex("by_user", (q) => q.eq("clerkUserId", clerkUserId))
+    .collect();
+
+  const ticketsWithDetails = await Promise.all(
+    userRsvps.map(async (rsvp) => {
+      const event = await ctx.db.get(rsvp.eventId);
+
+      let redemptionInfo = null;
+      if (rsvp.status === "approved" || rsvp.status === "attending") {
+        const redemption = await ctx.db
+          .query("redemptions")
+          .withIndex("by_event_user", (q) =>
+            q.eq("eventId", rsvp.eventId).eq("clerkUserId", clerkUserId),
+          )
+          .unique();
+
+        if (redemption) {
+          redemptionInfo = {
+            code: redemption.code,
+            listKey: redemption.listKey,
+            redeemedAt: redemption.redeemedAt,
+          };
+        }
+      }
+
+      return {
+        rsvp,
+        event,
+        redemption: redemptionInfo,
+      };
+    }),
+  );
+
+  const filtered = scope
+    ? ticketsWithDetails.filter((entry) => {
+        if (!entry.event) return false;
+        return eventMatchesTenantScope(entry.event, scope);
+      })
+    : ticketsWithDetails;
+
+  return filtered.sort((a, b) => {
+    if (!a.event || !b.event) return 0;
+    return b.event.eventDate - a.event.eventDate;
+  });
+}
 
 // Seed helper mutation - creates an RSVP with any status (for testing)
 export const createDirect = mutation({

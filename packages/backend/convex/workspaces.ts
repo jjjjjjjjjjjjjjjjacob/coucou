@@ -506,6 +506,136 @@ export const setTenantWorkspacePrimaryDomain = mutation({
   },
 });
 
+export const setTenantWorkspaceAuthBranding = mutation({
+  args: {
+    slug: v.string(),
+    clerkOrganizationId: v.string(),
+    authBranding: v.optional(
+      v.object({
+        heading: v.optional(v.string()),
+        sub: v.optional(v.string()),
+        eyebrow: v.optional(v.string()),
+        brandMarkStyle: v.optional(brandMarkStyleValidator),
+        logoStorageId: v.optional(v.id("_storage")),
+        showCoucouAttribution: v.optional(v.boolean()),
+      }),
+    ),
+  },
+  handler: async (ctx, { slug, clerkOrganizationId, authBranding }) => {
+    const normalizedSlug = normalizeTenantWorkspaceSlug(slug);
+    const resolvedScope = await requireWorkspaceAdmin(ctx, {
+      workspaceSlug: normalizedSlug,
+    });
+
+    if (resolvedScope.clerkOrganizationId !== clerkOrganizationId) {
+      throw new Error("Forbidden: organization mismatch");
+    }
+
+    const workspace = await ctx.db.get(resolvedScope.workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace not found: ${normalizedSlug}`);
+    }
+
+    await ctx.db.patch(workspace._id, {
+      authBranding,
+      updatedAt: Date.now(),
+    });
+
+    await writeAuditEntry(ctx, {
+      action: "workspace.setTenantAuthBranding",
+      targetKind: "workspace",
+      targetId: workspace._id,
+      workspaceId: workspace._id,
+      summary: authBranding
+        ? `heading="${authBranding.heading ?? ""}", style=${authBranding.brandMarkStyle ?? "—"}`
+        : "cleared",
+    });
+
+    return { workspaceId: workspace._id };
+  },
+});
+
+export const setTenantWorkspaceProfileLinkSettings = mutation({
+  args: {
+    slug: v.string(),
+    clerkOrganizationId: v.string(),
+    showCoucouProfileLink: v.optional(v.boolean()),
+  },
+  handler: async (
+    ctx,
+    { slug, clerkOrganizationId, showCoucouProfileLink },
+  ) => {
+    const normalizedSlug = normalizeTenantWorkspaceSlug(slug);
+    const resolvedScope = await requireWorkspaceAdmin(ctx, {
+      workspaceSlug: normalizedSlug,
+    });
+
+    if (resolvedScope.clerkOrganizationId !== clerkOrganizationId) {
+      throw new Error("Forbidden: organization mismatch");
+    }
+
+    const workspace = await ctx.db.get(resolvedScope.workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace not found: ${normalizedSlug}`);
+    }
+
+    await ctx.db.patch(workspace._id, {
+      showCoucouProfileLink,
+      updatedAt: Date.now(),
+    });
+
+    await writeAuditEntry(ctx, {
+      action: "workspace.setTenantProfileLinkSettings",
+      targetKind: "workspace",
+      targetId: workspace._id,
+      workspaceId: workspace._id,
+      summary: `showCoucouProfileLink=${showCoucouProfileLink ?? false}`,
+    });
+
+    return { workspaceId: workspace._id };
+  },
+});
+
+export const listTenantWorkspaceSites = query({
+  args: {
+    slug: v.string(),
+    clerkOrganizationId: v.string(),
+  },
+  handler: async (ctx, { slug, clerkOrganizationId }) => {
+    const normalizedSlug = normalizeTenantWorkspaceSlug(slug);
+    const resolvedScope = await requireWorkspaceAdmin(ctx, {
+      workspaceSlug: normalizedSlug,
+    });
+
+    if (resolvedScope.clerkOrganizationId !== clerkOrganizationId) {
+      throw new Error("Forbidden: organization mismatch");
+    }
+
+    const sites = await ctx.db
+      .query("workspaceSites")
+      .withIndex("by_workspace", (queryBuilder) =>
+        queryBuilder.eq("workspaceId", resolvedScope.workspaceId),
+      )
+      .collect();
+
+    return sites
+      .map((site) => ({
+        _id: site._id,
+        siteKey: site.siteKey,
+        domain: site.domain,
+        appKind: site.appKind,
+        clerkFrontendApiUrl: site.clerkFrontendApiUrl,
+        clerkSatelliteVerificationStatus:
+          site.clerkSatelliteVerificationStatus,
+        clerkSatelliteAuthEnabled: site.clerkSatelliteAuthEnabled,
+        clerkSatelliteLastSyncedAt: site.clerkSatelliteLastSyncedAt,
+      }))
+      .sort((firstSite, secondSite) =>
+        firstSite.domain.localeCompare(secondSite.domain),
+      );
+  },
+});
+
 export const setTenantWorkspaceDefaults = mutation({
   args: {
     slug: v.string(),

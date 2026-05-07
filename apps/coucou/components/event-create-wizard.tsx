@@ -18,6 +18,13 @@ import { FlyerUpload, StorageImageUpload } from "@/components/flyer-upload";
 import { EventIconUpload } from "@/components/event-icon-upload";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/custom-fields-builder";
 import { EventActsEditor } from "@/components/event-acts-editor";
+import {
+  EMPTY_PRIMARY_FIELD_CONFIG,
+  PrimaryFieldConfigOverrideEditor,
+  draftToPrimaryFieldConfig,
+  primaryFieldConfigToDraft,
+  type PrimaryFieldConfigDraft,
+} from "@/components/primary-field-config-editor";
 
 import { cn } from "@/lib/utils";
 import { createTimestamp } from "@/lib/date-utils";
@@ -66,7 +73,7 @@ const STEPS: WizardStep[] = [
     title: "Name the night.",
     description:
       "What guests will see across invites, tickets, and the front door.",
-    validate: ["name", "hosts"],
+    validate: ["name"],
   },
   {
     number: "02",
@@ -74,7 +81,7 @@ const STEPS: WizardStep[] = [
     title: "Where, when, how many.",
     description:
       "We'll show this on the public landing and use it on the door list.",
-    validate: ["location", "eventDate"],
+    validate: ["location", "eventDate", "eventEndDate"],
   },
   {
     number: "03",
@@ -169,6 +176,8 @@ export default function EventCreateWizard() {
       location: "",
       eventDate: "",
       eventTime: "19:00",
+      eventEndDate: "",
+      eventEndTime: "03:00",
       eventTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       flyerStorageId: null,
       customIconStorageId: null,
@@ -193,6 +202,29 @@ export default function EventCreateWizard() {
   ]);
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>([]);
   const [acts, setActs] = React.useState<EventAct[]>([]);
+  const [usePrimaryFieldDefaults, setUsePrimaryFieldDefaults] =
+    React.useState(true);
+  const [primaryFieldConfigDraft, setPrimaryFieldConfigDraft] =
+    React.useState<PrimaryFieldConfigDraft>(EMPTY_PRIMARY_FIELD_CONFIG);
+
+  const workspacePrimaryFieldDefaultsDraft: PrimaryFieldConfigDraft =
+    React.useMemo(
+      () =>
+        primaryFieldConfigToDraft({
+          socialPlatforms: workspace?.eventDefaults?.socialPlatforms,
+          invitedBy: workspace?.eventDefaults?.invitedBy,
+        }),
+      [
+        workspace?.eventDefaults?.socialPlatforms,
+        workspace?.eventDefaults?.invitedBy,
+      ],
+    );
+
+  React.useEffect(() => {
+    if (usePrimaryFieldDefaults) {
+      setPrimaryFieldConfigDraft(workspacePrimaryFieldDefaultsDraft);
+    }
+  }, [usePrimaryFieldDefaults, workspacePrimaryFieldDefaultsDraft]);
 
   const flyerStorageId = form.watch("flyerStorageId") ?? null;
   const eventIconStorageId = form.watch("customIconStorageId") ?? null;
@@ -250,6 +282,26 @@ export default function EventCreateWizard() {
       }
     }
 
+    if (stepIndex === 1) {
+      const values = form.getValues();
+      if (values.eventDate && values.eventEndDate) {
+        const startTimestamp = createTimestamp(
+          values.eventDate,
+          values.eventTime,
+          values.eventTimezone,
+        );
+        const endTimestamp = createTimestamp(
+          values.eventEndDate,
+          values.eventEndTime,
+          values.eventTimezone,
+        );
+        if (endTimestamp <= startTimestamp) {
+          toast.error("Event end must be after the event start");
+          return;
+        }
+      }
+    }
+
     if (stepIndex === 4) {
       const values = form.getValues();
       const labelTrimmed = values.guestPortalLinkLabel?.trim() ?? "";
@@ -270,7 +322,18 @@ export default function EventCreateWizard() {
       }
     }
 
-    if (!fieldsValid) return;
+    if (!fieldsValid) {
+      const fieldErrors = form.formState.errors;
+      const messages = Object.values(fieldErrors)
+        .map((entry) =>
+          typeof entry === "object" && entry && "message" in entry
+            ? String((entry as { message?: unknown }).message ?? "")
+            : "",
+        )
+        .filter(Boolean);
+      messages.forEach((message) => toast.error(message));
+      return;
+    }
 
     const nextIndex = Math.min(STEPS.length - 1, stepIndex + 1);
     setStepIndex(nextIndex);
@@ -281,9 +344,9 @@ export default function EventCreateWizard() {
     const values = form.getValues();
     const baseValid = await form.trigger([
       "name",
-      "hosts",
       "location",
       "eventDate",
+      "eventEndDate",
     ]);
     const colorErrors = validateColors(values);
     const listErrors = validateLists(lists);
@@ -296,7 +359,19 @@ export default function EventCreateWizard() {
       return;
     }
     if (!baseValid) {
-      toast.error("A few required fields are still empty.");
+      const fieldErrors = form.formState.errors;
+      const messages = Object.values(fieldErrors)
+        .map((entry) =>
+          typeof entry === "object" && entry && "message" in entry
+            ? String((entry as { message?: unknown }).message ?? "")
+            : "",
+        )
+        .filter(Boolean);
+      if (messages.length > 0) {
+        messages.forEach((message) => toast.error(message));
+      } else {
+        toast.error("A few required fields are still empty.");
+      }
       return;
     }
     if (!workspaceScope) {
@@ -318,6 +393,15 @@ export default function EventCreateWizard() {
         values.eventTime,
         values.eventTimezone,
       );
+      const endTimestamp = createTimestamp(
+        values.eventEndDate,
+        values.eventEndTime,
+        values.eventTimezone,
+      );
+      if (endTimestamp <= timestamp) {
+        toast.error("Event end must be after the event start");
+        return;
+      }
       const listsFiltered = lists
         .map((list) => ({
           listKey: list.listKey.trim(),
@@ -352,6 +436,7 @@ export default function EventCreateWizard() {
         guestPortalLinkLabel: trimmedLabel || undefined,
         guestPortalLinkUrl: trimmedUrl || undefined,
         eventDate: timestamp,
+        eventEndDate: endTimestamp,
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
         status: values.status ?? "inactive",
@@ -365,10 +450,9 @@ export default function EventCreateWizard() {
           prependUrl: field.prependUrl?.trim() || undefined,
           trimWhitespace: field.trimWhitespace !== false,
         })),
-        primaryFieldConfig: {
-          socialPlatforms: workspace?.eventDefaults?.socialPlatforms,
-          invitedBy: workspace?.eventDefaults?.invitedBy,
-        },
+        primaryFieldConfig: usePrimaryFieldDefaults
+          ? undefined
+          : draftToPrimaryFieldConfig(primaryFieldConfigDraft),
         themeBackgroundColor: themeBackground,
         themeTextColor: themeText,
         qrCodeColor: normalizeHexColorInput(values.qrCodeColor) || undefined,
@@ -478,6 +562,8 @@ export default function EventCreateWizard() {
                 form={form}
                 eventDate={form.watch("eventDate")}
                 eventTime={form.watch("eventTime")}
+                eventEndDate={form.watch("eventEndDate")}
+                eventEndTime={form.watch("eventEndTime")}
                 eventTimezone={form.watch("eventTimezone")}
               />
             )}
@@ -517,7 +603,17 @@ export default function EventCreateWizard() {
               />
             )}
             {stepIndex === 6 && (
-              <StepCustomFields onChange={setCustomFields} initial={customFields} />
+              <StepCustomFields
+                onChange={setCustomFields}
+                initial={customFields}
+                primaryFieldConfigDraft={primaryFieldConfigDraft}
+                onPrimaryFieldConfigChange={setPrimaryFieldConfigDraft}
+                usePrimaryFieldDefaults={usePrimaryFieldDefaults}
+                onUsePrimaryFieldDefaultsChange={setUsePrimaryFieldDefaults}
+                workspacePrimaryFieldDefaults={
+                  workspacePrimaryFieldDefaultsDraft
+                }
+              />
             )}
             {stepIndex === 7 && (
               <StepReview
@@ -647,11 +743,10 @@ function StepIdentity({
       <FormField
         control={form.control}
         name="hosts"
-        rules={{ required: "Hosts are required" }}
         render={({ field }) => (
           <FormItem>
             <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Hosts <span className="normal-case text-muted-foreground/70">(comma-separated)</span>
+              Hosts <span className="normal-case text-muted-foreground/70">(optional, comma-separated)</span>
             </FormLabel>
             <FormControl>
               <Input
@@ -701,10 +796,14 @@ function StepWhereWhen({
   form,
   eventDate,
   eventTime,
+  eventEndDate,
+  eventEndTime,
   eventTimezone,
 }: StepFormProps & {
   eventDate: string | undefined;
   eventTime: string | undefined;
+  eventEndDate: string | undefined;
+  eventEndTime: string | undefined;
   eventTimezone: string | undefined;
 }) {
   return (
@@ -753,6 +852,36 @@ function StepWhereWhen({
                 }
                 onTimezoneChange={(value) =>
                   form.setValue("eventTimezone", value, { shouldDirty: true })
+                }
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="eventEndDate"
+        rules={{ required: "Event end date is required" }}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              End date & time
+            </FormLabel>
+            <FormDescription>
+              RSVP access closes ten hours after this time.
+            </FormDescription>
+            <FormControl>
+              <DateTimePicker
+                date={eventEndDate}
+                time={eventEndTime ?? "03:00"}
+                timezone={
+                  eventTimezone ??
+                  Intl.DateTimeFormat().resolvedOptions().timeZone
+                }
+                onDateChange={(value) => field.onChange(value)}
+                onTimeChange={(value) =>
+                  form.setValue("eventEndTime", value, { shouldDirty: true })
                 }
               />
             </FormControl>
@@ -1128,11 +1257,48 @@ function StepLists({
 function StepCustomFields({
   initial,
   onChange,
+  primaryFieldConfigDraft,
+  onPrimaryFieldConfigChange,
+  usePrimaryFieldDefaults,
+  onUsePrimaryFieldDefaultsChange,
+  workspacePrimaryFieldDefaults,
 }: {
   initial: CustomFieldDef[];
   onChange: (fields: CustomFieldDef[]) => void;
+  primaryFieldConfigDraft: PrimaryFieldConfigDraft;
+  onPrimaryFieldConfigChange: (next: PrimaryFieldConfigDraft) => void;
+  usePrimaryFieldDefaults: boolean;
+  onUsePrimaryFieldDefaultsChange: (next: boolean) => void;
+  workspacePrimaryFieldDefaults: PrimaryFieldConfigDraft;
 }) {
-  return <CustomFieldsEditor initial={initial} onChange={onChange} />;
+  return (
+    <div className="space-y-6">
+      <div className="rounded-lg border bg-card p-4 space-y-4">
+        <h3 className="font-medium text-sm text-muted-foreground">
+          PRIMARY FIELDS
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Social fields and the &ldquo;invited by&rdquo; question for this
+          event. Defaults come from workspace settings; override here if
+          needed.
+        </p>
+        <PrimaryFieldConfigOverrideEditor
+          value={primaryFieldConfigDraft}
+          onChange={onPrimaryFieldConfigChange}
+          useDefaults={usePrimaryFieldDefaults}
+          onUseDefaultsChange={onUsePrimaryFieldDefaultsChange}
+          workspaceDefaults={workspacePrimaryFieldDefaults}
+        />
+      </div>
+      <CustomFieldsEditor
+        initial={initial}
+        onChange={onChange}
+        reservedKeys={primaryFieldConfigDraft.socialPlatforms.map(
+          (platform) => platform.platformKey,
+        )}
+      />
+    </div>
+  );
 }
 
 // ─── Step 08 — Review ───────────────────────────────────────────
@@ -1156,6 +1322,9 @@ function StepReview({
   const dateLabel = values.eventDate
     ? `${values.eventDate} · ${values.eventTime ?? ""} ${values.eventTimezone ?? ""}`.trim()
     : "—";
+  const endDateLabel = values.eventEndDate
+    ? `${values.eventEndDate} · ${values.eventEndTime ?? ""} ${values.eventTimezone ?? ""}`.trim()
+    : "—";
 
   const rows: { stepIndex: number; key: string; value: React.ReactNode }[] = [
     { stepIndex: 0, key: "Name", value: values.name || "—" },
@@ -1170,6 +1339,7 @@ function StepReview({
       value: values.hosts || "—",
     },
     { stepIndex: 1, key: "When", value: dateLabel },
+    { stepIndex: 1, key: "Ends", value: endDateLabel },
     { stepIndex: 1, key: "Where", value: values.location || "—" },
     {
       stepIndex: 1,

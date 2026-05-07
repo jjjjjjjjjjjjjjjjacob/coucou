@@ -65,6 +65,7 @@ export default defineSchema({
         showCoucouAttribution: v.optional(v.boolean()),
       }),
     ),
+    showCoucouProfileLink: v.optional(v.boolean()),
     plan: v.optional(
       v.object({
         tier: v.string(),
@@ -148,7 +149,7 @@ export default defineSchema({
     secondaryTitle: v.optional(v.string()),
     description: v.optional(v.string()),
     acts: v.optional(v.array(eventActValidator)),
-    hosts: v.array(v.string()), // host names (comma-separated)
+    hosts: v.optional(v.array(v.string())), // host names (comma-separated)
     productionCompany: v.optional(v.string()), // production company name that overrides host names in consent messaging
     location: v.string(),
     flyerUrl: v.optional(v.string()),
@@ -158,6 +159,7 @@ export default defineSchema({
     guestPortalLinkLabel: v.optional(v.string()),
     guestPortalLinkUrl: v.optional(v.string()),
     eventDate: v.number(), // ms since epoch
+    eventEndDate: v.optional(v.number()), // ms since epoch
     eventTimezone: v.optional(v.string()),
     isFeatured: v.optional(v.boolean()), // one event can be featured for home page redirect
     status: v.optional(eventStatusValidator),

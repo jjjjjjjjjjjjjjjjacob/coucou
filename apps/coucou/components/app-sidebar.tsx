@@ -12,6 +12,8 @@ import {
   MessageSquare,
   DoorOpen,
   FileText,
+  Moon,
+  Sun,
 } from "lucide-react";
 
 import {
@@ -38,6 +40,10 @@ import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { SidebarTenantSwitcher } from "@/components/sidebar-tenant-switcher";
 
 type DashboardNavigationAccess = "read" | "write";
+type DashboardAppearance = "dark" | "light";
+
+const DASHBOARD_APPEARANCE_STORAGE_KEY = "coucou-dashboard-appearance";
+const DASHBOARD_LIGHT_MODE_CLASS_NAME = "maison-dashboard-light";
 
 interface DashboardNavigationItem {
   title: string;
@@ -130,6 +136,73 @@ export const quickActions: DashboardNavigationItem[] = [
   },
 ];
 
+function isDashboardAppearance(
+  value: string | null,
+): value is DashboardAppearance {
+  return value === "dark" || value === "light";
+}
+
+function getStoredDashboardAppearance(): DashboardAppearance {
+  if (typeof window === "undefined") {
+    return "dark";
+  }
+
+  try {
+    const storedDashboardAppearance = window.localStorage.getItem(
+      DASHBOARD_APPEARANCE_STORAGE_KEY,
+    );
+
+    return isDashboardAppearance(storedDashboardAppearance)
+      ? storedDashboardAppearance
+      : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+function applyDashboardAppearance(dashboardAppearance: DashboardAppearance) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.documentElement.classList.toggle(
+    DASHBOARD_LIGHT_MODE_CLASS_NAME,
+    dashboardAppearance === "light",
+  );
+  document.documentElement.dataset.dashboardAppearance = dashboardAppearance;
+}
+
+function clearDashboardAppearance() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.documentElement.classList.remove(DASHBOARD_LIGHT_MODE_CLASS_NAME);
+  delete document.documentElement.dataset.dashboardAppearance;
+}
+
+function storeDashboardAppearance(dashboardAppearance: DashboardAppearance) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      DASHBOARD_APPEARANCE_STORAGE_KEY,
+      dashboardAppearance,
+    );
+  } catch {
+    return;
+  }
+}
+
+function normalizeUserBadgeText(
+  value: string | null | undefined,
+): string | null {
+  const trimmedValue = value?.trim();
+  return trimmedValue ? trimmedValue : null;
+}
+
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   canWrite?: boolean;
 }
@@ -138,6 +211,15 @@ export function AppSidebar({ canWrite = true, ...props }: AppSidebarProps) {
   const pathname = usePathname();
   const { user } = useUser();
   const workspaceScope = useWorkspaceScope();
+  const [dashboardAppearance, setDashboardAppearance] =
+    React.useState<DashboardAppearance>("dark");
+
+  React.useEffect(() => {
+    const storedDashboardAppearance = getStoredDashboardAppearance();
+    setDashboardAppearance(storedDashboardAppearance);
+    applyDashboardAppearance(storedDashboardAppearance);
+    return clearDashboardAppearance;
+  }, []);
 
   const resolveWorkspaceNavigationUrl = React.useCallback(
     (url: string) => {
@@ -181,6 +263,38 @@ export function AppSidebar({ canWrite = true, ...props }: AppSidebarProps) {
         isActive: pathname === url,
       };
     });
+
+  const userEmailAddress =
+    normalizeUserBadgeText(user?.primaryEmailAddress?.emailAddress) ??
+    normalizeUserBadgeText(
+      user?.emailAddresses?.find(
+        (emailAddress) => emailAddress.id === user?.primaryEmailAddressId,
+      )?.emailAddress,
+    ) ??
+    normalizeUserBadgeText(user?.emailAddresses?.[0]?.emailAddress);
+  const userNameParts = [
+    normalizeUserBadgeText(user?.firstName),
+    normalizeUserBadgeText(user?.lastName),
+  ].filter(
+    (namePart): namePart is string => Boolean(namePart),
+  );
+  const userDisplayName =
+    normalizeUserBadgeText(user?.fullName) ??
+    (userNameParts.length > 0 ? userNameParts.join(" ") : null);
+  const userPrimaryText = userDisplayName ?? userEmailAddress;
+  const userSecondaryText = userDisplayName ? userEmailAddress : null;
+  const shouldShowUserBadge = Boolean(userPrimaryText);
+  const isLightModeEnabled = dashboardAppearance === "light";
+  const nextDashboardAppearance = isLightModeEnabled ? "dark" : "light";
+  const dashboardAppearanceLabel = isLightModeEnabled
+    ? "Switch to dark mode"
+    : "Switch to light mode";
+
+  function handleDashboardAppearanceToggle() {
+    setDashboardAppearance(nextDashboardAppearance);
+    storeDashboardAppearance(nextDashboardAppearance);
+    applyDashboardAppearance(nextDashboardAppearance);
+  }
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -231,30 +345,52 @@ export function AppSidebar({ canWrite = true, ...props }: AppSidebarProps) {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="Go to Coucou">
-              <Link href="/dashboard" className="flex items-center gap-2">
-                <div
-                  className="flex aspect-square size-8 items-center justify-center"
-                  style={{
-                    border: "1px solid var(--tt-rule-strong)",
-                    borderRadius: 2,
-                    color: "var(--tt-fg)",
-                  }}
-                >
-                  <User className="size-4" />
-                </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold">
-                    {user?.firstName || "Host"}
-                  </span>
-                  <span className="truncate text-xs">
-                    {user?.emailAddresses?.[0]?.emailAddress ||
-                      "host@example.com"}
-                  </span>
-                </div>
-              </Link>
+            <SidebarMenuButton
+              type="button"
+              aria-label={dashboardAppearanceLabel}
+              aria-pressed={isLightModeEnabled}
+              tooltip={dashboardAppearanceLabel}
+              onClick={handleDashboardAppearanceToggle}
+            >
+              {isLightModeEnabled ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+              <span>Light mode</span>
+              <span className="ml-auto text-xs text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
+                {isLightModeEnabled ? "On" : "Off"}
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          {shouldShowUserBadge ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" asChild tooltip="Go to Coucou">
+                <Link href="/dashboard" className="flex items-center gap-2">
+                  <div
+                    className="flex aspect-square size-8 items-center justify-center"
+                    style={{
+                      border: "1px solid var(--tt-rule-strong)",
+                      borderRadius: 2,
+                      color: "var(--tt-fg)",
+                    }}
+                  >
+                    <User className="size-4" />
+                  </div>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-semibold">
+                      {userPrimaryText}
+                    </span>
+                    {userSecondaryText ? (
+                      <span className="truncate text-xs">
+                        {userSecondaryText}
+                      </span>
+                    ) : null}
+                  </div>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
         </SidebarMenu>
       </SidebarFooter>
 

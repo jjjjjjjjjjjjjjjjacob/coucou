@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { formatEventTitleInline } from "@/lib/event-display";
 import type { UserTicket, RSVP } from "@/lib/types";
+import { siteConfiguration } from "@/lib/site";
 
 function formatDate(eventDate: number, timezone?: string) {
   return new Date(eventDate).toLocaleDateString("en-US", {
@@ -53,11 +54,14 @@ export default function TicketsPage() {
   const canLoadUserTickets =
     isClerkLoaded && isSignedIn && isConvexAuthenticated;
   const userTickets = useQuery(
-    api.rsvps.listUserTickets,
-    canLoadUserTickets ? {} : "skip",
-  ) as
-    | UserTicket[]
-    | undefined;
+    api.rsvps.listUserTicketsInWorkspace,
+    canLoadUserTickets
+      ? {
+          workspaceSlug: siteConfiguration.workspaceSlug,
+          siteKey: siteConfiguration.siteKey,
+        }
+      : "skip",
+  ) as UserTicket[] | undefined;
 
   if (
     !isClerkLoaded ||

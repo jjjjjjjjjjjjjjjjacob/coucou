@@ -3,6 +3,7 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
+import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 
 export const resolveListByPassword = action({
   args: {
@@ -41,7 +42,7 @@ export const resolveEventByPassword = action({
         eventId: credential.eventId,
         siteKey,
       });
-      if (event?.status === "active" && event.isFeatured) {
+      if (event && isEventOpenForRsvp(event) && event.isFeatured) {
         return {
           ok: true as const,
           eventId: credential.eventId,
@@ -57,7 +58,7 @@ export const resolveEventByPassword = action({
         eventId: credential.eventId,
         siteKey,
       });
-      if (event?.status === "active") {
+      if (event && isEventOpenForRsvp(event)) {
         return {
           ok: true as const,
           eventId: credential.eventId,

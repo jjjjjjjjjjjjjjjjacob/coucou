@@ -13,14 +13,15 @@ describe("Clerk Convex auth config", () => {
     ).toEqual(["https://clerk.coucou.events"]);
   });
 
-  it("uses comma-separated Frontend API URLs for primary and satellite domains", () => {
+  it("combines single and comma-separated Frontend API URLs", () => {
     expect(
       resolveClerkFrontendApiUrls({
-        CLERK_FRONTEND_API_URL: "https://clerk.coucou.events",
+        CLERK_FRONTEND_API_URL: "https://curious-bee-44.clerk.accounts.dev",
         CLERK_FRONTEND_API_URLS:
           "https://clerk.coucou.events, https://clerk.dojopomodoro.club, https://clerk.coucou.events",
       }),
     ).toEqual([
+      "https://curious-bee-44.clerk.accounts.dev",
       "https://clerk.coucou.events",
       "https://clerk.dojopomodoro.club",
     ]);

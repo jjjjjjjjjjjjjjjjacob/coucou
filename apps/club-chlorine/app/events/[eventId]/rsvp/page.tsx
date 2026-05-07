@@ -6,11 +6,13 @@ import { useAction, useQuery } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { Spinner } from "@/components/ui/spinner";
 import { siteConfiguration } from "@/lib/site";
 import {
   RsvpAccepted,
   RsvpGate,
+  RsvpPending,
   TenantTemplateProvider,
   type RsvpGateState,
 } from "@coucou/ui/tenant-template";
@@ -47,6 +49,7 @@ export default function RsvpPage({
   const [listKey, setListKey] = useState<string | null>(null);
   const [gateState, setGateState] = useState<RsvpGateState>("idle");
   const [resolvedFromUrl, setResolvedFromUrl] = useState(false);
+  const eventIsOpenForRsvp = event ? isEventOpenForRsvp(event) : false;
 
   // Auto-redirect to the right post-submission surface if the user already
   // has an RSVP for this event.
@@ -81,6 +84,7 @@ export default function RsvpPage({
     async (passwordToResolve: string) => {
       const trimmed = passwordToResolve.trim();
       if (!trimmed) return;
+      if (!eventIsOpenForRsvp) return;
       setGateState("submitting");
       try {
         const result = await resolveListByPassword({
@@ -105,7 +109,7 @@ export default function RsvpPage({
         setGateState("wrong");
       }
     },
-    [resolveListByPassword, eventId, router],
+    [eventIsOpenForRsvp, resolveListByPassword, eventId, router],
   );
 
   // If a password came in via the URL and we haven't tried to resolve yet, do it.
@@ -113,19 +117,47 @@ export default function RsvpPage({
     if (resolvedFromUrl) return;
     if (!queryParamPassword) return;
     if (!isSignedIn) return;
+    if (!eventIsOpenForRsvp) return;
     setResolvedFromUrl(true);
     void tryResolvePassword(queryParamPassword);
-  }, [queryParamPassword, isSignedIn, resolvedFromUrl, tryResolvePassword]);
+  }, [
+    queryParamPassword,
+    isSignedIn,
+    eventIsOpenForRsvp,
+    resolvedFromUrl,
+    tryResolvePassword,
+  ]);
 
   const handleGateSubmit = useCallback(async () => {
     await tryResolvePassword(password);
   }, [password, tryResolvePassword]);
 
-  if (!event || !isLoaded || (!isSignedIn && isLoaded)) {
+  if (
+    !event ||
+    !isLoaded ||
+    (!isSignedIn && isLoaded) ||
+    (isSignedIn && status === undefined)
+  ) {
     return (
       <main className="flex min-h-screen items-center justify-center p-6">
         <Spinner />
       </main>
+    );
+  }
+
+  if (!status && !eventIsOpenForRsvp) {
+    return (
+      <TenantTemplateProvider
+        siteConfigurationPreset={siteConfiguration.preset}
+        event={event}
+      >
+        <RsvpPending
+          eyebrow="RSVP"
+          heading="RSVP closed."
+          description="This event is no longer accepting RSVP requests."
+          statusLabel="Closed"
+        />
+      </TenantTemplateProvider>
     );
   }
 

@@ -103,6 +103,7 @@ export interface Event {
   guestPortalLinkUrl?: string;
   isFeatured?: boolean;
   eventDate: number;
+  eventEndDate?: number;
   eventTimezone?: string;
   maxAttendees?: number;
   status?: EventStatus;
@@ -362,6 +363,8 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   description?: string;
   eventDate: string;
   eventTime: string;
+  eventEndDate: string;
+  eventEndTime: string;
   eventTimezone: string;
   maxAttendees?: number;
   status?: EventStatus;

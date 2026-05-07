@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Mail, Phone, Calendar, Users, Settings } from "lucide-react";
+import { Mail, Phone, Calendar, Users, Settings, ExternalLink } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
@@ -26,12 +26,18 @@ import type { UserEventSharing } from "@/lib/types";
 import type { Id } from "@convex/_generated/dataModel";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
+import { coucouBaseUrl, siteConfiguration } from "@/lib/site";
 
 export default function ProfilePage() {
   const { isLoaded, isSignedIn, user } = useUser();
-  const sharedEvents = useQuery(api.rsvps.listForCurrentUser, {}) as
-    | UserEventSharing[]
-    | undefined;
+  const sharedEvents = useQuery(api.rsvps.listForCurrentUserInWorkspace, {
+    workspaceSlug: siteConfiguration.workspaceSlug,
+    siteKey: siteConfiguration.siteKey,
+  }) as UserEventSharing[] | undefined;
+  const workspace = useQuery(api.workspaces.getWorkspaceBySlug, {
+    slug: siteConfiguration.workspaceSlug,
+  });
+  const showCoucouProfileLink = workspace?.showCoucouProfileLink === true;
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
   const updateSharedFields = useMutation(api.rsvps.updateSharedFields);
   const [editingRsvpId, setEditingRsvpId] = React.useState<string | null>(null);
@@ -225,6 +231,33 @@ export default function ProfilePage() {
             </div>
           </CardContent>
         </Card>
+
+        {showCoucouProfileLink && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ExternalLink className="h-5 w-5" />
+                View your full Coucou profile
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-4">
+                See all your events, saved info, and shared profile data
+                across every workspace on Coucou.
+              </p>
+              <Button asChild>
+                <a
+                  href={`${coucouBaseUrl}/profile`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open on Coucou
+                  <ExternalLink className="size-4" />
+                </a>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Organizations Card */}
         {organizationMemberships.length > 0 && (

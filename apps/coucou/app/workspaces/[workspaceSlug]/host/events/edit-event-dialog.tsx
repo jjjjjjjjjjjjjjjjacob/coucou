@@ -22,6 +22,13 @@ import {
   type CustomFieldDef,
 } from "@/components/custom-fields-builder";
 import { EventActsEditor } from "@/components/event-acts-editor";
+import {
+  EMPTY_PRIMARY_FIELD_CONFIG,
+  PrimaryFieldConfigOverrideEditor,
+  draftToPrimaryFieldConfig,
+  primaryFieldConfigToDraft,
+  type PrimaryFieldConfigDraft,
+} from "@/components/primary-field-config-editor";
 import { useForm } from "react-hook-form";
 import { HostEventForm } from "@/components/host-event-form";
 import {
@@ -64,11 +71,13 @@ type EventUpdatePatch = {
   guestPortalLinkLabel?: string;
   guestPortalLinkUrl?: string;
   eventDate?: number;
+  eventEndDate?: number;
   eventTimezone?: string;
   maxAttendees?: number;
   status?: Event["status"];
   isFeatured?: boolean;
   customFields?: Event["customFields"];
+  primaryFieldConfig?: Event["primaryFieldConfig"];
   themeBackgroundColor?: string;
   themeTextColor?: string;
   qrCodeColor?: string;
@@ -109,6 +118,26 @@ export default function EditEventDialog({
       return "";
     }
   }, [event.eventDate, defaultTimezone]);
+  const defaultEndDate = React.useMemo(() => {
+    try {
+      return extractDateFromTimestamp(
+        event.eventEndDate ?? event.eventDate,
+        defaultTimezone,
+      );
+    } catch {
+      return "";
+    }
+  }, [event.eventDate, event.eventEndDate, defaultTimezone]);
+  const defaultEndTime = React.useMemo(() => {
+    try {
+      return extractTimeFromTimestamp(
+        event.eventEndDate ?? event.eventDate,
+        defaultTimezone,
+      );
+    } catch {
+      return "";
+    }
+  }, [event.eventDate, event.eventEndDate, defaultTimezone]);
   const normalizedEventBackgroundColor =
     normalizeHexColorInput(event.themeBackgroundColor) ??
     EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
@@ -130,6 +159,8 @@ export default function EditEventDialog({
       guestPortalLinkUrl: event.guestPortalLinkUrl ?? "",
       eventDate: defaultDate,
       eventTime: defaultTime,
+      eventEndDate: defaultEndDate,
+      eventEndTime: defaultEndTime,
       eventTimezone: defaultTimezone,
       maxAttendees: event.maxAttendees ?? 1,
       status: event.status ?? "inactive",
@@ -163,6 +194,37 @@ export default function EditEventDialog({
     event.customFields ?? [],
   );
   const [acts, setActs] = React.useState<EventAct[]>(event.acts ?? []);
+  const workspace = useQuery(
+    api.workspaces.getWorkspaceBySlug,
+    open && workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
+  );
+  const workspacePrimaryFieldDefaultsDraft: PrimaryFieldConfigDraft =
+    React.useMemo(
+      () =>
+        primaryFieldConfigToDraft({
+          socialPlatforms: workspace?.eventDefaults?.socialPlatforms,
+          invitedBy: workspace?.eventDefaults?.invitedBy,
+        }),
+      [
+        workspace?.eventDefaults?.socialPlatforms,
+        workspace?.eventDefaults?.invitedBy,
+      ],
+    );
+  const [usePrimaryFieldDefaults, setUsePrimaryFieldDefaults] = React.useState(
+    !event.primaryFieldConfig,
+  );
+  const [primaryFieldConfigDraft, setPrimaryFieldConfigDraft] =
+    React.useState<PrimaryFieldConfigDraft>(() =>
+      event.primaryFieldConfig
+        ? primaryFieldConfigToDraft(event.primaryFieldConfig)
+        : EMPTY_PRIMARY_FIELD_CONFIG,
+    );
+
+  React.useEffect(() => {
+    if (usePrimaryFieldDefaults) {
+      setPrimaryFieldConfigDraft(workspacePrimaryFieldDefaultsDraft);
+    }
+  }, [usePrimaryFieldDefaults, workspacePrimaryFieldDefaultsDraft]);
   const getStoredPasswords = useAction(api.credentialsNode.getPasswordsForEvent);
   const [storedPasswords, setStoredPasswords] = React.useState<
     Map<string, string>
@@ -338,6 +400,13 @@ export default function EditEventDialog({
         }
       }
       const timezoneValue = values.eventTimezone || defaultTimezone;
+      const dateFieldsDirty = Boolean(
+        form.formState.dirtyFields.eventDate ||
+          form.formState.dirtyFields.eventTime ||
+          form.formState.dirtyFields.eventEndDate ||
+          form.formState.dirtyFields.eventEndTime ||
+          form.formState.dirtyFields.eventTimezone,
+      );
       const computedTimestamp =
         values.eventDate && (values.eventTime || defaultTime)
           ? createTimestamp(
@@ -346,20 +415,47 @@ export default function EditEventDialog({
               timezoneValue,
             )
           : undefined;
+      const computedEndTimestamp =
+        values.eventEndDate && (values.eventEndTime || defaultEndTime)
+          ? createTimestamp(
+              values.eventEndDate,
+              values.eventEndTime || defaultEndTime || "03:00",
+              timezoneValue,
+            )
+          : undefined;
       if (
+        dateFieldsDirty &&
+        computedTimestamp &&
+        computedEndTimestamp &&
+        computedEndTimestamp <= computedTimestamp
+      ) {
+        toast.error("Event end must be after the event start");
+        setSaving(false);
+        return;
+      }
+      if (
+        dateFieldsDirty &&
         computedTimestamp &&
         Number.isFinite(computedTimestamp) &&
         computedTimestamp !== event.eventDate
       ) {
         patch.eventDate = computedTimestamp;
       }
+      if (
+        dateFieldsDirty &&
+        computedEndTimestamp &&
+        Number.isFinite(computedEndTimestamp) &&
+        computedEndTimestamp !== (event.eventEndDate ?? event.eventDate)
+      ) {
+        patch.eventEndDate = computedEndTimestamp;
+      }
       if (timezoneValue && timezoneValue !== event.eventTimezone) {
         patch.eventTimezone = timezoneValue;
       }
       const outgoingLists = lists.map((list) => ({
         id: list.id as Id<"listCredentials"> | undefined,
-        listKey: list.listKey,
-        password: list.password || undefined,
+        listKey: list.listKey.trim(),
+        password: list.password.trim() || undefined,
         generateQR: list.generateQR,
         approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
       }));
@@ -376,6 +472,18 @@ export default function EditEventDialog({
           : undefined,
         trimWhitespace: field.trimWhitespace !== false,
       }));
+      const nextPrimaryFieldConfig = usePrimaryFieldDefaults
+        ? undefined
+        : draftToPrimaryFieldConfig(primaryFieldConfigDraft);
+      const previousPrimaryFieldConfigKey = JSON.stringify(
+        event.primaryFieldConfig ?? null,
+      );
+      const nextPrimaryFieldConfigKey = JSON.stringify(
+        nextPrimaryFieldConfig ?? null,
+      );
+      if (previousPrimaryFieldConfigKey !== nextPrimaryFieldConfigKey) {
+        patch.primaryFieldConfig = nextPrimaryFieldConfig;
+      }
       await update({
         eventId: event._id,
         ...workspaceScope.queryArgs,
@@ -451,7 +559,7 @@ export default function EditEventDialog({
                             placeholder="e.g. vip, general, backstage"
                             value={listPassword.listKey}
                             onChange={(event) =>
-                              setList(index, "listKey", event.target.value.trim())
+                              setList(index, "listKey", event.target.value)
                             }
                           />
                         </div>
@@ -487,7 +595,7 @@ export default function EditEventDialog({
                               }
                               value={listPassword.password}
                               onChange={(event) =>
-                                setList(index, "password", event.target.value.trim())
+                                setList(index, "password", event.target.value)
                               }
                             />
                           )}
@@ -559,10 +667,32 @@ export default function EditEventDialog({
               </div>
             }
             customFieldsSection={
-              <CustomFieldsEditor
-                initial={event.customFields ?? []}
-                onChange={setCustomFields}
-              />
+              <div className="space-y-6">
+                <div className="rounded-lg border bg-card p-4 space-y-4">
+                  <h3 className="font-medium text-sm text-muted-foreground">
+                    PRIMARY FIELDS
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Social fields and the &ldquo;invited by&rdquo; question
+                    for this event. Defaults come from workspace settings;
+                    override here if needed.
+                  </p>
+                  <PrimaryFieldConfigOverrideEditor
+                    value={primaryFieldConfigDraft}
+                    onChange={setPrimaryFieldConfigDraft}
+                    useDefaults={usePrimaryFieldDefaults}
+                    onUseDefaultsChange={setUsePrimaryFieldDefaults}
+                    workspaceDefaults={workspacePrimaryFieldDefaultsDraft}
+                  />
+                </div>
+                <CustomFieldsEditor
+                  initial={event.customFields ?? []}
+                  onChange={setCustomFields}
+                  reservedKeys={primaryFieldConfigDraft.socialPlatforms.map(
+                    (platform) => platform.platformKey,
+                  )}
+                />
+              </div>
             }
             footer={
               <DialogFooter>

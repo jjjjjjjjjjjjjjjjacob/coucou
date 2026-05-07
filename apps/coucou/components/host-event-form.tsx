@@ -63,11 +63,15 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
   const selectedEventTime = form.watch("eventTime" as Path<FormValues>) as string | undefined;
   const selectedEventTimezone = form.watch("eventTimezone" as Path<FormValues>) as string | undefined;
   const selectedEventDate = form.watch("eventDate" as Path<FormValues>) as string | undefined;
+  const selectedEventEndDate = form.watch("eventEndDate" as Path<FormValues>) as string | undefined;
+  const selectedEventEndTime = form.watch("eventEndTime" as Path<FormValues>) as string | undefined;
   
   // Provide fallbacks only for display purposes - these shouldn't be used if form is properly initialized
   const displayTime = selectedEventTime ?? "19:00";
+  const displayEndTime = selectedEventEndTime ?? "03:00";
   const displayTimezone = selectedEventTimezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const displayDate = selectedEventDate;
+  const displayEndDate = selectedEventEndDate;
 
   return (
     <Form {...form}>
@@ -263,12 +267,11 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
             <FormField
               control={form.control}
               name={"hosts" as Path<FormValues>}
-              rules={{ required: "Hosts are required" }}
               render={({ field }) => {
                 const { value, onChange, ref, ...rest } = field
                 return (
                   <FormItem>
-                    <FormLabel>Host Names (comma-separated)</FormLabel>
+                    <FormLabel>Host Names (optional, comma-separated)</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="Host Name 1, Host Name 2"
@@ -435,7 +438,7 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
               rules={{ required: "Event date is required" }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Date, Time & Timezone</FormLabel>
+                  <FormLabel>Start Date, Time & Timezone</FormLabel>
                   <FormControl>
                     <DateTimePicker
                       date={displayDate}
@@ -454,6 +457,37 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
                       onTimezoneChange={(value) =>
                         form.setValue(
                           "eventTimezone" as Path<FormValues>,
+                          value as PathValue<FormValues, Path<FormValues>>,
+                          {
+                            shouldDirty: true,
+                          },
+                        )
+                      }
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name={"eventEndDate" as Path<FormValues>}
+              rules={{ required: "Event end date is required" }}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>End Date & Time</FormLabel>
+                  <FormDescription>
+                    RSVP access closes ten hours after this time.
+                  </FormDescription>
+                  <FormControl>
+                    <DateTimePicker
+                      date={displayEndDate}
+                      time={displayEndTime}
+                      timezone={displayTimezone}
+                      onDateChange={(value) => field.onChange(value)}
+                      onTimeChange={(value) =>
+                        form.setValue(
+                          "eventEndTime" as Path<FormValues>,
                           value as PathValue<FormValues, Path<FormValues>>,
                           {
                             shouldDirty: true,

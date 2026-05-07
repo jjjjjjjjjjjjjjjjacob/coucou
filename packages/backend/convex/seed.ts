@@ -113,6 +113,7 @@ export const seedTestRSVPs = action({
         hosts: ["test@example.com"],
         location: "Virtual Event Center",
         eventDate: Date.now() + (7 * 24 * 60 * 60 * 1000), // 1 week from now
+        eventEndDate: Date.now() + (7 * 24 * 60 * 60 * 1000) + (6 * 60 * 60 * 1000),
         lists: [
           { listKey: "vip", password: "vip123", generateQR: true },
           { listKey: "ga", password: "general456", generateQR: true },

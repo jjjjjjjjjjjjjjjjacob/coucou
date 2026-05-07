@@ -44,9 +44,9 @@ type ListRow = {
 function validateCreate(values: EventFormData, lists: ListRow[]): string[] {
   const validationErrors: string[] = [];
   if (!values.name?.trim()) validationErrors.push("Name is required");
-  if (!values.hosts?.trim()) validationErrors.push("Hosts are required");
   if (!values.location?.trim()) validationErrors.push("Location is required");
   if (!values.eventDate) validationErrors.push("Event date is required");
+  if (!values.eventEndDate) validationErrors.push("Event end date is required");
   const filteredLists = lists.filter(
     (list) => list.listKey?.trim() && list.password?.trim(),
   );
@@ -84,6 +84,8 @@ export default function NewEventClient() {
       location: "",
       eventDate: "",
       eventTime: "19:00",
+      eventEndDate: "",
+      eventEndTime: "03:00",
       eventTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       flyerStorageId: null,
       customIconStorageId: null,
@@ -178,6 +180,15 @@ export default function NewEventClient() {
         values.eventTime,
         values.eventTimezone,
       );
+      const endTimestamp = createTimestamp(
+        values.eventEndDate,
+        values.eventEndTime,
+        values.eventTimezone,
+      );
+      if (endTimestamp <= timestamp) {
+        toast.error("Event end must be after the event start");
+        return;
+      }
       const listsFiltered = lists
         .map((list) => ({
           listKey: list.listKey.trim(),
@@ -212,6 +223,7 @@ export default function NewEventClient() {
         guestPortalLinkLabel: hasLabel ? trimmedGuestPortalLinkLabel : undefined,
         guestPortalLinkUrl: hasUrl ? trimmedGuestPortalLinkUrl : undefined,
         eventDate: timestamp,
+        eventEndDate: endTimestamp,
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
         status: values.status ?? "inactive",

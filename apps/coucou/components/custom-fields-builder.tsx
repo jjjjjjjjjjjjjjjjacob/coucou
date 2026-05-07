@@ -51,14 +51,39 @@ function CustomFieldPreview({ field }: { field: CustomFieldDef }) {
  * Base component for custom fields management
  * Handles all shared logic between form and controlled modes
  */
+const RESERVED_PRIMARY_FIELD_KEYS = ["invitedBy", "invitedByName"];
+
+function normalizeReservedKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function buildReservedKeyMap(
+  reservedKeys: string[] | undefined,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const reservedKey of [
+    ...RESERVED_PRIMARY_FIELD_KEYS,
+    ...(reservedKeys ?? []),
+  ]) {
+    const normalized = normalizeReservedKey(reservedKey);
+    if (!normalized) continue;
+    if (!map.has(normalized)) {
+      map.set(normalized, reservedKey);
+    }
+  }
+  return map;
+}
+
 function CustomFieldsBuilder({
   mode,
   initialFields,
   onChange,
+  reservedKeys,
 }: {
   mode: "form" | "controlled";
   initialFields?: CustomFieldDef[];
   onChange?: (fields: CustomFieldDef[]) => void;
+  reservedKeys?: string[];
 }) {
   const isMobile = useIsMobile();
   const withDefaults = React.useCallback(
@@ -134,13 +159,30 @@ function CustomFieldsBuilder({
     });
   };
 
+  const reservedKeyMap = React.useMemo(
+    () => buildReservedKeyMap(reservedKeys),
+    [reservedKeys],
+  );
+
+  const reservedKeyConflict = React.useCallback(
+    (key: string): string | null => {
+      const normalized = normalizeReservedKey(key);
+      if (!normalized) return null;
+      const original = reservedKeyMap.get(normalized);
+      return original ?? null;
+    },
+    [reservedKeyMap],
+  );
+
   return (
     <div className="rounded-lg border bg-card p-4 space-y-4">
       <h3 className="font-medium text-sm text-muted-foreground">
         CUSTOM RSVP FIELDS
       </h3>
       <div className="space-y-6">
-        {fields.map((field, index) => (
+        {fields.map((field, index) => {
+          const conflict = reservedKeyConflict(field.key);
+          return (
           <div key={index} className="space-y-4">
             {index > 0 && <div className="border-t" />}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -154,8 +196,16 @@ function CustomFieldsBuilder({
                     <Input
                       placeholder="e.g. instagram, phone, dietary"
                       value={field.key}
-                      onChange={(e) => set(index, "key", e.target.value.trim())}
+                      onChange={(e) => set(index, "key", e.target.value)}
+                      aria-invalid={conflict ? true : undefined}
                     />
+                    {conflict ? (
+                      <p className="text-xs text-destructive mt-1">
+                        &ldquo;{conflict}&rdquo; is reserved for a primary
+                        field. Pick a different key or remove that primary
+                        field above.
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">
@@ -164,9 +214,7 @@ function CustomFieldsBuilder({
                     <Input
                       placeholder="e.g. Instagram Handle"
                       value={field.label}
-                      onChange={(e) =>
-                        set(index, "label", e.target.value.trim())
-                      }
+                      onChange={(e) => set(index, "label", e.target.value)}
                     />
                   </div>
                 </div>
@@ -178,7 +226,7 @@ function CustomFieldsBuilder({
                     placeholder="e.g. @username or Enter your dietary restrictions"
                     value={field.placeholder || ""}
                     onChange={(e) =>
-                      set(index, "placeholder", e.target.value.trim())
+                      set(index, "placeholder", e.target.value)
                     }
                   />
                 </div>
@@ -190,7 +238,7 @@ function CustomFieldsBuilder({
                     placeholder="e.g. https://instagram.com/ or https://twitter.com/"
                     value={field.prependUrl || ""}
                     onChange={(e) =>
-                      set(index, "prependUrl", e.target.value.trim())
+                      set(index, "prependUrl", e.target.value)
                     }
                   />
                   <p className="text-xs text-muted-foreground mt-1">
@@ -294,7 +342,8 @@ function CustomFieldsBuilder({
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {fields.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
@@ -343,15 +392,18 @@ export function CustomFieldsBuilderForm() {
 export function CustomFieldsEditor({
   initial,
   onChange,
+  reservedKeys,
 }: {
   initial?: CustomFieldDef[];
   onChange: (fields: CustomFieldDef[]) => void;
+  reservedKeys?: string[];
 }) {
   return (
     <CustomFieldsBuilder
       mode="controlled"
       initialFields={initial}
       onChange={onChange}
+      reservedKeys={reservedKeys}
     />
   );
 }

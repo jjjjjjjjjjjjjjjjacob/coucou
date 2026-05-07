@@ -2,6 +2,10 @@ import { siteConfigurations } from "@coucou/sdk/site-config";
 
 export const siteConfiguration = siteConfigurations["club-chlorine"];
 
+export const coucouBaseUrl = (
+  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
+).replace(/\/+$/, "");
+
 const clubChlorineIconVersion = "club-chlorine-swimmer-v1";
 
 function buildVersionedClubChlorineIconPath(path: string) {

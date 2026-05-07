@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { ensureEventInSiteScope } from "./lib/siteScope";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
+import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 
 function toPublicCredential(credential: {
   _id: string;
@@ -84,7 +85,7 @@ export const resolveListByPassword = query({
       siteKey,
       workspaceSlug,
     });
-    if (event.status !== "active") {
+    if (!isEventOpenForRsvp(event, Date.now())) {
       return { ok: false as const };
     }
 

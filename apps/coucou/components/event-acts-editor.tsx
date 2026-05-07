@@ -154,8 +154,11 @@ export function EventActsEditor({ acts, onChange }: EventActsEditorProps) {
                   ) : null}
                 </div>
 
-                <div className="space-y-3">
-                  <label className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Visibility
+                  </label>
+                  <label className="flex h-10 items-center gap-2 rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground">
                     <Checkbox
                       checked={isSecretGuest}
                       onCheckedChange={(checked) =>

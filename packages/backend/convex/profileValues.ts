@@ -15,6 +15,10 @@ import {
   upsertProfileFieldValue,
 } from "./lib/profileValueRecords";
 import { requireWorkspaceRead } from "./lib/workspaceAuth";
+import {
+  eventMatchesTenantScope,
+  resolveTenantWorkspaceScope,
+} from "./lib/workspaceScope";
 
 interface ResolvedWorkspaceProfileScope {
   workspaceId?: Id<"workspaces">;
@@ -169,6 +173,93 @@ export const listForCurrentUser = query({
   },
 });
 
+export const listForCurrentUserInWorkspace = query({
+  args: {
+    workspaceSlug: v.optional(v.string()),
+    siteKey: v.optional(v.string()),
+    fieldKeys: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { workspaceSlug, siteKey, fieldKeys }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    if (!workspaceSlug && !siteKey) return [];
+
+    const scope = await resolveTenantWorkspaceScope(ctx, {
+      workspaceSlug,
+      siteKey,
+    });
+    if (!scope) return [];
+
+    const normalizedFieldKeys = normalizeProfileFieldKeySet(fieldKeys);
+    const profileFieldValues = await ctx.db
+      .query("profileFieldValues")
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", identity.subject),
+      )
+      .collect();
+
+    if (profileFieldValues.length === 0) return [];
+
+    const sourceEventIds = Array.from(
+      new Set(
+        profileFieldValues
+          .map((profileFieldValue) => profileFieldValue.sourceEventId)
+          .filter(
+            (sourceEventId): sourceEventId is Id<"events"> =>
+              sourceEventId !== undefined,
+          ),
+      ),
+    );
+    const sourceEventEntries = await Promise.all(
+      sourceEventIds.map(async (eventId) => ({
+        eventId,
+        event: await ctx.db.get(eventId),
+      })),
+    );
+    const sourceEventInScope = new Set<string>();
+    for (const entry of sourceEventEntries) {
+      if (!entry.event) continue;
+      if (eventMatchesTenantScope(entry.event, scope)) {
+        sourceEventInScope.add(entry.eventId);
+      }
+    }
+
+    const grantedIds = new Set<string>();
+    const activeGrants = await listWorkspaceProfileValueGrantsForUser(ctx, {
+      clerkUserId: identity.subject,
+      workspaceId: scope.workspaceId,
+      workspaceSlug: scope.workspaceSlug,
+      siteKey: scope.siteKey ?? undefined,
+    });
+    for (const grant of activeGrants) {
+      grantedIds.add(grant.profileFieldValueId);
+    }
+
+    return profileFieldValues
+      .filter(
+        (profileFieldValue) =>
+          !normalizedFieldKeys ||
+          normalizedFieldKeys.has(profileFieldValue.fieldKey),
+      )
+      .filter((profileFieldValue) => {
+        if (
+          profileFieldValue.sourceEventId &&
+          sourceEventInScope.has(profileFieldValue.sourceEventId)
+        ) {
+          return true;
+        }
+        if (grantedIds.has(profileFieldValue._id)) {
+          return true;
+        }
+        return false;
+      })
+      .sort(
+        (firstProfileFieldValue, secondProfileFieldValue) =>
+          secondProfileFieldValue.updatedAt - firstProfileFieldValue.updatedAt,
+      );
+  },
+});
+
 export const createForCurrentUser = mutation({
   args: {
     fieldKey: v.string(),
@@ -282,6 +373,65 @@ export const revokeWorkspaceGrantForCurrentUser = mutation({
     });
 
     return { ok: true as const };
+  },
+});
+
+export const listAllGrantsForCurrentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const grants = await ctx.db
+      .query("workspaceProfileValueGrants")
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", identity.subject),
+      )
+      .collect();
+
+    const activeGrants = grants.filter(
+      (grant) => grant.revokedAt === undefined,
+    );
+
+    const workspaceCache = new Map<
+      Id<"workspaces">,
+      Doc<"workspaces"> | null
+    >();
+    async function loadWorkspace(
+      workspaceId: Id<"workspaces"> | undefined,
+    ): Promise<Doc<"workspaces"> | null> {
+      if (!workspaceId) return null;
+      if (workspaceCache.has(workspaceId)) {
+        return workspaceCache.get(workspaceId) ?? null;
+      }
+      const workspace = await ctx.db.get(workspaceId);
+      workspaceCache.set(workspaceId, workspace);
+      return workspace;
+    }
+
+    const grantsWithProfile = await Promise.all(
+      activeGrants.map(async (grant) => {
+        const profileFieldValue = await ctx.db.get(grant.profileFieldValueId);
+        if (!profileFieldValue) return null;
+        if (profileFieldValue.clerkUserId !== grant.clerkUserId) return null;
+        const workspace = await loadWorkspace(grant.workspaceId);
+        return {
+          grant,
+          profileFieldValue,
+          workspace,
+        };
+      }),
+    );
+
+    return grantsWithProfile.filter(
+      (
+        entry,
+      ): entry is {
+        grant: Doc<"workspaceProfileValueGrants">;
+        profileFieldValue: Doc<"profileFieldValues">;
+        workspace: Doc<"workspaces"> | null;
+      } => entry !== null,
+    );
   },
 });
 

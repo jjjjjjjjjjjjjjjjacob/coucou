@@ -31,6 +31,10 @@ export function DateTimePicker({
   className,
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false);
+  const pickerId = React.useId();
+  const datePickerId = `${pickerId}-date`;
+  const timePickerId = `${pickerId}-time`;
+  const timezonePickerId = `${pickerId}-timezone`;
 
   const selectedDate = React.useMemo(() => {
     if (!date) return undefined;
@@ -56,7 +60,7 @@ export function DateTimePicker({
     <div className={cn("flex flex-col gap-4", className)}>
       <div className="flex flex-wrap items-end gap-6">
         <div className="flex flex-col gap-3">
-          <Label htmlFor="date-picker" className="px-1">
+          <Label htmlFor={datePickerId} className="px-1">
             Date
           </Label>
           <Popover open={open} onOpenChange={setOpen}>
@@ -64,7 +68,7 @@ export function DateTimePicker({
               <Button
                 type="button"
                 variant="outline"
-                id="date-picker"
+                id={datePickerId}
                 className={cn(
                   "w-40 justify-between font-normal",
                   !selectedDate && "text-muted-foreground",
@@ -97,11 +101,11 @@ export function DateTimePicker({
         </div>
 
         <div className="flex flex-col gap-3 min-w-[9rem]">
-          <Label htmlFor="time-picker" className="px-1">
+          <Label htmlFor={timePickerId} className="px-1">
             Time
           </Label>
           <Input
-            id="time-picker"
+            id={timePickerId}
             type="time"
             step={60}
             value={time || ""}
@@ -112,11 +116,11 @@ export function DateTimePicker({
 
         {onTimezoneChange && (
           <div className="flex flex-col gap-3 min-w-[12rem] flex-1">
-            <Label htmlFor="timezone-picker" className="px-1">
+            <Label htmlFor={timezonePickerId} className="px-1">
               Timezone
             </Label>
             <Select
-              id="timezone-picker"
+              id={timezonePickerId}
               value={resolvedTimezone}
               onValueChange={(value) => onTimezoneChange(value)}
               className="h-10"

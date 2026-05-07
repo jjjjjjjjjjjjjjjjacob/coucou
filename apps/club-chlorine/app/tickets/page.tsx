@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { formatEventTitleInline } from "@/lib/event-display";
 import type { UserTicket, RSVP } from "@/lib/types";
+import { siteConfiguration } from "@/lib/site";
 
 function formatDate(eventDate: number, timezone?: string) {
   return new Date(eventDate).toLocaleDateString("en-US", {
@@ -44,9 +45,10 @@ function getStatusBadgeColor(status: RSVP["status"]) {
 }
 
 export default function TicketsPage() {
-  const userTickets = useQuery(api.rsvps.listUserTickets) as
-    | UserTicket[]
-    | undefined;
+  const userTickets = useQuery(api.rsvps.listUserTicketsInWorkspace, {
+    workspaceSlug: siteConfiguration.workspaceSlug,
+    siteKey: siteConfiguration.siteKey,
+  }) as UserTicket[] | undefined;
 
   if (userTickets === undefined) {
     return (

@@ -77,10 +77,9 @@ export function GuestInfoFields({
                   className="border border-primary/20 placeholder:text-primary/50 text-primary"
                   value={firstName}
                   onChange={(e) => {
-                    const value = e.target.value.trim();
+                    const value = e.target.value;
                     setFirstName(value);
                     field.onChange(value);
-                    // Update combined name for backward compatibility
                     setName(`${value} ${lastName}`.trim());
                   }}
                 />
@@ -104,10 +103,9 @@ export function GuestInfoFields({
                   className="border border-primary/20 placeholder:text-primary/50 text-primary"
                   value={lastName}
                   onChange={(e) => {
-                    const value = e.target.value.trim();
+                    const value = e.target.value;
                     setLastName(value);
                     field.onChange(value);
-                    // Update combined name for backward compatibility
                     setName(`${firstName} ${value}`.trim());
                   }}
                 />
