@@ -1,6 +1,8 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { AuthObject } from "@/lib/types";
+import { buildRedirectPathWithSearch } from "@/lib/auth-redirects";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
@@ -33,6 +35,15 @@ function parseEventRoute(pathname: string): {
 
   const [, eventId, subpath = ""] = match;
   return { isEvent: true, eventId, subpath };
+}
+
+function redirectToSignIn(req: NextRequest): NextResponse {
+  const signInUrl = new URL("/sign-in", req.url);
+  signInUrl.searchParams.set(
+    "redirect_url",
+    buildRedirectPathWithSearch(req.nextUrl.pathname, req.nextUrl.search),
+  );
+  return NextResponse.redirect(signInUrl);
 }
 
 export default clerkMiddleware(async (auth, req) => {
@@ -88,9 +99,7 @@ export default clerkMiddleware(async (auth, req) => {
 
       // If trying to access status or ticket page, redirect to sign-in
       if (isStatusPage || isTicketPage) {
-        const signInUrl = new URL("/sign-in", req.url);
-        signInUrl.searchParams.set("redirect_url", pathname);
-        return NextResponse.redirect(signInUrl);
+        return redirectToSignIn(req);
       }
 
       // For other subpaths, redirect to main event page
@@ -164,8 +173,7 @@ export default clerkMiddleware(async (auth, req) => {
   const authObj = (await auth()) as AuthObject;
   const { userId } = authObj;
   if (!userId) {
-    const signInUrl = new URL("/sign-in", req.url);
-    return NextResponse.redirect(signInUrl);
+    return redirectToSignIn(req);
   }
 
   // For /host and /door: require sign-in only; pages render request/approval UI when unauthorized.
