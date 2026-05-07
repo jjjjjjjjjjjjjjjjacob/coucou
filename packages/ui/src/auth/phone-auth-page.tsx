@@ -3,11 +3,23 @@
 import { useAuth } from "@clerk/nextjs";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import type { EventThemeColorSource, PresetKey } from "@coucou/sdk";
-import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
+import { resolveSafeRedirectUrl } from "@coucou/sdk/routes";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { AuthShell, type AuthBrandingOverrides } from "./auth-shell";
 import { PhoneAuthFlow } from "./phone-auth-flow";
+
+function isExternalAbsoluteUrl(value: string): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return new URL(value).origin !== window.location.origin;
+  } catch {
+    return false;
+  }
+}
 
 export interface PhoneAuthPageProps {
   preset: PresetKey;
@@ -33,6 +45,11 @@ export interface PhoneAuthPageProps {
    * Optional replacement for the default preset mark.
    */
   brandMarkSlot?: ReactNode;
+  /**
+   * Absolute origins that may receive a post-auth redirect. Primary Coucou
+   * auth uses this for verified tenant satellite domains.
+   */
+  allowedRedirectOrigins?: readonly string[];
   /**
    * Optional event-takeover styling. When the user reaches sign-in via
    * redirect from an event page (the layout's `EventThemeProvider` resolved
@@ -60,6 +77,7 @@ export function PhoneAuthPage({
   postAuthNavigation = "router",
   authBranding,
   brandMarkSlot,
+  allowedRedirectOrigins = [],
   event,
   onSuccess,
 }: PhoneAuthPageProps) {
@@ -69,14 +87,20 @@ export function PhoneAuthPage({
 
   const authenticatedRedirectPath = useMemo(
     () =>
-      resolveSafeRedirectPath(
+      resolveSafeRedirectUrl(
         redirectUrl,
         siteAuthConfiguration.signInRedirectPath || "/",
+        allowedRedirectOrigins,
       ),
-    [redirectUrl, siteAuthConfiguration.signInRedirectPath],
+    [allowedRedirectOrigins, redirectUrl, siteAuthConfiguration.signInRedirectPath],
   );
 
   const navigateToAuthenticatedRedirectPath = useCallback(() => {
+    if (isExternalAbsoluteUrl(authenticatedRedirectPath)) {
+      window.location.replace(authenticatedRedirectPath);
+      return;
+    }
+
     if (
       postAuthNavigation === "document-replace" &&
       typeof window !== "undefined"

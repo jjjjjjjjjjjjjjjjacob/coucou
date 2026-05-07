@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Emoji } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { getClientSiteRedirectOrigins } from "@coucou/sdk";
 import "./globals.css";
 import Providers from "./providers";
 import { AppChrome } from "./app-chrome";
@@ -65,6 +66,7 @@ export const metadata: Metadata = {
 // Vaul scales whatever element carries this attribute when a drawer with
 // shouldScaleBackground is opened. The body acts as the dark backdrop.
 const vaulDrawerWrapperAttribute = { "vaul-drawer-wrapper": "" };
+const allowedTenantRedirectOrigins = getClientSiteRedirectOrigins();
 
 export default function RootLayout({
   children,
@@ -76,7 +78,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${notoEmoji.variable} antialiased`}
       >
-        <ClerkProvider>
+        <ClerkProvider allowedRedirectOrigins={allowedTenantRedirectOrigins}>
           <Providers>
             <div
               {...vaulDrawerWrapperAttribute}

@@ -1,11 +1,36 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import type { ClerkMiddlewareOptions } from "@clerk/nextjs/server";
 import { AuthObject } from "@/lib/types";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
 import { siteConfiguration } from "@/lib/site";
+import {
+  buildSatelliteReturnUrl,
+  buildTenantPrimarySignInUrl,
+} from "@coucou/sdk";
+
+const coucouBaseUrl = (
+  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
+).replace(/\/+$/, "");
+const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
+  primaryBaseUrl: coucouBaseUrl,
+  siteConfiguration,
+});
+
+function buildClerkSatelliteOptions(
+  req: NextRequest,
+): ClerkMiddlewareOptions {
+  return {
+    isSatellite: true,
+    domain: req.nextUrl.host,
+    signInUrl: primaryTenantSignInUrl,
+    signUpUrl: primaryTenantSignInUrl,
+  };
+}
 
 // Public routes do not require auth. Host routes are intentionally not public.
 // Note: /events routes need conditional auth handling, so they're not fully public
@@ -35,6 +60,37 @@ function parseEventRoute(pathname: string): {
   return { isEvent: true, eventId, subpath };
 }
 
+function buildRedirectPathWithSearch(pathname: string, search: string): string {
+  const normalizedSearch = search
+    ? search.startsWith("?")
+      ? search
+      : `?${search}`
+    : "";
+  return `${pathname}${normalizedSearch}`;
+}
+
+function buildPrimarySignInUrl(req: NextRequest, redirectPath?: string): string {
+  const resolvedRedirectPath =
+    redirectPath ??
+    buildRedirectPathWithSearch(req.nextUrl.pathname, req.nextUrl.search);
+  const satelliteReturnUrl = buildSatelliteReturnUrl(
+    req.nextUrl.origin,
+    resolvedRedirectPath,
+  );
+  return buildTenantPrimarySignInUrl({
+    primaryBaseUrl: coucouBaseUrl,
+    siteConfiguration,
+    redirectUrl: satelliteReturnUrl,
+  });
+}
+
+function redirectToPrimarySignIn(
+  req: NextRequest,
+  redirectPath?: string,
+): NextResponse {
+  return NextResponse.redirect(buildPrimarySignInUrl(req, redirectPath));
+}
+
 export default clerkMiddleware(async (auth, req) => {
   const pathname = req.nextUrl.pathname;
   const searchParams = req.nextUrl.searchParams;
@@ -51,7 +107,13 @@ export default clerkMiddleware(async (auth, req) => {
       );
       return NextResponse.redirect(authenticatedRedirectUrl);
     }
-    return NextResponse.next();
+    return redirectToPrimarySignIn(
+      req,
+      resolveSafeRedirectPath(
+        searchParams.get("redirect_url"),
+        siteConfiguration.auth.signInRedirectPath,
+      ),
+    );
   }
 
   // Club Chlorine's homepage is the animated landing — it lists every
@@ -77,9 +139,7 @@ export default clerkMiddleware(async (auth, req) => {
 
       // If trying to access status or ticket page, redirect to sign-in
       if (isStatusPage || isTicketPage) {
-        const signInUrl = new URL("/sign-in", req.url);
-        signInUrl.searchParams.set("redirect_url", pathname);
-        return NextResponse.redirect(signInUrl);
+        return redirectToPrimarySignIn(req);
       }
 
       // For other subpaths, redirect to main event page
@@ -153,13 +213,12 @@ export default clerkMiddleware(async (auth, req) => {
   const authObj = (await auth()) as AuthObject;
   const { userId } = authObj;
   if (!userId) {
-    const signInUrl = new URL("/sign-in", req.url);
-    return NextResponse.redirect(signInUrl);
+    return redirectToPrimarySignIn(req);
   }
 
   // For /host and /door: require sign-in only; pages render request/approval UI when unauthorized.
   return NextResponse.next();
-});
+}, buildClerkSatelliteOptions);
 
 export const config = {
   matcher: ["/((?!.+\\.[\\w]+$|_next).*)", "/(api|trpc)(.*)"],

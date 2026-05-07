@@ -1,3 +1,4 @@
+export * from "./auth-domains";
 export * from "./routes";
 export * from "./site-config";
 export * from "./shared/approval-messages";

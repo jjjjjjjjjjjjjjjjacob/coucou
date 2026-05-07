@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./auth-domains": "./src/auth-domains.ts",
     "./site-config": "./src/site-config.ts",
     "./routes": "./src/routes.ts",
     "./shared/approval-messages": "./src/shared/approval-messages.ts",

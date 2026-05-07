@@ -2,7 +2,11 @@
 import { SignOutButton, useAuth, useUser } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
 import { siteConfiguration } from "@/lib/site";
-import { buildSignInPath } from "@coucou/sdk/routes";
+import {
+  buildSatelliteReturnUrl,
+  buildTenantPrimarySignInUrl,
+  getSiteOrigin,
+} from "@coucou/sdk";
 import {
   ChlorineRippleMark,
   HamburgerMenuItem,
@@ -20,6 +24,18 @@ const coucouBaseUrl = (
 
 function buildCoucouWorkspaceHref(surface: "host" | "door") {
   return `${coucouBaseUrl}/workspaces/${workspaceSlug}/${surface}`;
+}
+
+function buildPrimarySignInHref(redirectPath: string): string {
+  const satelliteReturnUrl = buildSatelliteReturnUrl(
+    getSiteOrigin(siteConfiguration),
+    redirectPath,
+  );
+  return buildTenantPrimarySignInUrl({
+    primaryBaseUrl: coucouBaseUrl,
+    siteConfiguration,
+    redirectUrl: satelliteReturnUrl,
+  });
 }
 
 function useRoleFlags() {
@@ -51,7 +67,7 @@ export default function HeaderClient() {
   const { isLoaded, isSignedIn } = useAuth();
   const { isHost, isDoor } = useRoleFlags();
   const pathname = usePathname();
-  const signInPath = buildSignInPath(
+  const signInHref = buildPrimarySignInHref(
     pathname ?? siteConfiguration.auth.signInRedirectPath,
   );
   const hostHref = buildCoucouWorkspaceHref("host");
@@ -83,7 +99,7 @@ export default function HeaderClient() {
           </HamburgerMenuSection>
         </>
       ) : (
-        <HamburgerMenuItem href={signInPath}>Sign in</HamburgerMenuItem>
+        <HamburgerMenuItem href={signInHref}>Sign in</HamburgerMenuItem>
       )}
     </HeaderHamburgerMenu>
   );

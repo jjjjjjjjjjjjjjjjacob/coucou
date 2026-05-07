@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { resolveSafeRedirectPath } from "../src/routes";
+import { resolveSafeRedirectPath, resolveSafeRedirectUrl } from "../src/routes";
 
 describe("resolveSafeRedirectPath", () => {
   it("preserves safe internal redirect paths", () => {
@@ -46,5 +46,41 @@ describe("resolveSafeRedirectPath", () => {
     expect(resolveSafeRedirectPath("https://example.com", "/sign-in")).toBe(
       "/",
     );
+  });
+});
+
+describe("resolveSafeRedirectUrl", () => {
+  it("preserves safe internal redirect paths", () => {
+    expect(resolveSafeRedirectUrl("/dashboard", "/")).toBe("/dashboard");
+  });
+
+  it("allows external redirect targets from configured origins", () => {
+    expect(
+      resolveSafeRedirectUrl(
+        "https://dojopomodoro.club/events/event_123/ticket",
+        "/dashboard",
+        ["https://dojopomodoro.club"],
+      ),
+    ).toBe("https://dojopomodoro.club/events/event_123/ticket");
+  });
+
+  it("rejects external redirect targets from unconfigured origins", () => {
+    expect(
+      resolveSafeRedirectUrl(
+        "https://example.com/events/event_123/ticket",
+        "/dashboard",
+        ["https://dojopomodoro.club"],
+      ),
+    ).toBe("/dashboard");
+  });
+
+  it("rejects external authentication redirect loops", () => {
+    expect(
+      resolveSafeRedirectUrl(
+        "https://dojopomodoro.club/sign-in?redirect_url=/events/event_123",
+        "/dashboard",
+        ["https://dojopomodoro.club"],
+      ),
+    ).toBe("/dashboard");
   });
 });

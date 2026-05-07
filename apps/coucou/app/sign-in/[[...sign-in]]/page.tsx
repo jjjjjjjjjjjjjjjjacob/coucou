@@ -8,7 +8,8 @@ import type { Event } from "@/lib/types";
 import { EventThemeProvider } from "@/components/event-theme-provider";
 import { SignInClient } from "./sign-in-client";
 import { siteConfiguration } from "@/lib/site";
-import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
+import { getClientSiteRedirectOrigins } from "@coucou/sdk";
+import { resolveSafeRedirectUrl } from "@coucou/sdk/routes";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 type ThemedEvent = Pick<
@@ -89,9 +90,10 @@ export default async function Page({
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const redirectParam = ensureString(resolvedSearchParams.redirect_url);
-  const redirectUrl = resolveSafeRedirectPath(
+  const redirectUrl = resolveSafeRedirectUrl(
     redirectParam,
     siteConfiguration.auth.signInRedirectPath,
+    getClientSiteRedirectOrigins(),
   );
   const authObject = await auth();
   if (authObject.userId) {

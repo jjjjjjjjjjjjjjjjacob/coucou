@@ -15,6 +15,8 @@ interface SignInTestGlobal {
   }) => void;
   __clearRouterReplaceCalls?: () => void;
   __getRouterReplaceCalls?: () => string[];
+  __clearLocationReplaceCalls?: () => void;
+  __getLocationReplaceCalls?: () => string[];
 }
 
 function getSignInTestGlobal(): typeof globalThis & SignInTestGlobal {
@@ -33,10 +35,15 @@ function getRouterReplaceCalls(): string[] {
   return getSignInTestGlobal().__getRouterReplaceCalls?.() ?? [];
 }
 
+function getLocationReplaceCalls(): string[] {
+  return getSignInTestGlobal().__getLocationReplaceCalls?.() ?? [];
+}
+
 describe("SignInClient", () => {
   beforeEach(() => {
     setClerkSignedIn(false);
     getSignInTestGlobal().__clearRouterReplaceCalls?.();
+    getSignInTestGlobal().__clearLocationReplaceCalls?.();
   });
 
   it("renders the coucou phone-auth sign-in page", () => {
@@ -131,5 +138,20 @@ describe("SignInClient", () => {
     });
     expect(screen.getByRole("status")).toHaveTextContent("Redirecting...");
     expect(screen.queryByLabelText("Phone number")).toBeNull();
+  });
+
+  it("redirects signed-in satellite users back to an allowed tenant origin", async () => {
+    setClerkSignedIn(true);
+
+    render(
+      <SignInClient redirectUrl="https://dojopomodoro.club/events/sample/ticket?__clerk_synced=false" />,
+    );
+
+    await waitFor(() => {
+      expect(getLocationReplaceCalls()).toEqual([
+        "https://dojopomodoro.club/events/sample/ticket?__clerk_synced=false",
+      ]);
+    });
+    expect(getRouterReplaceCalls()).toEqual([]);
   });
 });

@@ -2,8 +2,12 @@ import { auth } from "@clerk/nextjs/server";
 import { notFound, redirect } from "next/navigation";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
-import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
-import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
+import { getSiteOrigin, siteConfigurations } from "@coucou/sdk";
+import type {
+  SiteAuthConfiguration,
+  SiteKey,
+} from "@coucou/sdk/site-config";
+import { resolveSafeRedirectUrl } from "@coucou/sdk/routes";
 import { SignInClient } from "../../../sign-in/[[...sign-in]]/sign-in-client";
 import {
   buildWorkspaceOperationPath,
@@ -41,6 +45,30 @@ function buildAccentMark(brandName: string): string {
   return brandName.trim().slice(0, 2).toUpperCase() || "CO";
 }
 
+function isSiteKey(value: string | null | undefined): value is SiteKey {
+  return (
+    value === "dojo" || value === "club-chlorine" || value === "coucou"
+  );
+}
+
+function normalizeDomainOrigin(domain: string | null | undefined): string | null {
+  const trimmedDomain = domain?.trim();
+  if (!trimmedDomain) {
+    return null;
+  }
+
+  try {
+    const domainUrl = new URL(
+      trimmedDomain.match(/^https?:\/\//)
+        ? trimmedDomain
+        : `https://${trimmedDomain}`,
+    );
+    return domainUrl.origin;
+  } catch {
+    return null;
+  }
+}
+
 export default async function TenantLoginPage({
   params,
   searchParams,
@@ -54,14 +82,6 @@ export default async function TenantLoginPage({
     workspaceSlug,
     "host",
   );
-  const redirectUrl = resolveSafeRedirectPath(
-    ensureString(resolvedSearchParams.redirect_url),
-    fallbackRedirectPath,
-  );
-  const authObject = await auth();
-  if (authObject.userId) {
-    redirect(redirectUrl);
-  }
 
   const workspace = await fetchQuery(api.workspaces.getWorkspaceBySlug, {
     slug: workspaceSlug,
@@ -75,7 +95,44 @@ export default async function TenantLoginPage({
     notFound();
   }
 
-  const tenantAuthConfiguration: SiteAuthConfiguration = {
+  const primaryWorkspaceSite = workspace.sites.find(
+    (workspaceSite) =>
+      isSiteKey(workspaceSite.siteKey) &&
+      siteConfigurations[workspaceSite.siteKey].appKind === "client",
+  );
+  const siteAuthConfiguration =
+    primaryWorkspaceSite && isSiteKey(primaryWorkspaceSite.siteKey)
+      ? siteConfigurations[primaryWorkspaceSite.siteKey].auth
+      : null;
+
+  const workspaceAllowedRedirectOrigins = new Set<string>();
+  const workspacePrimaryOrigin = normalizeDomainOrigin(workspace.primaryDomain);
+  if (workspacePrimaryOrigin) {
+    workspaceAllowedRedirectOrigins.add(workspacePrimaryOrigin);
+  }
+  for (const workspaceSite of workspace.sites) {
+    const workspaceSiteOrigin = normalizeDomainOrigin(workspaceSite.domain);
+    if (workspaceSiteOrigin) {
+      workspaceAllowedRedirectOrigins.add(workspaceSiteOrigin);
+    }
+    if (isSiteKey(workspaceSite.siteKey)) {
+      workspaceAllowedRedirectOrigins.add(
+        getSiteOrigin(siteConfigurations[workspaceSite.siteKey]),
+      );
+    }
+  }
+
+  const redirectUrl = resolveSafeRedirectUrl(
+    ensureString(resolvedSearchParams.redirect_url),
+    fallbackRedirectPath,
+    [...workspaceAllowedRedirectOrigins],
+  );
+  const authObject = await auth();
+  if (authObject.userId) {
+    redirect(redirectUrl);
+  }
+
+  const tenantAuthConfiguration: SiteAuthConfiguration = siteAuthConfiguration ?? {
     siteKey: "coucou",
     brandName: workspace.name,
     accentMark: buildAccentMark(workspace.name),
@@ -88,16 +145,22 @@ export default async function TenantLoginPage({
     verificationDescription:
       "Enter the verification code we sent to continue.",
   };
+  const fallbackEyebrow = siteAuthConfiguration
+    ? "Event login"
+    : "Organization login";
 
   return (
     <SignInClient
       redirectUrl={redirectUrl}
       siteAuthConfiguration={tenantAuthConfiguration}
       authBranding={{
-        heading: workspace.authBranding?.heading ?? tenantAuthConfiguration.heading,
-        sub: workspace.authBranding?.sub ?? tenantAuthConfiguration.description,
-        eyebrow: workspace.authBranding?.eyebrow ?? "Organization login",
-        brandMarkStyle: workspace.authBranding?.brandMarkStyle ?? "square-serif",
+        heading:
+          workspace.authBranding?.heading ?? tenantAuthConfiguration.heading,
+        sub:
+          workspace.authBranding?.sub ?? tenantAuthConfiguration.description,
+        eyebrow: workspace.authBranding?.eyebrow ?? fallbackEyebrow,
+        brandMarkStyle:
+          workspace.authBranding?.brandMarkStyle ?? "square-serif",
         showCoucouAttribution:
           workspace.authBranding?.showCoucouAttribution ?? true,
       }}

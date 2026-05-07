@@ -2,7 +2,7 @@
 
 import React, { useMemo, type ReactNode } from "react";
 import { PhoneAuthPage, type AuthBrandingOverrides } from "@coucou/ui/auth";
-import type { PresetKey } from "@coucou/sdk";
+import { getClientSiteRedirectOrigins, type PresetKey } from "@coucou/sdk";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import { siteConfiguration } from "@/lib/site";
 import { CoucouLogoMark } from "@/components/coucou-logo";
@@ -43,6 +43,10 @@ export function SignInClient({
   const resolvedBrandMarkSlot =
     brandMarkSlot ??
     (isCoucouPlatformAuthentication ? <CoucouLogoMark size={64} /> : undefined);
+  const allowedRedirectOrigins = useMemo(
+    () => getClientSiteRedirectOrigins(),
+    [],
+  );
 
   return (
     <PhoneAuthPage
@@ -51,6 +55,7 @@ export function SignInClient({
       preset={preset}
       authBranding={authBranding}
       brandMarkSlot={resolvedBrandMarkSlot}
+      allowedRedirectOrigins={allowedRedirectOrigins}
       event={eventThemeOverride}
       postAuthNavigation={postAuthNavigation}
     />

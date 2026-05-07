@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Emoji } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import "./globals.css";
 import Providers from "./providers";
 import { AppChrome } from "./app-chrome";
@@ -22,6 +23,16 @@ const notoEmoji = Noto_Emoji({
   subsets: ["emoji"],
   display: "swap",
 });
+const coucouBaseUrl = (
+  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
+).replace(/\/+$/, "");
+const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
+  primaryBaseUrl: coucouBaseUrl,
+  siteConfiguration,
+});
+const clerkSatelliteDomain =
+  process.env.NEXT_PUBLIC_CLERK_DOMAIN ??
+  new URL(siteConfiguration.domain).host;
 
 export const metadata: Metadata = {
   title: siteConfiguration.brandName,
@@ -77,7 +88,14 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${notoEmoji.variable} antialiased flex flex-col min-h-screen`}
       >
-        <ClerkProvider>{inner}</ClerkProvider>
+        <ClerkProvider
+          isSatellite
+          domain={clerkSatelliteDomain}
+          signInUrl={primaryTenantSignInUrl}
+          signUpUrl={primaryTenantSignInUrl}
+        >
+          {inner}
+        </ClerkProvider>
       </body>
     </html>
   );

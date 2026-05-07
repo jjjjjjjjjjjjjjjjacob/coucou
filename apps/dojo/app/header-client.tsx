@@ -18,7 +18,11 @@ import Link from "next/link";
 import { LogOut, LogIn, Settings, DoorOpen, User, Cog } from "lucide-react";
 import { siteConfiguration } from "@/lib/site";
 import DojoPomodoreIcon from "@/components/icons/dojo-pomodoro-icon";
-import { buildSignInPath } from "@coucou/sdk/routes";
+import {
+  buildSatelliteReturnUrl,
+  buildTenantPrimarySignInUrl,
+  getSiteOrigin,
+} from "@coucou/sdk";
 
 const workspaceSlug = siteConfiguration.workspaceSlug;
 const workspaceOrganizationId =
@@ -29,6 +33,18 @@ const coucouBaseUrl = (
 
 function buildCoucouWorkspaceHref(surface: "host" | "door") {
   return `${coucouBaseUrl}/workspaces/${workspaceSlug}/${surface}`;
+}
+
+function buildPrimarySignInHref(redirectPath: string): string {
+  const satelliteReturnUrl = buildSatelliteReturnUrl(
+    getSiteOrigin(siteConfiguration),
+    redirectPath,
+  );
+  return buildTenantPrimarySignInUrl({
+    primaryBaseUrl: coucouBaseUrl,
+    siteConfiguration,
+    redirectUrl: satelliteReturnUrl,
+  });
 }
 
 function useRoleFlags() {
@@ -51,7 +67,7 @@ function useRoleFlags() {
 export default function HeaderClient() {
   const { isHost, isDoor } = useRoleFlags();
   const pathname = usePathname();
-  const signInPath = buildSignInPath(
+  const signInHref = buildPrimarySignInHref(
     pathname ?? siteConfiguration.auth.signInRedirectPath,
   );
   const hostHref = buildCoucouWorkspaceHref("host");
@@ -119,7 +135,7 @@ export default function HeaderClient() {
           <SignedOut>
             <DropdownMenuItem asChild>
               <Link
-                href={signInPath}
+                href={signInHref}
                 className="flex items-center gap-2 text-primary! hover:text-primary!"
               >
                 <LogIn size={16} className="text-primary" />
