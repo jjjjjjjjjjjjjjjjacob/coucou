@@ -213,7 +213,7 @@ async function findExistingWorkspaceProfileValueGrant(
   }: GrantWorkspaceProfileValueArgs,
 ): Promise<Doc<"workspaceProfileValueGrants"> | null> {
   if (workspaceId) {
-    const workspaceGrant = await ctx.db
+    return await ctx.db
       .query("workspaceProfileValueGrants")
       .withIndex("by_workspace_user_field_value", (queryBuilder) =>
         queryBuilder
@@ -223,11 +223,10 @@ async function findExistingWorkspaceProfileValueGrant(
           .eq("profileFieldValueId", profileFieldValueId),
       )
       .unique();
-    if (workspaceGrant) return workspaceGrant;
   }
 
   if (workspaceSlug) {
-    const workspaceSlugGrant = await ctx.db
+    return await ctx.db
       .query("workspaceProfileValueGrants")
       .withIndex("by_workspaceSlug_user_field_value", (queryBuilder) =>
         queryBuilder
@@ -237,7 +236,6 @@ async function findExistingWorkspaceProfileValueGrant(
           .eq("profileFieldValueId", profileFieldValueId),
       )
       .unique();
-    if (workspaceSlugGrant) return workspaceSlugGrant;
   }
 
   if (siteKey) {

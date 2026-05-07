@@ -28,6 +28,7 @@ type EventCustomFieldDefinition = {
   key: string;
   label?: string;
   trimWhitespace?: boolean;
+  canHide?: boolean;
 };
 
 type MetadataRecord = Record<string, unknown>;
@@ -945,18 +946,58 @@ function getSocialPlatformConfig(
   );
 }
 
+function buildPrimaryFieldBackfillCandidates(
+  eventCustomFields: EventCustomFieldDefinition[] | undefined,
+  customFieldValues: Record<string, string>,
+): EventCustomFieldDefinition[] {
+  const customFieldDefinitionsByKey = new Map<
+    string,
+    EventCustomFieldDefinition
+  >();
+
+  for (const customField of eventCustomFields ?? []) {
+    customFieldDefinitionsByKey.set(customField.key, {
+      ...customField,
+      canHide: true,
+    });
+  }
+
+  for (const fieldKey of Object.keys(customFieldValues)) {
+    if (customFieldDefinitionsByKey.has(fieldKey)) continue;
+
+    customFieldDefinitionsByKey.set(fieldKey, {
+      key: fieldKey,
+      label: fieldKey,
+      canHide: false,
+    });
+  }
+
+  return Array.from(customFieldDefinitionsByKey.values());
+}
+
 export const backfillPrimaryFieldsFromCustomFields = mutation({
   args: {
     dryRun: v.optional(v.boolean()),
     workspaceSlug: v.optional(v.string()),
     limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+    hideMigratedCustomFields: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
-    { dryRun = true, workspaceSlug, limit },
+    {
+      dryRun = true,
+      workspaceSlug,
+      limit,
+      cursor,
+      hideMigratedCustomFields = false,
+    },
   ): Promise<{
     dryRun: boolean;
+    hideMigratedCustomFields: boolean;
     scannedRsvpCount: number;
+    nextCursor: string | null;
+    isDone: boolean;
     matchedSocialValueCount: number;
     matchedInvitedByValueCount: number;
     linkedProfileFieldValueCount: number;
@@ -978,10 +1019,17 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
         )
         .map((event) => [event._id, event]),
     );
-    const allRsvps = await ctx.db.query("rsvps").collect();
-    const scopedRsvps = allRsvps
-      .filter((rsvp) => eventById.has(rsvp.eventId))
-      .slice(0, limit && limit > 0 ? limit : undefined);
+    const batchSize = Math.min(
+      Math.max(Math.floor(limit && limit > 0 ? limit : 100), 1),
+      250,
+    );
+    const rsvpPage = await ctx.db.query("rsvps").order("asc").paginate({
+      cursor: cursor ?? null,
+      numItems: batchSize,
+    });
+    const scopedRsvps = rsvpPage.page.filter((rsvp) =>
+      eventById.has(rsvp.eventId),
+    );
 
     let matchedSocialValueCount = 0;
     let matchedInvitedByValueCount = 0;
@@ -989,6 +1037,10 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
     let linkedWorkspaceGrantCount = 0;
     let patchedEventCount = 0;
     let patchedRsvpCount = 0;
+    const userByClerkUserId = new Map<
+      string,
+      Doc<"users"> | null
+    >();
     const eventPrimaryFieldPatches = new Map<
       Id<"events">,
       {
@@ -1012,7 +1064,10 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
 
     for (const event of eventById.values()) {
       for (const customField of
-        (event.customFields ?? []) as EventCustomFieldDefinition[]) {
+        buildPrimaryFieldBackfillCandidates(
+          event.customFields as EventCustomFieldDefinition[] | undefined,
+          {},
+        )) {
         const socialPlatformKey =
           detectSocialPlatformKeyFromCustomField(customField);
         const isInvitedByField = isInvitedByCustomField(customField);
@@ -1031,7 +1086,7 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
         }
       }
     }
-    const hiddenCustomFieldDefinitionCount = Array.from(
+    const candidateCustomFieldDefinitionCount = Array.from(
       eventPrimaryFieldPatches.values(),
     ).reduce(
       (totalHiddenCustomFields, patch) =>
@@ -1041,12 +1096,16 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
 
     for (const rsvp of scopedRsvps) {
       const event = eventById.get(rsvp.eventId);
-      if (!event?.customFields || !rsvp.customFieldValues) continue;
+      if (!event || !rsvp.customFieldValues) continue;
 
       const submittedProfiles: SanitizedSubmittedSocialProfile[] = [];
       let invitedByName: string | undefined;
+      const customFieldDefinitions = buildPrimaryFieldBackfillCandidates(
+        event.customFields as EventCustomFieldDefinition[] | undefined,
+        rsvp.customFieldValues,
+      );
 
-      for (const customField of event.customFields as EventCustomFieldDefinition[]) {
+      for (const customField of customFieldDefinitions) {
         const rawValue = rsvp.customFieldValues[customField.key];
         if (!rawValue?.trim()) continue;
 
@@ -1062,6 +1121,9 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
           });
           matchedSocialValueCount += 1;
           const patch = getOrCreateEventPrimaryFieldPatch(event._id);
+          if (customField.canHide) {
+            patch.customFieldKeysToHide.add(customField.key);
+          }
           patch.socialPlatformsByKey.set(
             socialPlatformKey,
             getSocialPlatformConfig(socialPlatformKey),
@@ -1072,6 +1134,9 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
           invitedByName = rawValue;
           matchedInvitedByValueCount += 1;
           const patch = getOrCreateEventPrimaryFieldPatch(event._id);
+          if (customField.canHide) {
+            patch.customFieldKeysToHide.add(customField.key);
+          }
           patch.invitedByEnabled = true;
         }
       }
@@ -1080,12 +1145,16 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
         continue;
       }
 
-      const user = await ctx.db
-        .query("users")
-        .withIndex("by_clerkUserId", (queryBuilder) =>
-          queryBuilder.eq("clerkUserId", rsvp.clerkUserId),
-        )
-        .unique();
+      let user = userByClerkUserId.get(rsvp.clerkUserId);
+      if (!userByClerkUserId.has(rsvp.clerkUserId)) {
+        user = await ctx.db
+          .query("users")
+          .withIndex("by_clerkUserId", (queryBuilder) =>
+            queryBuilder.eq("clerkUserId", rsvp.clerkUserId),
+          )
+          .unique();
+        userByClerkUserId.set(rsvp.clerkUserId, user ?? null);
+      }
       const configuredPlatformKeys = new Set(
         submittedProfiles.map((profile) => profile.platformKey),
       );
@@ -1120,7 +1189,7 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
       patchedRsvpCount += 1;
     }
 
-    if (!dryRun) {
+    if (!dryRun && rsvpPage.isDone) {
       for (const [eventId, patch] of eventPrimaryFieldPatches.entries()) {
         const event = eventById.get(eventId);
         if (!event) continue;
@@ -1163,7 +1232,7 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
           updatedAt: Date.now(),
         };
 
-        if (patch.customFieldKeysToHide.size > 0) {
+        if (hideMigratedCustomFields && patch.customFieldKeysToHide.size > 0) {
           const visibleCustomFields = (event.customFields ?? []).filter(
             (customField) => !patch.customFieldKeysToHide.has(customField.key),
           );
@@ -1178,12 +1247,17 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
 
     return {
       dryRun,
-      scannedRsvpCount: scopedRsvps.length,
+      hideMigratedCustomFields,
+      scannedRsvpCount: rsvpPage.page.length,
+      nextCursor: rsvpPage.isDone ? null : rsvpPage.continueCursor,
+      isDone: rsvpPage.isDone,
       matchedSocialValueCount,
       matchedInvitedByValueCount,
       linkedProfileFieldValueCount,
       linkedWorkspaceGrantCount,
-      hiddenCustomFieldDefinitionCount,
+      hiddenCustomFieldDefinitionCount: hideMigratedCustomFields
+        ? candidateCustomFieldDefinitionCount
+        : 0,
       patchedEventCount,
       patchedRsvpCount,
     };
