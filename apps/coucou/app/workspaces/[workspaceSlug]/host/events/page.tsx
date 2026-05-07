@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery, useMutation } from "convex/react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import CreatedToastOnce from "./toast-client";
 import EventCardClient from "./event-card-client";
@@ -243,9 +243,30 @@ function EventListItem({ event }: { event: Event }) {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const removeEvent = useMutation(api.events.remove);
   const setFeaturedEvent = useMutation(api.events.setFeaturedEvent);
-  const now = Date.now();
-  const isUpcoming = (event.eventDate || 0) > now;
+  const updateEvent = useAction(api.eventsNode.update);
   const inlineTitle = formatEventTitleInline(event);
+  const eventStatus = event.status ?? "inactive";
+  const isRsvpActive = eventStatus === "active";
+
+  const toggleRsvpStatus = async () => {
+    if (!workspaceScope) {
+      return;
+    }
+    const nextStatus = isRsvpActive ? "inactive" : "active";
+    try {
+      await updateEvent({
+        eventId: event._id,
+        ...workspaceScope.queryArgs,
+        patch: { status: nextStatus },
+      });
+      toast.success(
+        nextStatus === "active" ? "RSVPs are open" : "RSVPs are closed",
+      );
+      router.refresh();
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Failed to update RSVP status");
+    }
+  };
 
   return (
     <Card>
@@ -261,6 +282,12 @@ function EventListItem({ event }: { event: Event }) {
                   Featured
                 </Badge>
               )}
+              <Badge
+                variant={isRsvpActive ? "success" : "outline"}
+                className="text-xs capitalize"
+              >
+                {eventStatus}
+              </Badge>
             </div>
             <div className="text-sm text-muted-foreground">
               {formatEventDateTime(event.eventDate, event.eventTimezone)} • {event.location}
@@ -281,6 +308,9 @@ function EventListItem({ event }: { event: Event }) {
             onClick={() => router.push(rsvpsPath)}
           >
             RSVPs
+          </Button>
+          <Button variant="outline" size="sm" onClick={toggleRsvpStatus}>
+            {isRsvpActive ? "Close RSVPs" : "Open RSVPs"}
           </Button>
           <ShareEventPopover eventId={event._id}>
             <Tooltip>

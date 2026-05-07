@@ -80,7 +80,13 @@ export const resolveListByPassword = query({
     workspaceSlug: v.optional(v.string()),
   },
   handler: async (ctx, { eventId, password, siteKey, workspaceSlug }) => {
-    await ensureEventInSiteScope(ctx, eventId, { siteKey, workspaceSlug });
+    const event = await ensureEventInSiteScope(ctx, eventId, {
+      siteKey,
+      workspaceSlug,
+    });
+    if (event.status !== "active") {
+      return { ok: false as const };
+    }
 
     const passwordNormalized = normalizeCredentialPassword(password);
     const credentials = await ctx.db

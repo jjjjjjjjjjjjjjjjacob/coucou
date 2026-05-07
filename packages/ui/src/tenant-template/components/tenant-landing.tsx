@@ -32,9 +32,19 @@ export interface TenantLandingEvent {
    */
   lede?: string | null;
   /**
+   * Optional public lineup rows shown below the event metadata.
+   */
+  lineup?: TenantLandingAct[];
+  /**
    * Optional override for the eyebrow ("THE NEXT POMODORO" for dojo).
    */
   eyebrow?: string | null;
+}
+
+export interface TenantLandingAct {
+  displayName: string;
+  descriptorBadges?: string[];
+  socialUrl?: string | null;
 }
 
 export interface TenantLandingRecentEvent {
@@ -85,24 +95,29 @@ const DEFAULT_ABOUT_COPY: Record<string, string> = {
     "Atrium is a small reading-room for new work. Members keep a chair; guests are welcome by invitation.",
   maison:
     "Maison Obscure is a small, recurring evening for a particular crowd. If you have found this page, someone we trust has sent you.",
+  chlorine:
+    "Club Chlorine is a recurring pool-hours series. RSVP access opens by event.",
 };
 
 const DEFAULT_HERO_EYEBROW: Record<string, string> = {
   dojo: "THE NEXT POMODORO",
   atrium: "Tonight",
   maison: "The next night",
+  chlorine: "Club Chlorine",
 };
 
 const DEFAULT_HOUSE_EYEBROW: Record<string, string> = {
   dojo: "THE HOUSE",
   atrium: "The house",
   maison: "The house",
+  chlorine: "The pool",
 };
 
 const DEFAULT_RECENT_EYEBROW: Record<string, string> = {
   dojo: "RECENT",
   atrium: "Recent",
   maison: "Recent",
+  chlorine: "Recent",
 };
 
 export function TenantLanding({
@@ -121,6 +136,7 @@ export function TenantLanding({
   const recentEyebrow = DEFAULT_RECENT_EYEBROW[presetKey];
   const houseCopy = aboutCopy ?? DEFAULT_ABOUT_COPY[presetKey];
   const showRecent = (recentEvents?.length ?? 0) > 0;
+  const showLineup = (event.lineup?.length ?? 0) > 0;
 
   return (
     <TenantShell>
@@ -171,6 +187,70 @@ export function TenantLanding({
             <MetaRow label="Dress">{event.dressLabel}</MetaRow>
           ) : null}
         </div>
+
+        {showLineup ? (
+          <div
+            className="mb-10 max-w-[640px] border-y py-5"
+            style={{ borderColor: "var(--tt-rule)" }}
+          >
+            {event.lineup!.map((act, actIndex) => {
+              const actContent = (
+                <>
+                  <span>{preset.upper ? act.displayName.toUpperCase() : act.displayName}</span>
+                  {act.descriptorBadges?.length ? (
+                    <span
+                      className="inline-flex flex-wrap gap-1.5"
+                      style={{ marginLeft: 8 }}
+                    >
+                      {act.descriptorBadges.map((descriptorBadge) => (
+                        <span
+                          key={descriptorBadge}
+                          className="border px-1.5 py-0.5 text-[10px]"
+                          style={{
+                            borderColor: "var(--tt-rule)",
+                            color: "var(--tt-fg-dim)",
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          {descriptorBadge.toUpperCase()}
+                        </span>
+                      ))}
+                    </span>
+                  ) : null}
+                </>
+              );
+
+              return act.socialUrl ? (
+                <a
+                  key={`${act.displayName}-${actIndex}`}
+                  href={act.socialUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block py-2 text-[18px] leading-tight no-underline"
+                  style={{
+                    color: "var(--tt-fg)",
+                    fontFamily: "var(--tt-display)",
+                    fontWeight: presetKey === "dojo" ? 600 : 400,
+                  }}
+                >
+                  {actContent}
+                </a>
+              ) : (
+                <div
+                  key={`${act.displayName}-${actIndex}`}
+                  className="py-2 text-[18px] leading-tight"
+                  style={{
+                    color: "var(--tt-fg)",
+                    fontFamily: "var(--tt-display)",
+                    fontWeight: presetKey === "dojo" ? 600 : 400,
+                  }}
+                >
+                  {actContent}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
 
         {event.lede ? (
           <p

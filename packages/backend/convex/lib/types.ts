@@ -48,6 +48,8 @@ export type ApiResult<T> = {
 export type EventPatch = Partial<Pick<Doc<"events">,
   | "name"
   | "secondaryTitle"
+  | "description"
+  | "acts"
   | "hosts"
   | "productionCompany"
   | "location"

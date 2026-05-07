@@ -1,6 +1,7 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "bun:test";
+import { siteConfigurations } from "@coucou/sdk";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import { SignInClient } from "../app/sign-in/[[...sign-in]]/sign-in-client";
 
@@ -125,6 +126,29 @@ describe("SignInClient", () => {
     ).toBeTruthy();
     expect(screen.getByText("DP")).toBeTruthy();
     expect(screen.getByText("Organization login")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Powered by Coucou" })).toBeTruthy();
+  });
+
+  it("renders a Dojo-branded satellite login surface", () => {
+    render(
+      <SignInClient
+        redirectUrl="https://dojopomodoro.club/events/sample/ticket?__clerk_synced=false"
+        preset={siteConfigurations.dojo.preset}
+        siteAuthConfiguration={siteConfigurations.dojo.auth}
+        eventThemeBackgroundColor="#f7efe2"
+        eventThemeTextColor="#191713"
+        authBranding={{
+          eyebrow: "Event login",
+          showCoucouAttribution: true,
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Sign in to Dojo Pomodoro" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Event login")).toBeTruthy();
+    expect(document.querySelector('[data-preset="dojo"]')).toBeTruthy();
     expect(screen.getByRole("link", { name: "Powered by Coucou" })).toBeTruthy();
   });
 

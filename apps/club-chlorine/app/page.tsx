@@ -8,6 +8,10 @@ import {
   type ChlorineLandingEvent,
 } from "@coucou/ui/tenant-template";
 import { siteConfiguration } from "@/lib/site";
+import {
+  formatPublicEventActLabel,
+  getPublicEventActs,
+} from "@/lib/event-lineup";
 
 export default function Home() {
   const allEvents = useQuery(api.events.listAll, {
@@ -24,8 +28,14 @@ export default function Home() {
       .map((event) => ({
         id: event._id,
         date: formatChlorineDate(event.eventDate, event.eventTimezone),
-        lineup: buildLineupLines(event.name, event.secondaryTitle),
-        rsvpHref: `/events/${event._id}/rsvp`,
+        lineup: getPublicEventActs(event).map((act) => ({
+          label: formatPublicEventActLabel(act),
+          href: act.socialUrl,
+        })),
+        rsvpHref:
+          event.status === "active" ? `/events/${event._id}/rsvp` : undefined,
+        rsvpLabel: event.status === "active" ? "RSVP" : "CLOSED",
+        rsvpDisabled: event.status !== "active",
       }));
   }, [allEvents]);
 
@@ -95,28 +105,4 @@ function formatChlorineDate(timestamp: number, timezone?: string): string {
     .format(date)
     .replace(/\//g, ".");
   return `${weekday} ${monthDay}`;
-}
-
-/**
- * Splits a `name` (and optional `secondaryTitle`) on the editorial `·`
- * separator the design uses for multi-act lineups. Falls back to the raw
- * strings when `·` isn't present so events with a single act render on one
- * line.
- */
-function buildLineupLines(
-  name: string,
-  secondaryTitle: string | null | undefined,
-): string[] {
-  const lines: string[] = [];
-  for (const part of name.split("·")) {
-    const trimmed = part.trim();
-    if (trimmed.length > 0) lines.push(trimmed);
-  }
-  if (secondaryTitle) {
-    for (const part of secondaryTitle.split("·")) {
-      const trimmed = part.trim();
-      if (trimmed.length > 0) lines.push(trimmed);
-    }
-  }
-  return lines.length > 0 ? lines : [name];
 }

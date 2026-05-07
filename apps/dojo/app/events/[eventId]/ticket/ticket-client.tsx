@@ -1,9 +1,10 @@
 "use client";
-import React, { use, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import React, { useEffect, useMemo, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import {
   useQuery as useConvexQuery,
+  useConvexAuth,
   Preloaded,
   usePreloadedQuery,
 } from "convex/react";
@@ -14,7 +15,7 @@ import QRCode from "react-qr-code";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { Download } from "lucide-react";
-import { useAuth, useUser } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 import { formatEventTitleInline, hasEventSecondaryTitle } from "@/lib/event-display";
 import { siteConfiguration } from "@/lib/site";
 import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
@@ -130,18 +131,25 @@ export default function TicketClientPage({
   eventPreload,
   statusPreload,
 }: TicketClientPageProps) {
-  const { isSignedIn } = useAuth();
-  const { user } = useUser();
+  const { isLoaded: isClerkLoaded, isSignedIn } = useAuth();
+  const {
+    isAuthenticated: isConvexAuthenticated,
+    isLoading: isConvexAuthLoading,
+  } = useConvexAuth();
+  const canLoadAuthenticatedTicketData =
+    isClerkLoaded && isSignedIn && isConvexAuthenticated;
 
   const event = usePreloadedQuery(eventPreload);
   const status = usePreloadedQuery(statusPreload);
 
   const myRedemptionQuery = useConvexQuery(
     api.redemptions.forCurrentUserEvent,
-    {
-      eventId: eventId as Id<"events">,
-      siteKey: siteConfiguration.siteKey,
-    },
+    canLoadAuthenticatedTicketData
+      ? {
+          eventId: eventId as Id<"events">,
+          siteKey: siteConfiguration.siteKey,
+        }
+      : "skip",
   );
   const myRedemption = myRedemptionQuery;
   const guestPortalImageResponse = useConvexQuery(
@@ -178,7 +186,8 @@ export default function TicketClientPage({
       event?.name &&
       status?.status === "approved" &&
       !acceptRsvp.isPending &&
-      !celebrate
+      !celebrate &&
+      canLoadAuthenticatedTicketData
     ) {
       acceptRsvp.mutate(
         {
@@ -203,7 +212,14 @@ export default function TicketClientPage({
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [event?.name, status?.status, eventId, acceptRsvp.isPending, celebrate]);
+  }, [
+    event?.name,
+    status?.status,
+    eventId,
+    acceptRsvp.isPending,
+    celebrate,
+    canLoadAuthenticatedTicketData,
+  ]);
 
   const dateText = useMemo(() => {
     const timestamp = event?.eventDate;
@@ -223,8 +239,12 @@ export default function TicketClientPage({
     return `${day} ${formattedDate.replace(/\//g, ".")}`;
   }, [event?.eventDate, event?.eventTimezone]);
 
-  const isStatusLoading = !status;
-  const isRedemptionLoading = myRedemptionQuery === undefined;
+  const isStatusLoading =
+    !canLoadAuthenticatedTicketData ||
+    isConvexAuthLoading ||
+    status === undefined;
+  const isRedemptionLoading =
+    canLoadAuthenticatedTicketData && myRedemptionQuery === undefined;
   const hasRedemptionData = myRedemption && myRedemption.code;
 
   const renderEventNotFound = () => (

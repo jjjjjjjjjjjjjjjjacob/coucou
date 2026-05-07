@@ -21,9 +21,10 @@ gh secret set TWILIO_PHONE_NUMBER --env Production --repo jjjjjjjjjjjjjjjjacob/c
 
 `APP_BASE_URL` must be `https://coucou.events` for production. Known event
 sites resolve to their own configured domains first, so this value is only the
-generic fallback. If using
-`bun run sync:github-production-secrets`, export production values first. The
-sync script rejects local URLs.
+generic fallback. Production CD generates `CLERK_FRONTEND_API_URLS` from
+`CLERK_FRONTEND_API_URL`, verified workspace-site satellite metadata, and
+static known-tenant fallback values. If using `bun run sync:github-production-secrets`,
+export production values first. The sync script rejects local URLs.
 
 ## Clerk
 

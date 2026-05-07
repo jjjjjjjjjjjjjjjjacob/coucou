@@ -1,7 +1,11 @@
 "use client";
 import React, { use } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useMutation, useQuery as useConvexQuery } from "convex/react";
+import {
+  useConvexAuth,
+  useMutation,
+  useQuery as useConvexQuery,
+} from "convex/react";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
@@ -22,6 +26,12 @@ export default function StatusPage({
 }) {
   const { eventId } = use(params);
   const { isSignedIn, isLoaded } = useAuth();
+  const {
+    isAuthenticated: isConvexAuthenticated,
+    isLoading: isConvexAuthLoading,
+  } = useConvexAuth();
+  const canLoadAuthenticatedStatus =
+    isLoaded && isSignedIn && isConvexAuthenticated;
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
   const [isUpdatingSmsPreference, setIsUpdatingSmsPreference] = React.useState(false);
   const [smsConsentIpAddress, setSmsConsentIpAddress] = React.useState<
@@ -31,7 +41,7 @@ export default function StatusPage({
   const statusQuery = useQuery(
     convexQuery(
       api.rsvps.statusForUserEvent,
-      isLoaded && isSignedIn
+      canLoadAuthenticatedStatus
         ? {
             eventId: eventId as Id<"events">,
             siteKey: siteConfiguration.siteKey,
@@ -124,7 +134,10 @@ export default function StatusPage({
   };
 
   // Show loading while auth is initializing
-  if (!isLoaded) {
+  if (
+    !isLoaded ||
+    (isSignedIn && (isConvexAuthLoading || !isConvexAuthenticated))
+  ) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
         <div className="flex items-center text-primary justify-center py-10">

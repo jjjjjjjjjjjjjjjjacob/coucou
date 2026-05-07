@@ -76,10 +76,22 @@ export interface CustomField {
   trimWhitespace?: boolean;
 }
 
+export type EventStatus = "active" | "inactive" | "past";
+
+export interface EventAct {
+  name: string;
+  descriptorBadges?: string[];
+  socialUrl?: string;
+  isSecretGuest?: boolean;
+  secretDisplayName?: string;
+}
+
 export interface Event {
   _id: Id<"events">;
   name: string;
   secondaryTitle?: string;
+  description?: string;
+  acts?: EventAct[];
   hosts: string[];
   productionCompany?: string;
   location: string;
@@ -93,7 +105,7 @@ export interface Event {
   eventDate: number;
   eventTimezone?: string;
   maxAttendees?: number;
-  status?: "active" | "past";
+  status?: EventStatus;
   customFields?: CustomField[];
   primaryFieldConfig?: PrimaryFieldConfig;
   themeBackgroundColor?: string;
@@ -347,10 +359,12 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   guestPortalImageStorageId?: string | null;
   guestPortalLinkLabel?: string;
   guestPortalLinkUrl?: string;
+  description?: string;
   eventDate: string;
   eventTime: string;
   eventTimezone: string;
   maxAttendees?: number;
+  status?: EventStatus;
   themeBackgroundColor?: string;
   themeTextColor?: string;
   qrCodeColor?: string;
@@ -451,7 +465,6 @@ export interface ClerkOrganization {
 }
 
 // Utility types
-export type EventStatus = Event["status"];
 export type RSVPStatus = RSVP["status"];
 export type ApprovalDecision = Approval["decision"];
 export interface RSVPDashboardRow {

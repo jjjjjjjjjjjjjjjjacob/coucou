@@ -13,6 +13,7 @@ import {
   type TenantLandingEvent,
 } from "@coucou/ui/tenant-template";
 import { siteConfiguration } from "@/lib/site";
+import { getPublicEventActs } from "@/lib/event-lineup";
 
 interface EventPageClientProps {
   params: Promise<{ eventId: string }>;
@@ -58,8 +59,9 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   }, [queryParamPassword, eventId, router]);
 
   const handleRsvpClick = useCallback(() => {
+    if (event?.status !== "active") return;
     router.push(`/events/${eventId}/rsvp`);
-  }, [router, eventId]);
+  }, [event?.status, router, eventId]);
 
   const tenantLandingEvent = useMemo<TenantLandingEvent | null>(() => {
     if (!event) return null;
@@ -70,6 +72,12 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         ? formatWhenLabel(event.eventDate, event.eventTimezone)
         : null,
       whereLabel: event.location ?? null,
+      lede: event.description ?? null,
+      lineup: getPublicEventActs(event).map((act) => ({
+        displayName: act.displayName,
+        descriptorBadges: act.descriptorBadges,
+        socialUrl: act.socialUrl,
+      })),
     };
   }, [event]);
 
@@ -91,8 +99,12 @@ export default function EventPageClient({ params }: EventPageClientProps) {
       <TenantLanding
         event={tenantLandingEvent}
         primaryCta={
-          <TenantButton type="button" onClick={handleRsvpClick}>
-            RSVP
+          <TenantButton
+            type="button"
+            onClick={handleRsvpClick}
+            disabled={event.status !== "active"}
+          >
+            {event.status === "active" ? "RSVP" : "RSVP CLOSED"}
           </TenantButton>
         }
       />

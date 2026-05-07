@@ -49,7 +49,19 @@ NEXT_PUBLIC_CLUB_CHLORINE_CLERK_ORGANIZATION_ID=org_...
 ```
 
 Convex production must use the same Clerk issuer/front-end API URL that matches
-the Coucou Clerk application.
+the Coucou Clerk application. When satellite domains are enabled, set the
+primary Frontend API host as a production secret:
+
+```bash
+CLERK_FRONTEND_API_URL=https://clerk.coucou.events
+```
+
+Production deploys generate `CLERK_FRONTEND_API_URLS` before syncing Convex
+environment variables and before `convex deploy`. The generator combines:
+
+- the primary `CLERK_FRONTEND_API_URL`
+- enabled and verified workspace-site `clerkFrontendApiUrl` metadata
+- static site config fallback values for known tenant apps
 
 ## Code Checklist
 
@@ -75,6 +87,11 @@ For a new tenant app:
 8. Allow Coucou login pages to redirect only to known tenant origins via
    `resolveSafeRedirectUrl`.
 9. Add tests for the tenant auth-domain helper path.
+10. Provision the workspace-site Clerk satellite auth metadata:
+    - `clerkFrontendApiUrl`
+    - `clerkSatelliteVerificationStatus="verified"`
+    - `clerkSatelliteAuthEnabled=true`
+    - `clerkSatelliteLastSyncedAt`
 
 The shared helpers for steps 3 through 8 live in:
 

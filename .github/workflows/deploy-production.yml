@@ -43,6 +43,9 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      - name: Generate Clerk Frontend API allowlist
+        run: bun scripts/clerk-frontend-api-allowlist.mjs --github-env
+
       - name: Sync Convex production environment
         run: bun run sync:convex-production-env
 

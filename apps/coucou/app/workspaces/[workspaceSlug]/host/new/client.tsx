@@ -9,13 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { HostEventForm } from "@/components/host-event-form";
+import { EventActsEditor } from "@/components/event-acts-editor";
 import {
   CustomFieldsEditor,
   type CustomFieldDef,
 } from "@/components/custom-fields-builder";
 import { createTimestamp } from "@/lib/date-utils";
 import { toast } from "sonner";
-import { ApplicationError, EventFormData } from "@/lib/types";
+import { ApplicationError, EventAct, EventFormData } from "@/lib/types";
+import { sanitizeEventActsForSubmit } from "@/lib/event-metadata";
 import {
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
@@ -76,6 +78,7 @@ export default function NewEventClient() {
     defaultValues: {
       name: "",
       secondaryTitle: "",
+      description: "",
       hosts: "",
       productionCompany: "",
       location: "",
@@ -88,6 +91,7 @@ export default function NewEventClient() {
       guestPortalLinkLabel: "",
       guestPortalLinkUrl: "",
       maxAttendees: 1,
+      status: "inactive",
       themeBackgroundColor: EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
       themeTextColor: EVENT_THEME_DEFAULT_TEXT_COLOR,
       qrCodeColor: "#000000",
@@ -115,6 +119,7 @@ export default function NewEventClient() {
     },
   ]);
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>([]);
+  const [acts, setActs] = React.useState<EventAct[]>([]);
 
   const addList = () =>
     setLists((current) => [
@@ -192,6 +197,8 @@ export default function NewEventClient() {
       await create({
         name: values.name.trim(),
         secondaryTitle: trimmedSecondaryTitle || undefined,
+        description: values.description?.trim() || undefined,
+        acts: sanitizeEventActsForSubmit(acts),
         hosts: hostNames,
         productionCompany: trimmedProductionCompany || undefined,
         location: values.location.trim(),
@@ -207,6 +214,7 @@ export default function NewEventClient() {
         eventDate: timestamp,
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
+        status: values.status ?? "inactive",
         lists: listsFiltered,
         customFields: customFields.map((field) => ({
           key: field.key.trim(),
@@ -266,6 +274,7 @@ export default function NewEventClient() {
             shouldDirty: true,
           })
         }
+        actsSection={<EventActsEditor acts={acts} onChange={setActs} />}
         listsSection={
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <h3 className="font-medium text-sm text-muted-foreground">

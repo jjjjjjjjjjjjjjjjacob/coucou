@@ -10,6 +10,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectOption } from "@/components/ui/select";
 import { FlyerUpload, StorageImageUpload } from "@/components/flyer-upload";
@@ -35,6 +36,7 @@ export interface HostEventFormProps<FormValues extends BaseEventFormValues> {
   guestPortalImageStorageId: string | null;
   onGuestPortalImageChange: (value: string | null) => void;
   listsSection?: React.ReactNode;
+  actsSection?: React.ReactNode;
   customFieldsSection?: React.ReactNode;
   footer?: React.ReactNode;
 }
@@ -52,6 +54,7 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
   guestPortalImageStorageId,
   onGuestPortalImageChange,
   listsSection,
+  actsSection,
   customFieldsSection,
   footer,
 }: HostEventFormProps<FormValues>) {
@@ -119,6 +122,34 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
                         value={(value as string | undefined) ?? ""}
                         onChange={onChange}
                         ref={ref}
+                        {...rest}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )
+              }}
+            />
+            <FormField
+              control={form.control}
+              name={"description" as Path<FormValues>}
+              render={({ field }) => {
+                const { value, onChange, ref, ...rest } = field
+                return (
+                  <FormItem className="md:col-span-2">
+                    <FormLabel>
+                      Event Description{" "}
+                      <span className="text-sm text-muted-foreground">
+                        (optional)
+                      </span>
+                    </FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Short guest-facing description"
+                        value={(value as string | undefined) ?? ""}
+                        onChange={onChange}
+                        ref={ref}
+                        rows={4}
                         {...rest}
                       />
                     </FormControl>
@@ -283,6 +314,11 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
               }}
             />
         </div>
+        {actsSection ? (
+          <div className="rounded-lg border bg-card p-4">
+            {actsSection}
+          </div>
+        ) : null}
         <div className="rounded-lg border bg-card p-4 space-y-4">
           <h3 className="font-medium text-sm text-muted-foreground">
             GUEST EXPERIENCE
@@ -457,6 +493,34 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
                       <SelectOption value="4">4</SelectOption>
                       <SelectOption value="5">5</SelectOption>
                       <SelectOption value="6">6</SelectOption>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name={"status" as Path<FormValues>}
+              render={({ field }) => (
+                <FormItem className="w-full max-w-xs">
+                  <FormLabel>RSVP Status</FormLabel>
+                  <FormDescription>
+                    Active events can receive RSVP submissions.
+                  </FormDescription>
+                  <FormControl>
+                    <Select
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      value={(field.value as string | undefined) ?? "inactive"}
+                      onValueChange={(value) =>
+                        field.onChange(
+                          value as PathValue<FormValues, Path<FormValues>>,
+                        )
+                      }
+                    >
+                      <SelectOption value="inactive">Inactive</SelectOption>
+                      <SelectOption value="active">Active</SelectOption>
+                      <SelectOption value="past">Past</SelectOption>
                     </Select>
                   </FormControl>
                   <FormMessage />

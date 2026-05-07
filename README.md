@@ -54,7 +54,10 @@ TWILIO_PHONE_NUMBER
 
 `APP_BASE_URL` must be `https://coucou.events` in production. Known event
 sites resolve to their own configured domains first, so this value is only the
-generic fallback. If you use
+generic fallback. For Clerk satellite domains, production CD generates
+`CLERK_FRONTEND_API_URLS` from the primary Clerk Frontend API host, verified
+workspace-site satellite metadata, and static known-tenant fallback values
+before Convex environment sync and deploy. If you use
 `bun run sync:github-production-secrets`, export production values first; the
 sync script rejects local URLs.
 

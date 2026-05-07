@@ -21,15 +21,18 @@ import {
   CustomFieldsEditor,
   type CustomFieldDef,
 } from "@/components/custom-fields-builder";
+import { EventActsEditor } from "@/components/event-acts-editor";
 import { useForm } from "react-hook-form";
 import { HostEventForm } from "@/components/host-event-form";
 import {
   Event,
+  EventAct,
   EditEventFormData,
   ListCredentialEdit,
   CredentialResponse,
   ApplicationError,
 } from "@/lib/types";
+import { sanitizeEventActsForSubmit } from "@/lib/event-metadata";
 import {
   createTimestamp,
   extractDateFromTimestamp,
@@ -49,6 +52,8 @@ import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 type EventUpdatePatch = {
   name?: string;
   secondaryTitle?: string;
+  description?: string;
+  acts?: EventAct[];
   hosts?: string[];
   productionCompany?: string;
   location?: string;
@@ -114,6 +119,7 @@ export default function EditEventDialog({
     defaultValues: {
       name: event.name || "",
       secondaryTitle: event.secondaryTitle ?? "",
+      description: event.description ?? "",
       hosts: (event.hosts || []).join(", "),
       productionCompany: event.productionCompany ?? "",
       location: event.location || "",
@@ -126,6 +132,7 @@ export default function EditEventDialog({
       eventTime: defaultTime,
       eventTimezone: defaultTimezone,
       maxAttendees: event.maxAttendees ?? 1,
+      status: event.status ?? "inactive",
       themeBackgroundColor: normalizedEventBackgroundColor,
       themeTextColor: normalizedEventTextColor,
       qrCodeColor: normalizeHexColorInput(event.qrCodeColor) ?? "#000000",
@@ -155,6 +162,7 @@ export default function EditEventDialog({
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>(
     event.customFields ?? [],
   );
+  const [acts, setActs] = React.useState<EventAct[]>(event.acts ?? []);
   const getStoredPasswords = useAction(api.credentialsNode.getPasswordsForEvent);
   const [storedPasswords, setStoredPasswords] = React.useState<
     Map<string, string>
@@ -236,6 +244,18 @@ export default function EditEventDialog({
       if (trimmedSecondaryTitle !== (event.secondaryTitle ?? "")) {
         patch.secondaryTitle = trimmedSecondaryTitle || undefined;
       }
+      const trimmedDescription = values.description?.trim() ?? "";
+      if (trimmedDescription !== (event.description ?? "")) {
+        patch.description = trimmedDescription;
+      }
+      const sanitizedActs = sanitizeEventActsForSubmit(acts);
+      const existingSanitizedActs = sanitizeEventActsForSubmit(event.acts ?? []);
+      if (
+        JSON.stringify(sanitizedActs ?? []) !==
+        JSON.stringify(existingSanitizedActs ?? [])
+      ) {
+        patch.acts = sanitizedActs ?? [];
+      }
       const hostArray = values.hosts
         .split(",")
         .map((host) => host.trim())
@@ -269,6 +289,9 @@ export default function EditEventDialog({
         values.maxAttendees !== (event.maxAttendees ?? 1)
       ) {
         patch.maxAttendees = values.maxAttendees;
+      }
+      if ((values.status ?? "inactive") !== (event.status ?? "inactive")) {
+        patch.status = values.status ?? "inactive";
       }
       const nextThemeBackgroundColor =
         normalizeHexColorInput(values.themeBackgroundColor) ??
@@ -407,6 +430,7 @@ export default function EditEventDialog({
                 shouldDirty: true,
               });
             }}
+            actsSection={<EventActsEditor acts={acts} onChange={setActs} />}
             listsSection={
               <div className="space-y-3 rounded-lg border bg-card p-4">
                 <h4 className="font-medium text-sm text-muted-foreground">

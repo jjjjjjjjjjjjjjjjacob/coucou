@@ -35,15 +35,13 @@ export const resolveEventByPassword = action({
     });
     if (credentials.length === 0) return { ok: false as const };
 
-    const now = Date.now();
-
-    // First, try to find featured event with valid password
+    // First, try to find a featured active event with this password.
     for (const credential of credentials) {
       const event = await ctx.runQuery(api.events.get, {
         eventId: credential.eventId,
         siteKey,
       });
-      if (event && event.isFeatured) {
+      if (event?.status === "active" && event.isFeatured) {
         return {
           ok: true as const,
           eventId: credential.eventId,
@@ -52,32 +50,20 @@ export const resolveEventByPassword = action({
       }
     }
 
-    // If no featured event, try upcoming events
+    // Otherwise, use the first active event. Passwords are validated to be
+    // unique across active events when hosts activate or edit credentials.
     for (const credential of credentials) {
       const event = await ctx.runQuery(api.events.get, {
         eventId: credential.eventId,
         siteKey,
       });
-      if (event && event.eventDate > now) {
+      if (event?.status === "active") {
         return {
           ok: true as const,
           eventId: credential.eventId,
           listKey: credential.listKey,
         };
       }
-    }
-    const firstCredential = credentials[0];
-    const fallbackEvent = await ctx.runQuery(api.events.get, {
-      eventId: firstCredential.eventId,
-      siteKey,
-    });
-
-    if (fallbackEvent) {
-      return {
-        ok: true as const,
-        eventId: firstCredential.eventId,
-        listKey: firstCredential.listKey,
-      };
     }
     return { ok: false as const };
   },

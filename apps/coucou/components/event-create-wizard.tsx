@@ -17,10 +17,15 @@ import { DateTimePicker } from "@/components/date-time-picker";
 import { FlyerUpload, StorageImageUpload } from "@/components/flyer-upload";
 import { EventIconUpload } from "@/components/event-icon-upload";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/custom-fields-builder";
+import { EventActsEditor } from "@/components/event-acts-editor";
 
 import { cn } from "@/lib/utils";
 import { createTimestamp } from "@/lib/date-utils";
-import { ApplicationError, EventFormData } from "@/lib/types";
+import { ApplicationError, EventAct, EventFormData } from "@/lib/types";
+import {
+  formatActSummary,
+  sanitizeEventActsForSubmit,
+} from "@/lib/event-metadata";
 import {
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
@@ -158,6 +163,7 @@ export default function EventCreateWizard() {
     defaultValues: {
       name: "",
       secondaryTitle: "",
+      description: "",
       hosts: "",
       productionCompany: "",
       location: "",
@@ -170,6 +176,7 @@ export default function EventCreateWizard() {
       guestPortalLinkLabel: "",
       guestPortalLinkUrl: "",
       maxAttendees: 1,
+      status: "inactive",
       themeBackgroundColor: EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
       themeTextColor: EVENT_THEME_DEFAULT_TEXT_COLOR,
       qrCodeColor: "#000000",
@@ -185,6 +192,7 @@ export default function EventCreateWizard() {
     { listKey: "ga", password: "", shouldGenerateQrCode: false, approvalMessage: "" },
   ]);
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>([]);
+  const [acts, setActs] = React.useState<EventAct[]>([]);
 
   const flyerStorageId = form.watch("flyerStorageId") ?? null;
   const eventIconStorageId = form.watch("customIconStorageId") ?? null;
@@ -327,6 +335,8 @@ export default function EventCreateWizard() {
       await create({
         name: values.name.trim(),
         secondaryTitle: trimmedSecondaryTitle || undefined,
+        description: values.description?.trim() || undefined,
+        acts: sanitizeEventActsForSubmit(acts),
         hosts: hostNames,
         productionCompany: trimmedProductionCompany || undefined,
         location: values.location.trim(),
@@ -344,6 +354,7 @@ export default function EventCreateWizard() {
         eventDate: timestamp,
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
+        status: values.status ?? "inactive",
         lists: listsFiltered,
         customFields: customFields.map((field) => ({
           key: field.key.trim(),
@@ -459,7 +470,9 @@ export default function EventCreateWizard() {
           </div>
 
           <div className="space-y-12">
-            {stepIndex === 0 && <StepIdentity form={form} />}
+            {stepIndex === 0 && (
+              <StepIdentity form={form} acts={acts} onActsChange={setActs} />
+            )}
             {stepIndex === 1 && (
               <StepWhereWhen
                 form={form}
@@ -509,6 +522,7 @@ export default function EventCreateWizard() {
             {stepIndex === 7 && (
               <StepReview
                 values={form.getValues()}
+                acts={acts}
                 lists={lists}
                 customFields={customFields}
                 onJump={goTo}
@@ -557,7 +571,14 @@ type StepFormProps = {
   form: ReturnType<typeof useForm<EventFormData>>;
 };
 
-function StepIdentity({ form }: StepFormProps) {
+function StepIdentity({
+  form,
+  acts,
+  onActsChange,
+}: StepFormProps & {
+  acts: EventAct[];
+  onActsChange: (acts: EventAct[]) => void;
+}) {
   return (
     <div className="space-y-10">
       <FormField
@@ -601,6 +622,28 @@ function StepIdentity({ form }: StepFormProps) {
           </FormItem>
         )}
       />
+      <FormField
+        control={form.control}
+        name="description"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Description <span className="normal-case text-muted-foreground/70">(optional)</span>
+            </FormLabel>
+            <FormControl>
+              <Textarea
+                {...field}
+                placeholder="A short description guests will see before they RSVP."
+                value={field.value ?? ""}
+                rows={4}
+                className="resize-none"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <EventActsEditor acts={acts} onChange={onActsChange} />
       <FormField
         control={form.control}
         name="hosts"
@@ -741,6 +784,32 @@ function StepWhereWhen({
                 <SelectOption value="6">6</SelectOption>
               </Select>
             </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="status"
+        render={({ field }) => (
+          <FormItem className="max-w-xs">
+            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              RSVP status
+            </FormLabel>
+            <FormControl>
+              <Select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={field.value ?? "inactive"}
+                onValueChange={(value) => field.onChange(value)}
+              >
+                <SelectOption value="inactive">Inactive</SelectOption>
+                <SelectOption value="active">Active</SelectOption>
+                <SelectOption value="past">Past</SelectOption>
+              </Select>
+            </FormControl>
+            <FormDescription>
+              Active events can receive RSVP submissions.
+            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
@@ -1070,11 +1139,13 @@ function StepCustomFields({
 
 function StepReview({
   values,
+  acts,
   lists,
   customFields,
   onJump,
 }: {
   values: EventFormData;
+  acts: EventAct[];
   lists: ListRow[];
   customFields: CustomFieldDef[];
   onJump: (index: number) => void;
@@ -1090,6 +1161,11 @@ function StepReview({
     { stepIndex: 0, key: "Name", value: values.name || "—" },
     {
       stepIndex: 0,
+      key: "Lineup",
+      value: formatActSummary(sanitizeEventActsForSubmit(acts) ?? []),
+    },
+    {
+      stepIndex: 0,
       key: "Hosts",
       value: values.hosts || "—",
     },
@@ -1099,6 +1175,11 @@ function StepReview({
       stepIndex: 1,
       key: "Max",
       value: `${values.maxAttendees ?? 1} per RSVP`,
+    },
+    {
+      stepIndex: 1,
+      key: "Status",
+      value: values.status ?? "inactive",
     },
     {
       stepIndex: 2,

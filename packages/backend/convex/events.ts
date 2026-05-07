@@ -9,6 +9,10 @@ import {
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 import { writeAuditEntry } from "./audit";
 import { primaryFieldConfigValidator } from "./lib/primaryFields";
+import {
+  eventActValidator,
+  eventStatusValidator,
+} from "./lib/eventMetadata";
 
 // Node crypto-based creation is handled in eventsNode.ts (action).
 // This module contains only queries/mutations compatible with the standard runtime.
@@ -19,6 +23,8 @@ export const insertWithCreds = mutation({
     siteKey: v.optional(v.string()),
     name: v.string(),
     secondaryTitle: v.optional(v.string()),
+    description: v.optional(v.string()),
+    acts: v.optional(v.array(eventActValidator)),
     hosts: v.array(v.string()),
     productionCompany: v.optional(v.string()),
     location: v.string(),
@@ -30,6 +36,7 @@ export const insertWithCreds = mutation({
     guestPortalLinkUrl: v.optional(v.string()),
     eventDate: v.number(),
     eventTimezone: v.optional(v.string()),
+    status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()),
     customFields: v.optional(
       v.array(
@@ -73,6 +80,8 @@ export const insertWithCreds = mutation({
       siteKey: args.siteKey,
       name: args.name,
       secondaryTitle: args.secondaryTitle,
+      description: args.description,
+      acts: args.acts,
       hosts: args.hosts,
       productionCompany: args.productionCompany,
       location: args.location,
@@ -84,6 +93,7 @@ export const insertWithCreds = mutation({
       guestPortalLinkUrl: args.guestPortalLinkUrl,
       eventDate: args.eventDate,
       eventTimezone: args.eventTimezone,
+      status: args.status ?? "inactive",
       maxAttendees: args.maxAttendees,
       customFields: args.customFields,
       primaryFieldConfig: args.primaryFieldConfig,
@@ -112,6 +122,8 @@ export const update = mutation({
     workspaceSlug: v.optional(v.string()),
     name: v.optional(v.string()),
     secondaryTitle: v.optional(v.string()),
+    description: v.optional(v.string()),
+    acts: v.optional(v.array(eventActValidator)),
     hosts: v.optional(v.array(v.string())),
     productionCompany: v.optional(v.string()),
     location: v.optional(v.string()),
@@ -123,6 +135,7 @@ export const update = mutation({
     guestPortalLinkLabel: v.optional(v.string()),
     guestPortalLinkUrl: v.optional(v.string()),
     maxAttendees: v.optional(v.number()),
+    status: v.optional(eventStatusValidator),
     isFeatured: v.optional(v.boolean()),
     customFields: v.optional(
       v.array(
@@ -193,6 +206,8 @@ export const update = mutation({
     const updateableFields = [
       "name",
       "secondaryTitle",
+      "description",
+      "acts",
       "hosts",
       "productionCompany",
       "location",
@@ -205,6 +220,7 @@ export const update = mutation({
       "eventDate",
       "eventTimezone",
       "maxAttendees",
+      "status",
       "isFeatured",
       "customFields",
       "primaryFieldConfig",

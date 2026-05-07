@@ -40,16 +40,25 @@ export interface ChlorineLandingEvent {
    * Lines printed under each other in the lineup column. Pass `[event.name]`
    * if there is no separate lineup data.
    */
-  lineup: string[];
+  lineup: Array<string | ChlorineLineupEntry>;
   /**
    * Click target for the RSVP brick. Rendered as an `<a>` so right-click and
    * cmd-click open in a new tab as expected.
    */
-  rsvpHref: string;
+  rsvpHref?: string;
   /**
    * Optional override for the brick label. Defaults to "RSVP".
    */
   rsvpLabel?: string;
+  /**
+   * When true, the RSVP brick renders visually but is not clickable.
+   */
+  rsvpDisabled?: boolean;
+}
+
+export interface ChlorineLineupEntry {
+  label: string;
+  href?: string;
 }
 
 export interface ChlorineLandingProps {
@@ -593,32 +602,68 @@ function ChlorineEventRow({
           letterSpacing: "0.01em",
         }}
       >
-        {event.lineup.map((name, lineupIndex) => (
-          <div key={lineupIndex}>{name}</div>
-        ))}
+        {event.lineup.map((lineupEntry, lineupIndex) => {
+          const normalizedLineupEntry =
+            typeof lineupEntry === "string"
+              ? { label: lineupEntry }
+              : lineupEntry;
+          return normalizedLineupEntry.href ? (
+            <a
+              key={`${normalizedLineupEntry.label}-${lineupIndex}`}
+              href={normalizedLineupEntry.href}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                color: "inherit",
+                display: "block",
+                textDecoration: "none",
+              }}
+            >
+              {normalizedLineupEntry.label}
+            </a>
+          ) : (
+            <div key={`${normalizedLineupEntry.label}-${lineupIndex}`}>
+              {normalizedLineupEntry.label}
+            </div>
+          );
+        })}
       </div>
-      <a
-        href={event.rsvpHref}
-        style={{
-          background: "var(--tt-fg)",
-          color: "var(--tt-bg)",
-          fontFamily:
-            'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
-          fontSize: mobile ? 11 : 12,
-          fontWeight: 700,
-          letterSpacing: "0.08em",
-          padding: mobile ? "6px 10px" : "8px 14px",
-          textDecoration: "none",
-          alignSelf: "start",
-          textAlign: "center",
-          display: "inline-block",
-          textTransform: "uppercase",
-        }}
-      >
-        {event.rsvpLabel ?? "RSVP"}
-      </a>
+      {event.rsvpHref && !event.rsvpDisabled ? (
+        <a
+          href={event.rsvpHref}
+          style={buildRsvpBrickStyle(mobile, false)}
+        >
+          {event.rsvpLabel ?? "RSVP"}
+        </a>
+      ) : (
+        <span style={buildRsvpBrickStyle(mobile, true)}>
+          {event.rsvpLabel ?? "CLOSED"}
+        </span>
+      )}
     </div>
   );
+}
+
+function buildRsvpBrickStyle(
+  mobile: boolean,
+  disabled: boolean,
+): CSSProperties {
+  return {
+    background: "var(--tt-fg)",
+    color: "var(--tt-bg)",
+    fontFamily:
+      'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+    fontSize: mobile ? 11 : 12,
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    padding: mobile ? "6px 10px" : "8px 14px",
+    textDecoration: "none",
+    alignSelf: "start",
+    textAlign: "center",
+    display: "inline-block",
+    textTransform: "uppercase",
+    opacity: disabled ? 0.45 : 1,
+  };
 }
 
 const MOBILE_BREAKPOINT_PX = 720;

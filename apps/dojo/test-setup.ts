@@ -40,6 +40,11 @@ interface ClerkTestState {
   userId: string | null;
 }
 
+interface ConvexAuthTestState {
+  isLoading: boolean;
+  isAuthenticated: boolean;
+}
+
 const defaultClerkTestState: ClerkTestState = {
   isLoaded: true,
   isSignedIn: true,
@@ -47,6 +52,13 @@ const defaultClerkTestState: ClerkTestState = {
 };
 
 const clerkTestState: ClerkTestState = { ...defaultClerkTestState };
+const defaultConvexAuthTestState: ConvexAuthTestState = {
+  isLoading: false,
+  isAuthenticated: true,
+};
+const convexAuthTestState: ConvexAuthTestState = {
+  ...defaultConvexAuthTestState,
+};
 const routerReplaceCalls: string[] = [];
 
 const testUser = {
@@ -72,6 +84,10 @@ const testUser = {
 interface ClerkTestGlobal {
   __setClerkTestState?: (nextState: Partial<ClerkTestState>) => void;
   __resetClerkTestState?: () => void;
+  __setConvexAuthTestState?: (
+    nextState: Partial<ConvexAuthTestState>,
+  ) => void;
+  __resetConvexAuthTestState?: () => void;
   __getRouterReplaceCalls?: () => string[];
   __clearRouterReplaceCalls?: () => void;
 }
@@ -83,6 +99,12 @@ clerkTestGlobal.__setClerkTestState = (nextState) => {
 };
 clerkTestGlobal.__resetClerkTestState = () => {
   Object.assign(clerkTestState, defaultClerkTestState);
+};
+clerkTestGlobal.__setConvexAuthTestState = (nextState) => {
+  Object.assign(convexAuthTestState, nextState);
+};
+clerkTestGlobal.__resetConvexAuthTestState = () => {
+  Object.assign(convexAuthTestState, defaultConvexAuthTestState);
 };
 clerkTestGlobal.__getRouterReplaceCalls = () => [...routerReplaceCalls];
 clerkTestGlobal.__clearRouterReplaceCalls = () => {
@@ -207,7 +229,14 @@ mock.module("@clerk/nextjs", () => ({
 
 // Mock Convex
 mock.module("convex/react", () => ({
-  useQuery: () => {
+  useConvexAuth: () => ({
+    isLoading: convexAuthTestState.isLoading,
+    isAuthenticated: convexAuthTestState.isAuthenticated,
+  }),
+  useQuery: (_queryReference: unknown, queryArguments?: unknown) => {
+    if (queryArguments === "skip") {
+      return undefined;
+    }
     // Return safe default data that works for most queries
     return [
       {
@@ -405,6 +434,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   clerkTestGlobal.__resetClerkTestState?.();
+  clerkTestGlobal.__resetConvexAuthTestState?.();
   clerkTestGlobal.__clearRouterReplaceCalls?.();
 });
 afterAll(() => {

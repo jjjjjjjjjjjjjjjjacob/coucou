@@ -1,5 +1,6 @@
 "use client";
-import { useQuery } from "convex/react";
+import { useConvexAuth, useQuery } from "convex/react";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -44,9 +45,50 @@ function getStatusBadgeColor(status: RSVP["status"]) {
 }
 
 export default function TicketsPage() {
-  const userTickets = useQuery(api.rsvps.listUserTickets) as
+  const { isLoaded: isClerkLoaded, isSignedIn } = useAuth();
+  const {
+    isAuthenticated: isConvexAuthenticated,
+    isLoading: isConvexAuthLoading,
+  } = useConvexAuth();
+  const canLoadUserTickets =
+    isClerkLoaded && isSignedIn && isConvexAuthenticated;
+  const userTickets = useQuery(
+    api.rsvps.listUserTickets,
+    canLoadUserTickets ? {} : "skip",
+  ) as
     | UserTicket[]
     | undefined;
+
+  if (
+    !isClerkLoaded ||
+    (isSignedIn && (isConvexAuthLoading || !isConvexAuthenticated))
+  ) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="flex items-center justify-center min-h-screen">
+          <Spinner />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
+    return (
+      <div className="container mx-auto p-6 max-w-4xl">
+        <h1 className="text-3xl font-bold mb-6">My Tickets</h1>
+        <div className="text-center py-12">
+          <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">Sign in required</h3>
+          <p className="text-muted-foreground mb-6">
+            Sign in to view your RSVPs and tickets.
+          </p>
+          <Link href="/">
+            <Button>Browse Events</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (userTickets === undefined) {
     return (

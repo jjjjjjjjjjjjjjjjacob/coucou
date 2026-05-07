@@ -13,6 +13,7 @@ import {
   isInvitedByCustomField,
   normalizePrimaryFieldLookupText,
   normalizeSocialHandleInput,
+  type PrimaryFieldConfig,
   type PrimarySocialPlatformConfig,
 } from "@coucou/sdk/shared/primary-fields";
 import {
@@ -20,6 +21,7 @@ import {
   sanitizePrimaryFieldConfig,
   type SanitizedSubmittedSocialProfile,
 } from "./lib/primaryFields";
+import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./lib/profileValueRecords";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
 
 type EventCustomFieldDefinition = {
@@ -957,6 +959,9 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
     scannedRsvpCount: number;
     matchedSocialValueCount: number;
     matchedInvitedByValueCount: number;
+    linkedProfileFieldValueCount: number;
+    linkedWorkspaceGrantCount: number;
+    hiddenCustomFieldDefinitionCount: number;
     patchedEventCount: number;
     patchedRsvpCount: number;
   }> => {
@@ -980,6 +985,8 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
 
     let matchedSocialValueCount = 0;
     let matchedInvitedByValueCount = 0;
+    let linkedProfileFieldValueCount = 0;
+    let linkedWorkspaceGrantCount = 0;
     let patchedEventCount = 0;
     let patchedRsvpCount = 0;
     const eventPrimaryFieldPatches = new Map<
@@ -987,8 +994,50 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
       {
         socialPlatformsByKey: Map<string, PrimarySocialPlatformConfig>;
         invitedByEnabled: boolean;
+        customFieldKeysToHide: Set<string>;
       }
     >();
+    const getOrCreateEventPrimaryFieldPatch = (eventId: Id<"events">) => {
+      const existingPatch = eventPrimaryFieldPatches.get(eventId);
+      if (existingPatch) return existingPatch;
+
+      const patch = {
+        socialPlatformsByKey: new Map<string, PrimarySocialPlatformConfig>(),
+        invitedByEnabled: false,
+        customFieldKeysToHide: new Set<string>(),
+      };
+      eventPrimaryFieldPatches.set(eventId, patch);
+      return patch;
+    };
+
+    for (const event of eventById.values()) {
+      for (const customField of
+        (event.customFields ?? []) as EventCustomFieldDefinition[]) {
+        const socialPlatformKey =
+          detectSocialPlatformKeyFromCustomField(customField);
+        const isInvitedByField = isInvitedByCustomField(customField);
+        if (!socialPlatformKey && !isInvitedByField) continue;
+
+        const patch = getOrCreateEventPrimaryFieldPatch(event._id);
+        patch.customFieldKeysToHide.add(customField.key);
+        if (socialPlatformKey) {
+          patch.socialPlatformsByKey.set(
+            socialPlatformKey,
+            getSocialPlatformConfig(socialPlatformKey),
+          );
+        }
+        if (isInvitedByField) {
+          patch.invitedByEnabled = true;
+        }
+      }
+    }
+    const hiddenCustomFieldDefinitionCount = Array.from(
+      eventPrimaryFieldPatches.values(),
+    ).reduce(
+      (totalHiddenCustomFields, patch) =>
+        totalHiddenCustomFields + patch.customFieldKeysToHide.size,
+      0,
+    );
 
     for (const rsvp of scopedRsvps) {
       const event = eventById.get(rsvp.eventId);
@@ -1012,26 +1061,18 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
             normalizedHandle: normalizePrimaryFieldLookupText(handle),
           });
           matchedSocialValueCount += 1;
-          const patch = eventPrimaryFieldPatches.get(event._id) ?? {
-            socialPlatformsByKey: new Map<string, PrimarySocialPlatformConfig>(),
-            invitedByEnabled: false,
-          };
+          const patch = getOrCreateEventPrimaryFieldPatch(event._id);
           patch.socialPlatformsByKey.set(
             socialPlatformKey,
             getSocialPlatformConfig(socialPlatformKey),
           );
-          eventPrimaryFieldPatches.set(event._id, patch);
         }
 
         if (isInvitedByCustomField(customField)) {
           invitedByName = rawValue;
           matchedInvitedByValueCount += 1;
-          const patch = eventPrimaryFieldPatches.get(event._id) ?? {
-            socialPlatformsByKey: new Map<string, PrimarySocialPlatformConfig>(),
-            invitedByEnabled: false,
-          };
+          const patch = getOrCreateEventPrimaryFieldPatch(event._id);
           patch.invitedByEnabled = true;
-          eventPrimaryFieldPatches.set(event._id, patch);
         }
       }
 
@@ -1049,6 +1090,17 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
         submittedProfiles.map((profile) => profile.platformKey),
       );
       if (submittedProfiles.length > 0) {
+        const profileGrantSyncResult =
+          await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+            event,
+            rsvpId: rsvp._id,
+            clerkUserId: rsvp.clerkUserId,
+            userId: user?._id,
+            submittedProfiles,
+          });
+        linkedProfileFieldValueCount +=
+          profileGrantSyncResult.profileFieldValueCount;
+        linkedWorkspaceGrantCount += profileGrantSyncResult.workspaceGrantCount;
         await replaceRsvpSocialProfileSnapshots(ctx, {
           eventId: rsvp.eventId,
           rsvpId: rsvp._id,
@@ -1102,11 +1154,24 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
                 }
               : undefined,
         });
-
-        await ctx.db.patch(eventId, {
+        const eventUpdate: {
+          primaryFieldConfig: PrimaryFieldConfig | undefined;
+          customFields?: Doc<"events">["customFields"];
+          updatedAt: number;
+        } = {
           primaryFieldConfig,
           updatedAt: Date.now(),
-        });
+        };
+
+        if (patch.customFieldKeysToHide.size > 0) {
+          const visibleCustomFields = (event.customFields ?? []).filter(
+            (customField) => !patch.customFieldKeysToHide.has(customField.key),
+          );
+          eventUpdate.customFields =
+            visibleCustomFields.length > 0 ? visibleCustomFields : undefined;
+        }
+
+        await ctx.db.patch(eventId, eventUpdate);
         patchedEventCount += 1;
       }
     }
@@ -1116,6 +1181,9 @@ export const backfillPrimaryFieldsFromCustomFields = mutation({
       scannedRsvpCount: scopedRsvps.length,
       matchedSocialValueCount,
       matchedInvitedByValueCount,
+      linkedProfileFieldValueCount,
+      linkedWorkspaceGrantCount,
+      hiddenCustomFieldDefinitionCount,
       patchedEventCount,
       patchedRsvpCount,
     };

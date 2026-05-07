@@ -1,5 +1,9 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  eventActValidator,
+  eventStatusValidator,
+} from "./lib/eventMetadata";
 
 const socialPlatformConfigValidator = v.object({
   platformKey: v.string(),
@@ -97,6 +101,17 @@ export default defineSchema({
     siteKey: v.string(),
     domain: v.string(),
     appKind: v.string(),
+    clerkFrontendApiUrl: v.optional(v.string()),
+    clerkSatelliteVerificationStatus: v.optional(
+      v.union(
+        v.literal("unconfigured"),
+        v.literal("pending"),
+        v.literal("verified"),
+        v.literal("failed"),
+      ),
+    ),
+    clerkSatelliteAuthEnabled: v.optional(v.boolean()),
+    clerkSatelliteLastSyncedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -131,6 +146,8 @@ export default defineSchema({
     siteKey: v.optional(v.string()),
     name: v.string(),
     secondaryTitle: v.optional(v.string()),
+    description: v.optional(v.string()),
+    acts: v.optional(v.array(eventActValidator)),
     hosts: v.array(v.string()), // host names (comma-separated)
     productionCompany: v.optional(v.string()), // production company name that overrides host names in consent messaging
     location: v.string(),
@@ -143,7 +160,7 @@ export default defineSchema({
     eventDate: v.number(), // ms since epoch
     eventTimezone: v.optional(v.string()),
     isFeatured: v.optional(v.boolean()), // one event can be featured for home page redirect
-    status: v.optional(v.string()),
+    status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()), // maximum attendees allowed per RSVP (default 1)
     customFields: v.optional(
       v.array(
@@ -248,6 +265,68 @@ export default defineSchema({
     .index("by_user", ["clerkUserId"])
     .index("by_user_platform", ["clerkUserId", "platformKey"])
     .index("by_platform_handle", ["platformKey", "normalizedHandle"]),
+
+  profileFieldValues: defineTable({
+    clerkUserId: v.string(),
+    userId: v.optional(v.id("users")),
+    fieldKey: v.string(),
+    value: v.string(),
+    normalizedValue: v.string(),
+    label: v.optional(v.string()),
+    source: v.optional(v.string()),
+    sourceEventId: v.optional(v.id("events")),
+    sourceRsvpId: v.optional(v.id("rsvps")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["clerkUserId"])
+    .index("by_user_field", ["clerkUserId", "fieldKey"])
+    .index("by_user_field_value", [
+      "clerkUserId",
+      "fieldKey",
+      "normalizedValue",
+    ]),
+
+  workspaceProfileValueGrants: defineTable({
+    workspaceId: v.optional(v.id("workspaces")),
+    workspaceSlug: v.optional(v.string()),
+    siteKey: v.optional(v.string()),
+    clerkUserId: v.string(),
+    fieldKey: v.string(),
+    profileFieldValueId: v.id("profileFieldValues"),
+    sourceEventId: v.optional(v.id("events")),
+    sourceRsvpId: v.optional(v.id("rsvps")),
+    revokedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["clerkUserId"])
+    .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_user", ["workspaceId", "clerkUserId"])
+    .index("by_workspace_user_field", [
+      "workspaceId",
+      "clerkUserId",
+      "fieldKey",
+    ])
+    .index("by_workspace_user_field_value", [
+      "workspaceId",
+      "clerkUserId",
+      "fieldKey",
+      "profileFieldValueId",
+    ])
+    .index("by_workspaceSlug_user_field_value", [
+      "workspaceSlug",
+      "clerkUserId",
+      "fieldKey",
+      "profileFieldValueId",
+    ])
+    .index("by_siteKey_user_field_value", [
+      "siteKey",
+      "clerkUserId",
+      "fieldKey",
+      "profileFieldValueId",
+    ])
+    .index("by_profile_value", ["profileFieldValueId"]),
 
   rsvpSocialProfiles: defineTable({
     eventId: v.id("events"),

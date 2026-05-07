@@ -52,6 +52,18 @@ export const DEFAULT_SOCIAL_PLATFORM_CONFIGS: readonly PrimarySocialPlatformConf
       placeholder: "Beli username",
       profileUrlPrefix: "https://beliapp.com/profile/",
     },
+    {
+      platformKey: "x",
+      label: "X",
+      placeholder: "@handle",
+      profileUrlPrefix: "https://x.com/",
+    },
+    {
+      platformKey: "linkedin",
+      label: "LinkedIn",
+      placeholder: "LinkedIn profile",
+      profileUrlPrefix: "https://www.linkedin.com/in/",
+    },
   ];
 
 const socialPlatformAliases: Record<string, readonly string[]> = {
@@ -73,6 +85,31 @@ const socialPlatformAliases: Record<string, readonly string[]> = {
     "tiktok username",
   ],
   beli: ["beli", "beli handle", "beli username"],
+  x: [
+    "x",
+    "twitter",
+    "x handle",
+    "twitter handle",
+    "x username",
+    "twitter username",
+  ],
+  linkedin: [
+    "linkedin",
+    "linked in",
+    "linked-in",
+    "linkedin handle",
+    "linked in handle",
+    "linkedin profile",
+    "linked in profile",
+    "linkedin url",
+  ],
+};
+
+const canonicalSocialPlatformKeyByAlias: Record<string, string> = {
+  twitter: "x",
+  "x-twitter": "x",
+  "linked-in": "linkedin",
+  "linked-in-profile": "linkedin",
 };
 
 const invitedByAliases = new Set([
@@ -96,13 +133,34 @@ export function normalizePrimaryFieldLookupText(value: string): string {
 }
 
 export function normalizeSocialPlatformKey(value: string): string {
-  return value
+  const normalizedKey = value
     .trim()
     .toLowerCase()
     .replace(/^@+/, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
+
+  return canonicalSocialPlatformKeyByAlias[normalizedKey] ?? normalizedKey;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function candidateMatchesSocialAlias(candidate: string, alias: string): boolean {
+  const normalizedAlias = normalizePrimaryFieldLookupText(alias);
+  if (!normalizedAlias) return false;
+  if (candidate === normalizedAlias) return true;
+
+  const words = normalizedAlias.split(" ");
+  if (words.length === 1 && normalizedAlias.length <= 2) {
+    return false;
+  }
+
+  return new RegExp(
+    `(?:^|\\s)${escapeRegExp(normalizedAlias)}(?:\\s|$)`,
+  ).test(candidate);
 }
 
 export function detectSocialPlatformKeyFromCustomField(
@@ -116,9 +174,7 @@ export function detectSocialPlatformKeyFromCustomField(
   for (const [platformKey, aliases] of Object.entries(socialPlatformAliases)) {
     if (
       candidates.some((candidate) =>
-        aliases.some(
-          (alias) => candidate === alias || candidate.includes(alias),
-        ),
+        aliases.some((alias) => candidateMatchesSocialAlias(candidate, alias)),
       )
     ) {
       return platformKey;
@@ -152,10 +208,12 @@ export function normalizeSocialHandleInput(
         : `https://${candidate}`,
     );
     const host = parsedUrl.hostname.toLowerCase();
-    const firstPathSegment = parsedUrl.pathname
+    const pathSegments = parsedUrl.pathname
       .split("/")
       .map((segment) => segment.trim())
-      .filter(Boolean)[0];
+      .filter(Boolean);
+    const firstPathSegment = pathSegments[0];
+    const secondPathSegment = pathSegments[1];
 
     if (
       firstPathSegment &&
@@ -164,6 +222,18 @@ export function normalizeSocialHandleInput(
         host.includes("beli"))
     ) {
       candidate = firstPathSegment;
+    } else if (
+      firstPathSegment &&
+      (host === "x.com" ||
+        host.endsWith(".x.com") ||
+        host.includes("twitter.com"))
+    ) {
+      candidate = firstPathSegment;
+    } else if (host.includes("linkedin.com")) {
+      candidate =
+        firstPathSegment === "in" && secondPathSegment
+          ? secondPathSegment
+          : firstPathSegment ?? candidate;
     }
   } catch {
     candidate = trimmedValue;

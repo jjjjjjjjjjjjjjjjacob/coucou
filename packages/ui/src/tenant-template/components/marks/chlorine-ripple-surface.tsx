@@ -826,6 +826,10 @@ export function ChlorineRippleSurface({
       offscreenContext.clearRect(0, 0, canvasWidth, canvasHeight);
       offscreenContext.globalCompositeOperation = "source-over";
 
+      // Two-pass: union all piece alphas first, then color the result once.
+      // Per-piece source-in fillRect would otherwise re-color overlapping
+      // anti-aliased pixels piece-by-piece, leaving a visible seam where the
+      // pieces' bounding boxes overlap (club ↔ chlorine, icon ↔ chlorine).
       for (const [pieceIndex, piece] of pieces.entries()) {
         const pieceRect = measurePieceRect(piece);
         const image = loadedImages[pieceIndex];
@@ -833,15 +837,6 @@ export function ChlorineRippleSurface({
           continue;
         }
 
-        offscreenContext.save();
-        offscreenContext.beginPath();
-        offscreenContext.rect(
-          pieceRect.left,
-          pieceRect.top,
-          pieceRect.width,
-          pieceRect.height,
-        );
-        offscreenContext.clip();
         offscreenContext.drawImage(
           image,
           pieceRect.left,
@@ -849,17 +844,16 @@ export function ChlorineRippleSurface({
           pieceRect.width,
           pieceRect.height,
         );
-        offscreenContext.globalCompositeOperation = "source-in";
-        offscreenContext.fillStyle = resolvePieceColor(piece);
-        offscreenContext.fillRect(
-          pieceRect.left,
-          pieceRect.top,
-          pieceRect.width,
-          pieceRect.height,
-        );
-        offscreenContext.restore();
-        offscreenContext.globalCompositeOperation = "source-over";
       }
+
+      const resolvedFillColor =
+        pieces.length > 0
+          ? resolvePieceColor(pieces[0])
+          : resolveCssColor(colorProbe, foregroundColorRef.current);
+      offscreenContext.globalCompositeOperation = "source-in";
+      offscreenContext.fillStyle = resolvedFillColor;
+      offscreenContext.fillRect(0, 0, canvasWidth, canvasHeight);
+      offscreenContext.globalCompositeOperation = "source-over";
 
       webGlContext.bindTexture(webGlContext.TEXTURE_2D, contentTexture);
       webGlContext.texImage2D(

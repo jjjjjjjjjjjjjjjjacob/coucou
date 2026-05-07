@@ -11,6 +11,23 @@ interface WorkspacePatch {
   updatedAt: number;
 }
 
+export type ClerkSatelliteVerificationStatus =
+  | "unconfigured"
+  | "pending"
+  | "verified"
+  | "failed";
+
+interface WorkspaceSitePatch {
+  workspaceId?: Id<"workspaces">;
+  domain?: string;
+  appKind?: string;
+  clerkFrontendApiUrl?: string;
+  clerkSatelliteVerificationStatus?: ClerkSatelliteVerificationStatus;
+  clerkSatelliteAuthEnabled?: boolean;
+  clerkSatelliteLastSyncedAt?: number;
+  updatedAt: number;
+}
+
 function optionalTrimmedString(value: string | undefined): string | undefined {
   const trimmedValue = value?.trim();
   return trimmedValue ? trimmedValue : undefined;
@@ -126,6 +143,10 @@ export async function upsertWorkspaceSiteRecord(
     siteKey: string;
     domain: string;
     appKind: string;
+    clerkFrontendApiUrl?: string;
+    clerkSatelliteVerificationStatus?: ClerkSatelliteVerificationStatus;
+    clerkSatelliteAuthEnabled?: boolean;
+    clerkSatelliteLastSyncedAt?: number;
   },
 ): Promise<Id<"workspaceSites">> {
   const now = Date.now();
@@ -137,12 +158,27 @@ export async function upsertWorkspaceSiteRecord(
     .unique();
 
   if (existingWorkspaceSite) {
-    await ctx.db.patch(existingWorkspaceSite._id, {
+    const patch: WorkspaceSitePatch = {
       workspaceId: args.workspaceId,
       domain: args.domain,
       appKind: args.appKind,
       updatedAt: now,
-    });
+    };
+    if (args.clerkFrontendApiUrl !== undefined) {
+      patch.clerkFrontendApiUrl = args.clerkFrontendApiUrl;
+    }
+    if (args.clerkSatelliteVerificationStatus !== undefined) {
+      patch.clerkSatelliteVerificationStatus =
+        args.clerkSatelliteVerificationStatus;
+    }
+    if (args.clerkSatelliteAuthEnabled !== undefined) {
+      patch.clerkSatelliteAuthEnabled = args.clerkSatelliteAuthEnabled;
+    }
+    if (args.clerkSatelliteLastSyncedAt !== undefined) {
+      patch.clerkSatelliteLastSyncedAt = args.clerkSatelliteLastSyncedAt;
+    }
+
+    await ctx.db.patch(existingWorkspaceSite._id, patch);
     return existingWorkspaceSite._id;
   }
 
@@ -151,6 +187,10 @@ export async function upsertWorkspaceSiteRecord(
     siteKey: args.siteKey,
     domain: args.domain,
     appKind: args.appKind,
+    clerkFrontendApiUrl: args.clerkFrontendApiUrl,
+    clerkSatelliteVerificationStatus: args.clerkSatelliteVerificationStatus,
+    clerkSatelliteAuthEnabled: args.clerkSatelliteAuthEnabled,
+    clerkSatelliteLastSyncedAt: args.clerkSatelliteLastSyncedAt,
     createdAt: now,
     updatedAt: now,
   });

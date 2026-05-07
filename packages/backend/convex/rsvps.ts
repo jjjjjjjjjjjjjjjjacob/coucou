@@ -43,6 +43,7 @@ import {
   sanitizeSubmittedSocialProfiles,
   submittedSocialProfileValidator,
 } from "./lib/primaryFields";
+import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./lib/profileValueRecords";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
 
 export const submitRequest = mutation({
@@ -83,7 +84,7 @@ export const submitRequest = mutation({
       siteKey: args.siteKey,
     });
     const now = Date.now();
-    if (!event || (event.status && event.status !== "active"))
+    if (!event || event.status !== "active")
       throw new Error("Event not available");
     const eventFieldMap = new Map(
       (event.customFields ?? []).map((field) => [field.key, field]),
@@ -189,6 +190,13 @@ export const submitRequest = mutation({
       });
 
       if (configuredSocialPlatformKeys.size > 0) {
+        await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+          event,
+          rsvpId,
+          clerkUserId,
+          userId: user?._id,
+          submittedProfiles: sanitizedSocialProfiles,
+        });
         await replaceRsvpSocialProfileSnapshots(ctx, {
           eventId: args.eventId,
           rsvpId,
@@ -238,6 +246,13 @@ export const submitRequest = mutation({
       });
 
       if (configuredSocialPlatformKeys.size > 0) {
+        await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+          event,
+          rsvpId: existing._id,
+          clerkUserId,
+          userId: user?._id,
+          submittedProfiles: sanitizedSocialProfiles,
+        });
         await replaceRsvpSocialProfileSnapshots(ctx, {
           eventId: args.eventId,
           rsvpId: existing._id,
@@ -575,6 +590,13 @@ export const updateSharedPrimaryFields = mutation({
       .unique();
 
     if (configuredSocialPlatformKeys.size > 0) {
+      await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+        event,
+        rsvpId,
+        clerkUserId,
+        userId: user?._id,
+        submittedProfiles: sanitizedSocialProfiles,
+      });
       await replaceRsvpSocialProfileSnapshots(ctx, {
         eventId: rsvp.eventId,
         rsvpId,

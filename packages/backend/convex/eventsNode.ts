@@ -1,5 +1,6 @@
 "use node";
 import { action } from "./_generated/server";
+import type { ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import {
@@ -14,6 +15,14 @@ import { sanitizeOptionalApprovalMessage } from "@coucou/sdk/shared/approval-mes
 import type { WorkspaceEventDefaults } from "@coucou/sdk/shared/primary-fields";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
+import {
+  eventActValidator,
+  eventStatusValidator,
+  sanitizeOptionalEventActs,
+  sanitizeOptionalEventDescription,
+  type EventActInput,
+  type EventStatus,
+} from "./lib/eventMetadata";
 import {
   primaryFieldConfigFromWorkspaceDefaults,
   primaryFieldConfigValidator,
@@ -36,6 +45,12 @@ type WorkspaceDefaultsSource = {
   eventDefaults?: WorkspaceEventDefaults;
 };
 
+type EventPasswordCandidate = {
+  credentialId?: Id<"listCredentials">;
+  listKey: string;
+  password: string;
+};
+
 function normalizeOptionalHexColor(
   input: string | null | undefined,
   validationLabel: string,
@@ -54,12 +69,104 @@ function normalizeOptionalHexColor(
   return `#${prefixedInput.slice(1).toUpperCase()}`;
 }
 
+function validateLocalPasswordUniqueness(
+  candidates: EventPasswordCandidate[],
+): void {
+  const normalizedPasswords = new Set<string>();
+
+  for (const candidate of candidates) {
+    const normalizedPassword = normalizeCredentialPassword(candidate.password);
+    if (normalizedPasswords.has(normalizedPassword)) {
+      throw new ValidationError("List passwords must be unique within the event");
+    }
+    normalizedPasswords.add(normalizedPassword);
+  }
+}
+
+async function ensureActiveEventPasswordsAreUnique(
+  ctx: ActionCtx,
+  options: {
+    eventId?: Id<"events">;
+    candidates: EventPasswordCandidate[];
+  },
+): Promise<void> {
+  validateLocalPasswordUniqueness(options.candidates);
+
+  for (const candidate of options.candidates) {
+    const matchingCredentials = await ctx.runQuery(
+      api.credentials.getByPassword,
+      { password: candidate.password },
+    );
+
+    for (const matchingCredential of matchingCredentials) {
+      if (
+        candidate.credentialId &&
+        matchingCredential._id === candidate.credentialId
+      ) {
+        continue;
+      }
+      if (options.eventId && matchingCredential.eventId === options.eventId) {
+        continue;
+      }
+
+      const matchingEvent = await ctx.runQuery(api.events.get, {
+        eventId: matchingCredential.eventId,
+      });
+      if (matchingEvent?.status === "active") {
+        throw new DuplicateError(
+          "Password already in use by an active event",
+        );
+      }
+    }
+  }
+}
+
+function buildFinalPasswordCandidates(
+  existingCredentials: HostCredentialData[],
+  lists:
+    | Array<{
+        id?: Id<"listCredentials">;
+        listKey: string;
+        password?: string;
+      }>
+    | undefined,
+): EventPasswordCandidate[] {
+  if (!lists) {
+    return existingCredentials
+      .filter((credential) => Boolean(credential.password?.trim()))
+      .map((credential) => ({
+        credentialId: credential._id,
+        listKey: credential.listKey,
+        password: credential.password!.trim(),
+      }));
+  }
+
+  const existingById = new Map<Id<"listCredentials">, HostCredentialData>(
+    existingCredentials.map((credential) => [credential._id, credential]),
+  );
+
+  return lists.flatMap((list) => {
+      const currentCredential = list.id ? existingById.get(list.id) : undefined;
+      const password = list.password?.trim() || currentCredential?.password?.trim();
+      if (!password) return [];
+
+      const candidate: EventPasswordCandidate = {
+        credentialId: currentCredential?._id,
+        listKey: list.listKey,
+        password,
+      };
+      return [candidate];
+    });
+}
+
 export const create = action({
   args: {
     workspaceSlug: v.optional(v.string()),
     siteKey: v.optional(v.string()),
     name: v.string(),
     secondaryTitle: v.optional(v.string()),
+    description: v.optional(v.string()),
+    acts: v.optional(v.array(eventActValidator)),
     hosts: v.array(v.string()),
     productionCompany: v.optional(v.string()),
     location: v.string(),
@@ -71,6 +178,7 @@ export const create = action({
     guestPortalLinkUrl: v.optional(v.string()),
     eventDate: v.number(),
     eventTimezone: v.optional(v.string()),
+    status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()),
     lists: v.array(
       v.object({
@@ -99,7 +207,7 @@ export const create = action({
     approvalMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<any> => {
+  handler: async (ctx, args): Promise<{ eventId: Id<"events"> }> => {
     await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
@@ -116,32 +224,17 @@ export const create = action({
       }
     }
 
-    const localPasswords = new Set<string>();
-
-    for (const { password } of args.lists) {
-      const passwordNormalized = normalizeCredentialPassword(password);
-      if (localPasswords.has(passwordNormalized))
-        throw new ValidationError(
-          "List passwords must be unique within the event",
-        );
-      localPasswords.add(passwordNormalized);
-    }
-
-    // Enforce uniqueness across upcoming events
-    for (const { password } of args.lists) {
-      const credentials = await ctx.runQuery(api.credentials.getByPassword, {
-        password,
+    const eventStatus = args.status ?? "inactive";
+    const passwordCandidates = args.lists.map((list) => ({
+      listKey: list.listKey,
+      password: list.password,
+    }));
+    if (eventStatus === "active") {
+      await ensureActiveEventPasswordsAreUnique(ctx, {
+        candidates: passwordCandidates,
       });
-      for (const credential of credentials) {
-        const event = await ctx.runQuery(api.events.get, {
-          eventId: credential.eventId,
-        });
-        if (event && event.eventDate > now) {
-          throw new DuplicateError(
-            "Password already in use by an upcoming event",
-          );
-        }
-      }
+    } else {
+      validateLocalPasswordUniqueness(passwordCandidates);
     }
 
     const derivedCredentials: CredentialData[] = args.lists.map(
@@ -220,6 +313,8 @@ export const create = action({
       siteKey: args.siteKey,
       name: args.name,
       secondaryTitle: args.secondaryTitle,
+      description: sanitizeOptionalEventDescription(args.description),
+      acts: sanitizeOptionalEventActs(args.acts),
       hosts: args.hosts,
       productionCompany: args.productionCompany,
       location: args.location,
@@ -231,6 +326,7 @@ export const create = action({
       guestPortalLinkUrl: normalizedGuestPortalLinkUrl,
       eventDate: args.eventDate,
       eventTimezone: args.eventTimezone,
+      status: eventStatus,
       maxAttendees: args.maxAttendees ?? 1,
       customFields: args.customFields,
       primaryFieldConfig,
@@ -253,6 +349,8 @@ export const update = action({
       v.object({
         name: v.optional(v.string()),
         secondaryTitle: v.optional(v.string()),
+        description: v.optional(v.string()),
+        acts: v.optional(v.array(eventActValidator)),
         hosts: v.optional(v.array(v.string())),
         productionCompany: v.optional(v.string()),
         location: v.optional(v.string()),
@@ -264,7 +362,7 @@ export const update = action({
         eventDate: v.optional(v.number()),
         eventTimezone: v.optional(v.string()),
         maxAttendees: v.optional(v.number()),
-        status: v.optional(v.string()),
+        status: v.optional(eventStatusValidator),
         customFields: v.optional(
           v.array(
             v.object({
@@ -297,13 +395,53 @@ export const update = action({
       ),
     ),
   },
-  handler: async (ctx, args): Promise<any> => {
+  handler: async (ctx, args): Promise<{ ok: true }> => {
     const { eventId, patch, lists, siteKey, workspaceSlug } = args;
     await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
+
+    const currentEvent = await ctx.runQuery(api.events.get, {
+      eventId,
+      siteKey,
+      workspaceSlug,
+    });
+    if (!currentEvent) {
+      throw new ValidationError("Event not found");
+    }
+
+    const targetStatus = (patch?.status ??
+      currentEvent.status ??
+      "inactive") as EventStatus;
+    const shouldValidateActivePasswords =
+      targetStatus === "active" &&
+      (patch?.status === "active" || lists !== undefined);
+    const existingCredentials =
+      lists || shouldValidateActivePasswords
+        ? ((await ctx.runQuery(api.credentials.getHostCredsForEvent, {
+            eventId,
+            siteKey,
+            workspaceSlug,
+          })) as HostCredentialData[])
+        : [];
+
+    if (shouldValidateActivePasswords) {
+      await ensureActiveEventPasswordsAreUnique(ctx, {
+        eventId,
+        candidates: buildFinalPasswordCandidates(existingCredentials, lists),
+      });
+    }
 
     // Update event base fields via mutation to keep server/runtime separation
     if (patch && Object.keys(patch).length > 0) {
       const sanitizedPatch: EventPatch = { ...patch };
+      if (patch.description !== undefined) {
+        sanitizedPatch.description =
+          sanitizeOptionalEventDescription(patch.description) ?? "";
+      }
+      if (patch.acts !== undefined) {
+        sanitizedPatch.acts = sanitizeOptionalEventActs(
+          patch.acts as EventActInput[],
+        ) ?? [];
+      }
       if (patch.themeBackgroundColor !== undefined) {
         sanitizedPatch.themeBackgroundColor = normalizeOptionalHexColor(
           patch.themeBackgroundColor,
@@ -394,11 +532,6 @@ export const update = action({
 
     if (!lists) return { ok: true as const };
 
-    // Fetch current credentials for event
-    const existingCredentials = (await ctx.runQuery(
-      api.credentials.getHostCredsForEvent,
-      { eventId, siteKey, workspaceSlug },
-    )) as HostCredentialData[];
     const existingById = new Map<Id<"listCredentials">, HostCredentialData>(
       existingCredentials.map((credential) => [
         credential._id,
@@ -438,23 +571,6 @@ export const update = action({
             list.password!,
           );
 
-          // Enforce uniqueness across active events excluding this credential
-          const matchingCredentials = await ctx.runQuery(
-            api.credentials.getByPassword,
-            { password: list.password! },
-          );
-          for (const matchingCredential of matchingCredentials) {
-            if (matchingCredential._id === currentCredential._id) continue;
-            const event = await ctx.runQuery(api.events.get, {
-              eventId: matchingCredential.eventId,
-            });
-            if (event && event.status === "active") {
-              throw new DuplicateError(
-                "Password already in use by an active event",
-              );
-            }
-          }
-
           credentialPatch.password = list.password!;
           credentialPatch.passwordNormalized = passwordNormalized;
         }
@@ -477,20 +593,6 @@ export const update = action({
       } else {
         // New credential - require password
         if (!wantsPasswordUpdate) continue; // skip if no password provided
-        const matchingCredentials = await ctx.runQuery(
-          api.credentials.getByPassword,
-          { password: list.password! },
-        );
-        for (const matchingCredential of matchingCredentials) {
-          const event = await ctx.runQuery(api.events.get, {
-            eventId: matchingCredential.eventId,
-          });
-          if (event && event.status === "active") {
-            throw new DuplicateError(
-              "Password already in use by an active event",
-            );
-          }
-        }
         await ctx.runMutation(api.events.addListCredential, {
           eventId,
           siteKey,

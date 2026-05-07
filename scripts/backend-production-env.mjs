@@ -13,6 +13,7 @@ export const requiredBackendEnvironmentVariables = Object.freeze([
 ]);
 
 export const optionalBackendEnvironmentVariables = Object.freeze([
+  "CLERK_FRONTEND_API_URLS",
   "TWILIO_MESSAGING_SERVICE_SID",
   "DEV_TWILIO_ENABLED",
 ]);
@@ -43,7 +44,7 @@ function getEnvironmentVariableValue(environmentVariables, name) {
   return environmentVariables[name];
 }
 
-function isProductionHttpsUrl(value) {
+export function isProductionHttpsUrl(value) {
   try {
     const parsedUrl = new URL(value);
     if (parsedUrl.protocol !== "https:") {
@@ -68,6 +69,17 @@ function isProductionHttpsUrl(value) {
   }
 }
 
+export function splitCommaSeparatedValues(value) {
+  if (!hasNonEmptyValue(value)) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
 export function validateProductionEnvironmentValues(environmentVariables) {
   const validationMessages = [];
   const appBaseUrl = getEnvironmentVariableValue(
@@ -77,6 +89,10 @@ export function validateProductionEnvironmentValues(environmentVariables) {
   const clerkFrontendApiUrl = getEnvironmentVariableValue(
     environmentVariables,
     "CLERK_FRONTEND_API_URL",
+  );
+  const clerkFrontendApiUrls = getEnvironmentVariableValue(
+    environmentVariables,
+    "CLERK_FRONTEND_API_URLS",
   );
   const developmentTwilioEnabled = getEnvironmentVariableValue(
     environmentVariables,
@@ -96,6 +112,17 @@ export function validateProductionEnvironmentValues(environmentVariables) {
     validationMessages.push(
       "CLERK_FRONTEND_API_URL must be a production HTTPS URL.",
     );
+  }
+
+  const configuredClerkFrontendApiUrls =
+    splitCommaSeparatedValues(clerkFrontendApiUrls);
+  for (const configuredClerkFrontendApiUrl of configuredClerkFrontendApiUrls) {
+    if (!isProductionHttpsUrl(configuredClerkFrontendApiUrl)) {
+      validationMessages.push(
+        "Every CLERK_FRONTEND_API_URLS entry must be a production HTTPS URL.",
+      );
+      break;
+    }
   }
 
   if (developmentTwilioEnabled?.trim().toLowerCase() === "true") {

@@ -17,6 +17,7 @@ import {
   resolveWorkspaceAuthScopeFromDatabase,
 } from "./lib/workspaceAuth";
 import {
+  type ClerkSatelliteVerificationStatus,
   ensureTenantWorkspaceRecordForOrganization,
   normalizePrimaryDomain,
   normalizeTenantWorkspaceSlug,
@@ -56,6 +57,40 @@ interface AccessibleWorkspaceNavigationEntry {
   organizationSlug?: string | null;
   membershipRole: string;
   isWorkspaceConfigured: boolean;
+}
+
+function normalizeOptionalClerkFrontendApiUrl(
+  value: string | undefined,
+): string | undefined {
+  const trimmedValue = value?.trim();
+  if (!trimmedValue) {
+    return undefined;
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(trimmedValue);
+  } catch {
+    throw new Error("Clerk Frontend API URL must be a valid URL");
+  }
+
+  if (parsedUrl.protocol !== "https:") {
+    throw new Error("Clerk Frontend API URL must use HTTPS");
+  }
+
+  const hostname = parsedUrl.hostname.toLowerCase();
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname === "::1"
+  ) {
+    throw new Error("Clerk Frontend API URL must be a production host");
+  }
+
+  return parsedUrl.origin;
 }
 
 async function getCoucouWorkspace(
@@ -166,6 +201,13 @@ const brandMarkStyleValidator = v.union(
   v.literal("wordmark-only"),
 );
 
+const clerkSatelliteVerificationStatusValidator = v.union(
+  v.literal("unconfigured"),
+  v.literal("pending"),
+  v.literal("verified"),
+  v.literal("failed"),
+);
+
 export const setPreset = mutation({
   args: {
     slug: v.string(),
@@ -249,10 +291,85 @@ export const upsertWorkspaceSite = mutation({
     siteKey: v.string(),
     domain: v.string(),
     appKind: v.string(),
+    clerkFrontendApiUrl: v.optional(v.string()),
+    clerkSatelliteVerificationStatus: v.optional(
+      clerkSatelliteVerificationStatusValidator,
+    ),
+    clerkSatelliteAuthEnabled: v.optional(v.boolean()),
+    clerkSatelliteLastSyncedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireCoucouPlatformMember(ctx);
-    return await upsertWorkspaceSiteRecord(ctx, args);
+    return await upsertWorkspaceSiteRecord(ctx, {
+      ...args,
+      clerkFrontendApiUrl: normalizeOptionalClerkFrontendApiUrl(
+        args.clerkFrontendApiUrl,
+      ),
+    });
+  },
+});
+
+export const setWorkspaceSiteClerkSatelliteAuth = mutation({
+  args: {
+    siteKey: v.string(),
+    clerkFrontendApiUrl: v.optional(v.string()),
+    clerkSatelliteVerificationStatus: clerkSatelliteVerificationStatusValidator,
+    clerkSatelliteAuthEnabled: v.boolean(),
+    clerkSatelliteLastSyncedAt: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    {
+      siteKey,
+      clerkFrontendApiUrl,
+      clerkSatelliteVerificationStatus,
+      clerkSatelliteAuthEnabled,
+      clerkSatelliteLastSyncedAt,
+    },
+  ) => {
+    await requireCoucouPlatformMember(ctx);
+
+    const workspaceSite = await ctx.db
+      .query("workspaceSites")
+      .withIndex("by_siteKey", (queryBuilder) =>
+        queryBuilder.eq("siteKey", siteKey),
+      )
+      .unique();
+
+    if (!workspaceSite) {
+      throw new Error(`Workspace site not found: ${siteKey}`);
+    }
+
+    const workspaceSitePatch: {
+      clerkFrontendApiUrl?: string;
+      clerkSatelliteVerificationStatus: ClerkSatelliteVerificationStatus;
+      clerkSatelliteAuthEnabled: boolean;
+      clerkSatelliteLastSyncedAt: number;
+      updatedAt: number;
+    } = {
+      clerkSatelliteVerificationStatus,
+      clerkSatelliteAuthEnabled,
+      clerkSatelliteLastSyncedAt: clerkSatelliteLastSyncedAt ?? Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const normalizedClerkFrontendApiUrl =
+      normalizeOptionalClerkFrontendApiUrl(clerkFrontendApiUrl);
+    if (normalizedClerkFrontendApiUrl !== undefined) {
+      workspaceSitePatch.clerkFrontendApiUrl = normalizedClerkFrontendApiUrl;
+    }
+
+    await ctx.db.patch(workspaceSite._id, workspaceSitePatch);
+
+    await writeAuditEntry(ctx, {
+      action: "workspaceSite.setClerkSatelliteAuth",
+      targetKind: "workspaceSite",
+      targetId: workspaceSite._id,
+      workspaceId: workspaceSite.workspaceId,
+      summary: `${siteKey} → ${clerkSatelliteVerificationStatus}, enabled=${clerkSatelliteAuthEnabled}`,
+    });
+
+    return workspaceSite._id;
   },
 });
 
@@ -527,6 +644,33 @@ export const listWorkspaces = query({
         };
       }),
     );
+  },
+});
+
+export const listVerifiedClerkFrontendApiUrls = query({
+  args: {},
+  handler: async (ctx): Promise<string[]> => {
+    const workspaceSites = await ctx.db.query("workspaceSites").collect();
+    const clerkFrontendApiUrls = new Set<string>();
+
+    for (const workspaceSite of workspaceSites) {
+      if (workspaceSite.clerkSatelliteAuthEnabled !== true) {
+        continue;
+      }
+      if (workspaceSite.clerkSatelliteVerificationStatus !== "verified") {
+        continue;
+      }
+
+      const clerkFrontendApiUrl =
+        workspaceSite.clerkFrontendApiUrl?.trim() ?? "";
+      if (clerkFrontendApiUrl.length === 0) {
+        continue;
+      }
+
+      clerkFrontendApiUrls.add(clerkFrontendApiUrl);
+    }
+
+    return Array.from(clerkFrontendApiUrls).sort();
   },
 });
 
