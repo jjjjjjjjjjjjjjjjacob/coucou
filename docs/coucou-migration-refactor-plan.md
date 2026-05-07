@@ -1,11 +1,22 @@
 # Coucou Migration And Refactor Plan
 
-Last updated: 2026-04-24
+Last updated: 2026-05-07
 
 Companion docs:
 
 - [Coucou Product Source Of Truth](./coucou-product-source-of-truth.md)
 - [Coucou New Feature Buildout Plan](./coucou-new-feature-buildout-plan.md)
+
+Status as of 2026-05-07:
+
+- The Dojo workspace production migration and RSVP aggregate backfill are
+  complete in development and production.
+- The RSVP custom-field to first-class social/profile-field backfill is complete
+  in development and production.
+- Temporary primary-field and snapshot-restore scripts/functions have been
+  removed after verification.
+- This document remains an architecture and remaining-work plan, not a runbook
+  for rerunning completed backfills.
 
 ## 1. Summary
 
@@ -238,6 +249,8 @@ Current:
 
 - `users`
 - `profiles`
+- `profileFieldValues`
+- `workspaceProfileValueGrants`
 
 Target:
 
@@ -252,6 +265,16 @@ Migration:
 - Create one `person` per `(workspaceId, clerkUserId)` for every RSVP.
 - Move encrypted phone data from `profiles` into `contactPoints` when person records exist.
 - Keep `profiles` as compatibility storage during migration.
+
+Completed profile-field foundation:
+
+- User-owned reusable field values are stored in `profileFieldValues`.
+- Per-workspace organizer access is represented by
+  `workspaceProfileValueGrants`.
+- RSVP submission can reuse previously entered user information and grant the
+  organizer workspace access to only the requested fields.
+- Users can keep multiple values for the same field when they intentionally
+  enter different values for different contexts.
 
 V1 guest account policy:
 
@@ -284,6 +307,9 @@ Migration:
 - Generate a form definition from each event's `customFields`.
 - Keep `customFieldValues` on `rsvps` for v1 compatibility.
 - Continue to support existing status values.
+- Completed compatibility backfill: social custom-field aliases such as
+  Instagram, IG, X/Twitter, and LinkedIn now map into first-class primary
+  profile/social fields while preserving legacy RSVP `customFieldValues`.
 
 Required changes:
 
@@ -759,6 +785,9 @@ Refactor tasks:
 
 ### Phase 0: Stabilize And Document
 
+Status: completed for the initial Dojo production migration. Keep the docs
+current as the platform architecture continues to evolve.
+
 Goal: make current product understandable and testable.
 
 Tasks:
@@ -775,6 +804,10 @@ Acceptance:
 - Docs identify all major migration entities and provider decisions.
 
 ### Phase 1: Workspace/Tenant Foundation
+
+Status: the Dojo production workspace scoping and backfill are complete.
+Generalized tenant hardening for every future table and workflow remains
+ongoing platform work.
 
 Goal: every core object has owner workspace.
 
@@ -795,6 +828,10 @@ Acceptance:
 - Exports are workspace-scoped.
 
 ### Phase 2: Domain-Aware Auth And Routing
+
+Status: first-party production rollout support is in place for the current
+branded clients. Broader custom-domain management and satellite-auth polish
+remain future work.
 
 Goal: support `coucou.events` plus organizer custom domains.
 
@@ -975,7 +1012,8 @@ Add tests for:
 - Existing redemptions map to tickets/check-ins.
 - Existing text blasts map to campaigns.
 - Existing SMS notifications map to message deliveries.
-- Backfill scripts are resumable and idempotent.
+- Active backfill scripts are resumable and idempotent, and completed temporary
+  backfill scripts are removed from the active runbook after verification.
 
 ### 12.4 Manual Acceptance Scenarios
 
@@ -1032,6 +1070,7 @@ Backfills must:
 - Log counts.
 - Avoid deleting old fields until compatibility period ends.
 - Have rollback notes for each phase.
+- Be removed from active release runbooks after dev and production verification.
 
 ### 13.4 Compatibility Period
 
@@ -1100,7 +1139,7 @@ Before any phase is marked done:
 - Variable names remain descriptive.
 - `bun lint` passes.
 - Relevant backend tests pass.
-- Migration scripts report before/after counts.
+- Active migration scripts report before/after counts.
 - User-facing copy does not expose internal tenant implementation details.
 - SMS/consent copy identifies the organizer/end business.
 - Audit logs cover sensitive staff/API actions.

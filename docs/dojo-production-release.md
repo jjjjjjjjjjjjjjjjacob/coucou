@@ -1,6 +1,11 @@
-# Dojo Production Release
+# Dojo Production Release Record
 
-Use this checklist before pushing the migration work to `main`.
+Completed: May 7, 2026
+
+This document is now a production release record and verification checklist. The
+Dojo workspace migration, RSVP aggregate backfill, and RSVP social/profile-field
+backfill have already been completed in development and production. Do not run
+those backfills as part of routine deploys.
 
 ## Required Production Secrets
 
@@ -38,7 +43,7 @@ Subscribe it to user, organization, and organization membership create/update
 events, plus organization membership deletion. Set `CLERK_WEBHOOK_SECRET` in
 GitHub `Production` to the webhook signing secret.
 
-## Convex Deployment And Migration
+## Convex Deployment
 
 After production secrets exist, deploy the backend:
 
@@ -47,24 +52,23 @@ cd packages/backend
 bunx convex deploy -y
 ```
 
-Run the Dojo workspace scope migration as a Coucou platform member:
+Normal production deploys no longer require migration commands.
 
-```bash
-cd packages/backend
-bunx convex run migrations:backfillDojoPomodoroWorkspaceScope '{"dryRun":true,"clerkOrganizationId":"org_32rnaa36Qh7Q15BGgwwRehP6jJ9","clerkOrganizationSlug":"dojo-pomodoro"}' --prod
-bunx convex run migrations:backfillDojoPomodoroWorkspaceScope '{"dryRun":false,"clerkOrganizationId":"org_32rnaa36Qh7Q15BGgwwRehP6jJ9","clerkOrganizationSlug":"dojo-pomodoro"}' --prod
-```
+## Completed Migrations
 
-Save the dry-run output before the real run. It lists every event whose
-`siteKey` or `workspaceSlug` will be patched.
+The completed Dojo production migration:
 
-Backfill RSVP aggregates after event scope is correct:
+- linked the `dojo-pomodoro` workspace to Clerk organization
+  `org_32rnaa36Qh7Q15BGgwwRehP6jJ9`
+- configured the `dojo` workspace site for `dojopomodoro.club`
+- patched legacy Dojo events to `siteKey="dojo"` and
+  `workspaceSlug="dojo-pomodoro"`
+- backfilled RSVP aggregates after event scope was correct
+- backfilled RSVP social/profile data into first-class profile value records and
+  workspace grants while preserving legacy `customFieldValues`
 
-```bash
-cd packages/backend
-bunx convex run rsvps:run '{"fn":"rsvps:backfillRsvpAggregate"}' --prod
-bunx convex run rsvps:checkAggregateHealth '{"eventId":"<event-id>"}' --prod
-```
+The temporary primary-field and snapshot-restore scripts/functions were removed
+after dev and production verification.
 
 ## Post-Push Verification
 
@@ -73,5 +77,5 @@ Verify the production workflow succeeds, then check:
 - Dojo public pages and RSVP flows still work at `https://dojopomodoro.club`.
 - Dojo admin, host, and door links land under `/workspaces/dojo-pomodoro`.
 - Coucou shows Dojo events, RSVP counts, dashboard analytics, and door views.
-- Aggregate health matches database counts for key Dojo events.
+- Aggregate health matches database counts for key Dojo events if investigated.
 - Vercel deploy skipping behaves by app root and shared package changes.

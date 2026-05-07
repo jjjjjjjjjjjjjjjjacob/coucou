@@ -1,8 +1,14 @@
-# Production Migration Guide
+# Production Operations Guide
 
 This repository deploys the Coucou platform plus the Dojo Pomodoro and Club
-Chlorine client sites. Use this guide when preparing or running production
-deployments that require Convex data migrations.
+Chlorine client sites. Use this guide when preparing production deployments,
+checking production configuration, or investigating completed Convex data
+migrations.
+
+The Dojo workspace migration, RSVP aggregate backfill, and RSVP
+social/profile-field backfill were completed in development and production on
+May 7, 2026. They are no longer part of the normal production deployment
+checklist.
 
 All commands use Bun. Do not use npm, yarn, or pnpm in this repo.
 
@@ -16,8 +22,8 @@ Dojo Pomodoro: org_32rnaa36Qh7Q15BGgwwRehP6jJ9
 Club Chlorine: org_3DJfIuDejALI0S4PKobczmBixxn
 ```
 
-The current Dojo migration links the production Dojo workspace to
-`org_32rnaa36Qh7Q15BGgwwRehP6jJ9` and moves legacy Dojo events into the
+The completed Dojo migration linked the production Dojo workspace to
+`org_32rnaa36Qh7Q15BGgwwRehP6jJ9` and moved legacy Dojo events into the
 `dojo-pomodoro` workspace scope.
 
 ## Before Pushing To Main
@@ -74,7 +80,7 @@ NEXT_PUBLIC_CLUB_CHLORINE_CLERK_ORGANIZATION_ID=org_3DJfIuDejALI0S4PKobczmBixxn
 
 Pushing to `main` runs `.github/workflows/deploy-production.yml`, which deploys
 the Convex backend after CI passes. Wait for that workflow to finish before
-running production migrations.
+running production verification or intentional maintenance commands.
 
 For a manual backend deploy, run:
 
@@ -84,20 +90,20 @@ cd packages/backend
 bunx convex deploy -y
 ```
 
-## Migration Identity
+## Maintenance Identity
 
-The Dojo workspace migration is protected by Coucou platform auth. Run it as a
+Some maintenance mutations are protected by Coucou platform auth. Run them as a
 Coucou platform member. When using the Convex CLI, provide an identity whose
 active organization slug is `coucou`.
 
-Set this once in the shell you use for migration commands:
+Set this once in the shell you use for maintenance commands:
 
 ```bash
 export COUCOU_PLATFORM_IDENTITY='{"subject":"<production-coucou-admin-clerk-user-id>","issuer":"<production-clerk-issuer>","tokenIdentifier":"<production-coucou-admin-clerk-user-id>","org_slug":"coucou","role":"org:admin"}'
 ```
 
 Keep `subject` and `tokenIdentifier` as the same production Clerk user ID for
-the operator running the migration.
+the operator running the command.
 
 ## Optional Workspace Bootstrap
 
@@ -115,56 +121,35 @@ Then link the Club Chlorine workspace to its production Clerk organization:
 bunx convex run workspaces:setClerkOrganizationId '{"slug":"club-chlorine","clerkOrganizationId":"org_3DJfIuDejALI0S4PKobczmBixxn","clerkOrganizationSlug":"club-chlorine"}' --prod --identity "$COUCOU_PLATFORM_IDENTITY"
 ```
 
-The Dojo workspace organization link is handled by the Dojo migration below.
+The Dojo workspace organization link was handled by the completed Dojo
+workspace migration.
 
-## Dojo Workspace Migration
+## Completed Dojo Workspace Migration
 
-Always run the dry run first and save the output:
+The Dojo workspace migration has already completed in development and
+production. Do not run it during routine deploys.
 
-```bash
-cd packages/backend
-bunx convex run migrations:backfillDojoPomodoroWorkspaceScope '{"dryRun":true,"clerkOrganizationId":"org_32rnaa36Qh7Q15BGgwwRehP6jJ9","clerkOrganizationSlug":"dojo-pomodoro"}' --prod --identity "$COUCOU_PLATFORM_IDENTITY"
-```
+It:
 
-Review the dry-run output before continuing:
-
-```text
-workspaceAction
-workspaceSiteAction
-matchingEventCount
-patchedEventCount
-patchedEvents
-```
-
-Stop if `patchedEvents` includes anything that is not a Dojo Pomodoro event, or
-if the migration reports that the existing Dojo workspace is linked to a
-different Clerk organization.
-
-After the dry run looks correct, run the real migration:
-
-```bash
-bunx convex run migrations:backfillDojoPomodoroWorkspaceScope '{"dryRun":false,"clerkOrganizationId":"org_32rnaa36Qh7Q15BGgwwRehP6jJ9","clerkOrganizationSlug":"dojo-pomodoro"}' --prod --identity "$COUCOU_PLATFORM_IDENTITY"
-```
-
-This migration:
-
-- creates or updates the `dojo-pomodoro` workspace
-- links it to the production Dojo Clerk organization
-- creates, reassigns, or updates the `dojo` workspace site
-- patches legacy Dojo events to `siteKey="dojo"` and
+- created or updated the `dojo-pomodoro` workspace
+- linked it to the production Dojo Clerk organization
+- created, reassigned, or updated the `dojo` workspace site
+- patched legacy Dojo events to `siteKey="dojo"` and
   `workspaceSlug="dojo-pomodoro"`
 
-## RSVP Aggregate Backfill
-
-Run the RSVP aggregate backfill after the Dojo workspace scope migration:
+Verify the production workspace record when investigating production state:
 
 ```bash
-cd packages/backend
-bunx convex run rsvps:run '{"fn":"rsvps:backfillRsvpAggregate"}' --prod
+bunx convex run workspaces:getWorkspaceBySlug '{"slug":"dojo-pomodoro"}' --prod
 ```
 
-Then list the production Dojo events and check aggregate health for each event
-ID returned:
+## Completed RSVP Aggregate Backfill
+
+The RSVP aggregate backfill has already completed in development and
+production. Do not run it during routine deploys.
+
+To investigate aggregate health, list production Dojo events and check each
+event ID returned:
 
 ```bash
 bunx convex run events:listAll '{"siteKey":"dojo","workspaceSlug":"dojo-pomodoro"}' --prod
@@ -173,7 +158,17 @@ bunx convex run rsvps:checkAggregateHealth '{"eventId":"<event-id>"}' --prod
 
 Every health check should return `isHealthy: true` and `difference: 0`.
 
-## Post-Migration Verification
+## Completed RSVP Social/Profile Backfill
+
+The RSVP custom-field to first-class social/profile-field backfill has already
+completed in development and production. Legacy RSVP `customFieldValues` remain
+for compatibility, while reusable user-owned profile values and workspace grants
+now provide the first-class profile data path.
+
+The temporary snapshot restore and primary-field backfill scripts/functions were
+removed after verification.
+
+## Production Verification
 
 Verify the Dojo workspace record:
 
@@ -209,9 +204,9 @@ Then check the live apps:
 - Club Chlorine deploys with its production Clerk organization ID and does not
   show Dojo admin links.
 
-## Rollback Notes
+## Incident Notes
 
-Do not roll back with ad hoc database edits. If a production migration result
-looks wrong, stop deploying new changes, keep the saved dry-run and real-run
-outputs, and inspect the specific `workspaces`, `workspaceSites`, and `events`
-records before making any corrective mutation.
+Do not roll back with ad hoc database edits. If a historical migration result
+looks wrong, stop deploying new changes and inspect the specific `workspaces`,
+`workspaceSites`, `events`, `rsvps`, `profileFieldValues`, and
+`workspaceProfileValueGrants` records before making any corrective mutation.
