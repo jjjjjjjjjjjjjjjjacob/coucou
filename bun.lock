@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "dojo-pomodoro",
+      "name": "coucou",
       "devDependencies": {
         "@next/eslint-plugin-next": "^16.0.8",
         "eslint-plugin-react-hooks": "^7.0.1",

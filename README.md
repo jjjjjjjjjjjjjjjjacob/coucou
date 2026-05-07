@@ -35,13 +35,13 @@ Confirm the GitHub `Production` environment has the backend deploy secrets. The
 production workflow syncs these into Convex before deploying the backend:
 
 ```bash
-gh secret list --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
+gh secret list --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
 ```
 
 Required backend secrets include:
 
 ```text
-CONVEX_DEPLOY_KEY_PRODUCTION
+CONVEX_DEPLOY_KEY
 APP_BASE_URL
 CLERK_FRONTEND_API_URL
 CLERK_SECRET_KEY
@@ -52,7 +52,9 @@ TWILIO_AUTH_TOKEN
 TWILIO_PHONE_NUMBER
 ```
 
-`APP_BASE_URL` must be `https://dojopomodoro.club` in production. If you use
+`APP_BASE_URL` must be `https://coucou.events` in production. Known event
+sites resolve to their own configured domains first, so this value is only the
+generic fallback. If you use
 `bun run sync:github-production-secrets`, export production values first; the
 sync script rejects local URLs.
 

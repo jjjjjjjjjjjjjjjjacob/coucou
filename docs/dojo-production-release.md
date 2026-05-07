@@ -8,18 +8,20 @@ Populate the GitHub `Production` environment before relying on the production
 workflow:
 
 ```bash
-gh secret set CONVEX_DEPLOY_KEY_PRODUCTION --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
-gh secret set APP_BASE_URL --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
-gh secret set CLERK_FRONTEND_API_URL --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
-gh secret set CLERK_SECRET_KEY --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
-gh secret set CLERK_WEBHOOK_SECRET --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
-gh secret set COUCOU_CLERK_ORGANIZATION_SLUG --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
-gh secret set TWILIO_ACCOUNT_SID --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
-gh secret set TWILIO_AUTH_TOKEN --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
-gh secret set TWILIO_PHONE_NUMBER --env Production --repo jjjjjjjjjjjjjjjjacob/dojo-pomodoro
+gh secret set CONVEX_DEPLOY_KEY --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
+gh secret set APP_BASE_URL --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
+gh secret set CLERK_FRONTEND_API_URL --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
+gh secret set CLERK_SECRET_KEY --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
+gh secret set CLERK_WEBHOOK_SECRET --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
+gh secret set COUCOU_CLERK_ORGANIZATION_SLUG --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
+gh secret set TWILIO_ACCOUNT_SID --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
+gh secret set TWILIO_AUTH_TOKEN --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
+gh secret set TWILIO_PHONE_NUMBER --env Production --repo jjjjjjjjjjjjjjjjacob/coucou
 ```
 
-`APP_BASE_URL` must be `https://dojopomodoro.club` for production. If using
+`APP_BASE_URL` must be `https://coucou.events` for production. Known event
+sites resolve to their own configured domains first, so this value is only the
+generic fallback. If using
 `bun run sync:github-production-secrets`, export production values first. The
 sync script rejects local URLs.
 

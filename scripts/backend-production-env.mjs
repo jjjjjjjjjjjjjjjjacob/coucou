@@ -1,4 +1,4 @@
-export const githubRepositoryFullName = "jjjjjjjjjjjjjjjjacob/dojo-pomodoro";
+export const githubRepositoryFullName = "jjjjjjjjjjjjjjjjacob/coucou";
 export const githubProductionEnvironmentName = "Production";
 
 export const requiredBackendEnvironmentVariables = Object.freeze([
@@ -18,7 +18,7 @@ export const optionalBackendEnvironmentVariables = Object.freeze([
 ]);
 
 export const requiredGitHubProductionSecrets = Object.freeze([
-  "CONVEX_DEPLOY_KEY_PRODUCTION",
+  "CONVEX_DEPLOY_KEY",
   ...requiredBackendEnvironmentVariables,
 ]);
 

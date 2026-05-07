@@ -1,0 +1,40 @@
+# Dependency installs
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+
+# Local build output and caches
+.next
+apps/*/.next
+.turbo
+apps/*/.turbo
+coverage
+apps/*/coverage
+packages/*/dist
+*.tsbuildinfo
+
+# Local Vercel and environment files
+.vercel
+apps/*/.vercel
+.env.local
+.env.*.local
+apps/*/.env.local
+apps/*/.env.*.local
+packages/*/.env.local
+packages/*/.env.*.local
+
+# Tests and local-only tooling
+__tests__
+apps/*/__tests__
+*.test.*
+*.spec.*
+test-setup.ts
+jest.config.*
+happydom.ts
+
+# Editor and OS files
+.vscode
+.idea
+.DS_Store
+apps/*/.DS_Store
+packages/*/.DS_Store

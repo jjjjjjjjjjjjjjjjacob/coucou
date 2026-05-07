@@ -93,7 +93,7 @@ export const siteConfigurations: Record<SiteKey, SiteConfiguration> = {
     workspaceSlug: "coucou",
     brandName: "Coucou",
     shortName: "Coucou",
-    domain: "https://coucou.now",
+    domain: "https://coucou.events",
     description:
       "Headless event operations for client sites, organizers, and door teams",
     accentMark: "CO",

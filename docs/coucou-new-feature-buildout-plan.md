@@ -93,8 +93,8 @@ Features:
 - Domain verification model.
 - Guest domain routing.
 - Admin domain routing.
-- Coucou-hosted dashboard login from `coucou.now`.
-- Clerk satellite-domain configuration support.
+- Coucou-hosted dashboard login from `coucou.events`.
+- Per-app Clerk configuration, with satellite-domain support deferred.
 - Auth redirect context preservation.
 - Multi-workspace switcher from Coucou.
 - Client-site dashboard routes:
@@ -103,8 +103,8 @@ Features:
 
 User stories:
 
-- As an organizer, I can log into Coucou from `coucou.now`.
-- As an organizer, I can log into Coucou from `coucou.now/admin` and switch between workspaces I can access.
+- As an organizer, I can log into Coucou from `coucou.events`.
+- As an organizer, I can log into Coucou from `coucou.events/admin` and switch between workspaces I can access.
 - As an organizer, I can log into Coucou from my own client domain at `/admin`.
 - As door staff, I can use the same workspace-scoped dashboard from the client domain at `/door`.
 - As a guest, I can open an event page on the organizer's domain.
@@ -115,7 +115,7 @@ Acceptance criteria:
 - Hostname resolves to workspace.
 - Verified custom domains can be marked active.
 - Guest event pages render from custom domains.
-- Sign-in and sign-up routes use Clerk primary/satellite domain rules.
+- Sign-in and sign-up routes use the active app's Clerk configuration.
 - Password/invite context survives auth redirects.
 - Dojo guest routes remain unchanged through the migration.
 - `dojopomodoro.club/admin` and `dojopomodoro.club/door` resolve to the Dojo workspace.
@@ -157,7 +157,7 @@ Acceptance criteria:
 - Old `/host/texts` and `/host/text-blasts` paths redirect or consolidate safely.
 - Existing RSVP export options remain available.
 - Existing QR tickets remain valid through migration.
-- `coucou.now/admin` can open the Dojo workspace or another client workspace.
+- `coucou.events/admin` can open the Dojo workspace or another client workspace.
 - Client domains can host the same admin and door surfaces at `/admin` and `/door`.
 
 Tests:
@@ -807,7 +807,7 @@ Acceptance criteria:
 | Area | Must Have Before Public V1 | Can Follow |
 | --- | --- | --- |
 | Tenant safety | Workspace IDs, authorization helpers, audit logs | Enterprise audit export |
-| Domains | Guest/admin custom domains, `coucou.now/admin`, client `/admin` and `/door` | Self-serve DNS wizard polish |
+| Domains | Guest/admin custom domains, `coucou.events/admin`, client `/admin` and `/door` | Self-serve DNS wizard polish |
 | Auth | Clerk + required guest accounts + multi-workspace switching | WorkOS SSO, Better Auth evaluation |
 | RSVP | Current Dojo parity, stable API | Conditional form logic |
 | CRM | Person profiles, tags, notes | Merge UI, advanced dedupe |
@@ -893,7 +893,7 @@ Every public feature must define:
 Coucou v1 can launch privately when:
 
 - `dojopomodoro.club` runs on Coucou backend while preserving current guest-facing behavior and organizer expectations.
-- `coucou.now/admin` works as superadmin portal and workspace admin shell.
+- `coucou.events/admin` works as superadmin portal and workspace admin shell.
 - An organizer with access to multiple workspaces can switch between them from Coucou.
 - At least one additional branded client domain, such as `clubchlorine.party`, can run on the same backend with separate workspace data.
 - Organizer can manage the Dojo workspace from `dojopomodoro.club/admin`.

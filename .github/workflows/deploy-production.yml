@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     env:
-      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY_PRODUCTION }}
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
       APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
       CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}

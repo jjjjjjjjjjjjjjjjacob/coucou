@@ -159,7 +159,7 @@ export function DashboardSidebar() {
         <NavLink href="/dashboard" active={pathname === "/dashboard"}>
           Home
         </NavLink>
-        <AdminSidebarAnchor href="mailto:hello@coucou.house">
+        <AdminSidebarAnchor href="mailto:hello@coucou.events">
           Inquire
         </AdminSidebarAnchor>
       </NavGroup>

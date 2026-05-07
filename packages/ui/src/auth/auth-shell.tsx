@@ -224,7 +224,7 @@ export function AuthShell({
             <>
               <span aria-hidden="true">·</span>
               <a
-                href="https://coucou.now"
+                href="https://coucou.events"
                 target="_blank"
                 rel="noreferrer"
                 className="transition-opacity hover:opacity-80"

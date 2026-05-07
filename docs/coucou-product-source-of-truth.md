@@ -168,14 +168,14 @@ Needs:
 
 ### 5.1 Hosted Organizer Cockpit
 
-The Coucou dashboard hosted on `coucou.now` and mirrored into client domains for workspace-specific admin and door access.
+The Coucou dashboard hosted on `coucou.events` and mirrored into client domains for workspace-specific admin and door access.
 
 V1 operating model:
 
-- `coucou.now` is the primary Coucou control plane.
-- `coucou.now/admin` serves as the superadmin portal and can also open workspace-specific admin contexts.
+- `coucou.events` is the primary Coucou control plane.
+- `coucou.events/admin` serves as the superadmin portal and can also open workspace-specific admin contexts.
 - A host/organizer with access to multiple workspaces can hop between them from Coucou.
-- Branded client sites such as `dojopomodoro.club` and `clubchlorine.party` act as Coucou satellite domains backed by the same shared backend.
+- Branded client sites such as `dojopomodoro.club` and `clubchlorine.party` run as Coucou client apps backed by the same shared backend.
 - Client sites expose workspace-scoped dashboard entry points such as `/admin` and `/door`.
 - `dojopomodoro.club` must remain materially unchanged for guests and functionally unchanged for organizers in v1; the backend and admin architecture changes, but the guest-facing product should not feel rebuilt.
 - Client onboarding in v1 is manual and high-touch, not self-serve.
@@ -280,11 +280,11 @@ Coucou must support:
 
 - Guest-facing event sites on organizer domains.
 - Organizer/client-facing login and dashboard access from the organizer's custom domain.
-- Organizer login from `coucou.now`.
+- Organizer login from `coucou.events`.
 - Shared backend data across all domains for the same workspace.
 - A first branded tenant at `dojopomodoro.club`.
 - Additional branded tenants such as `clubchlorine.party`.
-- Admin and host access from both `coucou.now/admin` and client-domain `/admin`.
+- Admin and host access from both `coucou.events/admin` and client-domain `/admin`.
 - Door access from client-domain `/door`.
 
 Domain records:
@@ -294,13 +294,13 @@ Domain records:
 - `purpose`: `guest`, `admin`, `api`, `auth`, or `mixed`.
 - `status`: `pending`, `verified`, `active`, `disabled`.
 - DNS verification fields.
-- Clerk satellite-domain configuration state.
+- Auth provider configuration state.
 - Default event or routing mode.
 
 Routing behavior:
 
-- `coucou.now` hosts the platform dashboard and can route to workspace admin contexts.
-- `coucou.now/admin` is the primary superadmin and multi-workspace admin entry point.
+- `coucou.events` hosts the platform dashboard and can route to workspace admin contexts.
+- `coucou.events/admin` is the primary superadmin and multi-workspace admin entry point.
 - Client guest domains route guests to workspace-owned event pages and preserve existing branded behavior.
 - Client domains expose `/admin` and `/door` routes that resolve into the same workspace-scoped dashboards and permissions as Coucou.
 - A host with access to multiple workspaces can switch workspace context from Coucou without maintaining separate accounts.
@@ -320,10 +320,10 @@ Why:
 
 - The current app already uses Clerk, Clerk webhooks, Convex JWT verification, and `ConvexProviderWithClerk`.
 - Clerk Organizations model active organization context, roles, and memberships, which maps well to workspace access.
-- Clerk satellite domains support shared sessions across different domains, but sign-in and sign-up flows complete on the primary domain.
+- Each deployed app uses its own Clerk configuration in v1; shared-session satellite domains are deferred.
 - Twilio is already implemented and is the right v1 provider for event SMS.
 
-Important Clerk constraint:
+Important Clerk constraint for future satellite-domain work:
 
 - With satellite domains, the primary domain owns auth state.
 - Custom domains can initiate sign-in, but users complete sign-in/sign-up on the primary auth domain and return to the satellite domain.
@@ -331,12 +331,12 @@ Important Clerk constraint:
 
 Implementation default:
 
-- Primary auth domain: `coucou.now` or a dedicated auth domain such as `auth.coucou.now`.
-- Organizer and client domains: Clerk satellite domains.
+- Coucou auth domain: `coucou.events`.
+- Organizer and client domains: separate Clerk app configurations.
 - Convex auth: continue validating Clerk-issued JWTs.
 - Guest RSVP/status/ticket flows: account required in v1.
 - Admin and door surfaces must be reachable from both Coucou-hosted and client-domain routes:
-  - `coucou.now/admin`
+  - `coucou.events/admin`
   - `<client-domain>/admin`
   - `<client-domain>/door`
 
@@ -732,7 +732,7 @@ Capabilities:
 Acceptance criteria:
 
 - Every data query is scoped by workspace.
-- Users can access an organizer dashboard from `coucou.now/admin`.
+- Users can access an organizer dashboard from `coucou.events/admin`.
 - Users can access an organizer dashboard from a verified client-domain `/admin` route.
 - Users can access a workspace door dashboard from a verified client-domain `/door` route.
 - A user with access to multiple workspaces can switch between them from Coucou.
@@ -1068,7 +1068,7 @@ Use Clerk for v1 auth.
 Relevant source facts:
 
 - Clerk Organizations group users with roles and permissions and expose active organization context.
-- Clerk satellite domains share sessions across different domains, with the primary domain owning auth state.
+- Satellite domains can share sessions across different domains, but Coucou is not using them in v1.
 - Convex has a Clerk integration through `ConvexProviderWithClerk` and Clerk-issued JWT validation.
 
 Sources:
@@ -1140,8 +1140,8 @@ Coucou v1 is successful when:
 
 - `dojopomodoro.club` behaves the same for guests and functionally the same for organizers and door staff, while being backed by Coucou.
 - Core data is workspace-scoped.
-- `coucou.now/admin` works as both superadmin portal and workspace admin portal.
-- Organizers can log in from `coucou.now` and switch between all client workspaces they can access.
+- `coucou.events/admin` works as both superadmin portal and workspace admin portal.
+- Organizers can log in from `coucou.events` and switch between all client workspaces they can access.
 - Organizers can access admin and door dashboards from client-site routes such as `dojopomodoro.club/admin`, `dojopomodoro.club/door`, and `clubchlorine.party/admin`.
 - A second branded client domain can run on the same backend with isolated workspace data.
 - Guests are required to authenticate before RSVP/status/ticket in v1.

@@ -89,11 +89,6 @@ export const metadata: Metadata = {
   manifest: clubChlorineIconPaths.manifest,
 };
 
-// Satellite-mode toggle. See apps/dojo/app/layout.tsx for context.
-const clerkSatelliteDomain = process.env.NEXT_PUBLIC_CLERK_DOMAIN;
-const clerkPrimarySignInUrl =
-  process.env.NEXT_PUBLIC_CLERK_PRIMARY_SIGN_IN_URL;
-
 // Vaul scales whatever element carries this attribute when a drawer with
 // shouldScaleBackground is opened. The body acts as the dark backdrop.
 const vaulDrawerWrapperAttribute = { "vaul-drawer-wrapper": "" };
@@ -120,17 +115,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${bowlbyOne.variable} ${notoEmoji.variable} antialiased`}
       >
-        {clerkSatelliteDomain ? (
-          <ClerkProvider
-            isSatellite
-            domain={clerkSatelliteDomain}
-            signInUrl={clerkPrimarySignInUrl}
-          >
-            {inner}
-          </ClerkProvider>
-        ) : (
-          <ClerkProvider>{inner}</ClerkProvider>
-        )}
+        <ClerkProvider>{inner}</ClerkProvider>
       </body>
     </html>
   );

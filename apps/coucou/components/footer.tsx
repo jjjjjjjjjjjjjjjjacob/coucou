@@ -13,11 +13,11 @@ export function Footer() {
       brandName={siteConfiguration.brandName}
       contact={
         <a
-          href="mailto:hello@coucou.house"
+          href="mailto:hello@coucou.events"
           className="transition-opacity hover:opacity-80"
           style={{ color: "var(--tt-fg-dim)" }}
         >
-          hello@coucou.house
+          hello@coucou.events
         </a>
       }
     />

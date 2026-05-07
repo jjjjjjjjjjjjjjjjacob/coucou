@@ -1102,7 +1102,7 @@ export const seedDefaultWorkspaces = mutation({
       slug: "coucou",
       name: "Coucou",
       kind: "admin",
-      primaryDomain: "coucou.now",
+      primaryDomain: "coucou.events",
     });
 
     await upsertWorkspaceSiteRecord(ctx, {
@@ -1120,7 +1120,7 @@ export const seedDefaultWorkspaces = mutation({
     await upsertWorkspaceSiteRecord(ctx, {
       workspaceId: coucouWorkspaceId,
       siteKey: "coucou",
-      domain: "coucou.now",
+      domain: "coucou.events",
       appKind: "admin",
     });
 

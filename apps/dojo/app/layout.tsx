@@ -60,14 +60,6 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
 };
 
-// Satellite-mode toggle. When NEXT_PUBLIC_CLERK_DOMAIN is set in production
-// (e.g. "dojopomodoro.club"), this app delegates auth to the primary Clerk
-// instance running at NEXT_PUBLIC_CLERK_PRIMARY_SIGN_IN_URL (Coucou).
-// In local dev (no env vars set) the app uses Clerk in standalone mode.
-const clerkSatelliteDomain = process.env.NEXT_PUBLIC_CLERK_DOMAIN;
-const clerkPrimarySignInUrl =
-  process.env.NEXT_PUBLIC_CLERK_PRIMARY_SIGN_IN_URL;
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -85,17 +77,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${notoEmoji.variable} antialiased flex flex-col min-h-screen`}
       >
-        {clerkSatelliteDomain ? (
-          <ClerkProvider
-            isSatellite
-            domain={clerkSatelliteDomain}
-            signInUrl={clerkPrimarySignInUrl}
-          >
-            {inner}
-          </ClerkProvider>
-        ) : (
-          <ClerkProvider>{inner}</ClerkProvider>
-        )}
+        <ClerkProvider>{inner}</ClerkProvider>
       </body>
     </html>
   );

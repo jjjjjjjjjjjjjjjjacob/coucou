@@ -61,7 +61,7 @@ export interface ChlorineLandingProps {
    */
   tagline?: string;
   /**
-   * Footer left text. Defaults to "chlorine@coucou.house".
+   * Footer left text. Defaults to "chlorine@coucou.events".
    */
   contactEmail?: string;
   /**
@@ -104,7 +104,7 @@ const LOGO_RIPPLE_REFRESH_MS = 1400;
 export function ChlorineLanding({
   events,
   tagline = "",
-  contactEmail = "chlorine@coucou.house",
+  contactEmail = "chlorine@coucou.events",
   yearLabel = "MMXXVI",
   mobile: forceMobile,
   emptyState,

@@ -93,7 +93,7 @@ export default async function Home() {
               </p>
               <div className="flex gap-8 text-[14px]">
                 <Link
-                  href="mailto:hello@coucou.house"
+                  href="mailto:hello@coucou.events"
                   style={{
                     color: "var(--tt-fg)",
                     borderBottom: "1px solid var(--tt-fg)",
@@ -212,7 +212,7 @@ export default async function Home() {
                 brand, voice. Pricing by negotiation.
               </p>
               <Link
-                href="mailto:hello@coucou.house"
+                href="mailto:hello@coucou.events"
                 className="inline-block text-[14px]"
                 style={{
                   color: "var(--tt-fg)",
@@ -220,7 +220,7 @@ export default async function Home() {
                   paddingBottom: 2,
                 }}
               >
-                Inquire — hello@coucou.house →
+                Inquire — hello@coucou.events →
               </Link>
             </div>
           </div>

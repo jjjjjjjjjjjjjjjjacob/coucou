@@ -27,7 +27,7 @@ V1 scope clarification:
 - V1 is a first-party multi-site platform rollout, not a broad public self-serve platform launch.
 - `dojopomodoro.club` is the first branded Coucou client and must remain behaviorally the same for guests and functionally the same for organizers.
 - Coucou must support additional manually onboarded branded client sites, such as `clubchlorine.party`, on the same backend.
-- `coucou.now` serves as the superadmin portal and a shared admin shell for operators with access to multiple workspaces.
+- `coucou.events` serves as the superadmin portal and a shared admin shell for operators with access to multiple workspaces.
 - Workspace-scoped dashboards must also be reachable from branded client routes such as `/admin` and `/door`.
 - Public SDK and external developer onboarding can follow after this first-party multi-site architecture is stable.
 
@@ -599,7 +599,7 @@ Target:
 - Add domain-aware workspace resolution.
 - Support slug/domain event routing.
 - Preserve password/invite state across Clerk sign-in.
-- Support primary Coucou auth domain plus custom-domain satellite flows.
+- Preserve current per-app Clerk auth flows; keep custom-domain satellite auth deferred.
 
 Refactor tasks:
 
@@ -796,14 +796,14 @@ Acceptance:
 
 ### Phase 2: Domain-Aware Auth And Routing
 
-Goal: support `coucou.now` plus organizer custom domains.
+Goal: support `coucou.events` plus organizer custom domains.
 
 Tasks:
 
 - Add `domains` management.
 - Add hostname-to-workspace resolution.
 - Add domain default event routing.
-- Configure Clerk primary/satellite domain model in app configuration.
+- Keep per-app Clerk configuration explicit and document satellite auth as deferred.
 - Preserve auth redirects from custom domains back through primary auth.
 - Update middleware/proxy route logic for domain-aware event lookup.
 - Add a shared workspace switcher in Coucou for users with access to multiple workspaces.
@@ -815,7 +815,7 @@ Tasks:
 
 Acceptance:
 
-- Organizer can log into dashboard from `coucou.now/admin`.
+- Organizer can log into dashboard from `coucou.events/admin`.
 - Organizer can open workspace-scoped admin dashboard from verified client-domain `/admin`.
 - Organizer can open workspace-scoped door dashboard from verified client-domain `/door`.
 - Organizer with multiple workspace memberships can switch contexts from Coucou.
@@ -988,7 +988,7 @@ Run these before calling a migration phase complete:
 - Host exports RSVP data.
 - Host creates a tagged person and sends a tag-filtered campaign.
 - Host duplicates a campaign and verifies audience preview before send.
-- Organizer logs in from `coucou.now/admin`.
+- Organizer logs in from `coucou.events/admin`.
 - Organizer opens admin dashboard from branded client `/admin`.
 - Organizer opens door dashboard from branded client `/door`.
 - Organizer with access to multiple workspaces switches between them from Coucou.
@@ -1062,7 +1062,7 @@ Reason:
 
 - Current app already depends on Clerk and Twilio.
 - Clerk Organizations and Convex JWT integration match the current architecture.
-- Clerk satellite domains support the required custom-domain/shared-session direction.
+- Clerk satellite domains can support future custom-domain shared sessions, but they are not part of the current deployment model.
 - Twilio already handles SMS sending and can support opt-out and optional verification.
 
 Known limitation:
@@ -1071,7 +1071,7 @@ Known limitation:
 
 V1 delivery implication:
 
-- Coucou should optimize first for Coucou-managed satellite client sites and shared admin routing, not for public self-serve customer configuration on day one.
+- Coucou should optimize first for Coucou-managed branded client sites and shared admin routing, not for public self-serve customer configuration on day one.
 
 Deferred:
 

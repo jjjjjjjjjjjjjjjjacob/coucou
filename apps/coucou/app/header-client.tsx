@@ -82,7 +82,7 @@ export default function HeaderClient({ sticky = false }: HeaderClientProps = {})
   const rightSlot = (
     <>
       <Link
-        href="mailto:hello@coucou.house"
+        href="mailto:hello@coucou.events"
         className="text-[13px] inline-flex items-center transition-opacity hover:opacity-80"
         style={{ color: "var(--tt-fg)", height: 32, lineHeight: 1 }}
       >
@@ -90,7 +90,7 @@ export default function HeaderClient({ sticky = false }: HeaderClientProps = {})
       </Link>
       <HeaderHamburgerMenu brandName={siteConfiguration.brandName}>
         <HamburgerMenuItem href="/">Home</HamburgerMenuItem>
-        <HamburgerMenuItem href="mailto:hello@coucou.house">
+        <HamburgerMenuItem href="mailto:hello@coucou.events">
           Inquire
         </HamburgerMenuItem>
         {isLoaded && isSignedIn ? (
