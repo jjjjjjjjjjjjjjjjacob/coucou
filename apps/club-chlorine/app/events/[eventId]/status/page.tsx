@@ -1,6 +1,7 @@
 "use client";
 
 import React, { use, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useMutation, useQuery as useConvexQuery } from "convex/react";
@@ -10,15 +11,13 @@ import type { Id } from "@convex/_generated/dataModel";
 import { useAuth } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { CheckCircle2, CircleDashed } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
-import {
-  RsvpPending,
-  TenantTemplateProvider,
-} from "@coucou/ui/tenant-template";
+import { EyebrowPill, RsvpPending } from "@coucou/ui/tenant-template";
 
 export default function StatusPage({
   params,
@@ -163,44 +162,62 @@ export default function StatusPage({
   // No request on file — direct user back to RSVP entry.
   if (!status?.status) {
     return (
-      <TenantTemplateProvider
-        siteConfigurationPreset={siteConfiguration.preset}
-        event={event}
-      >
+      <div className="mx-auto w-full max-w-[384px]">
         <RsvpPending
           eyebrow="Status"
+          eyebrowTrailing={
+            <EyebrowPill
+              href={`/events/${eventId}`}
+              linkComponent={Link}
+            >
+              ← Back to event
+            </EyebrowPill>
+          }
           heading="No request on file."
           description="It looks like you haven't sent in a request yet. Head back and enter your password."
           statusLabel="Awaiting"
+          noShell
         />
-      </TenantTemplateProvider>
+      </div>
     );
   }
 
   // We're here only when status.status === "pending" — terminal states have
   // already redirected above.
   return (
-    <TenantTemplateProvider
-      siteConfigurationPreset={siteConfiguration.preset}
-      event={event}
-    >
+    <div className="mx-auto w-full max-w-[384px]">
       <RsvpPending
-        description={
-          <>
-            Your request is{" "}
-            <strong>pending host approval</strong>. You will receive
-            instructions once approved. Approval is necessary to access the
-            event.
-          </>
+        noShell
+        eyebrowTrailing={
+          <EyebrowPill href={`/events/${eventId}`} linkComponent={Link}>
+            ← Back to event
+          </EyebrowPill>
         }
-        extras={
+      description={
+            <>
+              {status.listKey ? (
+                <div className="mb-3">
+                  <Badge
+                    variant="outline"
+                    style={{ letterSpacing: "0.05em" }}
+                  >
+                    {status.listKey.toUpperCase()}
+                  </Badge>
+                </div>
+              ) : null}
+              Your request is{" "}
+              <strong>pending host approval</strong>. You will receive
+              instructions once approved. Approval is necessary to access the
+              event.
+            </>
+          }
+          extras={
           <div className="flex flex-col items-start gap-6 text-sm">
             {(guestPortalImageUrl || shouldShowGuestLink) && (
               <section
-                className="w-full space-y-3 rounded-lg border p-4"
+                className="w-full space-y-3"
                 style={{
-                  borderColor: "var(--tt-rule)",
-                  background: "var(--tt-bg-2)",
+                  background: "transparent",
                 }}
               >
                 {guestPortalImageUrl && (
@@ -247,7 +264,7 @@ export default function StatusPage({
                   <Button
                     type="button"
                     size="sm"
-                    variant="default"
+                    variant="outline"
                     className="min-w-[7rem]"
                     onClick={() => handleSmsPreferenceChange(false)}
                     disabled={
@@ -309,6 +326,6 @@ export default function StatusPage({
           </div>
         }
       />
-    </TenantTemplateProvider>
-  );
+    </div>
+    );
 }

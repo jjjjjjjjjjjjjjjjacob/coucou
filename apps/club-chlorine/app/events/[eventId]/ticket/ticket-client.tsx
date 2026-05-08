@@ -12,7 +12,7 @@ import {
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { toast } from "sonner";
-import { Download } from "lucide-react";
+import { Check, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -21,8 +21,9 @@ import {
 } from "@/lib/event-display";
 import { siteConfiguration } from "@/lib/site";
 import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
+import Link from "next/link";
 import {
-  TenantTemplateProvider,
+  EyebrowPill,
   Ticket,
   TenantButton,
   type TicketDetailRow,
@@ -191,18 +192,12 @@ export default function TicketClientPage({
 
   if (!event) {
     return (
-      <TenantTemplateProvider
-        siteConfigurationPreset={siteConfiguration.preset}
-      >
-        <main className="flex min-h-screen items-center justify-center p-6">
-          <div className="text-center" style={{ color: "var(--tt-fg-dim)" }}>
-            <p className="text-lg font-medium">Event Not Found</p>
-            <p className="mt-2 text-sm">
-              This event may not exist or may have been removed.
-            </p>
-          </div>
-        </main>
-      </TenantTemplateProvider>
+      <div className="text-center" style={{ color: "var(--tt-fg-dim)" }}>
+        <p className="text-lg font-medium">Event Not Found</p>
+        <p className="mt-2 text-sm">
+          This event may not exist or may have been removed.
+        </p>
+      </div>
     );
   }
 
@@ -230,18 +225,24 @@ export default function TicketClientPage({
   }
 
   return (
-    <TenantTemplateProvider
-      siteConfigurationPreset={siteConfiguration.preset}
-      event={event}
-    >
+    <>
       {isLoadingRedemption ? (
-        <main className="flex min-h-screen items-center justify-center p-6">
+        <div className="flex items-center justify-center p-6">
           <Spinner />
-        </main>
+        </div>
       ) : (
         <Ticket
+          noShell
+          eyebrow="Ticket"
+          eyebrowTrailing={
+            <EyebrowPill href={`/events/${eventId}`} linkComponent={Link}>
+              ← Back to event
+            </EyebrowPill>
+          }
           eventName={event.name}
-          secondaryTitle={eventHasSecondaryTitle ? event.secondaryTitle : null}
+          secondaryTitle={
+            eventHasSecondaryTitle ? event.secondaryTitle : null
+          }
           whenLabel={dateText || null}
           whereLabel={event.location ?? null}
           qrValue={qrValue}
@@ -264,10 +265,11 @@ export default function TicketClientPage({
             ) : (
               <div className="flex flex-col items-center gap-2">
                 <div
-                  className="text-[14px] font-medium"
+                  className="flex items-center gap-1.5 text-[14px] font-medium"
                   style={{ color: "var(--tt-fg)" }}
                 >
-                  ✓ {status?.listKey?.toUpperCase()} confirmed
+                  <Check className="h-3.5 w-3.5" aria-hidden />
+                  <span>{status?.listKey?.toUpperCase()} confirmed</span>
                 </div>
                 <div
                   className="text-[12px] text-center max-w-[280px]"
@@ -297,6 +299,6 @@ export default function TicketClientPage({
           details={ticketDetails}
         />
       )}
-    </TenantTemplateProvider>
+    </>
   );
 }

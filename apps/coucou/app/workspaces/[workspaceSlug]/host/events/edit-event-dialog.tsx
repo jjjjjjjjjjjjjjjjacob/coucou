@@ -30,7 +30,17 @@ import {
   type PrimaryFieldConfigDraft,
 } from "@/components/primary-field-config-editor";
 import { useForm } from "react-hook-form";
-import { HostEventForm } from "@/components/host-event-form";
+import { Form } from "@/components/ui/form";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { EventDetailsSection } from "@/components/event-form-sections/event-details-section";
+import { EventScheduleSection } from "@/components/event-form-sections/event-schedule-section";
+import { EventLookSection } from "@/components/event-form-sections/event-look-section";
+import { EventGuestPageSection } from "@/components/event-form-sections/event-guest-page-section";
 import {
   Event,
   EventAct,
@@ -71,7 +81,6 @@ type EventUpdatePatch = {
   guestPortalLinkLabel?: string;
   guestPortalLinkUrl?: string;
   eventDate?: number;
-  eventEndDate?: number;
   eventTimezone?: string;
   maxAttendees?: number;
   status?: Event["status"];
@@ -81,6 +90,7 @@ type EventUpdatePatch = {
   themeBackgroundColor?: string;
   themeTextColor?: string;
   qrCodeColor?: string;
+  sendQrOnApproval?: boolean;
 };
 
 export default function EditEventDialog({
@@ -118,26 +128,6 @@ export default function EditEventDialog({
       return "";
     }
   }, [event.eventDate, defaultTimezone]);
-  const defaultEndDate = React.useMemo(() => {
-    try {
-      return extractDateFromTimestamp(
-        event.eventEndDate ?? event.eventDate,
-        defaultTimezone,
-      );
-    } catch {
-      return "";
-    }
-  }, [event.eventDate, event.eventEndDate, defaultTimezone]);
-  const defaultEndTime = React.useMemo(() => {
-    try {
-      return extractTimeFromTimestamp(
-        event.eventEndDate ?? event.eventDate,
-        defaultTimezone,
-      );
-    } catch {
-      return "";
-    }
-  }, [event.eventDate, event.eventEndDate, defaultTimezone]);
   const normalizedEventBackgroundColor =
     normalizeHexColorInput(event.themeBackgroundColor) ??
     EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
@@ -159,14 +149,18 @@ export default function EditEventDialog({
       guestPortalLinkUrl: event.guestPortalLinkUrl ?? "",
       eventDate: defaultDate,
       eventTime: defaultTime,
-      eventEndDate: defaultEndDate,
-      eventEndTime: defaultEndTime,
       eventTimezone: defaultTimezone,
       maxAttendees: event.maxAttendees ?? 1,
       status: event.status ?? "inactive",
       themeBackgroundColor: normalizedEventBackgroundColor,
       themeTextColor: normalizedEventTextColor,
       qrCodeColor: normalizeHexColorInput(event.qrCodeColor) ?? "#000000",
+      sendQrOnApproval:
+        typeof event.sendQrOnApproval === "boolean"
+          ? event.sendQrOnApproval
+          : typeof event.defersQrDelivery === "boolean"
+            ? !event.defersQrDelivery
+            : false,
     },
   });
   const [flyerStorageId, setFlyerStorageId] = React.useState<string | null>(
@@ -239,7 +233,18 @@ export default function EditEventDialog({
           id: credential._id,
           listKey: credential.listKey,
           password: "",
+          passwordEdited: false,
+          requirePassword: credential.hasPassword ?? false,
           generateQR: credential.generateQR ?? false,
+          // v(n+1) tri-state override mirrors the wizard's `sendQrOnApprovalOverride`:
+          // undefined inherits the event toggle, true/false explicitly opt this list
+          // in or out of immediate QR send.
+          sendQrOnApprovalOverride:
+            typeof credential.sendQrOnApproval === "boolean"
+              ? credential.sendQrOnApproval
+              : typeof credential.defersQrDelivery === "boolean"
+                ? !credential.defersQrDelivery
+                : undefined,
           approvalMessage:
             credential.approvalMessage ?? event.approvalMessage ?? "",
         })),
@@ -275,7 +280,15 @@ export default function EditEventDialog({
   const addList = () =>
     setLists((array) => [
       ...array,
-      { listKey: "", password: "", generateQR: false, approvalMessage: "" },
+      {
+        listKey: "",
+        password: "",
+        passwordEdited: true,
+        requirePassword: false,
+        generateQR: false,
+        sendQrOnApprovalOverride: undefined,
+        approvalMessage: "",
+      },
     ]);
   const setList = <Key extends keyof ListCredentialEdit>(
     index: number,
@@ -285,6 +298,14 @@ export default function EditEventDialog({
     setLists((array) =>
       array.map((item, position) =>
         position === index ? { ...item, [key]: value } : item,
+      ),
+    );
+  const setListPassword = (index: number, value: string) =>
+    setLists((array) =>
+      array.map((item, position) =>
+        position === index
+          ? { ...item, password: value, passwordEdited: true }
+          : item,
       ),
     );
   const removeList = (index: number) =>
@@ -403,8 +424,6 @@ export default function EditEventDialog({
       const dateFieldsDirty = Boolean(
         form.formState.dirtyFields.eventDate ||
           form.formState.dirtyFields.eventTime ||
-          form.formState.dirtyFields.eventEndDate ||
-          form.formState.dirtyFields.eventEndTime ||
           form.formState.dirtyFields.eventTimezone,
       );
       const computedTimestamp =
@@ -415,24 +434,6 @@ export default function EditEventDialog({
               timezoneValue,
             )
           : undefined;
-      const computedEndTimestamp =
-        values.eventEndDate && (values.eventEndTime || defaultEndTime)
-          ? createTimestamp(
-              values.eventEndDate,
-              values.eventEndTime || defaultEndTime || "03:00",
-              timezoneValue,
-            )
-          : undefined;
-      if (
-        dateFieldsDirty &&
-        computedTimestamp &&
-        computedEndTimestamp &&
-        computedEndTimestamp <= computedTimestamp
-      ) {
-        toast.error("Event end must be after the event start");
-        setSaving(false);
-        return;
-      }
       if (
         dateFieldsDirty &&
         computedTimestamp &&
@@ -441,24 +442,37 @@ export default function EditEventDialog({
       ) {
         patch.eventDate = computedTimestamp;
       }
-      if (
-        dateFieldsDirty &&
-        computedEndTimestamp &&
-        Number.isFinite(computedEndTimestamp) &&
-        computedEndTimestamp !== (event.eventEndDate ?? event.eventDate)
-      ) {
-        patch.eventEndDate = computedEndTimestamp;
-      }
       if (timezoneValue && timezoneValue !== event.eventTimezone) {
         patch.eventTimezone = timezoneValue;
       }
-      const outgoingLists = lists.map((list) => ({
-        id: list.id as Id<"listCredentials"> | undefined,
-        listKey: list.listKey.trim(),
-        password: list.password.trim() || undefined,
-        generateQR: list.generateQR,
-        approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
-      }));
+      const previousSendQrOnApproval =
+        typeof event.sendQrOnApproval === "boolean"
+          ? event.sendQrOnApproval
+          : typeof event.defersQrDelivery === "boolean"
+            ? !event.defersQrDelivery
+            : false;
+      const nextSendQrOnApproval = values.sendQrOnApproval ?? false;
+      if (nextSendQrOnApproval !== previousSendQrOnApproval) {
+        patch.sendQrOnApproval = nextSendQrOnApproval;
+      }
+      const outgoingLists = lists.map((list) => {
+        let password: string | undefined;
+        if (!list.requirePassword) {
+          password = "";
+        } else if (list.passwordEdited && list.password.trim()) {
+          password = list.password.trim();
+        } else {
+          password = undefined;
+        }
+        return {
+          id: list.id as Id<"listCredentials"> | undefined,
+          listKey: list.listKey.trim(),
+          password,
+          generateQR: list.generateQR,
+          sendQrOnApproval: list.sendQrOnApprovalOverride,
+          approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
+        };
+      });
       patch.customFields = customFields.map((field) => ({
         key: field.key.trim(),
         label: field.label.trim(),
@@ -515,186 +529,341 @@ export default function EditEventDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="mx-auto w-full max-w-[1200px] px-5 pb-5 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8">
-          <HostEventForm
-            form={form}
-            onSubmit={handleSubmit}
-            submitLabel="Save"
-            submittingLabel="Saving..."
-            isSubmitting={saving}
-            flyerStorageId={flyerStorageId}
-            onFlyerChange={(value) => {
-              setFlyerStorageId(value);
-              form.setValue("flyerStorageId", value, { shouldDirty: true });
-            }}
-            eventIconStorageId={eventIconStorageId}
-            onEventIconChange={(value) => {
-              setEventIconStorageId(value);
-              form.setValue("customIconStorageId", value, { shouldDirty: true });
-            }}
-            guestPortalImageStorageId={guestPortalImageStorageId}
-            onGuestPortalImageChange={(value) => {
-              setGuestPortalImageStorageId(value);
-              form.setValue("guestPortalImageStorageId", value, {
-                shouldDirty: true,
-              });
-            }}
-            actsSection={<EventActsEditor acts={acts} onChange={setActs} />}
-            listsSection={
-              <div className="space-y-3 rounded-lg border bg-card p-4">
-                <h4 className="font-medium text-sm text-muted-foreground">
-                  ACCESS LISTS & PASSWORDS
-                </h4>
-                <div className="space-y-3">
-                  {lists.map((listPassword, index) => (
-                    <div
-                      key={listPassword.id ?? index}
-                      className="space-y-4 rounded border bg-muted/20 p-4"
-                    >
-                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-                        <div className="flex flex-col">
-                          <label className="text-xs font-medium text-muted-foreground">
-                            List Name
-                          </label>
-                          <Input
-                            placeholder="e.g. vip, general, backstage"
-                            value={listPassword.listKey}
-                            onChange={(event) =>
-                              setList(index, "listKey", event.target.value)
-                            }
-                          />
-                        </div>
-                        <div className="flex flex-col">
-                          <label className="text-xs font-medium text-muted-foreground">
-                            Password
-                          </label>
-                          {listPassword.id &&
-                          storedPasswords.get(listPassword.id) &&
-                          !listPassword.password ? (
-                            <div className="flex items-center gap-2">
+          <Form {...form}>
+            <form
+              onSubmit={form.handleSubmit(handleSubmit)}
+              className="space-y-6"
+            >
+              <Tabs defaultValue="details">
+                <TabsList className="bg-foreground/5 dark:bg-foreground/10">
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="schedule">Schedule</TabsTrigger>
+                  <TabsTrigger value="look">Look</TabsTrigger>
+                  <TabsTrigger value="lineup">Lineup</TabsTrigger>
+                  <TabsTrigger value="guest">Guest Page</TabsTrigger>
+                  <TabsTrigger value="rsvp">RSVP &amp; Lists</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="details">
+                  <EventDetailsSection form={form} />
+                </TabsContent>
+
+                <TabsContent value="schedule">
+                  <EventScheduleSection form={form} />
+                </TabsContent>
+
+                <TabsContent value="look">
+                  <EventLookSection
+                    form={form}
+                    eventIconStorageId={eventIconStorageId}
+                    onEventIconChange={(value) => {
+                      setEventIconStorageId(value);
+                      form.setValue("customIconStorageId", value, {
+                        shouldDirty: true,
+                      });
+                    }}
+                    flyerStorageId={flyerStorageId}
+                    onFlyerChange={(value) => {
+                      setFlyerStorageId(value);
+                      form.setValue("flyerStorageId", value, {
+                        shouldDirty: true,
+                      });
+                    }}
+                  />
+                </TabsContent>
+
+                <TabsContent value="lineup">
+                  <div className="rounded-lg border bg-card p-4">
+                    <EventActsEditor acts={acts} onChange={setActs} />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="guest">
+                  <EventGuestPageSection
+                    form={form}
+                    guestPortalImageStorageId={guestPortalImageStorageId}
+                    onGuestPortalImageChange={(value) => {
+                      setGuestPortalImageStorageId(value);
+                      form.setValue("guestPortalImageStorageId", value, {
+                        shouldDirty: true,
+                      });
+                    }}
+                  />
+                </TabsContent>
+
+                <TabsContent value="rsvp" className="space-y-6">
+                  <div className="space-y-3 rounded-lg border bg-card p-4">
+                    <h4 className="font-medium text-sm text-muted-foreground">
+                      NOTIFICATIONS
+                    </h4>
+                    <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+                      <Checkbox
+                        checked={form.watch("sendQrOnApproval") ?? false}
+                        onCheckedChange={(checked) =>
+                          form.setValue(
+                            "sendQrOnApproval",
+                            Boolean(checked),
+                            { shouldDirty: true },
+                          )
+                        }
+                        className="mt-0.5"
+                      />
+                      <span className="space-y-1">
+                        <span className="block text-sm font-medium">
+                          Send QR on approval
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          When on, approval texts include the QR code
+                          immediately. Default off — most hosts send a manual
+                          blast closer to the event from the &quot;Send QR
+                          Codes&quot; button on the event card.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                  <div className="space-y-3 rounded-lg border bg-card p-4">
+                    <h4 className="font-medium text-sm text-muted-foreground">
+                      ACCESS LISTS & PASSWORDS
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      Leave a password blank for an open list — the first list
+                      with no password receives RSVPs that skip the password
+                      step.
+                    </p>
+                    <div className="space-y-3">
+                      {lists.map((listPassword, index) => (
+                        <div
+                          key={listPassword.id ?? index}
+                          className="space-y-4 rounded border bg-muted/20 p-4"
+                        >
+                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                            <div className="flex flex-col">
+                              <label className="text-xs font-medium text-muted-foreground">
+                                List Name
+                              </label>
                               <Input
-                                value={storedPasswords.get(listPassword.id) ?? ""}
-                                readOnly
-                                className="bg-muted/40 text-muted-foreground"
+                                placeholder="e.g. vip, general, backstage"
+                                value={listPassword.listKey}
+                                onChange={(event) =>
+                                  setList(index, "listKey", event.target.value)
+                                }
                               />
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="shrink-0 text-xs"
-                                onClick={() => setList(index, "password", " ")}
-                              >
-                                Change
-                              </Button>
                             </div>
-                          ) : (
-                            <Input
-                              placeholder={
-                                listPassword.id
-                                  ? "Leave blank to keep current"
-                                  : "Enter password"
-                              }
-                              value={listPassword.password}
-                              onChange={(event) =>
-                                setList(index, "password", event.target.value)
-                              }
-                            />
-                          )}
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <label
-                            htmlFor={`edit-generate-qr-${index}`}
-                            className="text-xs font-medium text-muted-foreground"
-                          >
-                            QR Code Generation
-                          </label>
-                          <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
-                            <Checkbox
-                              id={`edit-generate-qr-${index}`}
-                              checked={listPassword.generateQR ?? false}
-                              onCheckedChange={(checked) =>
-                                setList(index, "generateQR", Boolean(checked))
-                              }
-                            />
-                            <label
-                              htmlFor={`edit-generate-qr-${index}`}
-                              className="text-sm text-muted-foreground leading-tight"
+                            <div className="flex flex-col gap-2">
+                              <label className="text-xs font-medium text-muted-foreground">
+                                Password
+                              </label>
+                              <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                                <Checkbox
+                                  id={`edit-require-password-${index}`}
+                                  checked={listPassword.requirePassword}
+                                  onCheckedChange={(checked) =>
+                                    setList(
+                                      index,
+                                      "requirePassword",
+                                      Boolean(checked),
+                                    )
+                                  }
+                                />
+                                <label
+                                  htmlFor={`edit-require-password-${index}`}
+                                  className="text-sm text-muted-foreground leading-tight"
+                                >
+                                  Require password
+                                </label>
+                              </div>
+                              {(() => {
+                                const storedPassword = listPassword.id
+                                  ? storedPasswords.get(listPassword.id)
+                                  : undefined;
+                                if (!listPassword.requirePassword) {
+                                  return (
+                                    <Input
+                                      placeholder="Open list — no password"
+                                      value=""
+                                      disabled
+                                    />
+                                  );
+                                }
+                                if (
+                                  storedPassword &&
+                                  !listPassword.passwordEdited
+                                ) {
+                                  return (
+                                    <div className="flex items-center gap-2">
+                                      <Input
+                                        value={storedPassword}
+                                        readOnly
+                                        className="bg-muted/40 text-muted-foreground"
+                                      />
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="shrink-0 text-xs"
+                                        onClick={() =>
+                                          setListPassword(index, "")
+                                        }
+                                      >
+                                        Change
+                                      </Button>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <Input
+                                    placeholder="Enter password"
+                                    value={listPassword.password}
+                                    onChange={(event) =>
+                                      setListPassword(
+                                        index,
+                                        event.target.value,
+                                      )
+                                    }
+                                  />
+                                );
+                              })()}
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <label
+                                htmlFor={`edit-generate-qr-${index}`}
+                                className="text-xs font-medium text-muted-foreground"
+                              >
+                                QR Code Generation
+                              </label>
+                              <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                                <Checkbox
+                                  id={`edit-generate-qr-${index}`}
+                                  checked={listPassword.generateQR ?? false}
+                                  onCheckedChange={(checked) =>
+                                    setList(
+                                      index,
+                                      "generateQR",
+                                      Boolean(checked),
+                                    )
+                                  }
+                                />
+                                <label
+                                  htmlFor={`edit-generate-qr-${index}`}
+                                  className="text-sm text-muted-foreground leading-tight"
+                                >
+                                  Generate QR code for guests on this list
+                                </label>
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => removeList(index)}
+                              className="h-10 lg:self-end"
                             >
-                              Generate QR code for guests on this list
+                              Remove
+                            </Button>
+                          </div>
+                          {listPassword.generateQR ? (
+                            <div className="space-y-2">
+                              <label
+                                htmlFor={`edit-send-qr-on-approval-${index}`}
+                                className="text-xs font-medium text-muted-foreground"
+                              >
+                                Send QR on approval (this list)
+                              </label>
+                              <select
+                                id={`edit-send-qr-on-approval-${index}`}
+                                className="h-10 w-full max-w-sm rounded-md border border-input bg-background px-3 text-sm"
+                                value={
+                                  listPassword.sendQrOnApprovalOverride === true
+                                    ? "on"
+                                    : listPassword.sendQrOnApprovalOverride ===
+                                        false
+                                      ? "off"
+                                      : "inherit"
+                                }
+                                onChange={(eventChange) => {
+                                  const next = eventChange.target.value;
+                                  setList(
+                                    index,
+                                    "sendQrOnApprovalOverride",
+                                    next === "on"
+                                      ? true
+                                      : next === "off"
+                                        ? false
+                                        : undefined,
+                                  );
+                                }}
+                              >
+                                <option value="inherit">
+                                  Inherit from event (
+                                  {form.watch("sendQrOnApproval") ? "on" : "off"})
+                                </option>
+                                <option value="on">On (always send)</option>
+                                <option value="off">Off (always defer)</option>
+                              </select>
+                            </div>
+                          ) : null}
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">
+                              Approval Message{" "}
+                              <span className="text-muted-foreground">
+                                (optional)
+                              </span>
                             </label>
+                            <p className="text-xs text-muted-foreground">
+                              Sent when a guest on this list is approved.
+                            </p>
+                            <Textarea
+                              placeholder={defaultApprovalMessage}
+                              value={listPassword.approvalMessage}
+                              onChange={(event) =>
+                                setList(
+                                  index,
+                                  "approvalMessage",
+                                  event.target.value,
+                                )
+                              }
+                            />
                           </div>
                         </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => removeList(index)}
-                          className="h-10 lg:self-end"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Approval Message{" "}
-                          <span className="text-muted-foreground">(optional)</span>
-                        </label>
-                        <p className="text-xs text-muted-foreground">
-                          Sent when a guest on this list is approved.
-                        </p>
-                        <Textarea
-                          placeholder={defaultApprovalMessage}
-                          value={listPassword.approvalMessage}
-                          onChange={(event) =>
-                            setList(
-                              index,
-                              "approvalMessage",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addList}
+                        className="w-full"
+                      >
+                        + Add Another List
+                      </Button>
                     </div>
-                  ))}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addList}
-                    className="w-full"
-                  >
-                    + Add Another List
-                  </Button>
-                </div>
-              </div>
-            }
-            customFieldsSection={
-              <div className="space-y-6">
-                <div className="rounded-lg border bg-card p-4 space-y-4">
-                  <h3 className="font-medium text-sm text-muted-foreground">
-                    PRIMARY FIELDS
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Social fields and the &ldquo;invited by&rdquo; question
-                    for this event. Defaults come from workspace settings;
-                    override here if needed.
-                  </p>
-                  <PrimaryFieldConfigOverrideEditor
-                    value={primaryFieldConfigDraft}
-                    onChange={setPrimaryFieldConfigDraft}
-                    useDefaults={usePrimaryFieldDefaults}
-                    onUseDefaultsChange={setUsePrimaryFieldDefaults}
-                    workspaceDefaults={workspacePrimaryFieldDefaultsDraft}
+                  </div>
+
+                  <div className="rounded-lg border bg-card p-4 space-y-4">
+                    <h3 className="font-medium text-sm text-muted-foreground">
+                      PRIMARY FIELDS
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Social fields and the &ldquo;invited by&rdquo; question
+                      for this event. Defaults come from workspace settings;
+                      override here if needed.
+                    </p>
+                    <PrimaryFieldConfigOverrideEditor
+                      value={primaryFieldConfigDraft}
+                      onChange={setPrimaryFieldConfigDraft}
+                      useDefaults={usePrimaryFieldDefaults}
+                      onUseDefaultsChange={setUsePrimaryFieldDefaults}
+                      workspaceDefaults={workspacePrimaryFieldDefaultsDraft}
+                    />
+                  </div>
+                  <CustomFieldsEditor
+                    initial={event.customFields ?? []}
+                    onChange={setCustomFields}
+                    reservedKeys={primaryFieldConfigDraft.socialPlatforms.map(
+                      (platform) => platform.platformKey,
+                    )}
                   />
-                </div>
-                <CustomFieldsEditor
-                  initial={event.customFields ?? []}
-                  onChange={setCustomFields}
-                  reservedKeys={primaryFieldConfigDraft.socialPlatforms.map(
-                    (platform) => platform.platformKey,
-                  )}
-                />
-              </div>
-            }
-            footer={
+                </TabsContent>
+              </Tabs>
+
               <DialogFooter>
                 <Button
                   type="button"
@@ -707,8 +876,8 @@ export default function EditEventDialog({
                   {saving ? "Saving..." : "Save"}
                 </Button>
               </DialogFooter>
-            }
-          />
+            </form>
+          </Form>
         </div>
       </DialogContent>
     </Dialog>

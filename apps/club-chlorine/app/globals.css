@@ -49,25 +49,25 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* Club Chlorine ships the chlorine preset — pool-blue (#1E3CFF) on black,
+/* Club Chlorine ships the chlorine preset — pool-blue (#1E3CFF) on white,
  * heavy rounded display. Keep these tokens aligned with the chlorine entry
  * in packages/sdk/src/theming/presets.ts so shadcn-class pages and the
  * tenant-template components stay in lock-step. */
 :root {
   --radius: 0rem;
-  --background: #000000;
+  --background: #FFFFFF;
   --foreground: #1E3CFF;
-  --card: #050511;
+  --card: #F0F1FF;
   --card-foreground: #1E3CFF;
-  --popover: #050511;
+  --popover: #F0F1FF;
   --popover-foreground: #1E3CFF;
   --primary: #1E3CFF;
-  --primary-foreground: #000000;
-  --secondary: #050511;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F0F1FF;
   --secondary-foreground: #1E3CFF;
-  --muted: #050511;
+  --muted: #F0F1FF;
   --muted-foreground: rgba(30, 60, 255, 0.65);
-  --accent: #050511;
+  --accent: #F0F1FF;
   --accent-foreground: #1E3CFF;
   --destructive: #EF4444;
   --border: rgba(30, 60, 255, 0.20);
@@ -78,32 +78,32 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: #050511;
+  --sidebar: #F0F1FF;
   --sidebar-foreground: #1E3CFF;
   --sidebar-primary: #1E3CFF;
-  --sidebar-primary-foreground: #000000;
-  --sidebar-accent: #050511;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F0F1FF;
   --sidebar-accent-foreground: #1E3CFF;
   --sidebar-border: rgba(30, 60, 255, 0.20);
   --sidebar-ring: rgba(30, 60, 255, 0.40);
 }
 
-/* Chlorine is intrinsically dark — keep the .dark variant in sync so any
- * component that toggles it doesn't drop back to a light surface. */
+/* Keep the .dark variant pinned to the same light surface so any
+ * component that toggles it doesn't suddenly drop into a dark scheme. */
 .dark {
-  --background: #000000;
+  --background: #FFFFFF;
   --foreground: #1E3CFF;
-  --card: #050511;
+  --card: #F0F1FF;
   --card-foreground: #1E3CFF;
-  --popover: #050511;
+  --popover: #F0F1FF;
   --popover-foreground: #1E3CFF;
   --primary: #1E3CFF;
-  --primary-foreground: #000000;
-  --secondary: #050511;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F0F1FF;
   --secondary-foreground: #1E3CFF;
-  --muted: #050511;
+  --muted: #F0F1FF;
   --muted-foreground: rgba(30, 60, 255, 0.65);
-  --accent: #050511;
+  --accent: #F0F1FF;
   --accent-foreground: #1E3CFF;
   --destructive: #EF4444;
   --border: rgba(30, 60, 255, 0.20);
@@ -114,11 +114,11 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: #050511;
+  --sidebar: #F0F1FF;
   --sidebar-foreground: #1E3CFF;
   --sidebar-primary: #1E3CFF;
-  --sidebar-primary-foreground: #000000;
-  --sidebar-accent: #050511;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F0F1FF;
   --sidebar-accent-foreground: #1E3CFF;
   --sidebar-border: rgba(30, 60, 255, 0.20);
   --sidebar-ring: rgba(30, 60, 255, 0.40);
@@ -145,3 +145,4 @@
 [data-description] {
   color: var(--text-primary) !important;
 }
+

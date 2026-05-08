@@ -107,6 +107,11 @@ export interface Event {
   eventTimezone?: string;
   maxAttendees?: number;
   status?: EventStatus;
+  lifecycle?: "draft" | "published";
+  publishedAt?: number;
+  /** @deprecated Use `sendQrOnApproval`. */
+  defersQrDelivery?: boolean;
+  sendQrOnApproval?: boolean;
   customFields?: CustomField[];
   primaryFieldConfig?: PrimaryFieldConfig;
   themeBackgroundColor?: string;
@@ -123,6 +128,9 @@ export interface ListCredential {
   listKey: string;
   password?: string;
   generateQR?: boolean;
+  /** @deprecated Use `sendQrOnApproval`. */
+  defersQrDelivery?: boolean;
+  sendQrOnApproval?: boolean;
   approvalMessage?: string;
   createdAt: number;
 }
@@ -324,7 +332,14 @@ export interface ListCredentialEdit {
   id?: string;
   listKey: string;
   password: string;
+  passwordEdited?: boolean;
+  requirePassword: boolean;
   generateQR: boolean;
+  /**
+   * Per-list override of the event-level `sendQrOnApproval` opt-in.
+   * Tri-state: undefined inherits, true forces immediate, false forces defer.
+   */
+  sendQrOnApprovalOverride?: boolean;
   approvalMessage: string;
 }
 
@@ -333,7 +348,11 @@ export interface CredentialResponse {
   _id: string;
   listKey: string;
   // password is never returned from API
+  hasPassword?: boolean;
   generateQR?: boolean;
+  /** @deprecated Use `sendQrOnApproval`. */
+  defersQrDelivery?: boolean;
+  sendQrOnApproval?: boolean;
   approvalMessage?: string;
 }
 
@@ -363,14 +382,13 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   description?: string;
   eventDate: string;
   eventTime: string;
-  eventEndDate: string;
-  eventEndTime: string;
   eventTimezone: string;
   maxAttendees?: number;
   status?: EventStatus;
   themeBackgroundColor?: string;
   themeTextColor?: string;
   qrCodeColor?: string;
+  sendQrOnApproval?: boolean;
 }
 
 export interface EventFormData extends BaseEventFormValues {
@@ -394,6 +412,11 @@ export interface ListCredentialInput {
   listKey: string;
   password: string;
   generateQR?: boolean;
+  /**
+   * Per-list override of the event-level `sendQrOnApproval` opt-in.
+   * Tri-state: undefined inherits, true forces immediate, false forces defer.
+   */
+  sendQrOnApproval?: boolean;
   approvalMessage?: string;
 }
 

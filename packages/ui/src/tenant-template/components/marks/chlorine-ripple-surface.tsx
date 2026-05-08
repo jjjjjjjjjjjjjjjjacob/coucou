@@ -1332,6 +1332,19 @@ export function ChlorineRippleSurface({
     }
 
     function onClick(mouseEvent: MouseEvent) {
+      // Ignore synthetic clicks dispatched by libraries (e.g. Radix
+      // Checkbox's BubbleInput re-fires a generic `new Event("click")`
+      // on its hidden form input when the consumer toggles state). Those
+      // events have no `clientX`/`clientY`, which would otherwise feed
+      // NaN into the ripple drop queue and poison the WebGL height-map
+      // until the canvas renders nothing.
+      if (!mouseEvent.isTrusted) return;
+      if (
+        typeof mouseEvent.clientX !== "number" ||
+        typeof mouseEvent.clientY !== "number"
+      ) {
+        return;
+      }
       const { normalizedX, normalizedY } = getPointerPosition(
         mouseEvent.clientX,
         mouseEvent.clientY,

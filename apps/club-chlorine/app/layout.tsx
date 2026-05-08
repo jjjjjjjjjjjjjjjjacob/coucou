@@ -5,6 +5,7 @@ import { buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import "./globals.css";
 import Providers from "./providers";
 import { AppChrome } from "./app-chrome";
+import { DevColorTweakPanel } from "@/components/dev-color-tweak-panel";
 import { clubChlorineIconPaths, siteConfiguration } from "@/lib/site";
 
 const geistSans = Geist({
@@ -54,14 +55,6 @@ export const metadata: Metadata = {
     description: siteConfiguration.description,
     url: siteConfiguration.domain,
     siteName: siteConfiguration.brandName,
-    images: [
-      {
-        url: "/og-image.png", // You can replace this with actual image path
-        width: 1200,
-        height: 630,
-        alt: siteConfiguration.brandName,
-      },
-    ],
     locale: "en_US",
     type: "website",
   },
@@ -69,7 +62,6 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: siteConfiguration.brandName,
     description: siteConfiguration.description,
-    images: ["/og-image.png"],
   },
   icons: {
     icon: [
@@ -116,6 +108,7 @@ export default function RootLayout({
       >
         <AppChrome>{children}</AppChrome>
       </div>
+      <DevColorTweakPanel />
     </Providers>
   );
 

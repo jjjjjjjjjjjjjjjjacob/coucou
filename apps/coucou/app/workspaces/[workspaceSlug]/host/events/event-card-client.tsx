@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAction, useMutation } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import EditEventDialog from "./edit-event-dialog";
 import {
@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Event } from "@/lib/types";
 import { formatEventDateTime } from "@/lib/utils";
+import { resolveEventEndTimestamp } from "@convex/lib/eventTiming";
 import { toast } from "sonner";
 import { ShareEventPopover } from "@/components/share-event-popover";
 import {
@@ -45,6 +46,7 @@ import {
   useWorkspaceOperationPath,
   useWorkspaceScope,
 } from "@/lib/use-workspace-scope";
+import { buildPublicEventUrl } from "@/lib/event-public-url";
 
 export default function EventCardClient({
   event,
@@ -59,34 +61,100 @@ export default function EventCardClient({
     "host",
     `rsvps?eventId=${event._id}`,
   );
+  const editDraftPath = useWorkspaceOperationPath(
+    "host",
+    `new?draftId=${event._id}`,
+  );
+  const workspace = useQuery(
+    api.workspaces.getWorkspaceBySlug,
+    workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
+  );
   const removeEvent = useMutation(api.events.remove);
   const setFeaturedEvent = useMutation(api.events.setFeaturedEvent);
-  const updateEvent = useAction(api.eventsNode.update);
+  const publishEvent = useMutation(api.events.publishEvent);
+  const unpublishEvent = useMutation(api.events.unpublishEvent);
+  const sendDeferredQrBatch = useAction(api.qrDelivery.sendDeferredQrBatch);
+  const pendingDeferredCount = useQuery(
+    api.qrDelivery.countPendingDeferredRecipients,
+    workspaceScope
+      ? { eventId: event._id, ...workspaceScope.queryArgs }
+      : "skip",
+  );
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [sendingQrBatch, setSendingQrBatch] = useState(false);
 
   const inlineTitle = formatEventTitleInline(event);
-  const eventStatus = event.status ?? "inactive";
-  const isRsvpActive = eventStatus === "active";
+  const lifecycle = event.lifecycle ?? "published";
+  const isDraft = lifecycle === "draft";
+  const now = Date.now();
+  const endTimestamp =
+    resolveEventEndTimestamp({
+      eventDate: event.eventDate,
+      eventEndDate: event.eventEndDate,
+    }) ?? 0;
+  const isPast = !isDraft && endTimestamp > 0 && endTimestamp < now;
+  const badgeLabel = isDraft ? "Draft" : isPast ? "Past" : "Published";
+  const badgeVariant: "outline" | "success" =
+    isDraft || isPast ? "outline" : "success";
+  const publicEventUrl = buildPublicEventUrl(workspace ?? null, event._id);
 
-  const toggleRsvpStatus = async () => {
-    if (!workspaceScope) {
-      return;
-    }
-    const nextStatus = isRsvpActive ? "inactive" : "active";
+  const togglePublish = async () => {
+    if (!workspaceScope) return;
     try {
-      await updateEvent({
-        eventId: event._id,
-        ...workspaceScope.queryArgs,
-        patch: { status: nextStatus },
-      });
-      toast.success(
-        nextStatus === "active" ? "RSVPs are open" : "RSVPs are closed",
-      );
+      if (isDraft) {
+        await publishEvent({
+          eventId: event._id,
+          ...workspaceScope.queryArgs,
+        });
+        toast.success("Event published");
+      } else {
+        await unpublishEvent({
+          eventId: event._id,
+          ...workspaceScope.queryArgs,
+        });
+        toast.success("Event unpublished");
+      }
       router.refresh();
     } catch (error: unknown) {
-      toast.error((error as Error).message || "Failed to update RSVP status");
+      toast.error((error as Error).message || "Failed to update lifecycle");
     }
   };
+
+  const handleViewClick = () => {
+    if (isDraft) {
+      router.push(editDraftPath);
+      return;
+    }
+    if (publicEventUrl) {
+      window.open(publicEventUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    router.push(`/events/${event._id}`);
+  };
+
+  const sendPendingQrCodes = async () => {
+    if (!workspaceScope || !pendingDeferredCount) return;
+    setSendingQrBatch(true);
+    try {
+      const result = await sendDeferredQrBatch({
+        eventId: event._id,
+        ...workspaceScope.queryArgs,
+      });
+      const successMessage =
+        result.failed > 0
+          ? `Sent ${result.sent} QR codes (${result.failed} failed, ${result.skipped} skipped)`
+          : `Sent ${result.sent} QR codes`;
+      toast.success(successMessage);
+      router.refresh();
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Failed to send QR codes");
+    } finally {
+      setSendingQrBatch(false);
+    }
+  };
+
+  const showSendQrCodesButton =
+    !isDraft && (pendingDeferredCount ?? 0) > 0;
 
   return (
     <Card className="flex flex-col h-content">
@@ -114,10 +182,10 @@ export default function EventCardClient({
               </Badge>
             )}
             <Badge
-              variant={isRsvpActive ? "success" : "outline"}
+              variant={badgeVariant}
               className="text-xs capitalize"
             >
-              {eventStatus}
+              {badgeLabel}
             </Badge>
           </div>
           <div className="text-xs text-foreground/70 mb-3">
@@ -130,9 +198,9 @@ export default function EventCardClient({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => router.push(`/events/${event._id}`)}
+                onClick={handleViewClick}
               >
-                View
+                {isDraft ? "Continue editing" : "View"}
               </Button>
               <Button
                 variant="outline"
@@ -141,9 +209,21 @@ export default function EventCardClient({
               >
                 RSVPs
               </Button>
-              <Button variant="outline" size="sm" onClick={toggleRsvpStatus}>
-                {isRsvpActive ? "Close RSVPs" : "Open RSVPs"}
+              <Button variant="outline" size="sm" onClick={togglePublish}>
+                {isDraft ? "Publish" : "Unpublish"}
               </Button>
+              {showSendQrCodesButton && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={sendPendingQrCodes}
+                  disabled={sendingQrBatch}
+                >
+                  {sendingQrBatch
+                    ? "Sending…"
+                    : `Send QR codes (${pendingDeferredCount})`}
+                </Button>
+              )}
             </div>
 
             <div className="flex gap-2">

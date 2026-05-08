@@ -906,3 +906,17 @@ export const renameCustomFieldKeys = internalMutation({
     return results;
   },
 });
+
+export const backfillEventLifecycle = migrations.define({
+  table: "events",
+  migrateOne: async (_ctx, rawEvent) => {
+    const event = rawEvent as Doc<"events">;
+    if (event.lifecycle) return;
+    const lifecycle = event.status === "inactive" ? "draft" : "published";
+    const patch: Partial<Doc<"events">> = { lifecycle };
+    if (lifecycle === "published" && !event.publishedAt) {
+      patch.publishedAt = event.createdAt ?? Date.now();
+    }
+    return patch;
+  },
+});

@@ -44,6 +44,7 @@ import {
   requireWorkspaceRead,
 } from "./lib/workspaceAuth";
 import {
+  assertRequiredPrimaryFieldValues,
   buildInvitedByPatch,
   sanitizeSubmittedSocialProfiles,
   submittedSocialProfileValidator,
@@ -99,6 +100,11 @@ export const submitRequest = mutation({
       args.socialProfiles,
       primaryFieldConfig,
     );
+    assertRequiredPrimaryFieldValues({
+      primaryFieldConfig,
+      submittedProfiles: sanitizedSocialProfiles,
+      invitedByName: args.invitedByName,
+    });
     const configuredSocialPlatformKeys = new Set(
       (primaryFieldConfig?.socialPlatforms ?? []).map(
         (platform) => platform.platformKey,
@@ -614,10 +620,26 @@ export const updateSharedPrimaryFields = mutation({
         (platform) => platform.platformKey,
       ),
     );
-    const sanitizedSocialProfiles = sanitizeSubmittedSocialProfiles(
-      socialProfiles,
-      primaryFieldConfig,
-    );
+    const sanitizedSocialProfiles =
+      socialProfiles === undefined
+        ? []
+        : sanitizeSubmittedSocialProfiles(socialProfiles, primaryFieldConfig);
+    if (socialProfiles !== undefined || invitedByName !== undefined) {
+      assertRequiredPrimaryFieldValues({
+        primaryFieldConfig:
+          socialProfiles === undefined
+            ? {
+                invitedBy: primaryFieldConfig?.invitedBy,
+              }
+            : invitedByName === undefined
+              ? {
+                  socialPlatforms: primaryFieldConfig?.socialPlatforms,
+                }
+              : primaryFieldConfig,
+        submittedProfiles: sanitizedSocialProfiles,
+        invitedByName,
+      });
+    }
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerkUserId", (queryBuilder) =>
@@ -625,7 +647,7 @@ export const updateSharedPrimaryFields = mutation({
       )
       .unique();
 
-    if (configuredSocialPlatformKeys.size > 0) {
+    if (socialProfiles !== undefined && configuredSocialPlatformKeys.size > 0) {
       await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
         event,
         rsvpId,

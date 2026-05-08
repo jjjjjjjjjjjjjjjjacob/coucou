@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { usePreset } from "../use-preset";
 import { useMobile } from "../use-mobile";
 import { TenantShell } from "./tenant-shell";
+import { Eyebrow } from "./primitives/eyebrow";
 import { QrFrame } from "./primitives/qr-frame";
 
 export interface TicketDetailRow {
@@ -57,6 +58,20 @@ export interface TicketProps {
    * instructions like "Show ID at the door" or list-key confirmation pills.
    */
   noQrSlot?: ReactNode;
+  /**
+   * When true, skip the inner `TenantShell` wrapper. Use when the parent
+   * already provides a viewport-owning shell (e.g. `ChlorineSplitShell`).
+   */
+  noShell?: boolean;
+  /**
+   * Optional eyebrow label rendered at the very top of the ticket section.
+   * Often used together with `eyebrowTrailing` to expose a back-link pill.
+   */
+  eyebrow?: string;
+  /**
+   * Optional trailing slot beside the eyebrow (typically an `EyebrowPill`).
+   */
+  eyebrowTrailing?: ReactNode;
 }
 
 export function Ticket({
@@ -74,16 +89,29 @@ export function Ticket({
   footerContact,
   showQr = true,
   noQrSlot,
+  noShell = false,
+  eyebrow,
+  eyebrowTrailing,
 }: TicketProps) {
   const { preset, presetKey } = usePreset();
   const isMobile = useMobile();
 
-  return (
-    <TenantShell>
-      <section
-        className="text-center"
-        style={{ padding: isMobile ? "60px 0 48px" : "80px 0" }}
-      >
+  const sectionPadding = noShell
+    ? 0
+    : isMobile
+      ? "60px 0 48px"
+      : "80px 0";
+  const showEyebrow = Boolean(eyebrow || eyebrowTrailing);
+  const ticketSection = (
+    <section className="text-center" style={{ padding: sectionPadding }}>
+        {showEyebrow ? (
+          <Eyebrow
+            className="text-left"
+            trailing={eyebrowTrailing}
+          >
+            {eyebrow ? (preset.upper ? eyebrow.toUpperCase() : eyebrow) : ""}
+          </Eyebrow>
+        ) : null}
         <div className="mb-5">
           <h2
             className="m-0 mb-2 text-center"
@@ -163,14 +191,6 @@ export function Ticket({
               >
                 Show this at the door.
               </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--tt-fg-dim)",
-                }}
-              >
-                This QR can only be redeemed once.
-              </div>
               {actions ? (
                 <div className="mt-2 flex flex-wrap justify-center gap-4">
                   {actions}
@@ -207,7 +227,9 @@ export function Ticket({
             ))}
           </div>
         ) : null}
-      </section>
-    </TenantShell>
+    </section>
   );
+
+  if (noShell) return ticketSection;
+  return <TenantShell>{ticketSection}</TenantShell>;
 }

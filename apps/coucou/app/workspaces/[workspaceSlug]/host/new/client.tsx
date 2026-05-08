@@ -37,6 +37,7 @@ import {
 type ListRow = {
   listKey: string;
   password: string;
+  requirePassword: boolean;
   shouldGenerateQrCode: boolean;
   approvalMessage: string;
 };
@@ -46,12 +47,9 @@ function validateCreate(values: EventFormData, lists: ListRow[]): string[] {
   if (!values.name?.trim()) validationErrors.push("Name is required");
   if (!values.location?.trim()) validationErrors.push("Location is required");
   if (!values.eventDate) validationErrors.push("Event date is required");
-  if (!values.eventEndDate) validationErrors.push("Event end date is required");
-  const filteredLists = lists.filter(
-    (list) => list.listKey?.trim() && list.password?.trim(),
-  );
+  const filteredLists = lists.filter((list) => list.listKey?.trim());
   if (filteredLists.length === 0) {
-    validationErrors.push("Add at least one list/password");
+    validationErrors.push("Add at least one list");
   }
   if (
     values.themeBackgroundColor &&
@@ -84,8 +82,6 @@ export default function NewEventClient() {
       location: "",
       eventDate: "",
       eventTime: "19:00",
-      eventEndDate: "",
-      eventEndTime: "03:00",
       eventTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       flyerStorageId: null,
       customIconStorageId: null,
@@ -110,12 +106,14 @@ export default function NewEventClient() {
     {
       listKey: "vip",
       password: "",
+      requirePassword: true,
       shouldGenerateQrCode: false,
       approvalMessage: "",
     },
     {
       listKey: "ga",
       password: "",
+      requirePassword: true,
       shouldGenerateQrCode: false,
       approvalMessage: "",
     },
@@ -129,6 +127,7 @@ export default function NewEventClient() {
       {
         listKey: "",
         password: "",
+        requirePassword: true,
         shouldGenerateQrCode: false,
         approvalMessage: "",
       },
@@ -180,23 +179,14 @@ export default function NewEventClient() {
         values.eventTime,
         values.eventTimezone,
       );
-      const endTimestamp = createTimestamp(
-        values.eventEndDate,
-        values.eventEndTime,
-        values.eventTimezone,
-      );
-      if (endTimestamp <= timestamp) {
-        toast.error("Event end must be after the event start");
-        return;
-      }
       const listsFiltered = lists
         .map((list) => ({
           listKey: list.listKey.trim(),
-          password: list.password.trim(),
+          password: list.requirePassword ? list.password.trim() : "",
           generateQR: list.shouldGenerateQrCode,
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
         }))
-        .filter((list) => list.listKey && list.password);
+        .filter((list) => list.listKey);
       const trimmedSecondaryTitle = values.secondaryTitle?.trim() ?? "";
       const trimmedProductionCompany = values.productionCompany?.trim() ?? "";
       const normalizedThemeBackgroundColor =
@@ -223,7 +213,6 @@ export default function NewEventClient() {
         guestPortalLinkLabel: hasLabel ? trimmedGuestPortalLinkLabel : undefined,
         guestPortalLinkUrl: hasUrl ? trimmedGuestPortalLinkUrl : undefined,
         eventDate: timestamp,
-        eventEndDate: endTimestamp,
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
         status: values.status ?? "inactive",
@@ -292,6 +281,10 @@ export default function NewEventClient() {
               <h3 className="font-medium text-sm text-muted-foreground">
                 ACCESS LISTS & PASSWORDS
               </h3>
+              <p className="text-xs text-muted-foreground">
+                Leave a password blank for an open list — the first list with
+                no password receives RSVPs that skip the password step.
+              </p>
               <div className="space-y-3">
                 {lists.map((list, idx) => (
                   <div
@@ -311,17 +304,44 @@ export default function NewEventClient() {
                           }
                         />
                       </div>
-                      <div className="flex flex-col">
+                      <div className="flex flex-col gap-2">
                         <label className="text-xs font-medium text-muted-foreground">
                           Password
                         </label>
-                        <Input
-                          placeholder="Enter secure password"
-                          value={list.password}
-                          onChange={(event) =>
-                            setList(idx, "password", event.target.value)
-                          }
-                        />
+                        <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                          <Checkbox
+                            id={`require-password-${idx}`}
+                            checked={list.requirePassword}
+                            onCheckedChange={(checked) =>
+                              setList(
+                                idx,
+                                "requirePassword",
+                                Boolean(checked),
+                              )
+                            }
+                          />
+                          <label
+                            htmlFor={`require-password-${idx}`}
+                            className="text-sm text-muted-foreground leading-tight"
+                          >
+                            Require password
+                          </label>
+                        </div>
+                        {list.requirePassword ? (
+                          <Input
+                            placeholder="Enter password"
+                            value={list.password}
+                            onChange={(event) =>
+                              setList(idx, "password", event.target.value)
+                            }
+                          />
+                        ) : (
+                          <Input
+                            placeholder="Open list — no password"
+                            value=""
+                            disabled
+                          />
+                        )}
                       </div>
                       <div className="flex flex-col gap-2">
                         <label

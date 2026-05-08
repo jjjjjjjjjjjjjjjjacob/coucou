@@ -17,6 +17,7 @@ import { requireWorkspaceHost } from "./lib/workspaceAuth";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
 import {
   eventActValidator,
+  eventLifecycleValidator,
   eventStatusValidator,
   sanitizeOptionalEventActs,
   sanitizeOptionalEventDescription,
@@ -36,7 +37,10 @@ type HostCredentialData = {
   eventId: Id<"events">;
   listKey: string;
   password?: string;
+  hasPassword?: boolean;
   generateQR?: boolean;
+  defersQrDelivery?: boolean;
+  sendQrOnApproval?: boolean;
   approvalMessage?: string;
   createdAt: number;
 };
@@ -75,6 +79,7 @@ function validateLocalPasswordUniqueness(
   const normalizedPasswords = new Set<string>();
 
   for (const candidate of candidates) {
+    if (!candidate.password.trim()) continue;
     const normalizedPassword = normalizeCredentialPassword(candidate.password);
     if (normalizedPasswords.has(normalizedPassword)) {
       throw new ValidationError("List passwords must be unique within the event");
@@ -93,6 +98,7 @@ async function ensureActiveEventPasswordsAreUnique(
   validateLocalPasswordUniqueness(options.candidates);
 
   for (const candidate of options.candidates) {
+    if (!candidate.password.trim()) continue;
     const matchingCredentials = await ctx.runQuery(
       api.credentials.getByPassword,
       { password: candidate.password },
@@ -177,15 +183,22 @@ export const create = action({
     guestPortalLinkLabel: v.optional(v.string()),
     guestPortalLinkUrl: v.optional(v.string()),
     eventDate: v.number(),
-    eventEndDate: v.number(),
+    /**
+     * @deprecated The 24-hour RSVP cutoff is derived from `eventDate`;
+     * we no longer require an explicit end timestamp. Optional for
+     * back-compat only — host UI no longer collects it.
+     */
+    eventEndDate: v.optional(v.number()),
     eventTimezone: v.optional(v.string()),
     status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()),
+    sendQrOnApproval: v.optional(v.boolean()),
     lists: v.array(
       v.object({
         listKey: v.string(),
         password: v.string(),
         generateQR: v.optional(v.boolean()),
+        sendQrOnApproval: v.optional(v.boolean()),
         approvalMessage: v.optional(v.string()),
       }),
     ),
@@ -217,7 +230,10 @@ export const create = action({
     const now = Date.now();
     if (args.eventDate < now)
       throw new Error("Event date must be in the future");
-    if (args.eventEndDate <= args.eventDate) {
+    if (
+      args.eventEndDate !== undefined &&
+      args.eventEndDate <= args.eventDate
+    ) {
       throw new Error("Event end must be after the event start");
     }
 
@@ -242,12 +258,23 @@ export const create = action({
     }
 
     const derivedCredentials: CredentialData[] = args.lists.map(
-      ({ listKey, password, generateQR, approvalMessage }) => {
+      ({
+        listKey,
+        password,
+        generateQR,
+        sendQrOnApproval,
+        approvalMessage,
+      }) => {
+        const trimmedPassword = password.trim();
+        const hasPassword = trimmedPassword.length > 0;
         return {
           listKey,
-          password,
-          passwordNormalized: normalizeCredentialPassword(password),
+          password: hasPassword ? trimmedPassword : undefined,
+          passwordNormalized: hasPassword
+            ? normalizeCredentialPassword(trimmedPassword)
+            : undefined,
           generateQR,
+          sendQrOnApproval,
           approvalMessage: sanitizeOptionalApprovalMessage(approvalMessage),
         };
       },
@@ -333,6 +360,7 @@ export const create = action({
       eventTimezone: args.eventTimezone,
       status: eventStatus,
       maxAttendees: args.maxAttendees ?? 1,
+      sendQrOnApproval: args.sendQrOnApproval,
       customFields: args.customFields,
       primaryFieldConfig,
       themeBackgroundColor: normalizedThemeBackgroundColor,
@@ -369,6 +397,9 @@ export const update = action({
         eventTimezone: v.optional(v.string()),
         maxAttendees: v.optional(v.number()),
         status: v.optional(eventStatusValidator),
+        lifecycle: v.optional(eventLifecycleValidator),
+        defersQrDelivery: v.optional(v.boolean()),
+        sendQrOnApproval: v.optional(v.boolean()),
         customFields: v.optional(
           v.array(
             v.object({
@@ -396,6 +427,8 @@ export const update = action({
           listKey: v.string(),
           password: v.optional(v.string()),
           generateQR: v.optional(v.boolean()),
+          defersQrDelivery: v.optional(v.boolean()),
+          sendQrOnApproval: v.optional(v.boolean()),
           approvalMessage: v.optional(v.string()),
         }),
       ),
@@ -570,8 +603,11 @@ export const update = action({
 
     for (const list of lists) {
       const currentCredential = list.id ? existingById.get(list.id) : undefined;
-      const wantsPasswordUpdate = list.password && list.password.length > 0;
+      const trimmedPassword = list.password?.trim() ?? "";
+      const wantsPasswordUpdate = list.password !== undefined;
       const nextGenerateQrCodeEnabled = list.generateQR ?? false;
+      const nextDefersQrDelivery = list.defersQrDelivery;
+      const nextSendQrOnApproval = list.sendQrOnApproval;
       const nextApprovalMessage = sanitizeOptionalApprovalMessage(
         list.approvalMessage,
       );
@@ -582,17 +618,27 @@ export const update = action({
           credentialPatch.listKey = list.listKey;
         }
         if (wantsPasswordUpdate) {
-          const passwordNormalized = normalizeCredentialPassword(
-            list.password!,
-          );
-
-          credentialPatch.password = list.password!;
-          credentialPatch.passwordNormalized = passwordNormalized;
+          if (trimmedPassword.length > 0) {
+            const passwordNormalized = normalizeCredentialPassword(
+              trimmedPassword,
+            );
+            credentialPatch.password = trimmedPassword;
+            credentialPatch.passwordNormalized = passwordNormalized;
+          } else if (currentCredential.password) {
+            credentialPatch.password = "";
+            credentialPatch.passwordNormalized = "";
+          }
         }
         const currentGenerateQrCodeEnabled =
           currentCredential.generateQR ?? false;
         if (nextGenerateQrCodeEnabled !== currentGenerateQrCodeEnabled) {
           credentialPatch.generateQR = nextGenerateQrCodeEnabled;
+        }
+        if (nextDefersQrDelivery !== currentCredential.defersQrDelivery) {
+          credentialPatch.defersQrDelivery = nextDefersQrDelivery;
+        }
+        if (nextSendQrOnApproval !== currentCredential.sendQrOnApproval) {
+          credentialPatch.sendQrOnApproval = nextSendQrOnApproval;
         }
         if (nextApprovalMessage !== currentCredential.approvalMessage) {
           credentialPatch.approvalMessage = nextApprovalMessage;
@@ -606,16 +652,19 @@ export const update = action({
           });
         }
       } else {
-        // New credential - require password
-        if (!wantsPasswordUpdate) continue; // skip if no password provided
+        const hasPassword = trimmedPassword.length > 0;
         await ctx.runMutation(api.events.addListCredential, {
           eventId,
           siteKey,
           workspaceSlug,
           listKey: list.listKey,
-          password: list.password!,
-          passwordNormalized: normalizeCredentialPassword(list.password!),
+          password: hasPassword ? trimmedPassword : undefined,
+          passwordNormalized: hasPassword
+            ? normalizeCredentialPassword(trimmedPassword)
+            : undefined,
           generateQR: nextGenerateQrCodeEnabled,
+          defersQrDelivery: nextDefersQrDelivery,
+          sendQrOnApproval: nextSendQrOnApproval,
           approvalMessage: nextApprovalMessage,
         });
       }

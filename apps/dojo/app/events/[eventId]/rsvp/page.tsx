@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  validateRequired,
+  validateRequiredPrimaryFields,
   validateRequiredWithFirstName,
 } from "@/lib/mini-zod";
 import { useForm, type Path } from "react-hook-form";
@@ -32,7 +32,10 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
-import { GuestInfoFields, NoteForHostsField } from "@/components/guest-info-form";
+import {
+  GuestInfoFields,
+  NoteForHostsField,
+} from "@/components/guest-info-form";
 import { Spinner } from "@/components/ui/spinner";
 import {
   ContextMenu,
@@ -136,13 +139,20 @@ export default function RsvpPage({
         },
         { fallback: event?.name?.trim() ?? "Event Host" },
       ),
-    [event?.hosts, event?.name, event?.secondaryTitle, event?.productionCompany],
+    [
+      event?.hosts,
+      event?.name,
+      event?.secondaryTitle,
+      event?.productionCompany,
+    ],
   );
-  const { foregroundColor: qrForegroundColor, backgroundColor: qrBackgroundColor } =
-    resolveQrCodeColors({
-      foregroundColor: event?.themeTextColor,
-      backgroundColor: event?.themeBackgroundColor,
-    });
+  const {
+    foregroundColor: qrForegroundColor,
+    backgroundColor: qrBackgroundColor,
+  } = resolveQrCodeColors({
+    foregroundColor: event?.themeTextColor,
+    backgroundColor: event?.themeBackgroundColor,
+  });
 
   const resolve = useAction(api.credentialsNode.resolveListByPassword);
   const upsertContact = useMutation(api.users.upsertContactPhone);
@@ -160,31 +170,25 @@ export default function RsvpPage({
     },
   });
 
-  // Guard: password requirement
-  useEffect(() => {
-    if (!password) {
-      router.replace(`/events/${eventId}`);
-      return;
-    }
-  }, [password, eventId, router]);
-
-  // Resolve list by password
+  // Resolve list by password (empty password falls through to a no-password
+  // list when the event has one, otherwise surfaces an error message).
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      if (!password) return;
       try {
         setChecking(true);
         const res = await resolve({
           eventId: eventId as Id<"events">,
-          password,
+          password: password ?? "",
           siteKey: siteConfiguration.siteKey,
         });
         if (!cancelled) {
           if (res?.ok) {
             setListKey(res.listKey);
-          } else {
+          } else if (password) {
             setMessage("Invalid password for this event.");
+          } else {
+            router.replace(`/events/${eventId}`);
           }
         }
       } catch (error: unknown) {
@@ -199,7 +203,7 @@ export default function RsvpPage({
     return () => {
       cancelled = true;
     };
-  }, [password, eventId, resolve]);
+  }, [password, eventId, resolve, router]);
 
   // Prefill from existing RSVP data and Clerk profile
   useEffect(() => {
@@ -357,15 +361,36 @@ export default function RsvpPage({
         return;
       }
       const eventCustomFields: CustomField[] = event?.customFields ?? [];
-      const errs = validateRequiredWithFirstName(
-        firstName,
-        custom,
-        eventCustomFields.map((customField) => ({
-          key: customField.key,
-          label: customField.label || customField.key,
-          required: customField.required,
-        })),
-      );
+      const eventSocialPlatforms =
+        event?.primaryFieldConfig?.socialPlatforms ?? [];
+      const invitedByConfig = event?.primaryFieldConfig?.invitedBy;
+      const errs = [
+        ...validateRequiredWithFirstName(
+          firstName,
+          custom,
+          eventCustomFields.map((customField) => ({
+            key: customField.key,
+            label: customField.label || customField.key,
+            required: customField.required,
+          })),
+        ),
+        ...validateRequiredPrimaryFields(
+          socialProfiles,
+          eventSocialPlatforms.map((platform) => ({
+            key: platform.platformKey,
+            label: platform.label,
+            required: platform.required,
+          })),
+          invitedByName,
+          invitedByConfig?.enabled === true
+            ? {
+                key: "invitedByName",
+                label: invitedByConfig.label ?? "Invited by",
+                required: invitedByConfig.required,
+              }
+            : undefined,
+        ),
+      ];
       if (errs.length) {
         const perField: Record<string, string> = {};
         for (const e of errs) {
@@ -380,6 +405,26 @@ export default function RsvpPage({
           if (errs.includes(message)) {
             const fieldPath = `custom.${customField.key}` as Path<RSVPFormData>;
             form.setError(fieldPath, {
+              type: "required",
+              message,
+            });
+          }
+        }
+        for (const platform of eventSocialPlatforms) {
+          const message = `${platform.label} is required`;
+          if (errs.includes(message)) {
+            const fieldPath =
+              `socialProfiles.${platform.platformKey}` as Path<RSVPFormData>;
+            form.setError(fieldPath, {
+              type: "required",
+              message,
+            });
+          }
+        }
+        if (invitedByConfig?.enabled === true) {
+          const message = `${invitedByConfig.label ?? "Invited by"} is required`;
+          if (errs.includes(message)) {
+            form.setError("invitedByName", {
               type: "required",
               message,
             });
@@ -404,16 +449,15 @@ export default function RsvpPage({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
       });
-      const filteredCustomFields = eventCustomFields.reduce<Record<string, string>>(
-        (accumulator, customField) => {
-          const value = custom[customField.key];
-          if (value) {
-            accumulator[customField.key] = value;
-          }
-          return accumulator;
-        },
-        {},
-      );
+      const filteredCustomFields = eventCustomFields.reduce<
+        Record<string, string>
+      >((accumulator, customField) => {
+        const value = custom[customField.key];
+        if (value) {
+          accumulator[customField.key] = value;
+        }
+        return accumulator;
+      }, {});
       await upsertContact({
         phone: phone || undefined,
       });
@@ -435,9 +479,7 @@ export default function RsvpPage({
         attendees: form.getValues("attendees") || 1,
         smsConsent: smsConsentEnabled,
         smsConsentIpAddress:
-          smsConsentEnabled && consentIpAddress
-            ? consentIpAddress
-            : undefined,
+          smsConsentEnabled && consentIpAddress ? consentIpAddress : undefined,
         customFields: filteredCustomFields,
         socialProfiles: (event?.primaryFieldConfig?.socialPlatforms ?? [])
           .map((platform) => ({
@@ -579,10 +621,22 @@ export default function RsvpPage({
                       />
                       <span className="flex flex-col text-left gap-0.5">
                         <span className="font-medium text-primary text-sm">
-                          I consent to receive SMS messages from {smsSenderDisplayName}.
+                          I consent to receive SMS messages from{" "}
+                          {smsSenderDisplayName}.
                         </span>
                         <span className="text-[10px] text-muted-foreground leading-tight">
-                          RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply STOP to cancel. Consent not required for purchase. <a href="/terms" className="underline">Terms</a> & <a href="/privacy" className="underline">Privacy</a>.
+                          RSVP updates, reminders, and offers via SMS. Sent by
+                          Coucou on behalf of {smsSenderDisplayName} using Dojo
+                          Pomodoro. Msg & data rates may apply. Reply STOP to
+                          cancel. Consent not required for purchase.{" "}
+                          <a href="/terms" className="underline">
+                            Terms
+                          </a>{" "}
+                          &{" "}
+                          <a href="/privacy" className="underline">
+                            Privacy
+                          </a>
+                          .
                         </span>
                       </span>
                     </label>
@@ -608,9 +662,22 @@ export default function RsvpPage({
               >
                 <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
                   <AlertDialogHeader>
-                    <AlertDialogTitle className="text-lg">Confirm SMS Updates</AlertDialogTitle>
+                    <AlertDialogTitle className="text-lg">
+                      Confirm SMS Updates
+                    </AlertDialogTitle>
                     <AlertDialogDescription className="text-[11px] leading-tight break-words">
-                      RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply STOP to cancel. Consent not required for purchase. <a href="/terms" className="underline break-words">Terms</a> & <a href="/privacy" className="underline break-words">Privacy</a>.
+                      RSVP updates, reminders, and offers via SMS. Sent by
+                      Coucou on behalf of {smsSenderDisplayName} using Dojo
+                      Pomodoro. Msg & data rates may apply. Reply STOP to
+                      cancel. Consent not required for purchase.{" "}
+                      <a href="/terms" className="underline break-words">
+                        Terms
+                      </a>{" "}
+                      &{" "}
+                      <a href="/privacy" className="underline break-words">
+                        Privacy
+                      </a>
+                      .
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter className="flex flex-col sm:items-center sm:justify-center">
@@ -637,10 +704,23 @@ export default function RsvpPage({
                       Get Event Updates by SMS
                     </AlertDialogTitle>
                     <p className="text-sm text-foreground break-words">
-                      Turn on SMS updates and we will text you the moment your RSVP status changes, so you never have to refresh this page to see if you are approved.
+                      Turn on SMS updates and we will text you the moment your
+                      RSVP status changes, so you never have to refresh this
+                      page to see if you are approved.
                     </p>
                     <AlertDialogDescription className="text-[10px] leading-tight text-muted-foreground break-words">
-                      RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply STOP to cancel. Consent not required for purchase. <a href="/terms" className="underline break-words">Terms</a> & <a href="/privacy" className="underline break-words">Privacy</a>.
+                      RSVP updates, reminders, and offers via SMS. Sent by
+                      Coucou on behalf of {smsSenderDisplayName} using Dojo
+                      Pomodoro. Msg & data rates may apply. Reply STOP to
+                      cancel. Consent not required for purchase.{" "}
+                      <a href="/terms" className="underline break-words">
+                        Terms
+                      </a>{" "}
+                      &{" "}
+                      <a href="/privacy" className="underline break-words">
+                        Privacy
+                      </a>
+                      .
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
@@ -652,20 +732,20 @@ export default function RsvpPage({
                       Back
                     </AlertDialogCancel>
                     <div className="flex flex-col sm:flex-row gap-2">
-                    <AlertDialogAction
-                      type="button"
-                      onClick={handleEncourageContinue}
-                      className="w-full sm:w-auto border border-input bg-background text-primary hover:bg-accent hover:text-accent-foreground order-2"
-                    >
-                      No SMS
-                    </AlertDialogAction>
-                    <AlertDialogAction
-                      type="button"
-                      onClick={handleEncourageEnable}
-                      className="w-full sm:w-auto order-1"
-                    >
-                      Enable SMS
-                    </AlertDialogAction>
+                      <AlertDialogAction
+                        type="button"
+                        onClick={handleEncourageContinue}
+                        className="w-full sm:w-auto border border-input bg-background text-primary hover:bg-accent hover:text-accent-foreground order-2"
+                      >
+                        No SMS
+                      </AlertDialogAction>
+                      <AlertDialogAction
+                        type="button"
+                        onClick={handleEncourageEnable}
+                        className="w-full sm:w-auto order-1"
+                      >
+                        Enable SMS
+                      </AlertDialogAction>
                     </div>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -735,7 +815,7 @@ export default function RsvpPage({
                           Show this QR code at the door
                         </div>
                         <div className="text-xs text-primary/60 text-center">
-                          List: {myRedemption.listKey?.toUpperCase() || 'N/A'}
+                          List: {myRedemption.listKey?.toUpperCase() || "N/A"}
                         </div>
                       </div>
                     )}

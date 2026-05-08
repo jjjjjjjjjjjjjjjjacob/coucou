@@ -87,6 +87,11 @@ export interface TenantLandingProps {
    * to "the room" or similar context page.
    */
   secondaryCta?: ReactNode;
+  /**
+   * When true, skip the inner `TenantShell` wrapper. Use when the parent
+   * already provides a viewport-owning shell (e.g. `ChlorineSplitShell`).
+   */
+  noShell?: boolean;
 }
 
 const DEFAULT_ABOUT_COPY: Record<string, string> = {
@@ -127,6 +132,7 @@ export function TenantLanding({
   contactEmail,
   primaryCta,
   secondaryCta,
+  noShell = false,
 }: TenantLandingProps) {
   const { preset, presetKey } = usePreset();
   const isMobile = useMobile();
@@ -138,9 +144,14 @@ export function TenantLanding({
   const showRecent = (recentEvents?.length ?? 0) > 0;
   const showLineup = (event.lineup?.length ?? 0) > 0;
 
-  return (
-    <TenantShell>
-      <section style={{ padding: isMobile ? "60px 0 48px" : "120px 0 96px" }}>
+  const sectionPadding = noShell
+    ? 0
+    : isMobile
+      ? "60px 0 48px"
+      : "120px 0 96px";
+  const landingSection = (
+    <>
+    <section style={{ padding: sectionPadding }}>
         <Eyebrow>{heroEyebrow}</Eyebrow>
         <h1
           className="m-0 mb-6 max-w-[640px] leading-[1.15]"
@@ -326,6 +337,9 @@ export function TenantLanding({
           </div>
         </section>
       ) : null}
-    </TenantShell>
+    </>
   );
+
+  if (noShell) return landingSection;
+  return <TenantShell>{landingSection}</TenantShell>;
 }

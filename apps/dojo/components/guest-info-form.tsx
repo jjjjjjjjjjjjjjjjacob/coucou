@@ -197,12 +197,22 @@ export function GuestInfoFields({
           key={platform.platformKey}
           control={form.control}
           name={`socialProfiles.${platform.platformKey}` as Path<RSVPFormData>}
+          rules={
+            platform.required
+              ? {
+                  required: `${platform.label} is required`,
+                }
+              : undefined
+          }
           render={({ field }) => {
             const { value, onChange, ref, ...rest } = field;
             return (
               <FormItem>
                 <FormLabel className="text-primary text-xs font-medium">
                   {platform.label}
+                  {platform.required && (
+                    <span className="text-xs text-primary/70"> (required)</span>
+                  )}
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -232,10 +242,20 @@ export function GuestInfoFields({
         <FormField
           control={form.control}
           name="invitedByName"
+          rules={
+            event.primaryFieldConfig?.invitedBy?.required
+              ? {
+                  required: `${event.primaryFieldConfig?.invitedBy?.label ?? "Invited by"} is required`,
+                }
+              : undefined
+          }
           render={({ field }) => (
             <FormItem>
               <FormLabel className="text-primary text-xs font-medium">
                 {event.primaryFieldConfig?.invitedBy?.label ?? "Invited by"}
+                {event.primaryFieldConfig?.invitedBy?.required && (
+                  <span className="text-xs text-primary/70"> (required)</span>
+                )}
               </FormLabel>
               <FormControl>
                 <Input

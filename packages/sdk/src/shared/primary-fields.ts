@@ -3,12 +3,14 @@ export interface PrimarySocialPlatformConfig {
   label: string;
   placeholder?: string;
   profileUrlPrefix?: string;
+  required?: boolean;
 }
 
 export interface InvitedByPrimaryFieldConfig {
   enabled: boolean;
   label?: string;
   placeholder?: string;
+  required?: boolean;
 }
 
 export interface PrimaryFieldConfig {
@@ -39,6 +41,7 @@ export const DEFAULT_SOCIAL_PLATFORM_CONFIGS: readonly PrimarySocialPlatformConf
       label: "Instagram",
       placeholder: "@handle",
       profileUrlPrefix: "https://instagram.com/",
+      required: true,
     },
     {
       platformKey: "tiktok",
@@ -106,11 +109,46 @@ const socialPlatformAliases: Record<string, readonly string[]> = {
 };
 
 const canonicalSocialPlatformKeyByAlias: Record<string, string> = {
+  ig: "instagram",
+  insta: "instagram",
+  "ig-handle": "instagram",
+  "insta-handle": "instagram",
+  "instagram-handle": "instagram",
+  "instagram-username": "instagram",
+  tt: "tiktok",
+  "tik-tok": "tiktok",
+  "tiktok-handle": "tiktok",
+  "tiktok-username": "tiktok",
+  "beli-handle": "beli",
+  "beli-username": "beli",
   twitter: "x",
   "x-twitter": "x",
+  "twitter-handle": "x",
+  "twitter-username": "x",
+  "x-handle": "x",
   "linked-in": "linkedin",
   "linked-in-profile": "linkedin",
+  "linkedin-handle": "linkedin",
+  "linkedin-profile": "linkedin",
+  "linkedin-url": "linkedin",
 };
+
+const PRESET_PLATFORM_KEYS = new Set<string>(
+  DEFAULT_SOCIAL_PLATFORM_CONFIGS.map((platform) => platform.platformKey),
+);
+
+export function isPresetSocialPlatformKey(key: string): boolean {
+  return PRESET_PLATFORM_KEYS.has(normalizeSocialPlatformKey(key));
+}
+
+export function getPresetSocialPlatformConfig(
+  key: string,
+): PrimarySocialPlatformConfig | undefined {
+  const normalized = normalizeSocialPlatformKey(key);
+  return DEFAULT_SOCIAL_PLATFORM_CONFIGS.find(
+    (platform) => platform.platformKey === normalized,
+  );
+}
 
 const invitedByAliases = new Set([
   "invited by",
@@ -304,6 +342,7 @@ export function dedupeSocialPlatformConfigs(
       label,
       placeholder: platform.placeholder?.trim() || undefined,
       profileUrlPrefix: platform.profileUrlPrefix?.trim() || undefined,
+      required: platform.required === true ? true : undefined,
     });
   }
 

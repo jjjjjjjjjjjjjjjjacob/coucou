@@ -1,23 +1,21 @@
 "use client";
 
-import React, { use, useCallback, useEffect, useState } from "react";
+import React, { use, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAction, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
+import { toast } from "sonner";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { Spinner } from "@/components/ui/spinner";
 import { siteConfiguration } from "@/lib/site";
-import {
-  RsvpAccepted,
-  RsvpGate,
-  RsvpPending,
-  TenantTemplateProvider,
-  type RsvpGateState,
-} from "@coucou/ui/tenant-template";
+import { RsvpPending } from "@coucou/ui/tenant-template";
 import { ApplicationError, Event } from "@/lib/types";
-import { RsvpAcceptedForm } from "./rsvp-accepted-form";
+import {
+  RsvpAcceptedForm,
+  type RsvpCollectedArgs,
+} from "./rsvp-accepted-form";
 
 export default function RsvpPage({
   params,
@@ -39,36 +37,39 @@ export default function RsvpPage({
     siteKey: siteConfiguration.siteKey,
   });
 
-  const resolveListByPassword = useAction(
-    api.credentialsNode.resolveListByPassword,
-  );
+  const submitRsvp = useMutation(api.rsvps.submitRequest);
+
+  const hasNoPasswordList = useQuery(api.events.hasNoPasswordList, {
+    eventId: eventId as Id<"events">,
+  });
+  const hasPasswordList = useQuery(api.events.hasPasswordList, {
+    eventId: eventId as Id<"events">,
+  });
 
   const queryParamPassword = (searchParams?.get("password") ?? "").trim();
-
-  const [password, setPassword] = useState(queryParamPassword);
-  const [listKey, setListKey] = useState<string | null>(null);
-  const [gateState, setGateState] = useState<RsvpGateState>("idle");
-  const [resolvedFromUrl, setResolvedFromUrl] = useState(false);
   const eventIsOpenForRsvp = event ? isEventOpenForRsvp(event) : false;
 
   // Auto-redirect to the right post-submission surface if the user already
-  // has an RSVP for this event.
+  // has an RSVP for this event. Any submitted request — pending, approved,
+  // attending, denied — should pull the user off the password gate and onto
+  // the matching status / ticket / denied surface.
   useEffect(() => {
-    if (!status) return;
+    if (!status?.status) return;
     if (status.status === "approved" || status.status === "attending") {
       router.replace(`/events/${eventId}/ticket`);
       return;
     }
-    if (status.status === "pending" && status.listKey) {
+    if (status.status === "denied") {
+      router.replace(`/events/${eventId}/denied`);
+      return;
+    }
+    if (status.status === "pending") {
       router.replace(`/events/${eventId}/status`);
       return;
     }
   }, [status, eventId, router]);
 
-  // If the user landed here unauthenticated, push them through sign-in and
-  // bring them back. Mirrors the previous landing-page behavior so the dojo
-  // flow stays "sign-in then RSVP" rather than letting unsigned users see
-  // the password gate without context.
+  // Sign-in gate. Push unauthenticated users through Clerk first.
   useEffect(() => {
     if (!isLoaded) return;
     if (isSignedIn) return;
@@ -80,57 +81,32 @@ export default function RsvpPage({
     router.replace(`/sign-in?redirect_url=${encodeURIComponent(intended)}`);
   }, [isLoaded, isSignedIn, eventId, queryParamPassword, router]);
 
-  const tryResolvePassword = useCallback(
-    async (passwordToResolve: string) => {
-      const trimmed = passwordToResolve.trim();
-      if (!trimmed) return;
+  const handleInfoCollected = useCallback(
+    async (args: RsvpCollectedArgs) => {
       if (!eventIsOpenForRsvp) return;
-      setGateState("submitting");
+      if (!args.resolvedListKey) {
+        toast.error("Couldn't determine your list. Re-check your password.");
+        return;
+      }
       try {
-        const result = await resolveListByPassword({
+        const { resolvedListKey, ...submissionArgs } = args;
+        await submitRsvp({
           eventId: eventId as Id<"events">,
-          password: trimmed,
           siteKey: siteConfiguration.siteKey,
+          listKey: resolvedListKey,
+          ...submissionArgs,
         });
-        if (result?.ok) {
-          setListKey(result.listKey);
-          setGateState("idle");
-          // Mirror the password into the URL so refreshes preserve state.
-          const params = new URLSearchParams({ password: trimmed }).toString();
-          router.replace(`/events/${eventId}/rsvp?${params}`);
-        } else {
-          setListKey(null);
-          setGateState("wrong");
-        }
+        toast.success("RSVP submitted");
+        router.replace(`/events/${eventId}/status`);
       } catch (error: unknown) {
         const errorDetails = error as ApplicationError | Error;
-        console.error("Password resolution failed:", errorDetails);
-        setListKey(null);
-        setGateState("wrong");
+        const errorMessage =
+          errorDetails?.message || "Failed to submit request";
+        toast.error("Request failed", { description: errorMessage });
       }
     },
-    [eventIsOpenForRsvp, resolveListByPassword, eventId, router],
+    [eventIsOpenForRsvp, submitRsvp, eventId, router],
   );
-
-  // If a password came in via the URL and we haven't tried to resolve yet, do it.
-  useEffect(() => {
-    if (resolvedFromUrl) return;
-    if (!queryParamPassword) return;
-    if (!isSignedIn) return;
-    if (!eventIsOpenForRsvp) return;
-    setResolvedFromUrl(true);
-    void tryResolvePassword(queryParamPassword);
-  }, [
-    queryParamPassword,
-    isSignedIn,
-    eventIsOpenForRsvp,
-    resolvedFromUrl,
-    tryResolvePassword,
-  ]);
-
-  const handleGateSubmit = useCallback(async () => {
-    await tryResolvePassword(password);
-  }, [password, tryResolvePassword]);
 
   if (
     !event ||
@@ -139,57 +115,34 @@ export default function RsvpPage({
     (isSignedIn && status === undefined)
   ) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-6">
+      <div className="flex w-full items-center justify-center py-10">
         <Spinner />
-      </main>
+      </div>
     );
   }
 
   if (!status && !eventIsOpenForRsvp) {
     return (
-      <TenantTemplateProvider
-        siteConfigurationPreset={siteConfiguration.preset}
-        event={event}
-      >
-        <RsvpPending
-          eyebrow="RSVP"
-          heading="RSVP closed."
-          description="This event is no longer accepting RSVP requests."
-          statusLabel="Closed"
-        />
-      </TenantTemplateProvider>
+      <RsvpPending
+        eyebrow="RSVP"
+        heading="RSVP closed."
+        description="This event is no longer accepting RSVP requests."
+        statusLabel="Closed"
+        noShell
+      />
     );
   }
 
   return (
-    <TenantTemplateProvider
-      siteConfigurationPreset={siteConfiguration.preset}
-      event={event}
-    >
-      {!listKey ? (
-        <RsvpGate
-          password={password}
-          onPasswordChange={setPassword}
-          onSubmit={handleGateSubmit}
-          state={gateState}
-        />
-      ) : (
-        <RsvpAccepted
-          tier={listKey}
-          tierDescription={
-            <>
-              {event?.name ? <>You&apos;re in for {event.name}. </> : null}
-              We&apos;ll text the address day-of. Bring ID.
-            </>
-          }
-        >
-          <RsvpAcceptedForm
-            eventId={eventId as Id<"events">}
-            event={event as Event}
-            listKey={listKey}
-          />
-        </RsvpAccepted>
-      )}
-    </TenantTemplateProvider>
+    <RsvpAcceptedForm
+      eventId={eventId as Id<"events">}
+      event={event as Event}
+      submitMode="collect"
+      submitLabel="Submit Request"
+      onCollect={handleInfoCollected}
+      hasNoPasswordList={hasNoPasswordList === true}
+      hasPasswordList={hasPasswordList === true}
+      initialPassword={queryParamPassword}
+    />
   );
 }

@@ -8,6 +8,7 @@ import CreatedToastOnce from "./toast-client";
 import EventCardClient from "./event-card-client";
 import EditEventDialog from "./edit-event-dialog";
 import { Event } from "@/lib/types";
+import { resolveEventEndTimestamp } from "@convex/lib/eventTiming";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectOption } from "@/components/ui/select";
@@ -57,24 +58,26 @@ import {
 
 type ViewMode = "card" | "list";
 type SortOption = "date" | "name" | "rsvps";
-type FilterOption = "all" | "upcoming" | "past";
+type FilterOption = "all" | "draft" | "upcoming" | "past";
+
+type EventWithFlyer = { event: Event; flyerUrl: string | null };
 
 export default function EventsPage() {
   const router = useRouter();
   const workspaceScope = useWorkspaceScope();
   const newEventPath = useWorkspaceOperationPath("host", "new");
-  const events = useQuery(api.events.listAll, {
+  const eventEntries = useQuery(api.events.listAllWithFlyerUrls, {
     ...(workspaceScope?.queryArgs ?? {}),
-  }) as Event[] | undefined;
+  }) as EventWithFlyer[] | undefined;
   const [viewMode, setViewMode] = useState<ViewMode>("card");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("date");
   const [filterBy, setFilterBy] = useState<FilterOption>("all");
 
-  const filteredAndSortedEvents = useMemo(() => {
-    if (!events) return [];
+  const filteredAndSortedEntries = useMemo(() => {
+    if (!eventEntries) return [];
 
-    let filtered = events.filter((event) => {
+    let filtered = eventEntries.filter(({ event }) => {
       // Search filter
       const normalizedQuery = searchQuery.toLowerCase();
       const matchesSearch =
@@ -83,35 +86,44 @@ export default function EventsPage() {
         event.location?.toLowerCase().includes(normalizedQuery);
       if (!matchesSearch) return false;
 
-      // Date filter
+      // Lifecycle / time filter
       if (filterBy === "all") return true;
 
-      const now = Date.now();
-      const eventDate = event.eventDate || 0;
+      const lifecycle = event.lifecycle ?? "published";
+      if (filterBy === "draft") return lifecycle === "draft";
 
-      if (filterBy === "upcoming") return eventDate > now;
-      if (filterBy === "past") return eventDate <= now;
+      if (lifecycle === "draft") return false;
+      const now = Date.now();
+      const endTimestamp =
+        resolveEventEndTimestamp({
+          eventDate: event.eventDate,
+          eventEndDate: event.eventEndDate,
+        }) ?? 0;
+      const isPast = endTimestamp > 0 && endTimestamp < now;
+      if (filterBy === "upcoming") return !isPast;
+      if (filterBy === "past") return isPast;
 
       return true;
     });
 
     // Sort
-    filtered.sort((firstEvent, secondEvent) => {
+    filtered.sort((firstEntry, secondEntry) => {
+      const firstEvent = firstEntry.event;
+      const secondEvent = secondEntry.event;
       switch (sortBy) {
         case "name":
           return (firstEvent.name || "").localeCompare(secondEvent.name || "");
         case "date":
           return (secondEvent.eventDate || 0) - (firstEvent.eventDate || 0);
         case "rsvps":
-          // We'll need to add RSVP count to the event data or fetch separately
-          return 0; // Placeholder for now
+          return 0;
         default:
           return 0;
       }
     });
 
     return filtered;
-  }, [events, searchQuery, sortBy, filterBy]);
+  }, [eventEntries, searchQuery, sortBy, filterBy]);
 
   return (
     <div className="flex-1 space-y-4">
@@ -148,6 +160,7 @@ export default function EventsPage() {
             onValueChange={(value) => setFilterBy(value as FilterOption)}
           >
             <SelectOption value="all">All Events</SelectOption>
+            <SelectOption value="draft">Drafts</SelectOption>
             <SelectOption value="upcoming">Upcoming</SelectOption>
             <SelectOption value="past">Past</SelectOption>
           </Select>
@@ -185,14 +198,14 @@ export default function EventsPage() {
       </div>
 
       {/* Results Count */}
-      {events && (
+      {eventEntries && (
         <div className="text-sm text-muted-foreground">
-          Showing {filteredAndSortedEvents.length} of {events.length} events
+          Showing {filteredAndSortedEntries.length} of {eventEntries.length} events
         </div>
       )}
 
       {/* Empty State */}
-      {(!events || events.length === 0) && (
+      {(!eventEntries || eventEntries.length === 0) && (
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
           <p className="text-lg text-muted-foreground mb-2">No events yet</p>
           <p className="text-sm text-muted-foreground">
@@ -202,7 +215,7 @@ export default function EventsPage() {
       )}
 
       {/* No Results State */}
-      {events && events.length > 0 && filteredAndSortedEvents.length === 0 && (
+      {eventEntries && eventEntries.length > 0 && filteredAndSortedEntries.length === 0 && (
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
           <p className="text-lg text-muted-foreground mb-2">No events found</p>
           <p className="text-sm text-muted-foreground">
@@ -214,13 +227,13 @@ export default function EventsPage() {
       {/* Events Display */}
       {viewMode === "card" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredAndSortedEvents.map((event) => (
-            <EventCard key={event._id} event={event} />
+          {filteredAndSortedEntries.map(({ event, flyerUrl }) => (
+            <EventCard key={event._id} event={event} flyerUrl={flyerUrl} />
           ))}
         </div>
       ) : (
         <div className="space-y-2">
-          {filteredAndSortedEvents.map((event) => (
+          {filteredAndSortedEntries.map(({ event }) => (
             <EventListItem key={event._id} event={event} />
           ))}
         </div>
@@ -229,8 +242,8 @@ export default function EventsPage() {
   );
 }
 
-function EventCard({ event }: { event: Event }) {
-  return <EventCardClient event={event} fileUrl={null} />;
+function EventCard({ event, flyerUrl }: { event: Event; flyerUrl: string | null }) {
+  return <EventCardClient event={event} fileUrl={flyerUrl} />;
 }
 
 function EventListItem({ event }: { event: Event }) {
@@ -240,31 +253,51 @@ function EventListItem({ event }: { event: Event }) {
     "host",
     `rsvps?eventId=${event._id}`,
   );
+  const editDraftPath = useWorkspaceOperationPath(
+    "host",
+    `new?draftId=${event._id}`,
+  );
   const [showEditDialog, setShowEditDialog] = useState(false);
   const removeEvent = useMutation(api.events.remove);
   const setFeaturedEvent = useMutation(api.events.setFeaturedEvent);
-  const updateEvent = useAction(api.eventsNode.update);
+  const publishEvent = useMutation(api.events.publishEvent);
+  const unpublishEvent = useMutation(api.events.unpublishEvent);
   const inlineTitle = formatEventTitleInline(event);
-  const eventStatus = event.status ?? "inactive";
-  const isRsvpActive = eventStatus === "active";
+  const lifecycle = event.lifecycle ?? "published";
+  const isDraft = lifecycle === "draft";
+  const now = Date.now();
+  const endTimestamp =
+    resolveEventEndTimestamp({
+      eventDate: event.eventDate,
+      eventEndDate: event.eventEndDate,
+    }) ?? 0;
+  const isPast = !isDraft && endTimestamp > 0 && endTimestamp < now;
+  const badgeLabel = isDraft ? "Draft" : isPast ? "Past" : "Published";
+  const badgeVariant: "secondary" | "outline" | "success" = isDraft
+    ? "outline"
+    : isPast
+      ? "outline"
+      : "success";
 
-  const toggleRsvpStatus = async () => {
-    if (!workspaceScope) {
-      return;
-    }
-    const nextStatus = isRsvpActive ? "inactive" : "active";
+  const togglePublish = async () => {
+    if (!workspaceScope) return;
     try {
-      await updateEvent({
-        eventId: event._id,
-        ...workspaceScope.queryArgs,
-        patch: { status: nextStatus },
-      });
-      toast.success(
-        nextStatus === "active" ? "RSVPs are open" : "RSVPs are closed",
-      );
+      if (isDraft) {
+        await publishEvent({
+          eventId: event._id,
+          ...workspaceScope.queryArgs,
+        });
+        toast.success("Event published");
+      } else {
+        await unpublishEvent({
+          eventId: event._id,
+          ...workspaceScope.queryArgs,
+        });
+        toast.success("Event unpublished");
+      }
       router.refresh();
     } catch (error: unknown) {
-      toast.error((error as Error).message || "Failed to update RSVP status");
+      toast.error((error as Error).message || "Failed to update lifecycle");
     }
   };
 
@@ -283,10 +316,10 @@ function EventListItem({ event }: { event: Event }) {
                 </Badge>
               )}
               <Badge
-                variant={isRsvpActive ? "success" : "outline"}
+                variant={badgeVariant}
                 className="text-xs capitalize"
               >
-                {eventStatus}
+                {badgeLabel}
               </Badge>
             </div>
             <div className="text-sm text-muted-foreground">
@@ -295,13 +328,23 @@ function EventListItem({ event }: { event: Event }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(`/events/${event._id}`)}
-          >
-            View
-          </Button>
+          {isDraft ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(editDraftPath)}
+            >
+              Continue editing
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/events/${event._id}`)}
+            >
+              View
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -309,8 +352,8 @@ function EventListItem({ event }: { event: Event }) {
           >
             RSVPs
           </Button>
-          <Button variant="outline" size="sm" onClick={toggleRsvpStatus}>
-            {isRsvpActive ? "Close RSVPs" : "Open RSVPs"}
+          <Button variant="outline" size="sm" onClick={togglePublish}>
+            {isDraft ? "Publish" : "Unpublish"}
           </Button>
           <ShareEventPopover eventId={event._id}>
             <Tooltip>

@@ -15,7 +15,10 @@ export const resolveListByPassword = action({
   handler: async (
     ctx,
     { eventId, password, siteKey, workspaceSlug },
-  ): Promise<{ ok: true; listKey: string } | { ok: false }> => {
+  ): Promise<
+    | { ok: true; listKey: string; matched: "password" | "no-password" }
+    | { ok: false }
+  > => {
     return await ctx.runQuery(api.credentials.resolveListByPassword, {
       eventId,
       password,

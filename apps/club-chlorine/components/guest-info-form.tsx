@@ -17,6 +17,8 @@ import type { Path } from "react-hook-form";
 import { Info } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
+export type GuestInfoStep = 1 | 2;
+
 export function GuestInfoFields({
   form,
   event,
@@ -35,6 +37,7 @@ export function GuestInfoFields({
   phone,
   openUserProfile,
   isSignedIn,
+  step,
 }: {
   form: UseFormReturn<RSVPFormData>;
   event: Event;
@@ -57,11 +60,21 @@ export function GuestInfoFields({
   phone: string;
   openUserProfile?: () => void;
   isSignedIn?: boolean;
+  /**
+   * When set, render only the fields belonging to that step. Step 1 renders
+   * first/last name + phone; step 2 renders custom fields + social platforms
+   * + invited-by + attendees. When omitted, every field renders (legacy
+   * single-page form).
+   */
+  step?: GuestInfoStep;
 }) {
+  const showStep1 = step === undefined || step === 1;
+  const showStep2 = step === undefined || step === 2;
+
   return (
-    <div className="rounded border border-primary/30 p-3 space-y-2">
-      <div className="font-semibold text-sm text-primary">YOUR INFO</div>
-      <div className="grid grid-cols-2 gap-2">
+    <div className="space-y-3">
+      {showStep1 ? (
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <FormField
           control={form.control}
           name="firstName"
@@ -115,7 +128,13 @@ export function GuestInfoFields({
           )}
         />
       </div>
-      {(event?.customFields || []).map((customField: CustomField) => (
+      ) : null}
+      {showStep2 ? (
+        <div className="text-xs font-medium uppercase tracking-[0.08em] text-primary">
+          Details
+        </div>
+      ) : null}
+      {showStep2 ? (event?.customFields || []).map((customField: CustomField) => (
         <FormField
           key={customField.key}
           control={form.control}
@@ -190,19 +209,29 @@ export function GuestInfoFields({
             )
           }}
         />
-      ))}
+      )) : null}
 
-      {(event.primaryFieldConfig?.socialPlatforms ?? []).map((platform) => (
+      {showStep2 ? (event.primaryFieldConfig?.socialPlatforms ?? []).map((platform) => (
         <FormField
           key={platform.platformKey}
           control={form.control}
           name={`socialProfiles.${platform.platformKey}` as Path<RSVPFormData>}
+          rules={
+            platform.required
+              ? {
+                  required: `${platform.label} is required`,
+                }
+              : undefined
+          }
           render={({ field }) => {
             const { value, onChange, ref, ...rest } = field;
             return (
               <FormItem>
                 <FormLabel className="text-primary text-xs font-medium">
                   {platform.label}
+                  {platform.required && (
+                    <span className="text-xs text-primary/70"> (required)</span>
+                  )}
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -226,16 +255,26 @@ export function GuestInfoFields({
             );
           }}
         />
-      ))}
+      )) : null}
 
-      {event.primaryFieldConfig?.invitedBy?.enabled === true && (
+      {showStep2 && event.primaryFieldConfig?.invitedBy?.enabled === true && (
         <FormField
           control={form.control}
           name="invitedByName"
+          rules={
+            event.primaryFieldConfig?.invitedBy?.required
+              ? {
+                  required: `${event.primaryFieldConfig?.invitedBy?.label ?? "Invited by"} is required`,
+                }
+              : undefined
+          }
           render={({ field }) => (
             <FormItem>
               <FormLabel className="text-primary text-xs font-medium">
                 {event.primaryFieldConfig?.invitedBy?.label ?? "Invited by"}
+                {event.primaryFieldConfig?.invitedBy?.required && (
+                  <span className="text-xs text-primary/70"> (required)</span>
+                )}
               </FormLabel>
               <FormControl>
                 <Input
@@ -258,6 +297,7 @@ export function GuestInfoFields({
         />
       )}
 
+      {showStep1 ? (
       <div className="flex flex-col gap-1">
         <Label className="text-sm flex items-center gap-2 text-xs text-primary font-medium">
           PHONE
@@ -284,8 +324,10 @@ export function GuestInfoFields({
           )}
         </div>
       </div>
+      ) : null}
 
-      {/* Attendees selection */}
+      {showStep2 ? (
+      /* Attendees selection */
       <FormField
         control={form.control}
         name="attendees"
@@ -324,6 +366,7 @@ export function GuestInfoFields({
           </FormItem>
         )}
       />
+      ) : null}
     </div>
   );
 }
@@ -336,7 +379,7 @@ export function NoteForHostsField({
   setNote: (value: string) => void;
 }) {
   return (
-    <div className="rounded border border-primary/30 p-3 space-y-2">
+    <div className="space-y-2">
       <div className="font-medium text-xs text-primary">
         NOTE FOR HOSTS (optional)
       </div>

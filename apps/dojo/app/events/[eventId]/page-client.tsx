@@ -47,27 +47,35 @@ export default function EventPageClient({
     }
   }, [queryParamPassword, password]);
 
+  const hasNoPasswordListQuery = useQuery(
+    convexQuery(api.events.hasNoPasswordList, {
+      eventId: eventId as Id<"events">,
+    }),
+  );
+  const hasNoPasswordList = Boolean(hasNoPasswordListQuery.data);
+
   const onSubmitLocal = useCallback(() => {
     const passwordValue = password.trim();
-    if (!passwordValue) {
+    if (!passwordValue && !hasNoPasswordList) {
       setMessage("Enter your list password.");
       return;
     }
     setMessage("");
     setIsLoading(true);
 
-    const searchParameters = new URLSearchParams({
-      password: passwordValue,
-    }).toString();
+    const searchParameters = new URLSearchParams(
+      passwordValue ? { password: passwordValue } : {},
+    ).toString();
+    const queryString = searchParameters ? `?${searchParameters}` : "";
 
     if (isSignedIn) {
-      router.push(`/events/${eventId}/rsvp?${searchParameters}`);
+      router.push(`/events/${eventId}/rsvp${queryString}`);
     } else {
-      const requestUrl = `/events/${eventId}/rsvp?${searchParameters}`;
+      const requestUrl = `/events/${eventId}/rsvp${queryString}`;
       router.push(`/sign-in?redirect_url=${encodeURIComponent(requestUrl)}`);
     }
     setIsLoading(false);
-  }, [password, isSignedIn, eventId, router]);
+  }, [password, isSignedIn, eventId, router, hasNoPasswordList]);
 
   const dateText = useMemo(() => {
     const timestamp = event?.eventDate;

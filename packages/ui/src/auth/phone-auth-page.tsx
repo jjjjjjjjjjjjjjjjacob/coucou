@@ -62,6 +62,13 @@ export interface PhoneAuthPageProps {
    * `redirectUrl` (or `/`) using the Next.js router.
    */
   onSuccess?: () => void;
+  /**
+   * When true, skip the inner `AuthShell` chrome (brand mark, heading, sub,
+   * footer). The bare `PhoneAuthFlow` is rendered directly. Use when the
+   * parent already provides chrome — e.g. the Club Chlorine split shell
+   * supplies its own wordmark and footer.
+   */
+  noShell?: boolean;
 }
 
 /**
@@ -80,6 +87,7 @@ export function PhoneAuthPage({
   allowedRedirectOrigins = [],
   event,
   onSuccess,
+  noShell = false,
 }: PhoneAuthPageProps) {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
@@ -138,6 +146,19 @@ export function PhoneAuthPage({
   }, [navigateToAuthenticatedRedirectPath, onSuccess]);
 
   if (isLoaded && isSignedIn) {
+    const redirectingNotice = (
+      <div
+        role="status"
+        className="rounded-md border px-4 py-3 text-center text-sm"
+        style={{
+          borderColor: "var(--tt-rule)",
+          color: "var(--tt-fg-dim)",
+        }}
+      >
+        Redirecting...
+      </div>
+    );
+    if (noShell) return redirectingNotice;
     return (
       <AuthShell
         preset={preset}
@@ -146,18 +167,13 @@ export function PhoneAuthPage({
         brandMarkSlot={brandMarkSlot}
         event={event}
       >
-        <div
-          role="status"
-          className="rounded-md border px-4 py-3 text-center text-sm"
-          style={{
-            borderColor: "var(--tt-rule)",
-            color: "var(--tt-fg-dim)",
-          }}
-        >
-          Redirecting...
-        </div>
+        {redirectingNotice}
       </AuthShell>
     );
+  }
+
+  if (noShell) {
+    return <PhoneAuthFlow onSuccess={handleSuccess} />;
   }
 
   return (

@@ -2,15 +2,43 @@ import { mutation, query } from "./functions";
 import { v } from "convex/values";
 import { EventPatch, ValidationError, NotFoundError } from "./lib/types";
 import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
 import {
   ensureEventInSiteScope,
   eventMatchesSiteScope,
 } from "./lib/siteScope";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 import { writeAuditEntry } from "./audit";
-import { primaryFieldConfigValidator } from "./lib/primaryFields";
+import {
+  primaryFieldConfigFromWorkspaceDefaults,
+  primaryFieldConfigHasEffectiveContent,
+  primaryFieldConfigValidator,
+} from "./lib/primaryFields";
+
+async function applyWorkspacePrimaryFieldFallback<
+  TEvent extends Doc<"events"> | null,
+>(ctx: QueryCtx, event: TEvent): Promise<TEvent> {
+  if (!event) return event;
+  if (primaryFieldConfigHasEffectiveContent(event.primaryFieldConfig)) {
+    return event;
+  }
+  if (!event.workspaceSlug) return event;
+  const workspace = await ctx.db
+    .query("workspaces")
+    .withIndex("by_slug", (queryBuilder) =>
+      queryBuilder.eq("slug", event.workspaceSlug!),
+    )
+    .unique();
+  const fallback = primaryFieldConfigFromWorkspaceDefaults(
+    workspace?.eventDefaults,
+  );
+  if (!fallback) return event;
+  return { ...event, primaryFieldConfig: fallback } as TEvent;
+}
 import {
   eventActValidator,
+  eventLifecycleValidator,
   eventStatusValidator,
 } from "./lib/eventMetadata";
 
@@ -57,12 +85,16 @@ export const insertWithCreds = mutation({
     themeTextColor: v.optional(v.string()),
     approvalMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()),
+    defersQrDelivery: v.optional(v.boolean()),
+    sendQrOnApproval: v.optional(v.boolean()),
     creds: v.array(
       v.object({
         listKey: v.string(),
-        password: v.string(),
-        passwordNormalized: v.string(),
+        password: v.optional(v.string()),
+        passwordNormalized: v.optional(v.string()),
         generateQR: v.optional(v.boolean()),
+        defersQrDelivery: v.optional(v.boolean()),
+        sendQrOnApproval: v.optional(v.boolean()),
         approvalMessage: v.optional(v.string()),
       }),
     ),
@@ -96,6 +128,10 @@ export const insertWithCreds = mutation({
       eventEndDate: args.eventEndDate,
       eventTimezone: args.eventTimezone,
       status: args.status ?? "inactive",
+      lifecycle: "published",
+      publishedAt: now,
+      defersQrDelivery: args.defersQrDelivery,
+      sendQrOnApproval: args.sendQrOnApproval,
       maxAttendees: args.maxAttendees,
       customFields: args.customFields,
       primaryFieldConfig: args.primaryFieldConfig,
@@ -114,6 +150,141 @@ export const insertWithCreds = mutation({
       });
     }
     return { eventId };
+  },
+});
+
+export const createDraft = mutation({
+  args: {
+    workspaceSlug: v.optional(v.string()),
+    siteKey: v.optional(v.string()),
+    name: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+
+    const now = Date.now();
+    const eventId = await ctx.db.insert("events", {
+      workspaceSlug: args.workspaceSlug,
+      siteKey: args.siteKey,
+      name: args.name?.trim() || "Untitled event",
+      location: "",
+      eventDate: 0,
+      lifecycle: "draft",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await writeAuditEntry(ctx, {
+      action: "event.draft.create",
+      targetKind: "event",
+      targetId: eventId,
+      summary: args.name?.trim() || "Untitled event",
+    });
+
+    return { eventId };
+  },
+});
+
+const PUBLISH_REQUIRED_FIELDS = [
+  "name",
+  "location",
+  "eventDate",
+  "themeBackgroundColor",
+  "themeTextColor",
+] as const;
+
+export const publishEvent = mutation({
+  args: {
+    eventId: v.id("events"),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+
+    const event = await ensureEventInSiteScope(ctx, args.eventId, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    if (!event) throw new NotFoundError("Event");
+
+    const missingFields: string[] = [];
+    for (const field of PUBLISH_REQUIRED_FIELDS) {
+      const value = (event as Record<string, unknown>)[field];
+      if (value === undefined || value === null || value === "" || value === 0) {
+        missingFields.push(field);
+      }
+    }
+
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    if (credentials.length === 0) {
+      missingFields.push("lists");
+    }
+
+    if (missingFields.length > 0) {
+      throw new ValidationError(
+        `Cannot publish: missing required fields — ${missingFields.join(", ")}`,
+      );
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.eventId, {
+      lifecycle: "published",
+      publishedAt: event.publishedAt ?? now,
+      updatedAt: now,
+    });
+
+    await writeAuditEntry(ctx, {
+      action: "event.publish",
+      targetKind: "event",
+      targetId: args.eventId,
+      summary: event.name,
+    });
+
+    return { ok: true as const };
+  },
+});
+
+export const unpublishEvent = mutation({
+  args: {
+    eventId: v.id("events"),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+
+    const event = await ensureEventInSiteScope(ctx, args.eventId, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    if (!event) throw new NotFoundError("Event");
+
+    await ctx.db.patch(args.eventId, {
+      lifecycle: "draft",
+      updatedAt: Date.now(),
+    });
+
+    await writeAuditEntry(ctx, {
+      action: "event.unpublish",
+      targetKind: "event",
+      targetId: args.eventId,
+      summary: event.name,
+    });
+
+    return { ok: true as const };
   },
 });
 
@@ -139,6 +310,10 @@ export const update = mutation({
     guestPortalLinkUrl: v.optional(v.string()),
     maxAttendees: v.optional(v.number()),
     status: v.optional(eventStatusValidator),
+    lifecycle: v.optional(eventLifecycleValidator),
+    publishedAt: v.optional(v.number()),
+    defersQrDelivery: v.optional(v.boolean()),
+    sendQrOnApproval: v.optional(v.boolean()),
     isFeatured: v.optional(v.boolean()),
     customFields: v.optional(
       v.array(
@@ -225,6 +400,10 @@ export const update = mutation({
       "eventTimezone",
       "maxAttendees",
       "status",
+      "lifecycle",
+      "publishedAt",
+      "defersQrDelivery",
+      "sendQrOnApproval",
       "isFeatured",
       "customFields",
       "primaryFieldConfig",
@@ -300,9 +479,11 @@ export const addListCredential = mutation({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
     listKey: v.string(),
-    password: v.string(),
-    passwordNormalized: v.string(),
+    password: v.optional(v.string()),
+    passwordNormalized: v.optional(v.string()),
     generateQR: v.optional(v.boolean()),
+    defersQrDelivery: v.optional(v.boolean()),
+    sendQrOnApproval: v.optional(v.boolean()),
     approvalMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -323,6 +504,8 @@ export const addListCredential = mutation({
       password: args.password,
       passwordNormalized: args.passwordNormalized,
       generateQR: args.generateQR,
+      defersQrDelivery: args.defersQrDelivery,
+      sendQrOnApproval: args.sendQrOnApproval,
       approvalMessage: args.approvalMessage,
       createdAt: now,
     });
@@ -340,6 +523,8 @@ export const updateListCredential = mutation({
       password: v.optional(v.string()),
       passwordNormalized: v.optional(v.string()),
       generateQR: v.optional(v.boolean()),
+      defersQrDelivery: v.optional(v.boolean()),
+      sendQrOnApproval: v.optional(v.boolean()),
       approvalMessage: v.optional(v.string()),
     }),
   },
@@ -397,6 +582,8 @@ export const updateListCredentialWithCascade = mutation({
       password: v.optional(v.string()),
       passwordNormalized: v.optional(v.string()),
       generateQR: v.optional(v.boolean()),
+      defersQrDelivery: v.optional(v.boolean()),
+      sendQrOnApproval: v.optional(v.boolean()),
       approvalMessage: v.optional(v.string()),
     }),
   },
@@ -478,9 +665,8 @@ export const get = query({
   },
   handler: async (ctx, { eventId, siteKey, workspaceSlug }) => {
     const event = await ctx.db.get(eventId);
-    return eventMatchesSiteScope(event, { siteKey, workspaceSlug })
-      ? event
-      : null;
+    if (!eventMatchesSiteScope(event, { siteKey, workspaceSlug })) return null;
+    return await applyWorkspacePrimaryFieldFallback(ctx, event);
   },
 });
 
@@ -497,6 +683,60 @@ export const listAll = query({
   },
 });
 
+export const listAllWithFlyerUrls = query({
+  args: {
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, { siteKey, workspaceSlug }) => {
+    const events = await ctx.db.query("events").collect();
+    const filtered = events.filter((event) =>
+      eventMatchesSiteScope(event, { siteKey, workspaceSlug }),
+    );
+    const enriched = await Promise.all(
+      filtered.map(async (event) => {
+        const flyerUrl = event.flyerStorageId
+          ? await ctx.storage.getUrl(event.flyerStorageId)
+          : null;
+        return { event, flyerUrl };
+      }),
+    );
+    return enriched;
+  },
+});
+
+export const hasNoPasswordList = query({
+  args: {
+    eventId: v.id("events"),
+  },
+  handler: async (ctx, { eventId }) => {
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .collect();
+    return credentials.some((credential) => {
+      const normalized = credential.passwordNormalized?.trim();
+      return !normalized;
+    });
+  },
+});
+
+export const hasPasswordList = query({
+  args: {
+    eventId: v.id("events"),
+  },
+  handler: async (ctx, { eventId }) => {
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .collect();
+    return credentials.some((credential) => {
+      const normalized = credential.passwordNormalized?.trim();
+      return Boolean(normalized);
+    });
+  },
+});
+
 export const getFeaturedEvent = query({
   args: {
     siteKey: v.optional(v.string()),
@@ -508,11 +748,11 @@ export const getFeaturedEvent = query({
       .withIndex("by_featured", (q) => q.eq("isFeatured", true))
       .collect();
 
-    return (
+    const matchingEvent =
       featuredEvents.find((event) =>
         eventMatchesSiteScope(event, { siteKey, workspaceSlug }),
-      ) ?? null
-    );
+      ) ?? null;
+    return await applyWorkspacePrimaryFieldFallback(ctx, matchingEvent);
   },
 });
 

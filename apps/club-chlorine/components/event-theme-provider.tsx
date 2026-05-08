@@ -96,8 +96,15 @@ export function EventThemeProvider({
     };
   }, [applyBranding, clearBranding, brandingSourceId, iconUrl]);
 
+  // Strip the resolved `backgroundColor` / `color` declarations from the
+  // outer div so the chlorine wordmark behind always shows through. Child
+  // shadcn components still pick up the per-event palette via the cascading
+  // CSS custom properties (`--background`, `--foreground`, etc.).
+  const { backgroundColor: _bg, color: _fg, ...transparentThemeStyle } =
+    themeStyle as CSSProperties & { backgroundColor?: string; color?: string };
+
   return (
-    <div style={themeStyle} data-event-themed="true">
+    <div style={transparentThemeStyle} data-event-themed="true">
       {children}
     </div>
   );

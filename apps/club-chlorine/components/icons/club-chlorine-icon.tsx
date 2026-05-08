@@ -2,17 +2,17 @@ import Image from "next/image";
 import dynamic from "next/dynamic";
 import type { ComponentType, CSSProperties } from "react";
 import { cn } from "@/lib/utils";
-import type { DojoPomodoreIconProps } from "./dojo-pomodoro-icon.client";
-import { ICON_GLOW_FILTER } from "./dojo-pomodoro-icon.client";
+import type { ClubChlorineIconProps } from "./club-chlorine-icon.client";
+import { ICON_GLOW_FILTER } from "./club-chlorine-icon.client";
 
-const DojoPomodoreIconClient = dynamic(
-  () => import("./dojo-pomodoro-icon.client"),
+const ClubChlorineIconClient = dynamic(
+  () => import("./club-chlorine-icon.client"),
   {
     loading: ({
       size = 24,
       className = "",
       style,
-    }: DojoPomodoreIconProps) => {
+    }: ClubChlorineIconProps) => {
       const composedFilter =
         style?.filter && style.filter.length > 0
           ? `${ICON_GLOW_FILTER} ${style.filter}`
@@ -33,8 +33,8 @@ const DojoPomodoreIconClient = dynamic(
       );
     },
   },
-) as ComponentType<DojoPomodoreIconProps>;
+) as ComponentType<ClubChlorineIconProps>;
 
-export default function DojoPomodoreIcon(props: DojoPomodoreIconProps) {
-  return <DojoPomodoreIconClient {...props} />;
+export default function ClubChlorineIcon(props: ClubChlorineIconProps) {
+  return <ClubChlorineIconClient {...props} />;
 }

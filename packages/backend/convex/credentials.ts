@@ -9,7 +9,10 @@ function toPublicCredential(credential: {
   _id: string;
   eventId: string;
   listKey: string;
+  passwordNormalized?: string;
   generateQR?: boolean;
+  defersQrDelivery?: boolean;
+  sendQrOnApproval?: boolean;
   approvalMessage?: string;
   createdAt: number;
 }) {
@@ -17,7 +20,10 @@ function toPublicCredential(credential: {
     _id: credential._id,
     eventId: credential.eventId,
     listKey: credential.listKey,
+    hasPassword: Boolean(credential.passwordNormalized?.trim()),
     generateQR: credential.generateQR,
+    defersQrDelivery: credential.defersQrDelivery,
+    sendQrOnApproval: credential.sendQrOnApproval,
     approvalMessage: credential.approvalMessage,
     createdAt: credential.createdAt,
   };
@@ -29,6 +35,8 @@ function toHostCredential(credential: {
   listKey: string;
   password?: string;
   generateQR?: boolean;
+  defersQrDelivery?: boolean;
+  sendQrOnApproval?: boolean;
   approvalMessage?: string;
   createdAt: number;
 }) {
@@ -89,16 +97,44 @@ export const resolveListByPassword = query({
       return { ok: false as const };
     }
 
-    const passwordNormalized = normalizeCredentialPassword(password);
+    const trimmedPassword = password.trim();
     const credentials = await ctx.db
       .query("listCredentials")
       .withIndex("by_event", (q) => q.eq("eventId", eventId))
       .collect();
-    const matchingCredential = credentials.find(
-      (credential) => credential.passwordNormalized === passwordNormalized,
-    );
-    return matchingCredential
-      ? { ok: true as const, listKey: matchingCredential.listKey }
+
+    if (trimmedPassword.length > 0) {
+      const passwordNormalized = normalizeCredentialPassword(trimmedPassword);
+      const matchingCredential = credentials.find((credential) => {
+        const storedNormalized =
+          credential.passwordNormalized?.trim() ||
+          (credential.password
+            ? normalizeCredentialPassword(credential.password)
+            : "");
+        return (
+          storedNormalized.length > 0 && storedNormalized === passwordNormalized
+        );
+      });
+      if (matchingCredential) {
+        return {
+          ok: true as const,
+          listKey: matchingCredential.listKey,
+          matched: "password" as const,
+        };
+      }
+    }
+
+    const noPasswordCredential = credentials.find((credential) => {
+      const hasNormalized = (credential.passwordNormalized?.trim() ?? "").length > 0;
+      const hasPassword = (credential.password?.trim() ?? "").length > 0;
+      return !hasNormalized && !hasPassword;
+    });
+    return noPasswordCredential
+      ? {
+          ok: true as const,
+          listKey: noPasswordCredential.listKey,
+          matched: "no-password" as const,
+        }
       : { ok: false as const };
   },
 });

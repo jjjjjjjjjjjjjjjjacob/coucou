@@ -74,6 +74,45 @@ function buildReservedKeyMap(
   return map;
 }
 
+function applyCustomFieldDefaults(
+  customFields: CustomFieldDef[],
+): CustomFieldDef[] {
+  return customFields.map((customField) => ({
+    key: customField.key ?? "",
+    label: customField.label ?? "",
+    placeholder: customField.placeholder ?? "",
+    required: customField.required ?? false,
+    copyEnabled: customField.copyEnabled ?? false,
+    prependUrl: customField.prependUrl ?? "",
+    trimWhitespace:
+      customField.trimWhitespace === undefined
+        ? true
+        : customField.trimWhitespace,
+  }));
+}
+
+function areCustomFieldDefinitionsEqual(
+  previousFields: CustomFieldDef[],
+  nextFields: CustomFieldDef[],
+): boolean {
+  if (previousFields.length !== nextFields.length) {
+    return false;
+  }
+
+  return previousFields.every((previousField, fieldIndex) => {
+    const nextField = nextFields[fieldIndex];
+    return (
+      previousField.key === nextField.key &&
+      previousField.label === nextField.label &&
+      previousField.placeholder === nextField.placeholder &&
+      previousField.required === nextField.required &&
+      previousField.copyEnabled === nextField.copyEnabled &&
+      previousField.prependUrl === nextField.prependUrl &&
+      previousField.trimWhitespace === nextField.trimWhitespace
+    );
+  });
+}
+
 function CustomFieldsBuilder({
   mode,
   initialFields,
@@ -86,29 +125,20 @@ function CustomFieldsBuilder({
   reservedKeys?: string[];
 }) {
   const isMobile = useIsMobile();
-  const withDefaults = React.useCallback(
-    (array: CustomFieldDef[]): CustomFieldDef[] =>
-      array.map((field) => ({
-        key: field.key ?? "",
-        label: field.label ?? "",
-        placeholder: field.placeholder ?? "",
-        required: field.required ?? false,
-        copyEnabled: field.copyEnabled ?? false,
-        prependUrl: field.prependUrl ?? "",
-        trimWhitespace:
-          field.trimWhitespace === undefined ? true : field.trimWhitespace,
-      })),
-    [],
-  );
-  const [fields, setFields] = React.useState<CustomFieldDef[]>(
-    withDefaults(initialFields ?? []),
+  const [fields, setFields] = React.useState<CustomFieldDef[]>(() =>
+    applyCustomFieldDefaults(initialFields ?? []),
   );
 
   React.useEffect(() => {
     if (mode === "controlled" && initialFields) {
-      setFields(withDefaults(initialFields));
+      const fieldsWithDefaults = applyCustomFieldDefaults(initialFields);
+      setFields((currentFields) =>
+        areCustomFieldDefinitionsEqual(currentFields, fieldsWithDefaults)
+          ? currentFields
+          : fieldsWithDefaults,
+      );
     }
-  }, [initialFields, mode, withDefaults]);
+  }, [initialFields, mode]);
 
   // Call onChange when fields change (controlled mode only)
   React.useEffect(() => {
@@ -122,18 +152,20 @@ function CustomFieldsBuilder({
     key: keyof CustomFieldDef,
     value: string | boolean,
   ) =>
-    setFields((array) =>
-      array.map((item, idx) =>
-        idx === index ? { ...item, [key]: value } : item,
+    setFields((currentFields) =>
+      currentFields.map((customField, fieldIndex) =>
+        fieldIndex === index ? { ...customField, [key]: value } : customField,
       ),
     );
 
   const remove = (index: number) =>
-    setFields((array) => array.filter((_, idx) => idx !== index));
+    setFields((currentFields) =>
+      currentFields.filter((_, fieldIndex) => fieldIndex !== index),
+    );
 
   const add = () =>
-    setFields((array) => [
-      ...array,
+    setFields((currentFields) => [
+      ...currentFields,
       {
         key: "",
         label: "",
@@ -152,10 +184,10 @@ function CustomFieldsBuilder({
       key: fieldToCopy.key ? `${fieldToCopy.key}_copy` : "",
       label: fieldToCopy.label ? `${fieldToCopy.label} (Copy)` : "",
     };
-    setFields((array) => {
-      const newArray = [...array];
-      newArray.splice(index + 1, 0, copiedField);
-      return newArray;
+    setFields((currentFields) => {
+      const fieldsWithCopy = [...currentFields];
+      fieldsWithCopy.splice(index + 1, 0, copiedField);
+      return fieldsWithCopy;
     });
   };
 

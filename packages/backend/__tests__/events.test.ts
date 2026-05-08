@@ -7,7 +7,6 @@ describe('Events Functions', () => {
       name: 'Test Event',
       location: 'Test Location',
       eventDate: Date.now(),
-      eventEndDate: Date.now() + 21600000,
       password: 'testpass',
       customFields: [],
       organizationId: 'org_123',
@@ -18,12 +17,10 @@ describe('Events Functions', () => {
     expect(mockEvent).toHaveProperty('name')
     expect(mockEvent).toHaveProperty('location')
     expect(mockEvent).toHaveProperty('eventDate')
-    expect(mockEvent).toHaveProperty('eventEndDate')
     expect(mockEvent).toHaveProperty('password')
     expect(mockEvent).toHaveProperty('customFields')
     expect(Array.isArray(mockEvent.customFields)).toBe(true)
     expect(typeof mockEvent.eventDate).toBe('number')
-    expect(typeof mockEvent.eventEndDate).toBe('number')
   })
 
   it('should validate custom field structure', () => {
@@ -65,19 +62,6 @@ describe('Events Functions', () => {
     expect(isValidEventDate(tomorrow)).toBe(true)
     expect(isValidEventDate(yesterday)).toBe(false)
     expect(isValidEventDate(now + 1000)).toBe(true)
-  })
-
-  it('should validate event end follows event start', () => {
-    const startDate = Date.now() + 86400000
-    const endDate = startDate + 21600000
-
-    const hasValidEventRange = (eventDate: number, eventEndDate: number) => {
-      return eventEndDate > eventDate
-    }
-
-    expect(hasValidEventRange(startDate, endDate)).toBe(true)
-    expect(hasValidEventRange(startDate, startDate)).toBe(false)
-    expect(hasValidEventRange(startDate, startDate - 1000)).toBe(false)
   })
 
   it('should validate event status values', () => {

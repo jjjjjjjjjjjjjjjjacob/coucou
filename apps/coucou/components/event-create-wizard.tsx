@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
-import { useRouter } from "next/navigation";
-import { useAction, useQuery } from "convex/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { useForm, type Path } from "react-hook-form";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
@@ -27,7 +27,11 @@ import {
 } from "@/components/primary-field-config-editor";
 
 import { cn } from "@/lib/utils";
-import { createTimestamp } from "@/lib/date-utils";
+import {
+  createTimestamp,
+  extractDateFromTimestamp,
+  extractTimeFromTimestamp,
+} from "@/lib/date-utils";
 import { ApplicationError, EventAct, EventFormData } from "@/lib/types";
 import {
   formatActSummary,
@@ -49,10 +53,15 @@ import {
 } from "@/lib/use-workspace-scope";
 import { Id } from "@convex/_generated/dataModel";
 
+// `sendQrOnApprovalOverride` is a tri-state: undefined inherits the
+// event-level toggle, `true` forces immediate send for that list,
+// `false` forces deferral. Wired into the per-list controls in
+// `StepLists`.
 type ListRow = {
   listKey: string;
   password: string;
   shouldGenerateQrCode: boolean;
+  sendQrOnApprovalOverride?: boolean;
   approvalMessage: string;
 };
 
@@ -81,7 +90,7 @@ const STEPS: WizardStep[] = [
     title: "Where, when, how many.",
     description:
       "We'll show this on the public landing and use it on the door list.",
-    validate: ["location", "eventDate", "eventEndDate"],
+    validate: ["location", "eventDate"],
   },
   {
     number: "03",
@@ -132,11 +141,9 @@ const STEPS: WizardStep[] = [
 ];
 
 function validateLists(lists: ListRow[]): string[] {
-  const filtered = lists.filter(
-    (list) => list.listKey?.trim() && list.password?.trim(),
-  );
+  const filtered = lists.filter((list) => list.listKey?.trim());
   if (filtered.length === 0) {
-    return ["Add at least one list/password before continuing"];
+    return ["Add at least one list before continuing"];
   }
   return [];
 }
@@ -157,14 +164,37 @@ function validateColors(values: EventFormData): string[] {
 
 export default function EventCreateWizard() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const workspaceScope = useWorkspaceScope();
   const workspace = useQuery(
     api.workspaces.getWorkspaceBySlug,
     workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
   );
   const eventsPath = useWorkspaceOperationPath("host", "events?created=1");
+  const draftsPath = useWorkspaceOperationPath("host", "events?saved=1");
   const create = useAction(api.eventsNode.create);
+  const updateEventAction = useAction(api.eventsNode.update);
+  const createDraft = useMutation(api.events.createDraft);
+  const publishEvent = useMutation(api.events.publishEvent);
   const hasAppliedWorkspaceDefaults = React.useRef(false);
+  const hasHydratedFromDraft = React.useRef(false);
+
+  const draftIdParam = searchParams?.get("draftId") ?? null;
+  const [draftEventId, setDraftEventId] = React.useState<Id<"events"> | null>(
+    draftIdParam as Id<"events"> | null,
+  );
+  const draftQueryArgs = React.useMemo(() => {
+    if (!draftEventId || !workspaceScope) return null;
+    return { eventId: draftEventId, ...workspaceScope.queryArgs };
+  }, [draftEventId, workspaceScope]);
+  const draftEvent = useQuery(
+    api.events.get,
+    draftQueryArgs ?? "skip",
+  );
+  const draftCredentials = useQuery(
+    api.credentials.getHostCredsForEvent,
+    draftQueryArgs ?? "skip",
+  );
 
   const form = useForm<EventFormData>({
     defaultValues: {
@@ -176,8 +206,6 @@ export default function EventCreateWizard() {
       location: "",
       eventDate: "",
       eventTime: "19:00",
-      eventEndDate: "",
-      eventEndTime: "03:00",
       eventTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       flyerStorageId: null,
       customIconStorageId: null,
@@ -206,6 +234,11 @@ export default function EventCreateWizard() {
     React.useState(true);
   const [primaryFieldConfigDraft, setPrimaryFieldConfigDraft] =
     React.useState<PrimaryFieldConfigDraft>(EMPTY_PRIMARY_FIELD_CONFIG);
+  // `sendQrOnApproval` is the new explicit opt-in for sending QR codes
+  // immediately at approval time. Default off — most hosts trigger a
+  // manual blast (or scheduled batch) closer to the event from the
+  // dashboard's "Send QR Codes" button.
+  const [sendQrOnApproval, setSendQrOnApproval] = React.useState(false);
 
   const workspacePrimaryFieldDefaultsDraft: PrimaryFieldConfigDraft =
     React.useMemo(
@@ -257,6 +290,101 @@ export default function EventCreateWizard() {
     hasAppliedWorkspaceDefaults.current = true;
   }, [form, workspace?.eventDefaults]);
 
+  React.useEffect(() => {
+    if (!draftEventId) return;
+    if (hasHydratedFromDraft.current) return;
+    if (!draftEvent || draftCredentials === undefined) return;
+
+    const timezone =
+      draftEvent.eventTimezone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const formatTimestampDate = (timestamp: number | undefined | null) => {
+      if (!timestamp) return "";
+      try {
+        return extractDateFromTimestamp(timestamp, timezone);
+      } catch {
+        return "";
+      }
+    };
+    const formatTimestampTime = (timestamp: number | undefined | null) => {
+      if (!timestamp) return "";
+      try {
+        return extractTimeFromTimestamp(timestamp, timezone);
+      } catch {
+        return "";
+      }
+    };
+
+    form.reset({
+      name: draftEvent.name ?? "",
+      secondaryTitle: draftEvent.secondaryTitle ?? "",
+      description: draftEvent.description ?? "",
+      hosts: (draftEvent.hosts ?? []).join(", "),
+      productionCompany: draftEvent.productionCompany ?? "",
+      location: draftEvent.location ?? "",
+      flyerStorageId:
+        (draftEvent.flyerStorageId as string | undefined) ?? null,
+      customIconStorageId:
+        (draftEvent.customIconStorageId as string | undefined) ?? null,
+      guestPortalImageStorageId:
+        (draftEvent.guestPortalImageStorageId as string | undefined) ?? null,
+      guestPortalLinkLabel: draftEvent.guestPortalLinkLabel ?? "",
+      guestPortalLinkUrl: draftEvent.guestPortalLinkUrl ?? "",
+      eventDate: formatTimestampDate(draftEvent.eventDate),
+      eventTime: formatTimestampTime(draftEvent.eventDate) || "19:00",
+      eventTimezone: timezone,
+      maxAttendees: draftEvent.maxAttendees ?? 1,
+      status: draftEvent.status ?? "inactive",
+      themeBackgroundColor:
+        draftEvent.themeBackgroundColor ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
+      themeTextColor:
+        draftEvent.themeTextColor ?? EVENT_THEME_DEFAULT_TEXT_COLOR,
+      qrCodeColor: draftEvent.qrCodeColor ?? "#000000",
+    });
+
+    if (draftEvent.acts && draftEvent.acts.length > 0) {
+      setActs(draftEvent.acts as EventAct[]);
+    }
+    if (draftEvent.customFields && draftEvent.customFields.length > 0) {
+      setCustomFields(draftEvent.customFields as CustomFieldDef[]);
+    }
+    if (draftEvent.primaryFieldConfig) {
+      setUsePrimaryFieldDefaults(false);
+      setPrimaryFieldConfigDraft(
+        primaryFieldConfigToDraft(draftEvent.primaryFieldConfig),
+      );
+    }
+    // Hydrate the new opt-in toggle from a v(n+1) draft (`sendQrOnApproval`).
+    // Drafts written before this change only carry `defersQrDelivery`;
+    // surface that as the inverse so historical opt-ins (`defersQrDelivery: false`)
+    // continue to author "send on approval" until the host edits the event.
+    if (typeof draftEvent.sendQrOnApproval === "boolean") {
+      setSendQrOnApproval(draftEvent.sendQrOnApproval);
+    } else if (typeof draftEvent.defersQrDelivery === "boolean") {
+      setSendQrOnApproval(!draftEvent.defersQrDelivery);
+    }
+    if (draftCredentials.length > 0) {
+      setLists(
+        draftCredentials.map((credential) => ({
+          listKey: credential.listKey,
+          password: credential.password ?? "",
+          shouldGenerateQrCode: credential.generateQR ?? false,
+          sendQrOnApprovalOverride:
+            typeof credential.sendQrOnApproval === "boolean"
+              ? credential.sendQrOnApproval
+              : typeof credential.defersQrDelivery === "boolean"
+                ? !credential.defersQrDelivery
+                : undefined,
+          approvalMessage: credential.approvalMessage ?? "",
+        })),
+      );
+    }
+
+    hasAppliedWorkspaceDefaults.current = true;
+    hasHydratedFromDraft.current = true;
+    setFurthest(STEPS.length - 1);
+  }, [draftEventId, draftEvent, draftCredentials, form]);
+
   const step = STEPS[stepIndex];
   const isLast = stepIndex === STEPS.length - 1;
   const isFirst = stepIndex === 0;
@@ -279,26 +407,6 @@ export default function EventCreateWizard() {
       if (errors.length) {
         errors.forEach((message) => toast.error(message));
         return;
-      }
-    }
-
-    if (stepIndex === 1) {
-      const values = form.getValues();
-      if (values.eventDate && values.eventEndDate) {
-        const startTimestamp = createTimestamp(
-          values.eventDate,
-          values.eventTime,
-          values.eventTimezone,
-        );
-        const endTimestamp = createTimestamp(
-          values.eventEndDate,
-          values.eventEndTime,
-          values.eventTimezone,
-        );
-        if (endTimestamp <= startTimestamp) {
-          toast.error("Event end must be after the event start");
-          return;
-        }
       }
     }
 
@@ -340,13 +448,155 @@ export default function EventCreateWizard() {
     setFurthest((current) => Math.max(current, nextIndex));
   };
 
+  const buildDraftPayload = (): {
+    patch: Record<string, unknown>;
+    lists: Array<{
+      id?: Id<"listCredentials">;
+      listKey: string;
+      password?: string;
+      generateQR?: boolean;
+      sendQrOnApproval?: boolean;
+      approvalMessage?: string;
+    }>;
+  } => {
+    const values = form.getValues();
+    const trimmedSecondaryTitle = values.secondaryTitle?.trim() ?? "";
+    const trimmedProductionCompany = values.productionCompany?.trim() ?? "";
+    const trimmedLabel = values.guestPortalLinkLabel?.trim() ?? "";
+    const trimmedUrl = values.guestPortalLinkUrl?.trim() ?? "";
+    const hostNames = (values.hosts ?? "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    const startTimestamp = values.eventDate
+      ? createTimestamp(
+          values.eventDate,
+          values.eventTime,
+          values.eventTimezone,
+        )
+      : undefined;
+
+    const themeBackground =
+      normalizeHexColorInput(values.themeBackgroundColor) ?? undefined;
+    const themeText =
+      normalizeHexColorInput(values.themeTextColor) ?? undefined;
+
+    const patch: Record<string, unknown> = {
+      name: values.name?.trim() || "Untitled event",
+      secondaryTitle: trimmedSecondaryTitle || undefined,
+      description: values.description?.trim() ?? "",
+      acts: sanitizeEventActsForSubmit(acts) ?? [],
+      hosts: hostNames,
+      productionCompany: trimmedProductionCompany || undefined,
+      location: values.location?.trim() ?? "",
+      flyerStorageId: values.flyerStorageId
+        ? (values.flyerStorageId as unknown as Id<"_storage">)
+        : undefined,
+      customIconStorageId: values.customIconStorageId
+        ? (values.customIconStorageId as unknown as Id<"_storage">)
+        : null,
+      guestPortalImageStorageId: values.guestPortalImageStorageId
+        ? (values.guestPortalImageStorageId as unknown as Id<"_storage">)
+        : undefined,
+      guestPortalLinkLabel: trimmedLabel || undefined,
+      guestPortalLinkUrl: trimmedUrl || undefined,
+      eventTimezone: values.eventTimezone,
+      maxAttendees: values.maxAttendees,
+      themeBackgroundColor: themeBackground,
+      themeTextColor: themeText,
+      qrCodeColor: normalizeHexColorInput(values.qrCodeColor) || undefined,
+      customFields: customFields.map((field) => ({
+        key: field.key.trim(),
+        label: field.label.trim(),
+        placeholder: field.placeholder?.trim() || undefined,
+        required: field.required ?? false,
+        copyEnabled: field.copyEnabled ?? false,
+        prependUrl: field.prependUrl?.trim() || undefined,
+        trimWhitespace: field.trimWhitespace !== false,
+      })),
+      primaryFieldConfig: usePrimaryFieldDefaults
+        ? undefined
+        : draftToPrimaryFieldConfig(primaryFieldConfigDraft),
+      sendQrOnApproval,
+    };
+    if (startTimestamp !== undefined) patch.eventDate = startTimestamp;
+
+    const credentialIdByKey = new Map<string, Id<"listCredentials">>();
+    if (draftCredentials) {
+      for (const credential of draftCredentials) {
+        credentialIdByKey.set(
+          credential.listKey,
+          credential._id as Id<"listCredentials">,
+        );
+      }
+    }
+
+    const listsForPatch = lists
+      .filter((list) => list.listKey?.trim())
+      .map((list) => {
+        const listKey = list.listKey.trim();
+        const trimmedPassword = list.password?.trim() ?? "";
+        return {
+          id: credentialIdByKey.get(listKey),
+          listKey,
+          password: trimmedPassword,
+          generateQR: list.shouldGenerateQrCode,
+          sendQrOnApproval: list.sendQrOnApprovalOverride,
+          approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
+        };
+      });
+
+    return { patch, lists: listsForPatch };
+  };
+
+  const ensureDraftEventId = async (): Promise<Id<"events">> => {
+    if (draftEventId) return draftEventId;
+    if (!workspaceScope) {
+      throw new Error("Workspace scope is required to create events");
+    }
+    const result = await createDraft({
+      ...workspaceScope.queryArgs,
+      name: form.getValues().name?.trim() || undefined,
+    });
+    setDraftEventId(result.eventId);
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.set("draftId", result.eventId);
+    router.replace(`?${params.toString()}`);
+    return result.eventId;
+  };
+
+  const saveAsDraft = async () => {
+    if (!workspaceScope) {
+      toast.error("Workspace scope is required to save drafts");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const eventId = await ensureDraftEventId();
+      const { patch, lists: listsForPatch } = buildDraftPayload();
+      await updateEventAction({
+        eventId,
+        ...workspaceScope.queryArgs,
+        patch: patch as never,
+        lists: listsForPatch as never,
+      });
+      toast.success("Draft saved");
+      router.replace(draftsPath);
+    } catch (error: unknown) {
+      const errorDetails = error as ApplicationError | Error;
+      toast.error(errorDetails?.message || "Failed to save draft");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     const values = form.getValues();
     const baseValid = await form.trigger([
       "name",
       "location",
       "eventDate",
-      "eventEndDate",
     ]);
     const colorErrors = validateColors(values);
     const listErrors = validateLists(lists);
@@ -380,6 +630,29 @@ export default function EventCreateWizard() {
     }
     setSubmitting(true);
     try {
+      const timestamp = createTimestamp(
+        values.eventDate,
+        values.eventTime,
+        values.eventTimezone,
+      );
+
+      if (draftEventId) {
+        const { patch, lists: listsForPatch } = buildDraftPayload();
+        await updateEventAction({
+          eventId: draftEventId,
+          ...workspaceScope.queryArgs,
+          patch: patch as never,
+          lists: listsForPatch as never,
+        });
+        await publishEvent({
+          eventId: draftEventId,
+          ...workspaceScope.queryArgs,
+        });
+        toast.success("Event published");
+        router.replace(eventsPath);
+        return;
+      }
+
       const trimmedSecondaryTitle = values.secondaryTitle?.trim() ?? "";
       const trimmedProductionCompany = values.productionCompany?.trim() ?? "";
       const trimmedLabel = values.guestPortalLinkLabel?.trim() ?? "";
@@ -388,28 +661,15 @@ export default function EventCreateWizard() {
         .split(",")
         .map((name) => name.trim())
         .filter(Boolean);
-      const timestamp = createTimestamp(
-        values.eventDate,
-        values.eventTime,
-        values.eventTimezone,
-      );
-      const endTimestamp = createTimestamp(
-        values.eventEndDate,
-        values.eventEndTime,
-        values.eventTimezone,
-      );
-      if (endTimestamp <= timestamp) {
-        toast.error("Event end must be after the event start");
-        return;
-      }
       const listsFiltered = lists
         .map((list) => ({
           listKey: list.listKey.trim(),
           password: list.password.trim(),
           generateQR: list.shouldGenerateQrCode,
+          sendQrOnApproval: list.sendQrOnApprovalOverride,
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
         }))
-        .filter((list) => list.listKey && list.password);
+        .filter((list) => list.listKey);
       const themeBackground =
         normalizeHexColorInput(values.themeBackgroundColor) ??
         EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
@@ -436,10 +696,10 @@ export default function EventCreateWizard() {
         guestPortalLinkLabel: trimmedLabel || undefined,
         guestPortalLinkUrl: trimmedUrl || undefined,
         eventDate: timestamp,
-        eventEndDate: endTimestamp,
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
         status: values.status ?? "inactive",
+        sendQrOnApproval,
         lists: listsFiltered,
         customFields: customFields.map((field) => ({
           key: field.key.trim(),
@@ -458,11 +718,11 @@ export default function EventCreateWizard() {
         qrCodeColor: normalizeHexColorInput(values.qrCodeColor) || undefined,
         ...workspaceScope.queryArgs,
       });
-      toast.success("Event created");
+      toast.success("Event published");
       router.replace(eventsPath);
     } catch (error: unknown) {
       const errorDetails = error as ApplicationError | Error;
-      toast.error(errorDetails?.message || "Failed to create event");
+      toast.error(errorDetails?.message || "Failed to publish event");
       setSubmitting(false);
     }
   };
@@ -491,8 +751,9 @@ export default function EventCreateWizard() {
           </div>
           <button
             type="button"
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            onClick={() => router.back()}
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            onClick={saveAsDraft}
+            disabled={submitting}
           >
             save & finish later
           </button>
@@ -562,8 +823,6 @@ export default function EventCreateWizard() {
                 form={form}
                 eventDate={form.watch("eventDate")}
                 eventTime={form.watch("eventTime")}
-                eventEndDate={form.watch("eventEndDate")}
-                eventEndTime={form.watch("eventEndTime")}
                 eventTimezone={form.watch("eventTimezone")}
               />
             )}
@@ -597,6 +856,8 @@ export default function EventCreateWizard() {
             )}
             {stepIndex === 5 && (
               <StepLists
+                sendQrOnApproval={sendQrOnApproval}
+                onSendQrOnApprovalChange={setSendQrOnApproval}
                 lists={lists}
                 setLists={setLists}
                 defaultApprovalMessage={defaultApprovalMessage}
@@ -650,8 +911,8 @@ export default function EventCreateWizard() {
           >
             {isLast
               ? submitting
-                ? "Creating…"
-                : "Create event"
+                ? "Publishing…"
+                : "Publish"
               : "Continue"}
             {!isLast && <ArrowRight className="h-4 w-4" />}
           </Button>
@@ -796,14 +1057,10 @@ function StepWhereWhen({
   form,
   eventDate,
   eventTime,
-  eventEndDate,
-  eventEndTime,
   eventTimezone,
 }: StepFormProps & {
   eventDate: string | undefined;
   eventTime: string | undefined;
-  eventEndDate: string | undefined;
-  eventEndTime: string | undefined;
   eventTimezone: string | undefined;
 }) {
   return (
@@ -838,6 +1095,9 @@ function StepWhereWhen({
             <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
               Date, time & timezone
             </FormLabel>
+            <FormDescription>
+              RSVPs close 24 hours after this start time.
+            </FormDescription>
             <FormControl>
               <DateTimePicker
                 date={eventDate}
@@ -852,36 +1112,6 @@ function StepWhereWhen({
                 }
                 onTimezoneChange={(value) =>
                   form.setValue("eventTimezone", value, { shouldDirty: true })
-                }
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="eventEndDate"
-        rules={{ required: "Event end date is required" }}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              End date & time
-            </FormLabel>
-            <FormDescription>
-              RSVP access closes ten hours after this time.
-            </FormDescription>
-            <FormControl>
-              <DateTimePicker
-                date={eventEndDate}
-                time={eventEndTime ?? "03:00"}
-                timezone={
-                  eventTimezone ??
-                  Intl.DateTimeFormat().resolvedOptions().timeZone
-                }
-                onDateChange={(value) => field.onChange(value)}
-                onTimeChange={(value) =>
-                  form.setValue("eventEndTime", value, { shouldDirty: true })
                 }
               />
             </FormControl>
@@ -1084,8 +1314,76 @@ function StepGuestExperience({
   guestPortalImageStorageId: string | null;
   onGuestPortalImageChange: (value: string | null) => void;
 }) {
+  const themeBackground =
+    normalizeHexColorInput(form.watch("themeBackgroundColor")) ??
+    EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
+  const themeText =
+    normalizeHexColorInput(form.watch("themeTextColor")) ??
+    EVENT_THEME_DEFAULT_TEXT_COLOR;
+  const eventName = form.watch("name") || "Your event";
+  const guestLinkLabel = form.watch("guestPortalLinkLabel");
+
   return (
     <div className="space-y-10">
+      <div>
+        <div className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+          Preview
+        </div>
+        <p className="mb-3 max-w-lg text-sm text-muted-foreground">
+          Approved-status screen and QR ticket inherit these colors from step 03.
+        </p>
+        <div
+          className="rounded border border-border/40 p-6"
+          style={{ backgroundColor: themeBackground, color: themeText }}
+        >
+          <div className="flex items-start gap-4">
+            <div
+              className="flex h-24 w-24 items-center justify-center rounded"
+              style={{ backgroundColor: themeText }}
+            >
+              <div
+                className="grid grid-cols-5 grid-rows-5 gap-0.5"
+                style={{ width: 60, height: 60 }}
+                aria-hidden
+              >
+                {Array.from({ length: 25 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="rounded-sm"
+                    style={{
+                      backgroundColor:
+                        index % 3 === 0 ? themeBackground : "transparent",
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex-1 space-y-2">
+              <div className="text-xs uppercase tracking-[0.12em] opacity-60">
+                Approved
+              </div>
+              <div
+                className="text-xl font-semibold leading-tight"
+                style={{ color: themeText }}
+              >
+                {eventName}
+              </div>
+              <div className="text-xs opacity-70">
+                Sample QR colors — change them in step 03 (Look).
+              </div>
+              {guestLinkLabel ? (
+                <div
+                  className="mt-3 inline-flex rounded border px-3 py-1.5 text-xs"
+                  style={{ borderColor: themeText }}
+                >
+                  {guestLinkLabel}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div>
         <div className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
           Status & ticket image <span className="normal-case text-muted-foreground/70">(optional)</span>
@@ -1154,14 +1452,40 @@ function StepGuestExperience({
 
 // ─── Step 06 — Lists ────────────────────────────────────────────
 
+// Tri-state for the per-list "send QR on approval" override. Stored as
+// `boolean | undefined` on the list row; the radio control encodes the
+// undefined case as the literal string "inherit" so React doesn't lose
+// the value through stringification.
+type SendQrOnApprovalOverrideOption = "inherit" | "on" | "off";
+
+function overrideValueToOption(
+  value: boolean | undefined,
+): SendQrOnApprovalOverrideOption {
+  if (value === true) return "on";
+  if (value === false) return "off";
+  return "inherit";
+}
+
+function overrideOptionToValue(
+  option: SendQrOnApprovalOverrideOption,
+): boolean | undefined {
+  if (option === "on") return true;
+  if (option === "off") return false;
+  return undefined;
+}
+
 function StepLists({
   lists,
   setLists,
   defaultApprovalMessage,
+  sendQrOnApproval,
+  onSendQrOnApprovalChange,
 }: {
   lists: ListRow[];
   setLists: React.Dispatch<React.SetStateAction<ListRow[]>>;
   defaultApprovalMessage: string;
+  sendQrOnApproval: boolean;
+  onSendQrOnApprovalChange: (value: boolean) => void;
 }) {
   const update = <Key extends keyof ListRow>(
     index: number,
@@ -1178,17 +1502,45 @@ function StepLists({
   const add = () =>
     setLists((current) => [
       ...current,
-      { listKey: "", password: "", shouldGenerateQrCode: false, approvalMessage: "" },
+      {
+        listKey: "",
+        password: "",
+        shouldGenerateQrCode: false,
+        sendQrOnApprovalOverride: undefined,
+        approvalMessage: "",
+      },
     ]);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-[200px_1fr_80px_100px] items-baseline gap-4 border-b border-border/60 pb-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
         <span>List name</span>
-        <span>Password</span>
+        <span>Password (optional)</span>
         <span>QR</span>
         <span className="text-right">Actions</span>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Leave password blank for an open list — the first list with no password
+        receives RSVPs that skip the password step.
+      </p>
+      <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+        <Checkbox
+          checked={sendQrOnApproval}
+          onCheckedChange={(checked) =>
+            onSendQrOnApprovalChange(Boolean(checked))
+          }
+          className="mt-0.5"
+        />
+        <span className="space-y-1">
+          <span className="block text-sm font-medium">
+            Send QR on approval
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            When on, approval texts include the QR code immediately. Default
+            off — most hosts send a manual blast closer to the event.
+          </span>
+        </span>
+      </label>
       {lists.map((list, index) => (
         <div key={index} className="space-y-3 border-b border-border/60 pb-6 last:border-b-0">
           <div className="grid grid-cols-[200px_1fr_80px_100px] items-center gap-4">
@@ -1199,7 +1551,7 @@ function StepLists({
               className="h-10 font-mono text-sm"
             />
             <Input
-              placeholder="Enter password"
+              placeholder="Leave blank for no password"
               value={list.password}
               onChange={(event) => update(index, "password", event.target.value)}
               className="h-10"
@@ -1224,6 +1576,32 @@ function StepLists({
               </Button>
             </div>
           </div>
+          {list.shouldGenerateQrCode ? (
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                Send QR on approval (this list)
+              </label>
+              <Select
+                className="h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 text-sm"
+                value={overrideValueToOption(list.sendQrOnApprovalOverride)}
+                onValueChange={(value) =>
+                  update(
+                    index,
+                    "sendQrOnApprovalOverride",
+                    overrideOptionToValue(
+                      value as SendQrOnApprovalOverrideOption,
+                    ),
+                  )
+                }
+              >
+                <SelectOption value="inherit">
+                  Inherit from event ({sendQrOnApproval ? "on" : "off"})
+                </SelectOption>
+                <SelectOption value="on">On (always send)</SelectOption>
+                <SelectOption value="off">Off (always defer)</SelectOption>
+              </Select>
+            </div>
+          ) : null}
           <div className="space-y-1">
             <label className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
               Approval message <span className="normal-case text-muted-foreground/70">(optional)</span>
@@ -1322,9 +1700,6 @@ function StepReview({
   const dateLabel = values.eventDate
     ? `${values.eventDate} · ${values.eventTime ?? ""} ${values.eventTimezone ?? ""}`.trim()
     : "—";
-  const endDateLabel = values.eventEndDate
-    ? `${values.eventEndDate} · ${values.eventEndTime ?? ""} ${values.eventTimezone ?? ""}`.trim()
-    : "—";
 
   const rows: { stepIndex: number; key: string; value: React.ReactNode }[] = [
     { stepIndex: 0, key: "Name", value: values.name || "—" },
@@ -1339,7 +1714,6 @@ function StepReview({
       value: values.hosts || "—",
     },
     { stepIndex: 1, key: "When", value: dateLabel },
-    { stepIndex: 1, key: "Ends", value: endDateLabel },
     { stepIndex: 1, key: "Where", value: values.location || "—" },
     {
       stepIndex: 1,

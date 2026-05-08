@@ -153,15 +153,15 @@ export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
       eyebrow: "Members entrance",
     },
   },
-  // Club Chlorine — pool-blue (#1E3CFF) on black, heavy rounded display type.
+  // Club Chlorine — pool-blue (#1E3CFF) on white, heavy rounded display type.
   // Used by apps/club-chlorine. The chlorine display stack falls back through
   // Bowlby One → Fugaz One → Anton → Impact when Adobe's Alfarn isn't loaded.
   chlorine: {
     key: "chlorine",
     name: "Club Chlorine",
     tagline: "",
-    bg: "#000000",
-    bg2: "#050511",
+    bg: "#FFFFFF",
+    bg2: "#F0F1FF",
     fg: "#1E3CFF",
     fgDim: "rgba(30, 60, 255, 0.65)",
     fgMute: "rgba(30, 60, 255, 0.35)",
@@ -178,7 +178,7 @@ export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
     buttonRadius: 0,
     brandMarkStyle: "logo-upload",
     qrFg: "#1E3CFF",
-    qrBg: "#000000",
+    qrBg: "#FFFFFF",
     authCopy: {
       heading: "Sign in to Club Chlorine.",
       sub: "We'll text a code. Same number you'll show at the door.",

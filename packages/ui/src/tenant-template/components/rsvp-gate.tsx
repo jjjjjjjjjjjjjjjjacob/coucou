@@ -43,12 +43,19 @@ export interface RsvpGateProps {
    * Page-level brand copy (footer contact). Optional.
    */
   footerContact?: string;
+  /**
+   * When true, skip the inner `TenantShell` wrapper. Use when the parent
+   * already provides a viewport-owning shell (e.g. `ChlorineSplitShell`).
+   */
+  noShell?: boolean;
 }
 
 const DEFAULT_HEADING: Record<string, string> = {
   dojo: "List password.",
   atrium: "The password.",
   maison: "The password.",
+  chlorine: "The password.",
+  coucou: "The password.",
 };
 
 const DEFAULT_SUB: Record<string, string> = {
@@ -57,6 +64,10 @@ const DEFAULT_SUB: Record<string, string> = {
     "Enter the password you were given. We do not mind about case.",
   maison:
     "You will have received it. Type it as it was sent — we are not particular about case.",
+  chlorine:
+    "Enter the password you received from your host. Case-insensitive.",
+  coucou:
+    "Enter the password you received from your host. Case-insensitive.",
 };
 
 export function RsvpGate({
@@ -71,6 +82,7 @@ export function RsvpGate({
   sub,
   placeholder = "•••••••",
   footerContact,
+  noShell = false,
 }: RsvpGateProps) {
   const { preset, presetKey } = usePreset();
   const isMobile = useMobile();
@@ -89,14 +101,18 @@ export function RsvpGate({
     void onSubmit();
   };
 
-  return (
-    <TenantShell>
-      <section
-        style={{
-          padding: isMobile ? "80px 0 60px" : "140px 0 100px",
-          maxWidth: 480,
-        }}
-      >
+  const sectionPadding = noShell
+    ? 0
+    : isMobile
+      ? "80px 0 60px"
+      : "140px 0 100px";
+  const gateSection = (
+    <section
+      style={{
+        padding: sectionPadding,
+        maxWidth: 480,
+      }}
+    >
         <Eyebrow>RSVP</Eyebrow>
         <h2
           className="m-0 mb-4"
@@ -190,7 +206,9 @@ export function RsvpGate({
             {magicLinkSlot}
           </div>
         ) : null}
-      </section>
-    </TenantShell>
+    </section>
   );
+
+  if (noShell) return gateSection;
+  return <TenantShell>{gateSection}</TenantShell>;
 }

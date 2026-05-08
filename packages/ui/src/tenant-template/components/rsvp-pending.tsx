@@ -24,6 +24,11 @@ export interface RsvpPendingProps {
    */
   eyebrow?: string;
   /**
+   * Optional content rendered to the right of the eyebrow (typically an
+   * `EyebrowPill` for cross-route navigation).
+   */
+  eyebrowTrailing?: ReactNode;
+  /**
    * Override the status pill text.
    */
   statusLabel?: string;
@@ -37,12 +42,19 @@ export interface RsvpPendingProps {
    * guest-portal image, etc.).
    */
   extras?: ReactNode;
+  /**
+   * When true, skip the inner `TenantShell` wrapper. Use when the parent
+   * already provides a viewport-owning shell (e.g. `ChlorineSplitShell`).
+   */
+  noShell?: boolean;
 }
 
 const DEFAULT_HEADING: Record<string, string> = {
   dojo: "Sent for review.",
   atrium: "Sent to the host.",
   maison: "Sent to the host.",
+  chlorine: "Sent for review.",
+  coucou: "Sent for review.",
 };
 
 const DEFAULT_DESCRIPTION: Record<string, string> = {
@@ -51,12 +63,17 @@ const DEFAULT_DESCRIPTION: Record<string, string> = {
     "Your request is in. The host reviews these personally. You will hear back by evening, one way or the other.",
   maison:
     "Your password put you on the request list — the host reviews these personally on Friday afternoon. You'll have an answer by evening, one way or the other.",
+  chlorine:
+    "Your request is in. The host reviews these personally — you'll get a text the moment your status changes.",
+  coucou: "Your request is in. We'll let you know once it's been reviewed.",
 };
 
 const DEFAULT_STATUS: Record<string, string> = {
   dojo: "Awaiting review",
   atrium: "Awaiting review",
   maison: "Awaiting review",
+  chlorine: "Awaiting review",
+  coucou: "Awaiting review",
 };
 
 export function RsvpPending({
@@ -64,9 +81,11 @@ export function RsvpPending({
   submittedAtLabel,
   heading,
   eyebrow = "Pending",
+  eyebrowTrailing,
   statusLabel,
   footerContact,
   extras,
+  noShell = false,
 }: RsvpPendingProps) {
   const { preset, presetKey } = usePreset();
   const isMobile = useMobile();
@@ -74,12 +93,17 @@ export function RsvpPending({
   const resolvedHeading = heading ?? DEFAULT_HEADING[presetKey];
   const resolvedDescription =
     description ?? DEFAULT_DESCRIPTION[presetKey];
-  const resolvedStatus = statusLabel ?? DEFAULT_STATUS[presetKey];
 
-  return (
-    <TenantShell>
-      <section style={{ padding: isMobile ? "60px 0 48px" : "100px 0 80px" }}>
-        <Eyebrow>{preset.upper ? eyebrow.toUpperCase() : eyebrow}</Eyebrow>
+  const sectionPadding = noShell
+    ? 0
+    : isMobile
+      ? "60px 0 48px"
+      : "100px 0 80px";
+  const pendingSection = (
+    <section style={{ padding: sectionPadding }}>
+        <Eyebrow trailing={eyebrowTrailing}>
+          {preset.upper ? eyebrow.toUpperCase() : eyebrow}
+        </Eyebrow>
         <h2
           className="m-0 mb-8"
           style={{
@@ -94,7 +118,7 @@ export function RsvpPending({
           {resolvedHeading}
         </h2>
 
-        <p
+        <div
           className="m-0 max-w-[540px]"
           style={{
             fontSize: 14,
@@ -103,49 +127,25 @@ export function RsvpPending({
           }}
         >
           {resolvedDescription}
-        </p>
-
-        <div
-          className="border-y"
-          style={{
-            padding: "28px 0",
-            margin: "40px 0 0",
-            borderTopColor: "var(--tt-rule)",
-            borderBottomColor: "var(--tt-rule)",
-          }}
-        >
-          <div
-            className="text-[11px] uppercase tracking-[0.04em]"
-            style={{ color: "var(--tt-fg-mute)" }}
-          >
-            Status
-          </div>
-          <div
-            style={{
-              fontSize: 20,
-              fontFamily: "var(--tt-display)",
-              color: "var(--tt-fg)",
-              margin: "8px 0 12px",
-              fontWeight: presetKey === "dojo" ? 600 : 400,
-            }}
-          >
-            {preset.upper ? resolvedStatus.toUpperCase() : resolvedStatus}
-          </div>
-          {submittedAtLabel ? (
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--tt-fg-dim)",
-                lineHeight: 1.6,
-              }}
-            >
-              {submittedAtLabel}
-            </div>
-          ) : null}
         </div>
 
+        {submittedAtLabel ? (
+          <div
+            className="mt-6"
+            style={{
+              fontSize: 13,
+              color: "var(--tt-fg-dim)",
+              lineHeight: 1.6,
+            }}
+          >
+            {submittedAtLabel}
+          </div>
+        ) : null}
+
         {extras ? <div className="mt-10">{extras}</div> : null}
-      </section>
-    </TenantShell>
+    </section>
   );
+
+  if (noShell) return pendingSection;
+  return <TenantShell>{pendingSection}</TenantShell>;
 }

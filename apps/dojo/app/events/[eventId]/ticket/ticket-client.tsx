@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
-import { Download } from "lucide-react";
+import { Check, Download } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { formatEventTitleInline, hasEventSecondaryTitle } from "@/lib/event-display";
 import { siteConfiguration } from "@/lib/site";
@@ -411,8 +411,9 @@ export default function TicketClientPage({
 
   const renderNoQRContent = () => (
     <div className="rounded p-3 space-y-2">
-      <div className="font-medium text-sm text-primary">
-        ✓ {status?.listKey?.toUpperCase()} Confirmed
+      <div className="flex items-center gap-1.5 font-medium text-sm text-primary">
+        <Check className="h-3.5 w-3.5" aria-hidden />
+        <span>{status?.listKey?.toUpperCase()} Confirmed</span>
       </div>
       <div className="text-xs text-primary/70">
         {status?.listKey?.toLowerCase() === "ga" ? (

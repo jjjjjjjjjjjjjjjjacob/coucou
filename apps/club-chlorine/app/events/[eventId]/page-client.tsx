@@ -1,32 +1,49 @@
 "use client";
-import React, { use, useCallback, useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
+import React, { use, useMemo } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
+import {
+  isEventOpenForRsvp,
+  resolveEventRsvpCutoff,
+} from "@coucou/sdk/shared/event-availability";
 import { Spinner } from "@/components/ui/spinner";
 import {
-  TenantTemplateProvider,
-  TenantLanding,
-  TenantButton,
-  type TenantLandingEvent,
+  ChlorineEventRow,
+  useMobile,
+  type ChlorineLandingEvent,
 } from "@coucou/ui/tenant-template";
-import { siteConfiguration } from "@/lib/site";
 import { getPublicEventActs } from "@/lib/event-lineup";
+import { siteConfiguration } from "@/lib/site";
 
 interface EventPageClientProps {
   params: Promise<{ eventId: string }>;
 }
 
-function formatWhenLabel(timestamp: number, timezone: string | undefined): string {
+function formatLandingDate(timestamp: number, timezone?: string): string {
+  const dateFormatter = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: timezone ?? "UTC",
+  });
+  const parts = dateFormatter.formatToParts(new Date(timestamp));
+  const weekday =
+    parts.find((part) => part.type === "weekday")?.value.toUpperCase() ?? "";
+  const month = parts.find((part) => part.type === "month")?.value ?? "";
+  const day = parts.find((part) => part.type === "day")?.value ?? "";
+  return `${weekday} ${month}.${day}`;
+}
+
+function formatExpandedDate(timestamp: number, timezone?: string): string {
   const date = new Date(timestamp);
-  const day = date.toLocaleDateString(undefined, {
+  const day = date.toLocaleDateString("en-US", {
     weekday: "long",
     timeZone: timezone ?? "UTC",
   });
-  const formattedDate = date
+  const formatted = date
     .toLocaleDateString("en-US", {
       month: "2-digit",
       day: "2-digit",
@@ -34,76 +51,308 @@ function formatWhenLabel(timestamp: number, timezone: string | undefined): strin
       timeZone: timezone ?? "UTC",
     })
     .replace(/\//g, ".");
-  return `${day} ${formattedDate}`;
+  const time = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: timezone ?? "UTC",
+  });
+  return `${day} ${formatted} · ${time}`;
 }
+
+function formatEndTime(timestamp: number, timezone?: string): string {
+  return new Date(timestamp).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: timezone ?? "UTC",
+  });
+}
+
+const monoLabelStyle: React.CSSProperties = {
+  fontFamily:
+    'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+  fontSize: 11,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
+  color: "var(--tt-fg-mute)",
+};
+
+const monoBodyStyle: React.CSSProperties = {
+  fontFamily:
+    'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+  fontSize: 12,
+  letterSpacing: "0.04em",
+  color: "var(--tt-fg-dim)",
+};
 
 export default function EventPageClient({ params }: EventPageClientProps) {
   const { eventId } = use(params);
-  const router = useRouter();
   const searchParams = useSearchParams();
-
-  const eventQuery = useQuery(
-    convexQuery(api.events.get, { eventId: eventId as Id<"events"> }),
-  );
-  const event = eventQuery.data;
-
   const queryParamPassword = searchParams?.get("password") ?? "";
+  const passwordSearch = queryParamPassword
+    ? `?${new URLSearchParams({ password: queryParamPassword }).toString()}`
+    : "";
 
-  const eventIsOpenForRsvp = event ? isEventOpenForRsvp(event) : false;
+  const isMobile = useMobile();
+  const allEvents = useQuery(api.events.listAll, {
+    siteKey: siteConfiguration.siteKey,
+  });
+  const focusedEvent = useQuery(api.events.get, {
+    eventId: eventId as Id<"events">,
+    siteKey: siteConfiguration.siteKey,
+  });
+  const focusedEventStatus = useQuery(api.rsvps.statusForUserEvent, {
+    eventId: eventId as Id<"events">,
+    siteKey: siteConfiguration.siteKey,
+  });
 
-  const handleRsvpClick = useCallback(() => {
-    if (!eventIsOpenForRsvp) return;
-    const passwordSearch = queryParamPassword
-      ? `?${new URLSearchParams({ password: queryParamPassword }).toString()}`
-      : "";
-    router.push(`/events/${eventId}/rsvp${passwordSearch}`);
-  }, [eventIsOpenForRsvp, queryParamPassword, router, eventId]);
+  const orderedEvents = useMemo(() => {
+    if (!allEvents) return [];
+    const now = Date.now();
+    return allEvents
+      .filter((event) => resolveEventRsvpCutoff(event) >= now)
+      .sort(
+        (firstEvent, secondEvent) =>
+          firstEvent.eventDate - secondEvent.eventDate,
+      );
+  }, [allEvents]);
 
-  const tenantLandingEvent = useMemo<TenantLandingEvent | null>(() => {
-    if (!event) return null;
-    return {
-      name: event.name,
-      secondaryTitle: event.secondaryTitle ?? null,
-      whenLabel: event.eventDate
-        ? formatWhenLabel(event.eventDate, event.eventTimezone)
-        : null,
-      whereLabel: event.location ?? null,
-      lede: event.description ?? null,
-      lineup: getPublicEventActs(event).map((act) => ({
-        displayName: act.displayName,
-        descriptorBadges: act.descriptorBadges,
-        socialUrl: act.socialUrl,
-      })),
-    };
-  }, [event]);
+  const focusedEventInList = useMemo(() => {
+    return orderedEvents.find((event) => event._id === eventId) ?? null;
+  }, [orderedEvents, eventId]);
 
-  if (eventQuery.isLoading || !event || !tenantLandingEvent) {
+  // The focused event may have already passed (cutoff in the past). When
+  // that happens it won't be in `orderedEvents`; we still want to render
+  // its detail panel via the `focusedEvent` query.
+  const resolvedFocusedEvent = focusedEventInList ?? focusedEvent ?? null;
+
+  if (allEvents === undefined || focusedEvent === undefined) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-6">
-        <div className="flex animate-in fade-in items-center justify-center py-10 text-primary">
-          <Spinner />
-        </div>
-      </main>
+      <div className="flex items-center justify-center py-10 text-primary">
+        <Spinner />
+      </div>
     );
   }
 
+  if (!resolvedFocusedEvent) {
+    return (
+      <div
+        style={{
+          fontFamily:
+            'var(--font-geist-mono), "Geist Mono", ui-monospace, monospace',
+          fontSize: 12,
+          letterSpacing: "0.08em",
+          color: "var(--tt-fg-mute)",
+          textTransform: "uppercase",
+          textAlign: "center",
+        }}
+      >
+        Event not found.
+      </div>
+    );
+  }
+
+  const focusedEventIsOpen = isEventOpenForRsvp(resolvedFocusedEvent);
+  const focusedRsvpFormHref = `/events/${resolvedFocusedEvent._id}/rsvp${passwordSearch}`;
+
+  // When the user already has an RSVP, replace the standard "RSVP" brick
+  // with a contextual one that jumps straight to their existing status or
+  // ticket. There's no separate pill — the brick itself becomes the link.
+  const focusedRsvpStatus = focusedEventStatus?.status;
+  const focusedHasRsvp =
+    focusedRsvpStatus === "pending" ||
+    focusedRsvpStatus === "approved" ||
+    focusedRsvpStatus === "attending" ||
+    focusedRsvpStatus === "denied";
+  const focusedExistingRsvpHref =
+    focusedRsvpStatus === "approved" || focusedRsvpStatus === "attending"
+      ? `/events/${resolvedFocusedEvent._id}/ticket`
+      : focusedRsvpStatus === "pending" || focusedRsvpStatus === "denied"
+        ? `/events/${resolvedFocusedEvent._id}/status`
+        : null;
+  const focusedBrickHref = focusedExistingRsvpHref ?? focusedRsvpFormHref;
+  const focusedBrickLabel =
+    focusedRsvpStatus === "approved" || focusedRsvpStatus === "attending"
+      ? "TICKET"
+      : focusedRsvpStatus === "pending"
+        ? "MY RSVP"
+        : focusedRsvpStatus === "denied"
+          ? "STATUS"
+          : focusedEventIsOpen
+            ? "RSVP"
+            : "CLOSED";
+
+  const expandedContent = (
+    <div className="flex flex-col gap-5">
+      <dl
+        className="grid gap-x-6 gap-y-2"
+        style={{ gridTemplateColumns: "min-content 1fr" }}
+      >
+        <dt style={monoLabelStyle}>When</dt>
+        <dd style={monoBodyStyle}>
+          {formatExpandedDate(
+            resolvedFocusedEvent.eventDate,
+            resolvedFocusedEvent.eventTimezone,
+          )}
+          {resolvedFocusedEvent.eventEndDate ? (
+            <span> — until {formatEndTime(
+              resolvedFocusedEvent.eventEndDate,
+              resolvedFocusedEvent.eventTimezone,
+            )}</span>
+          ) : null}
+        </dd>
+        {resolvedFocusedEvent.location ? (
+          <>
+            <dt style={monoLabelStyle}>Where</dt>
+            <dd style={monoBodyStyle}>{resolvedFocusedEvent.location}</dd>
+          </>
+        ) : null}
+        {resolvedFocusedEvent.hosts && resolvedFocusedEvent.hosts.length > 0 ? (
+          <>
+            <dt style={monoLabelStyle}>Hosts</dt>
+            <dd style={monoBodyStyle}>
+              {resolvedFocusedEvent.hosts.join(", ")}
+            </dd>
+          </>
+        ) : null}
+        {resolvedFocusedEvent.productionCompany ? (
+          <>
+            <dt style={monoLabelStyle}>Presented by</dt>
+            <dd style={monoBodyStyle}>
+              {resolvedFocusedEvent.productionCompany}
+            </dd>
+          </>
+        ) : null}
+      </dl>
+
+      {resolvedFocusedEvent.description ? (
+        <p
+          className="m-0 max-w-[540px]"
+          style={{
+            fontSize: 13,
+            lineHeight: 1.65,
+            color: "var(--tt-fg-dim)",
+          }}
+        >
+          {resolvedFocusedEvent.description}
+        </p>
+      ) : null}
+    </div>
+  );
+
+  // If the focused event is the only thing to show, render just it expanded.
+  // Otherwise render every event as a row, expanding the focused one and
+  // minimizing siblings.
+  const allRows: Array<{
+    landingEvent: ChlorineLandingEvent;
+    isFocused: boolean;
+  }> = [];
+
+  // The brick on the focused row is contextual: when the user already has
+  // an RSVP it routes straight to their status/ticket and is never
+  // disabled. Otherwise it's the standard CLOSED-aware RSVP brick.
+  const focusedBrickDisabled = focusedHasRsvp ? false : !focusedEventIsOpen;
+
+  // Include the focused event even if it's not in `orderedEvents` (e.g. its
+  // RSVP cutoff has already passed but the user navigated to it directly).
+  if (!focusedEventInList && resolvedFocusedEvent) {
+    allRows.push({
+      landingEvent: {
+        id: resolvedFocusedEvent._id,
+        date: formatLandingDate(
+          resolvedFocusedEvent.eventDate,
+          resolvedFocusedEvent.eventTimezone,
+        ),
+        lineup: getPublicEventActs(resolvedFocusedEvent).map((act) => ({
+          label: act.displayName,
+          descriptorBadges: act.descriptorBadges,
+          // The focused row is variant="expanded" → row is a div, no
+          // outer anchor — so we can wrap individual lineup names in a
+          // social-link `<a>` without triggering the nested-anchor
+          // hydration warning.
+          href: act.socialUrl,
+        })),
+        rsvpHref: focusedBrickHref,
+        rsvpLabel: focusedBrickLabel,
+        rsvpDisabled: focusedBrickDisabled,
+      },
+      isFocused: true,
+    });
+  }
+
+  for (const event of orderedEvents) {
+    const eventIsOpen = isEventOpenForRsvp(event);
+    const isFocused = event._id === eventId;
+    allRows.push({
+      landingEvent: {
+        id: event._id,
+        date: formatLandingDate(event.eventDate, event.eventTimezone),
+        lineup: getPublicEventActs(event).map((act) => ({
+          label: act.displayName,
+          descriptorBadges: act.descriptorBadges,
+          // Only the focused/expanded row exposes social links — minimized
+          // sibling rows get joined into a single line and would otherwise
+          // nest anchors inside their detailHref wrap.
+          href: isFocused ? act.socialUrl : undefined,
+        })),
+        rsvpHref: isFocused
+          ? focusedBrickHref
+          : `/events/${event._id}/rsvp`,
+        rsvpLabel: isFocused
+          ? focusedBrickLabel
+          : eventIsOpen
+            ? "RSVP"
+            : "CLOSED",
+        rsvpDisabled: isFocused ? focusedBrickDisabled : !eventIsOpen,
+      },
+      isFocused,
+    });
+  }
+
   return (
-    <TenantTemplateProvider
-      siteConfigurationPreset={siteConfiguration.preset}
-      event={event}
-    >
-      <TenantLanding
-        event={tenantLandingEvent}
-        primaryCta={
-          <TenantButton
-            type="button"
-            onClick={handleRsvpClick}
-            disabled={!eventIsOpenForRsvp}
-          >
-            {eventIsOpenForRsvp ? "RSVP" : "RSVP CLOSED"}
-          </TenantButton>
-        }
-      />
-    </TenantTemplateProvider>
+    <div>
+      {allRows.map((row, index) => (
+        <div key={row.landingEvent.id}>
+          {row.isFocused ? (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                paddingBottom: 6,
+              }}
+            >
+              <Link
+                href="/"
+                style={{
+                  fontFamily:
+                    'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--tt-fg-mute)",
+                  textDecoration: "none",
+                }}
+              >
+                ← Back
+              </Link>
+            </div>
+          ) : null}
+          <ChlorineEventRow
+            event={row.landingEvent}
+            mobile={isMobile}
+            visible
+            delayMs={index * 90}
+            linkComponent={Link}
+            variant={row.isFocused ? "expanded" : "minimized"}
+            detailHref={
+              row.isFocused ? undefined : `/events/${row.landingEvent.id}`
+            }
+            expandedContent={row.isFocused ? expandedContent : undefined}
+          />
+        </div>
+      ))}
+    </div>
   );
 }

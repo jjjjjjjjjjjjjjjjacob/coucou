@@ -4,10 +4,9 @@ import { useUser, UserButton } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Mail, Phone, Calendar, Users, Settings, ExternalLink } from "lucide-react";
+import { Bell, ExternalLink } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
@@ -27,6 +26,22 @@ import type { Id } from "@convex/_generated/dataModel";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { coucouBaseUrl, siteConfiguration } from "@/lib/site";
+
+const displayHeadingStyle: React.CSSProperties = {
+  fontFamily:
+    'var(--font-bowlby-one), "Bowlby One", "Fugaz One", "Anton", "Impact", sans-serif',
+  textTransform: "uppercase",
+  letterSpacing: "0.01em",
+  lineHeight: 1.05,
+};
+
+const monoBodyStyle: React.CSSProperties = {
+  fontFamily:
+    'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+};
+
+const sectionEyebrowClassName =
+  "text-[11px] font-medium uppercase tracking-[0.12em] text-primary";
 
 export default function ProfilePage() {
   const { isLoaded, isSignedIn, user } = useUser();
@@ -133,28 +148,29 @@ export default function ProfilePage() {
 
   if (!isLoaded) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="flex items-center justify-center min-h-screen">
-          <Spinner />
-        </div>
+      <div className="flex min-h-[60vh] items-center justify-center px-6 py-10">
+        <Spinner />
       </div>
     );
   }
 
   if (!isSignedIn || !user) {
     return (
-      <div className="container mx-auto p-6 max-w-2xl">
-        <Card>
-          <CardContent className="text-center py-12">
-            <h2 className="text-lg font-medium mb-2">Not signed in</h2>
-            <p className="text-muted-foreground mb-6">
-              Please sign in to view your profile.
-            </p>
-            <Link href="/sign-in">
-              <Button>Sign In</Button>
-            </Link>
-          </CardContent>
-        </Card>
+      <div className="mx-auto w-full max-w-3xl px-6 py-16 text-center">
+        <h2
+          className="text-2xl text-primary"
+          style={displayHeadingStyle}
+        >
+          Not signed in
+        </h2>
+        <p className="mt-4 text-sm text-primary/70" style={monoBodyStyle}>
+          Please sign in to view your profile.
+        </p>
+        <div className="mt-6 flex justify-center">
+          <Link href="/sign-in">
+            <Button>Sign In</Button>
+          </Link>
+        </div>
       </div>
     );
   }
@@ -168,296 +184,300 @@ export default function ProfilePage() {
   );
   const isSharedEventsLoading = sharedEvents === undefined;
   const sharedEventCount = sharedEvents?.length ?? 0;
+  const memberSinceLabel = new Date(user.createdAt!).toLocaleDateString(
+    "en-US",
+    { year: "numeric", month: "long" },
+  );
+  const joinedLabel = new Date(user.createdAt!).toLocaleDateString();
 
   return (
-    <div className="container mx-auto p-6 max-w-3xl">
-      <h1 className="text-3xl font-bold mb-6">Profile</h1>
+    <div
+      className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6 lg:px-8"
+      style={monoBodyStyle}
+    >
+      <div className="mb-12 flex items-center gap-5">
+        <Avatar className="size-14">
+          <AvatarImage src={user.imageUrl} alt={user.fullName || ""} />
+          <AvatarFallback>
+            {user.firstName?.[0]}
+            {user.lastName?.[0]}
+          </AvatarFallback>
+        </Avatar>
+        <div>
+          <h1
+            className="text-3xl text-primary sm:text-4xl"
+            style={displayHeadingStyle}
+          >
+            {user.fullName || "Profile"}
+          </h1>
+          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-primary/60">
+            Member since {memberSinceLabel}
+          </p>
+        </div>
+      </div>
 
-      <div className="space-y-6">
-        {/* User Info Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-3">
-              <Avatar className="h-12 w-12">
-                <AvatarImage src={user.imageUrl} alt={user.fullName || ""} />
-                <AvatarFallback>
-                  {user.firstName?.[0]}{user.lastName?.[0]}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <h2 className="text-xl font-semibold">
-                  {user.fullName || "User"}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Member since{" "}
-                  {new Date(user.createdAt!).toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "long",
-                  })}
-                </p>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <div className="space-y-12">
+        <section className="space-y-3">
+          <p className={sectionEyebrowClassName}>Contact</p>
+          <div className="space-y-2 text-sm text-primary">
             {primaryEmail && (
-              <div className="flex items-center gap-3">
-                <Mail className="h-4 w-4 text-muted-foreground" />
+              <div className="flex flex-wrap items-center gap-3">
                 <span>{primaryEmail.emailAddress}</span>
                 {primaryEmail.verification?.status === "verified" && (
-                  <Badge variant="outline" className="text-green-600 border-green-600">
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] uppercase tracking-[0.1em]"
+                  >
                     Verified
                   </Badge>
                 )}
               </div>
             )}
-
             {primaryPhone && (
-              <div className="flex items-center gap-3">
-                <Phone className="h-4 w-4 text-muted-foreground" />
+              <div className="flex flex-wrap items-center gap-3">
                 <span>{primaryPhone.phoneNumber}</span>
                 {primaryPhone.verification?.status === "verified" && (
-                  <Badge variant="outline" className="text-green-600 border-green-600">
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] uppercase tracking-[0.1em]"
+                  >
                     Verified
                   </Badge>
                 )}
               </div>
             )}
-
-            <div className="flex items-center gap-3">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span>
-                Joined {new Date(user.createdAt!).toLocaleDateString()}
-              </span>
+            <div className="text-[11px] uppercase tracking-[0.1em] text-primary/60">
+              Joined {joinedLabel}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         {showCoucouProfileLink && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ExternalLink className="h-5 w-5" />
-                View your full Coucou profile
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                See all your events, saved info, and shared profile data
-                across every workspace on Coucou.
-              </p>
-              <Button asChild>
-                <a
-                  href={`${coucouBaseUrl}/profile`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Open on Coucou
-                  <ExternalLink className="size-4" />
-                </a>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Organizations Card */}
-        {organizationMemberships.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Organizations
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {organizationMemberships.map((membership) => (
-                  <div
-                    key={membership.organization.id}
-                    className="flex items-center justify-between p-3 border rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage
-                          src={membership.organization.imageUrl}
-                          alt={membership.organization.name}
-                        />
-                        <AvatarFallback>
-                          {membership.organization.name[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h3 className="font-medium">
-                          {membership.organization.name}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {membership.organization.slug}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="capitalize">
-                      {membership.role.replace("org:", "")}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Quick Actions Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Event Sharing & Notifications
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Manage SMS updates and the custom fields you have shared with hosts.
+          <section className="space-y-3">
+            <p className={sectionEyebrowClassName}>Coucou Profile</p>
+            <h2
+              className="text-xl text-primary sm:text-2xl"
+              style={displayHeadingStyle}
+            >
+              View your full Coucou profile
+            </h2>
+            <p className="max-w-xl text-sm text-primary/70">
+              See all your events, saved info, and shared profile data across
+              every workspace on Coucou.
             </p>
-          </CardHeader>
-          <CardContent>
-            {isSharedEventsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Spinner />
-              </div>
-            ) : sharedEventCount === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                You have not shared details with any events yet. Once you RSVP, your shared information will appear here.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                <p className="text-[10px] text-muted-foreground leading-tight">
-                  RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of each event host using Club Chlorine. Msg & data rates may apply. Reply STOP to cancel.
-                </p>
-                {sharedEvents?.map((sharedEvent) => {
-                  const smsSenderDisplayName = resolveEventMessagingBrandName(
-                    {
-                      name: sharedEvent.eventName,
-                      secondaryTitle: sharedEvent.eventSecondaryTitle,
-                      eventHostNames: sharedEvent.eventHostNames,
-                      productionCompany: sharedEvent.productionCompany,
-                    },
-                    { fallback: sharedEvent.eventName ?? "Event Host" },
-                  );
-                  const sharedFieldValues =
-                    sharedEvent.customFields.filter((field) => field.value && field.value.length > 0);
-                  return (
-                    <div
-                      key={sharedEvent.rsvpId}
-                      className="border rounded-lg p-4 space-y-4"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-lg font-semibold text-primary">
-                              {sharedEvent.eventName}
-                            </h3>
-                            {sharedEvent.listKey && (
-                              <Badge variant="outline" className="uppercase">
-                                {sharedEvent.listKey}
-                              </Badge>
-                            )}
-                          </div>
-                          {sharedEvent.eventSecondaryTitle && (
-                            <p className="text-sm text-muted-foreground">
-                              {sharedEvent.eventSecondaryTitle}
-                            </p>
-                          )}
-                          {sharedEvent.eventDate && (
-                            <p className="text-xs text-muted-foreground">
-                              {formatEventDateTime(
-                                sharedEvent.eventDate,
-                                sharedEvent.eventTimezone,
-                              )}
-                            </p>
-                          )}
-                          {smsSenderDisplayName && (
-                            <p className="text-xs text-muted-foreground">
-                              SMS sender: {smsSenderDisplayName} (delivered via Club Chlorine)
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={sharedEvent.smsConsent ? "default" : "outline"}
-                            onClick={() => handleSmsToggle(sharedEvent)}
-                            disabled={smsUpdatingRsvpId === sharedEvent.rsvpId}
-                            className="min-w-[7rem]"
-                          >
-                            {smsUpdatingRsvpId === sharedEvent.rsvpId && (
-                              <Spinner className="mr-2 h-3.5 w-3.5" />
-                            )}
-                            {sharedEvent.smsConsent ? "SMS On" : "SMS Off"}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setEditingRsvpId(sharedEvent.rsvpId)}
-                          >
-                            Edit Shared Fields
-                          </Button>
-                        </div>
-                      </div>
+            <Button asChild variant="outline">
+              <a
+                href={`${coucouBaseUrl}/profile`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open on Coucou
+                <ExternalLink className="size-4" />
+              </a>
+            </Button>
+          </section>
+        )}
 
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                          Shared fields
-                        </p>
-                        {sharedFieldValues.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {sharedFieldValues.map((field) => (
-                              <Badge
-                                key={`${sharedEvent.rsvpId}-${field.key}`}
-                                variant="secondary"
-                                className="text-xs font-medium px-2.5 py-1"
-                              >
-                                <span className="pr-1 text-muted-foreground">{field.label}:</span>
-                                <span>{field.value}</span>
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            You have not shared any custom fields for this event.
+        {organizationMemberships.length > 0 && (
+          <section className="space-y-3">
+            <p className={sectionEyebrowClassName}>Organizations</p>
+            <div className="space-y-2">
+              {organizationMemberships.map((membership) => (
+                <div
+                  key={membership.organization.id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <Avatar className="size-8">
+                      <AvatarImage
+                        src={membership.organization.imageUrl}
+                        alt={membership.organization.name}
+                      />
+                      <AvatarFallback>
+                        {membership.organization.name[0]}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <h3 className="text-sm text-primary">
+                        {membership.organization.name}
+                      </h3>
+                      <p className="text-[11px] uppercase tracking-[0.1em] text-primary/60">
+                        {membership.organization.slug}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] uppercase tracking-[0.1em]"
+                  >
+                    {membership.role.replace("org:", "")}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Bell className="size-4 text-primary" />
+            <p className={sectionEyebrowClassName}>
+              Event Sharing & Notifications
+            </p>
+          </div>
+          <p className="text-sm text-primary/70">
+            Manage SMS updates and the custom fields you have shared with hosts.
+          </p>
+          {isSharedEventsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner />
+            </div>
+          ) : sharedEventCount === 0 ? (
+            <p className="text-sm text-primary/70">
+              You have not shared details with any events yet. Once you RSVP,
+              your shared information will appear here.
+            </p>
+          ) : (
+            <div className="space-y-6">
+              <p className="text-[10px] leading-tight text-primary/60">
+                RSVP updates, reminders, and offers via SMS. Sent by Coucou on
+                behalf of each event host using Club Chlorine. Msg & data rates
+                may apply. Reply STOP to cancel.
+              </p>
+              {sharedEvents?.map((sharedEvent) => {
+                const smsSenderDisplayName = resolveEventMessagingBrandName(
+                  {
+                    name: sharedEvent.eventName,
+                    secondaryTitle: sharedEvent.eventSecondaryTitle,
+                    eventHostNames: sharedEvent.eventHostNames,
+                    productionCompany: sharedEvent.productionCompany,
+                  },
+                  { fallback: sharedEvent.eventName ?? "Event Host" },
+                );
+                const sharedFieldValues = sharedEvent.customFields.filter(
+                  (field) => field.value && field.value.length > 0,
+                );
+                return (
+                  <div key={sharedEvent.rsvpId} className="space-y-4 py-2">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3
+                            className="text-lg text-primary sm:text-xl"
+                            style={displayHeadingStyle}
+                          >
+                            {sharedEvent.eventName}
+                          </h3>
+                          {sharedEvent.listKey && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] uppercase tracking-[0.1em]"
+                            >
+                              {sharedEvent.listKey}
+                            </Badge>
+                          )}
+                        </div>
+                        {sharedEvent.eventSecondaryTitle && (
+                          <p className="text-sm text-primary/70">
+                            {sharedEvent.eventSecondaryTitle}
+                          </p>
+                        )}
+                        {sharedEvent.eventDate && (
+                          <p className="text-[11px] uppercase tracking-[0.1em] text-primary/60">
+                            {formatEventDateTime(
+                              sharedEvent.eventDate,
+                              sharedEvent.eventTimezone,
+                            )}
+                          </p>
+                        )}
+                        {smsSenderDisplayName && (
+                          <p className="text-[11px] uppercase tracking-[0.1em] text-primary/60">
+                            SMS sender: {smsSenderDisplayName} (delivered via
+                            Club Chlorine)
                           </p>
                         )}
                       </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={
+                            sharedEvent.smsConsent ? "default" : "outline"
+                          }
+                          onClick={() => handleSmsToggle(sharedEvent)}
+                          disabled={smsUpdatingRsvpId === sharedEvent.rsvpId}
+                          className="min-w-[7rem]"
+                        >
+                          {smsUpdatingRsvpId === sharedEvent.rsvpId && (
+                            <Spinner className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          {sharedEvent.smsConsent ? "SMS On" : "SMS Off"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setEditingRsvpId(sharedEvent.rsvpId)}
+                        >
+                          Edit Shared Fields
+                        </Button>
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Quick Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 flex flex-col">
+                    <div className="space-y-2">
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-primary/60">
+                        Shared fields
+                      </p>
+                      {sharedFieldValues.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {sharedFieldValues.map((field) => (
+                            <Badge
+                              key={`${sharedEvent.rsvpId}-${field.key}`}
+                              variant="secondary"
+                              className="px-2.5 py-1 text-xs font-medium"
+                            >
+                              <span className="pr-1 text-primary/60">
+                                {field.label}:
+                              </span>
+                              <span>{field.value}</span>
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-primary/70">
+                          You have not shared any custom fields for this event.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <p className={sectionEyebrowClassName}>Quick Actions</p>
+          <div className="flex flex-col gap-2">
             <Link href="/tickets">
               <Button variant="outline" className="w-full justify-start">
                 View My Tickets
               </Button>
             </Link>
-            <div className="flex items-center gap-3 p-3 border rounded-lg">
+            <div className="flex items-center gap-3 py-2">
               <UserButton
                 appearance={{
                   elements: {
-                    userButtonAvatarBox: "w-8 h-8"
-                  }
+                    userButtonAvatarBox: "w-8 h-8",
+                  },
                 }}
               />
-              <span className="text-sm">Manage Account Settings</span>
+              <span className="text-sm text-primary">
+                Manage Account Settings
+              </span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       </div>
 
       <Dialog
@@ -468,32 +488,45 @@ export default function ProfilePage() {
           }
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" style={monoBodyStyle}>
           <DialogHeader>
-            <DialogTitle>Update shared details</DialogTitle>
+            <DialogTitle style={displayHeadingStyle}>
+              Update shared details
+            </DialogTitle>
             <DialogDescription>
-              Adjust the information you are sharing with the host for this event. Clearing a field removes it from your shared details.
+              Adjust the information you are sharing with the host for this
+              event. Clearing a field removes it from your shared details.
             </DialogDescription>
           </DialogHeader>
           {editingEvent ? (
             <div className="space-y-4 py-2">
               <div className="space-y-1">
-                <h3 className="text-base font-semibold">{editingEvent.eventName}</h3>
+                <h3
+                  className="text-lg text-primary"
+                  style={displayHeadingStyle}
+                >
+                  {editingEvent.eventName}
+                </h3>
                 {editingEvent.eventSecondaryTitle && (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-primary/70">
                     {editingEvent.eventSecondaryTitle}
                   </p>
                 )}
               </div>
               {editingEvent.customFields.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-primary/70">
                   This event does not request additional custom fields.
                 </p>
               ) : (
                 <div className="space-y-3">
                   {editingEvent.customFields.map((field) => (
                     <div key={field.key} className="space-y-2">
-                      <Label htmlFor={`shared-${field.key}`}>{field.label}</Label>
+                      <Label
+                        htmlFor={`shared-${field.key}`}
+                        className="text-[11px] uppercase tracking-[0.12em] text-primary"
+                      >
+                        {field.label}
+                      </Label>
                       <div className="flex gap-2">
                         <Input
                           id={`shared-${field.key}`}

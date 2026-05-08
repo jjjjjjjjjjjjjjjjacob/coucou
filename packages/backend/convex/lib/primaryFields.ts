@@ -18,12 +18,14 @@ export const socialPlatformConfigValidator = v.object({
   label: v.string(),
   placeholder: v.optional(v.string()),
   profileUrlPrefix: v.optional(v.string()),
+  required: v.optional(v.boolean()),
 });
 
 export const invitedByPrimaryFieldConfigValidator = v.object({
   enabled: v.boolean(),
   label: v.optional(v.string()),
   placeholder: v.optional(v.string()),
+  required: v.optional(v.boolean()),
 });
 
 export const primaryFieldConfigValidator = v.object({
@@ -77,6 +79,7 @@ function sanitizeInvitedByConfig(
     enabled: config.enabled,
     label: config.label?.trim() || undefined,
     placeholder: config.placeholder?.trim() || undefined,
+    required: config.required === true ? true : undefined,
   };
 }
 
@@ -154,6 +157,15 @@ export function primaryFieldConfigFromWorkspaceDefaults(
   });
 }
 
+export function primaryFieldConfigHasEffectiveContent(
+  config: PrimaryFieldConfig | undefined | null,
+): boolean {
+  if (!config) return false;
+  const hasPlatforms = (config.socialPlatforms?.length ?? 0) > 0;
+  const hasInvitedBy = config.invitedBy?.enabled === true;
+  return hasPlatforms || hasInvitedBy;
+}
+
 export function sanitizeSubmittedSocialProfiles(
   submittedProfiles:
     | readonly { platformKey: string; handle: string }[]
@@ -192,6 +204,56 @@ export function sanitizeSubmittedSocialProfiles(
   }
 
   return sanitizedProfiles;
+}
+
+export function collectRequiredPrimaryFieldErrors({
+  primaryFieldConfig,
+  submittedProfiles,
+  invitedByName,
+}: {
+  primaryFieldConfig: PrimaryFieldConfig | undefined;
+  submittedProfiles: readonly SanitizedSubmittedSocialProfile[];
+  invitedByName: string | null | undefined;
+}): string[] {
+  if (!primaryFieldConfig) return [];
+
+  const errors: string[] = [];
+  const submittedPlatformKeys = new Set(
+    submittedProfiles.map((profile) =>
+      normalizeSocialPlatformKey(profile.platformKey),
+    ),
+  );
+
+  for (const platform of primaryFieldConfig.socialPlatforms ?? []) {
+    if (platform.required !== true) continue;
+
+    const platformKey = normalizeSocialPlatformKey(platform.platformKey);
+    if (!platformKey || submittedPlatformKeys.has(platformKey)) continue;
+
+    errors.push(`${platform.label} is required`);
+  }
+
+  const invitedByConfig = primaryFieldConfig.invitedBy;
+  if (
+    invitedByConfig?.enabled === true &&
+    invitedByConfig.required === true &&
+    !normalizeInvitedByName(invitedByName)
+  ) {
+    errors.push(`${invitedByConfig.label ?? "Invited by"} is required`);
+  }
+
+  return errors;
+}
+
+export function assertRequiredPrimaryFieldValues(input: {
+  primaryFieldConfig: PrimaryFieldConfig | undefined;
+  submittedProfiles: readonly SanitizedSubmittedSocialProfile[];
+  invitedByName: string | null | undefined;
+}) {
+  const errors = collectRequiredPrimaryFieldErrors(input);
+  if (errors.length > 0) {
+    throw new Error(`Missing required fields: ${errors.join(", ")}`);
+  }
 }
 
 export function buildInvitedByPatch(

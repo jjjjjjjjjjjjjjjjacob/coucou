@@ -1,19 +1,36 @@
 "use client";
-import { SignOutButton, useAuth, useUser } from "@clerk/nextjs";
+import {
+  SignedIn,
+  SignedOut,
+  SignOutButton,
+  useUser,
+} from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
+import {
+  Cog,
+  DoorOpen,
+  LogIn,
+  LogOut,
+  Menu,
+  Settings,
+  User,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { siteConfiguration } from "@/lib/site";
 import {
   buildSatelliteReturnUrl,
   buildTenantPrimarySignInUrl,
   getSiteOrigin,
 } from "@coucou/sdk";
-import {
-  ChlorineRippleMark,
-  HamburgerMenuItem,
-  HamburgerMenuSection,
-  HeaderHamburgerMenu,
-  TenantMasthead,
-} from "@coucou/ui/tenant-template";
 
 const workspaceSlug = "club-chlorine";
 const workspaceOrganizationId =
@@ -55,16 +72,7 @@ function useRoleFlags() {
   return { isHost, isDoor };
 }
 
-/**
- * Club Chlorine uses the chlorine preset (pool-blue on black). The shared
- * `<TenantMasthead>` supplies the bar layout; we pass the composed
- * `<ChlorineMark>` as the `logoSlot` so the bar shows the actual swimmer
- * wordmark instead of plain text. The hamburger menu rides in the right
- * slot for the same reason as the legacy maison config — the slide-in
- * panel plays nicely with the Clerk loading window.
- */
 export default function HeaderClient() {
-  const { isLoaded, isSignedIn } = useAuth();
   const { isHost, isDoor } = useRoleFlags();
   const pathname = usePathname();
   const signInHref = buildPrimarySignInHref(
@@ -73,43 +81,70 @@ export default function HeaderClient() {
   const hostHref = buildCoucouWorkspaceHref("host");
   const doorHref = buildCoucouWorkspaceHref("door");
 
-  // Always render at least one item so the menu is never empty during
-  // Clerk's loading window. Compose based on the resolved auth state.
-  const menu = (
-    <HeaderHamburgerMenu brandName={siteConfiguration.brandName}>
-      <HamburgerMenuItem href="/">Home</HamburgerMenuItem>
-      {isLoaded && isSignedIn ? (
-        <>
-          {isHost ? (
-            <HamburgerMenuItem href={hostHref}>
-              {siteConfiguration.shortName} Admin
-            </HamburgerMenuItem>
-          ) : null}
-          {isDoor ? (
-            <HamburgerMenuItem href={doorHref}>Door Portal</HamburgerMenuItem>
-          ) : null}
-          <HamburgerMenuSection label="Account">
-            <HamburgerMenuItem href="/profile">Profile</HamburgerMenuItem>
-            <HamburgerMenuItem href="/account">
-              Account settings
-            </HamburgerMenuItem>
-            <SignOutButton>
-              <HamburgerMenuItem dim>Sign out</HamburgerMenuItem>
-            </SignOutButton>
-          </HamburgerMenuSection>
-        </>
-      ) : (
-        <HamburgerMenuItem href={signInHref}>Sign in</HamburgerMenuItem>
-      )}
-    </HeaderHamburgerMenu>
-  );
-
   return (
-    <TenantMasthead
-      preset={siteConfiguration.preset}
-      brandName={siteConfiguration.brandName}
-      logoSlot={<ChlorineRippleMark size={120} fg="var(--tt-fg)" />}
-      rightSlot={menu}
-    />
+    <header className="fixed top-0 z-50 w-full flex items-center justify-end gap-2 px-2 py-2 sm:px-3 sm:py-3 pointer-events-none">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="aspect-square animate-in fade-in duration-600 pointer-events-auto"
+            aria-label={`${siteConfiguration.brandName} menu`}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <SignedIn>
+            {isHost && (
+              <DropdownMenuItem asChild>
+                <Link href={hostHref} className="flex items-center gap-2">
+                  <Settings size={16} />
+                  {siteConfiguration.shortName} Admin
+                </Link>
+              </DropdownMenuItem>
+            )}
+            {isDoor && (
+              <DropdownMenuItem asChild>
+                <Link href={doorHref} className="flex items-center gap-2">
+                  <DoorOpen size={16} />
+                  Door Portal
+                </Link>
+              </DropdownMenuItem>
+            )}
+            {(isHost || isDoor) && <DropdownMenuSeparator />}
+            <DropdownMenuItem asChild>
+              <Link href="/profile" className="flex items-center gap-2">
+                <User size={16} />
+                Profile
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/account" className="flex items-center gap-2">
+                <Cog size={16} />
+                Account Settings
+              </Link>
+            </DropdownMenuItem>
+            <SignOutButton>
+              <DropdownMenuItem className="flex items-center gap-2">
+                <LogOut size={16} />
+                Sign Out
+              </DropdownMenuItem>
+            </SignOutButton>
+          </SignedIn>
+          <SignedOut>
+            <DropdownMenuItem asChild>
+              <Link
+                href={signInHref}
+                className="flex items-center gap-2"
+              >
+                <LogIn size={16} />
+                Sign In
+              </Link>
+            </DropdownMenuItem>
+          </SignedOut>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </header>
   );
 }

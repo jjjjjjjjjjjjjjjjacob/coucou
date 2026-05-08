@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import {
   DEFAULT_SOCIAL_PLATFORM_CONFIGS,
   dedupeSocialPlatformConfigs,
+  isPresetSocialPlatformKey,
   normalizeSocialPlatformKey,
   type InvitedByPrimaryFieldConfig,
   type PrimaryFieldConfig,
@@ -20,6 +21,7 @@ export type InvitedByConfigDraft = {
   enabled: boolean;
   label: string;
   placeholder: string;
+  required: boolean;
 };
 
 export type PrimaryFieldConfigDraft = {
@@ -31,6 +33,7 @@ const EMPTY_INVITED_BY: InvitedByConfigDraft = {
   enabled: false,
   label: "Invited by",
   placeholder: "Who invited you?",
+  required: true,
 };
 
 export const EMPTY_PRIMARY_FIELD_CONFIG: PrimaryFieldConfigDraft = {
@@ -41,13 +44,17 @@ export const EMPTY_PRIMARY_FIELD_CONFIG: PrimaryFieldConfigDraft = {
 export function primaryFieldConfigToDraft(
   config: PrimaryFieldConfig | undefined,
 ): PrimaryFieldConfigDraft {
+  const invitedByConfig = config?.invitedBy;
   return {
     socialPlatforms: config?.socialPlatforms ?? [],
     invitedBy: {
-      enabled: config?.invitedBy?.enabled ?? false,
-      label: config?.invitedBy?.label ?? EMPTY_INVITED_BY.label,
+      enabled: invitedByConfig?.enabled ?? false,
+      label: invitedByConfig?.label ?? EMPTY_INVITED_BY.label,
       placeholder:
-        config?.invitedBy?.placeholder ?? EMPTY_INVITED_BY.placeholder,
+        invitedByConfig?.placeholder ?? EMPTY_INVITED_BY.placeholder,
+      required: invitedByConfig
+        ? invitedByConfig.required === true
+        : EMPTY_INVITED_BY.required,
     },
   };
 }
@@ -61,6 +68,7 @@ export function draftToPrimaryFieldConfig(
       label: platform.label.trim(),
       placeholder: platform.placeholder?.trim() || undefined,
       profileUrlPrefix: platform.profileUrlPrefix?.trim() || undefined,
+      required: platform.required === true ? true : undefined,
     })),
   );
   const invitedBy: InvitedByPrimaryFieldConfig | undefined = draft.invitedBy
@@ -69,6 +77,7 @@ export function draftToPrimaryFieldConfig(
         enabled: true,
         label: draft.invitedBy.label.trim() || undefined,
         placeholder: draft.invitedBy.placeholder.trim() || undefined,
+        required: draft.invitedBy.required === true ? true : undefined,
       }
     : undefined;
   return {
@@ -123,6 +132,30 @@ export function PrimaryFieldConfigEditor({
     onChange({ ...value, invitedBy: { ...value.invitedBy, ...patch } });
   };
 
+  const updateInvitedByEnabled = (enabled: boolean) => {
+    updateInvitedBy(
+      enabled && !value.invitedBy.enabled
+        ? { enabled, required: true }
+        : { enabled },
+    );
+  };
+
+  const addCustomPlatform = () => {
+    onChange({
+      ...value,
+      socialPlatforms: [
+        ...value.socialPlatforms,
+        {
+          platformKey: "",
+          label: "",
+          placeholder: "",
+          profileUrlPrefix: "",
+          required: false,
+        },
+      ],
+    });
+  };
+
   return (
     <div className="space-y-5">
       <div className="space-y-3">
@@ -141,66 +174,111 @@ export function PrimaryFieldConfigEditor({
                 Add {platform.label}
               </Button>
             ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addCustomPlatform}
+              disabled={disabled}
+            >
+              Add custom
+            </Button>
           </div>
         </div>
         <div className="space-y-3">
-          {value.socialPlatforms.map((platform, index) => (
-            <div
-              key={`${platform.platformKey}-${index}`}
-              className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_1fr_auto]"
-            >
-              <Input
-                value={platform.platformKey}
-                onChange={(event) =>
-                  updateSocialPlatform(index, {
-                    platformKey: event.target.value,
-                  })
-                }
-                disabled={disabled}
-                placeholder="instagram"
-              />
-              <Input
-                value={platform.label}
-                onChange={(event) =>
-                  updateSocialPlatform(index, { label: event.target.value })
-                }
-                disabled={disabled}
-                placeholder="Instagram"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => removeSocialPlatform(index)}
-                disabled={disabled}
-                aria-label={`Remove ${platform.label}`}
+          {value.socialPlatforms.map((platform, index) => {
+            const isPreset = isPresetSocialPlatformKey(platform.platformKey);
+            return (
+              <div
+                key={`${platform.platformKey}-${index}`}
+                className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_1fr_auto]"
               >
-                <Trash2 className="size-4" />
-              </Button>
-              <Input
-                value={platform.placeholder ?? ""}
-                onChange={(event) =>
-                  updateSocialPlatform(index, {
-                    placeholder: event.target.value,
-                  })
-                }
-                disabled={disabled}
-                placeholder="@handle"
-                className="sm:col-span-1"
-              />
-              <Input
-                value={platform.profileUrlPrefix ?? ""}
-                onChange={(event) =>
-                  updateSocialPlatform(index, {
-                    profileUrlPrefix: event.target.value,
-                  })
-                }
-                disabled={disabled}
-                placeholder="https://instagram.com/"
-                className="sm:col-span-2"
-              />
-            </div>
-          ))}
+                <div className="flex flex-col gap-1">
+                  <Input
+                    value={platform.platformKey}
+                    onChange={(event) =>
+                      updateSocialPlatform(index, {
+                        platformKey: event.target.value,
+                      })
+                    }
+                    disabled={disabled || isPreset}
+                    placeholder="instagram"
+                    aria-label="Platform key"
+                  />
+                  {isPreset ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Preset key — locked so this platform stays consistent across events.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      Custom key. Use lowercase letters, numbers, or dashes.
+                    </p>
+                  )}
+                </div>
+                <Input
+                  value={platform.label}
+                  onChange={(event) =>
+                    updateSocialPlatform(index, { label: event.target.value })
+                  }
+                  disabled={disabled}
+                  placeholder="Instagram"
+                  aria-label="Display label"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => removeSocialPlatform(index)}
+                  disabled={disabled}
+                  aria-label={`Remove ${platform.label || platform.platformKey}`}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+                <Input
+                  value={platform.placeholder ?? ""}
+                  onChange={(event) =>
+                    updateSocialPlatform(index, {
+                      placeholder: event.target.value,
+                    })
+                  }
+                  disabled={disabled}
+                  placeholder="@handle"
+                  className="sm:col-span-1"
+                  aria-label="Placeholder"
+                />
+                <Input
+                  value={platform.profileUrlPrefix ?? ""}
+                  onChange={(event) =>
+                    updateSocialPlatform(index, {
+                      profileUrlPrefix: event.target.value,
+                    })
+                  }
+                  disabled={disabled}
+                  placeholder="https://instagram.com/"
+                  className="sm:col-span-2"
+                  aria-label="Profile URL prefix"
+                />
+                <div className="flex items-center gap-2 sm:col-span-3">
+                  <Checkbox
+                    id={`social-required-${index}`}
+                    checked={platform.required === true}
+                    onCheckedChange={(checked) =>
+                      updateSocialPlatform(index, {
+                        required: Boolean(checked),
+                      })
+                    }
+                    disabled={disabled}
+                  />
+                  <Label
+                    htmlFor={`social-required-${index}`}
+                    className="text-sm font-normal text-muted-foreground"
+                  >
+                    Required
+                  </Label>
+                </div>
+              </div>
+            );
+          })}
           {value.socialPlatforms.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No social fields configured.
@@ -215,7 +293,7 @@ export function PrimaryFieldConfigEditor({
             id="invited-by-enabled"
             checked={value.invitedBy.enabled}
             onCheckedChange={(checked) =>
-              updateInvitedBy({ enabled: Boolean(checked) })
+              updateInvitedByEnabled(Boolean(checked))
             }
             disabled={disabled}
           />
@@ -236,6 +314,22 @@ export function PrimaryFieldConfigEditor({
             disabled={disabled || !value.invitedBy.enabled}
             placeholder="Who invited you?"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="invited-by-required"
+            checked={value.invitedBy.required}
+            onCheckedChange={(checked) =>
+              updateInvitedBy({ required: Boolean(checked) })
+            }
+            disabled={disabled || !value.invitedBy.enabled}
+          />
+          <Label
+            htmlFor="invited-by-required"
+            className="text-sm font-normal text-muted-foreground"
+          >
+            Required
+          </Label>
         </div>
       </div>
     </div>
@@ -266,6 +360,15 @@ export function PrimaryFieldConfigOverrideEditor({
     }
   };
 
+  // Auto-clear the "use defaults" checkbox the moment the user makes any change
+  // so the change actually persists per-event.
+  const handleEditorChange = (next: PrimaryFieldConfigDraft) => {
+    if (useDefaults) {
+      onUseDefaultsChange(false);
+    }
+    onChange(next);
+  };
+
   return (
     <div className="space-y-4">
       <label className="flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-sm">
@@ -277,18 +380,16 @@ export function PrimaryFieldConfigOverrideEditor({
         <div className="space-y-0.5">
           <span className="font-medium">Use workspace defaults</span>
           <p className="text-xs text-muted-foreground">
-            When on, this event uses the workspace&apos;s default social fields
-            and invited-by settings. Turn off to customize per event.
+            Currently inheriting the workspace&apos;s social fields and
+            invited-by settings. Edit anything below to customize for this event.
           </p>
         </div>
       </label>
-      {!useDefaults && (
-        <PrimaryFieldConfigEditor
-          value={value}
-          onChange={onChange}
-          disabled={disabled}
-        />
-      )}
+      <PrimaryFieldConfigEditor
+        value={value}
+        onChange={handleEditorChange}
+        disabled={disabled}
+      />
     </div>
   );
 }

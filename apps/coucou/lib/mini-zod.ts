@@ -34,3 +34,31 @@ export function validateRequiredWithFirstName(
   return errors;
 }
 
+export function validateRequiredFieldValues(
+  values: Record<string, string>,
+  rules: FieldRule[] = [],
+) {
+  const errors: string[] = [];
+  for (const rule of rules) {
+    if (rule.required && !((values?.[rule.key] || "").trim())) {
+      errors.push(`${rule.label} is required`);
+    }
+  }
+  return errors;
+}
+
+export function validateRequiredPrimaryFields(
+  socialProfiles: Record<string, string>,
+  socialRules: FieldRule[] = [],
+  invitedByName?: string,
+  invitedByRule?: FieldRule,
+) {
+  const errors = validateRequiredFieldValues(socialProfiles, socialRules);
+  if (
+    invitedByRule?.required &&
+    !(invitedByName || "").trim()
+  ) {
+    errors.push(`${invitedByRule.label} is required`);
+  }
+  return errors;
+}

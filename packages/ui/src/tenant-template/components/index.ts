@@ -1,4 +1,5 @@
 export * from "./chlorine-landing";
+export * from "./chlorine-split-shell";
 export * from "./tenant-shell";
 export * from "./tenant-landing";
 export * from "./tenant-masthead";

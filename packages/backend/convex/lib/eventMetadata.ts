@@ -15,6 +15,11 @@ export const eventStatusValidator = v.union(
   v.literal("past"),
 );
 
+export const eventLifecycleValidator = v.union(
+  v.literal("draft"),
+  v.literal("published"),
+);
+
 export const eventActValidator = v.object({
   name: v.string(),
   descriptorBadges: v.optional(v.array(v.string())),
@@ -24,6 +29,8 @@ export const eventActValidator = v.object({
 });
 
 export type EventStatus = "active" | "inactive" | "past";
+
+export type EventLifecycle = "draft" | "published";
 
 export type EventActInput = {
   name: string;

@@ -71,13 +71,21 @@ export type EventPatch = Partial<Pick<Doc<"events">,
   | "themeTextColor"
   | "approvalMessage"
   | "qrCodeColor"
+  | "defersQrDelivery"
+  | "sendQrOnApproval"
 >>;
 
 /**
  * List credential patch type
  */
 export type ListCredentialPatch = Partial<Pick<Doc<"listCredentials">,
-  "listKey" | "password" | "passwordNormalized" | "generateQR" | "approvalMessage"
+  | "listKey"
+  | "password"
+  | "passwordNormalized"
+  | "generateQR"
+  | "defersQrDelivery"
+  | "sendQrOnApproval"
+  | "approvalMessage"
 >>;
 
 /**
@@ -96,8 +104,13 @@ export type ListUpdate = {
  */
 export type CredentialData = {
   listKey: string;
-  password: string;
-  passwordNormalized: string;
+  password?: string;
+  passwordNormalized?: string;
   generateQR?: boolean;
+  /**
+   * Per-list override of the event-level `sendQrOnApproval` opt-in.
+   * Omit to inherit the event default (which itself defaults to off).
+   */
+  sendQrOnApproval?: boolean;
   approvalMessage?: string;
 };

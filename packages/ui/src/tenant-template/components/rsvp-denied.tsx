@@ -30,6 +30,8 @@ const DEFAULT_HEADING: Record<string, string> = {
   dojo: "Not on this list.",
   atrium: "Not on this list.",
   maison: "Not on this list.",
+  chlorine: "Not on this list.",
+  coucou: "Not on this list.",
 };
 
 const DEFAULT_DESCRIPTION: Record<string, string> = {
@@ -38,6 +40,10 @@ const DEFAULT_DESCRIPTION: Record<string, string> = {
     "We could not place you on this list. Reach out to your host if this is a mistake.",
   maison:
     "We could not place you on this list. Write to the host if this is in error.",
+  chlorine:
+    "We could not place you on this list. Reach out to your host if you think this is a mistake.",
+  coucou:
+    "We could not place you on this list. Reach out to your host if you think this is a mistake.",
 };
 
 export function RsvpDenied({

@@ -32,6 +32,7 @@ export function SignInClient({
       redirectUrl={redirectUrl}
       preset={siteConfiguration.preset}
       event={eventThemeOverride}
+      noShell
     />
   );
 }

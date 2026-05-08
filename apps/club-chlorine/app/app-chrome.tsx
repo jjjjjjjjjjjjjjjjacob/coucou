@@ -1,23 +1,40 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ChlorineLanding } from "@coucou/ui/tenant-template";
 import HeaderClient from "./header-client";
 import { Footer } from "@/components/footer";
 
 export function AppChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isSignInRoute = pathname?.startsWith("/sign-in") ?? false;
-  // The chlorine landing's animated wordmark IS the chrome — it splits to
-  // anchor at the top and bottom edges of the viewport. Rendering the shared
-  // header/footer on top of it would double up the brand mark.
-  const isHomeRoute = pathname === "/";
+  // The Club Chlorine animated split wordmark IS the chrome — three-phase
+  // intro (centered → split → content fades in) anchors CLUB to the top
+  // edge and CHLORINE to the bottom. We mount it ONCE here so every shell
+  // route (home, sign-in, every /events/<id>/* subpath) shares the same
+  // wordmark instance — navigating between them only swaps `children`,
+  // never re-measures or re-animates the marks.
+  const isHomeRoute = pathname === "/" || pathname === "/events";
+  const isLandingShellRoute =
+    isHomeRoute ||
+    (pathname?.startsWith("/sign-in") ?? false) ||
+    /^\/events\/[^/]+\/?$/.test(pathname ?? "");
+  const isFormShellRoute = /^\/events\/[^/]+\/(rsvp|status|ticket|denied)(?:\/|$)/.test(
+    pathname ?? "",
+  );
+  const isShellRoute = isLandingShellRoute || isFormShellRoute;
 
-  // On /sign-in the auth shell owns the full viewport (its own <main>,
-  // masthead, and footer). Don't wrap it in another <main> or the
-  // outer-flex container will leave whitespace below.
-  if (isSignInRoute || isHomeRoute) {
-    return <>{children}</>;
+  if (isShellRoute) {
+    return (
+      <>
+        <HeaderClient />
+        <ChlorineLanding linkComponent={Link} wordmarkHref="/">
+          {children}
+        </ChlorineLanding>
+        <Footer />
+      </>
+    );
   }
 
   return (

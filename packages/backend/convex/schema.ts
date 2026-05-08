@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
   eventActValidator,
+  eventLifecycleValidator,
   eventStatusValidator,
 } from "./lib/eventMetadata";
 
@@ -10,12 +11,14 @@ const socialPlatformConfigValidator = v.object({
   label: v.string(),
   placeholder: v.optional(v.string()),
   profileUrlPrefix: v.optional(v.string()),
+  required: v.optional(v.boolean()),
 });
 
 const invitedByPrimaryFieldConfigValidator = v.object({
   enabled: v.boolean(),
   label: v.optional(v.string()),
   placeholder: v.optional(v.string()),
+  required: v.optional(v.boolean()),
 });
 
 const primaryFieldConfigValidator = v.object({
@@ -163,6 +166,21 @@ export default defineSchema({
     eventTimezone: v.optional(v.string()),
     isFeatured: v.optional(v.boolean()), // one event can be featured for home page redirect
     status: v.optional(eventStatusValidator),
+    lifecycle: v.optional(eventLifecycleValidator),
+    publishedAt: v.optional(v.number()),
+    /**
+     * @deprecated Use `sendQrOnApproval`. Retained for back-compat reads:
+     * legacy rows where this is explicitly `false` continue to receive
+     * QR-on-approval through the resolution helper's fallback branch.
+     */
+    defersQrDelivery: v.optional(v.boolean()),
+    /**
+     * Per-event opt-in for sending the QR code SMS at the moment of
+     * approval. When undefined or false, hosts trigger a manual blast
+     * (or scheduled batch) closer to the event instead. Per-list
+     * `sendQrOnApproval` overrides this value when set.
+     */
+    sendQrOnApproval: v.optional(v.boolean()),
     maxAttendees: v.optional(v.number()), // maximum attendees allowed per RSVP (default 1)
     customFields: v.optional(
       v.array(
@@ -203,6 +221,17 @@ export default defineSchema({
       v.object({ ivB64: v.string(), ctB64: v.string(), tagB64: v.string() }),
     ), // deprecated
     generateQR: v.optional(v.boolean()), // whether to generate QR codes for this list
+    /**
+     * @deprecated Use `sendQrOnApproval`. Retained for back-compat reads
+     * — see notes on the events.defersQrDelivery field.
+     */
+    defersQrDelivery: v.optional(v.boolean()),
+    /**
+     * Per-list override of the event-level `sendQrOnApproval` opt-in.
+     * `undefined` inherits, `true` always sends QR with approval text,
+     * `false` always defers to a host-driven blast.
+     */
+    sendQrOnApproval: v.optional(v.boolean()),
     approvalMessage: v.optional(v.string()), // per-list approval SMS copy
     createdAt: v.number(),
   })
@@ -370,6 +399,7 @@ export default defineSchema({
     createdAt: v.number(),
     disabledAt: v.optional(v.number()),
     redeemedAt: v.optional(v.number()),
+    qrDeliveredAt: v.optional(v.number()), // when QR was delivered (deferred delivery flow)
     redeemedByClerkUserId: v.optional(v.string()), // clerkUserId of redeemer (host/door)
     unredeemHistory: v.array(
       v.object({

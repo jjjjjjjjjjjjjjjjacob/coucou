@@ -50,10 +50,54 @@ type SmsActionSkipped = {
 type SmsActionResult = SmsActionSuccess | SmsActionSkipped;
 
 type PublicListCredential = {
+  _id?: string;
   listKey: string;
   generateQR?: boolean;
+  defersQrDelivery?: boolean;
+  sendQrOnApproval?: boolean;
   approvalMessage?: string;
 };
+
+type SendQrOnApprovalEventInput = {
+  defersQrDelivery?: boolean;
+  sendQrOnApproval?: boolean;
+};
+
+type SendQrOnApprovalListInput = {
+  defersQrDelivery?: boolean;
+  sendQrOnApproval?: boolean;
+};
+
+/**
+ * Resolves whether the approval SMS for a given (event, list) pair
+ * should include the QR code immediately. Default is `false` — hosts
+ * trigger a manual blast (or scheduled batch) closer to the event.
+ *
+ * Resolution order, top-down:
+ *   1. List `sendQrOnApproval` (explicit per-list opt-in/out)
+ *   2. Event `sendQrOnApproval` (explicit event-level opt-in)
+ *   3. Legacy: list or event `defersQrDelivery === false` (an explicit
+ *      historical opt-in to immediate send) → preserved as `true`
+ *   4. Default `false`
+ */
+export function resolveSendQrOnApproval(
+  event: SendQrOnApprovalEventInput | null | undefined,
+  listCredential: SendQrOnApprovalListInput | null | undefined,
+): boolean {
+  if (typeof listCredential?.sendQrOnApproval === "boolean") {
+    return listCredential.sendQrOnApproval;
+  }
+  if (typeof event?.sendQrOnApproval === "boolean") {
+    return event.sendQrOnApproval;
+  }
+  if (
+    listCredential?.defersQrDelivery === false ||
+    event?.defersQrDelivery === false
+  ) {
+    return true;
+  }
+  return false;
+}
 
 function formatApprovalMessage(
   event: ApprovalEventSummary,
@@ -77,6 +121,16 @@ function formatApprovalMessage(
 ${approvalMessage}
 
 View your ticket here: ${ticketUrl}`;
+}
+
+function formatDeferredApprovalMessage(
+  event: ApprovalEventSummary,
+): string {
+  const header = getSmsMessageHeader(event as SmsConsentEventSummary);
+  const eventLabel = event.name?.trim() || "the event";
+  return `${header}:
+
+You're approved for ${eventLabel}. Your QR code will arrive closer to the event.`;
 }
 
 function getSmsMessageHeader(
@@ -222,7 +276,9 @@ export const sendApprovalSms = action({
       const matchingCredential = listCredentials.find(
         (credential) => credential.listKey === args.listKey,
       );
-      const shouldIncludeQrCode = matchingCredential?.generateQR === true;
+      const generateQrCode = matchingCredential?.generateQR === true;
+      const sendNow = resolveSendQrOnApproval(event, matchingCredential);
+      const shouldIncludeQrCode = generateQrCode && sendNow;
 
       let qrCodeMediaUrl: string | undefined;
       if (shouldIncludeQrCode) {
@@ -236,7 +292,7 @@ export const sendApprovalSms = action({
             backgroundColor: event.themeBackgroundColor,
           },
         );
-        
+
         // Get publicly accessible URL for the QR code
         const qrCodeUrl = await ctx.runAction(
           internal.lib.qrCodeGenerator.getQrCodeUrl,
@@ -247,13 +303,18 @@ export const sendApprovalSms = action({
         qrCodeMediaUrl = qrCodeUrl || undefined;
       }
 
-      // Format approval message
-      const approvalMessage = formatApprovalMessage(
-        event as ApprovalEventSummary,
-        args.code,
-        validatedBaseUrl,
-        matchingCredential?.approvalMessage,
-      );
+      // Format approval message — when QR generation is enabled but we're
+      // waiting to blast it later, send a copy that promises the QR
+      // closer to the event so guests don't expect an immediate ticket.
+      const approvalMessage =
+        generateQrCode && !sendNow
+          ? formatDeferredApprovalMessage(event as ApprovalEventSummary)
+          : formatApprovalMessage(
+              event as ApprovalEventSummary,
+              args.code,
+              validatedBaseUrl,
+              matchingCredential?.approvalMessage,
+            );
 
       // Create SMS notification record
       const notificationId = await ctx.runMutation(
@@ -275,6 +336,13 @@ export const sendApprovalSms = action({
         mediaUrl: qrCodeMediaUrl,
         messageType: "Transactional",
       })) as TwilioSendResult;
+
+      if (shouldIncludeQrCode) {
+        await ctx.runMutation(internal.qrDelivery.markRedemptionDelivered, {
+          eventId: args.eventId,
+          clerkUserId: args.clerkUserId,
+        });
+      }
 
       return {
         success: true,

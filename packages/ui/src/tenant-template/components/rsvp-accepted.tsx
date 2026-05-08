@@ -38,12 +38,16 @@ const DEFAULT_HEADING: Record<string, string> = {
   dojo: "You're on the list.",
   atrium: "You're on the list.",
   maison: "You're on the list.",
+  chlorine: "You're on the list.",
+  coucou: "You're on the list.",
 };
 
 const DEFAULT_EYEBROW: Record<string, string> = {
   dojo: "WELCOME",
   atrium: "Welcome",
   maison: "Welcome",
+  chlorine: "WELCOME",
+  coucou: "Welcome",
 };
 
 export function RsvpAccepted({
