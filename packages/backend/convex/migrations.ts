@@ -1,10 +1,10 @@
 import { Migrations } from "@convex-dev/migrations";
-import { components } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
-import { Id } from "./_generated/dataModel";
-import { internalMutation, mutation } from "./functions";
-import { v } from "convex/values";
 import { buildApprovalMessageBackfillPatch } from "@coucou/sdk/shared/approval-messages";
+import type { IndexRange, IndexRangeBuilder } from "convex/server";
+import { v } from "convex/values";
+import { components } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import { internalMutation, mutation } from "./functions";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
 import { upsertWorkspaceRecord } from "./lib/workspaceRecords";
 
@@ -15,10 +15,20 @@ type EventCustomFieldDefinition = {
 };
 
 type MetadataRecord = Record<string, unknown>;
+type ListCredentialByEventKeyBuilder = IndexRangeBuilder<
+  Doc<"listCredentials">,
+  ["eventId", "listKey"]
+>;
 
 const dojoPomodoroWorkspaceSlug = "dojo-pomodoro";
 const dojoLegacySiteKey = "dojo";
 const dojoPomodoroWorkspaceName = "Dojo Pomodoro";
+
+function listCredentialByEventKey(query: unknown, eventId: unknown, listKey: unknown): IndexRange {
+  return (query as ListCredentialByEventKeyBuilder)
+    .eq("eventId", eventId as Id<"events">)
+    .eq("listKey", listKey as string);
+}
 const dojoPomodoroPrimaryDomain = "dojopomodoro.club";
 
 // Create migrations instance and runner
@@ -28,10 +38,9 @@ export const run = migrations.runner();
 // User name parsing migration - parse concatenated name to firstName/lastName
 export const parseUserNamesToFirstLast = migrations.define({
   table: "users",
-  migrateOne: async (ctx, user) => {
+  migrateOne: async (_ctx, user) => {
     // Only migrate if has name but missing firstName/lastName
-    if (!user.name || typeof user.name !== "string" || user.name.trim() === "")
-      return;
+    if (!user.name || typeof user.name !== "string" || user.name.trim() === "") return;
     if (user.firstName && user.lastName) return; // Already migrated
 
     const parts = user.name
@@ -62,8 +71,8 @@ export const migrateRsvpsCredentialRefs = migrations.define({
 
     const credential = await ctx.db
       .query("listCredentials")
-      .withIndex("by_event_key", (q: any) =>
-        q.eq("eventId", rsvp.eventId).eq("listKey", rsvp.listKey),
+      .withIndex("by_event_key", (query) =>
+        listCredentialByEventKey(query, rsvp.eventId, rsvp.listKey),
       )
       .unique();
 
@@ -71,9 +80,7 @@ export const migrateRsvpsCredentialRefs = migrations.define({
       return { credentialId: credential._id };
     }
     // If no credential found, log it but don't fail
-    console.warn(
-      `No credential found for RSVP ${rsvp._id} with listKey: ${rsvp.listKey}`,
-    );
+    console.warn(`No credential found for RSVP ${rsvp._id} with listKey: ${rsvp.listKey}`);
   },
 });
 
@@ -86,8 +93,8 @@ export const migrateApprovalsCredentialRefs = migrations.define({
 
     const credential = await ctx.db
       .query("listCredentials")
-      .withIndex("by_event_key", (q: any) =>
-        q.eq("eventId", approval.eventId).eq("listKey", approval.listKey),
+      .withIndex("by_event_key", (query) =>
+        listCredentialByEventKey(query, approval.eventId, approval.listKey),
       )
       .unique();
 
@@ -110,8 +117,8 @@ export const migrateRedemptionsCredentialRefs = migrations.define({
 
     const credential = await ctx.db
       .query("listCredentials")
-      .withIndex("by_event_key", (q: any) =>
-        q.eq("eventId", redemption.eventId).eq("listKey", redemption.listKey),
+      .withIndex("by_event_key", (query) =>
+        listCredentialByEventKey(query, redemption.eventId, redemption.listKey),
       )
       .unique();
 
@@ -125,22 +132,19 @@ export const migrateRedemptionsCredentialRefs = migrations.define({
   },
 });
 
-export const backfillListCredentialApprovalMessagesFromEvents =
-  migrations.define({
-    table: "listCredentials",
-    migrateOne: async (ctx, rawCredential) => {
-      const credential = rawCredential as Doc<"listCredentials">;
-      const event = (await ctx.db.get(
-        credential.eventId as Id<"events">,
-      )) as Doc<"events"> | null;
-      if (!event) return;
+export const backfillListCredentialApprovalMessagesFromEvents = migrations.define({
+  table: "listCredentials",
+  migrateOne: async (ctx, rawCredential) => {
+    const credential = rawCredential as Doc<"listCredentials">;
+    const event = (await ctx.db.get(credential.eventId as Id<"events">)) as Doc<"events"> | null;
+    if (!event) return;
 
-      return buildApprovalMessageBackfillPatch({
-        credentialApprovalMessage: credential.approvalMessage,
-        eventApprovalMessage: event.approvalMessage,
-      });
-    },
-  });
+    return buildApprovalMessageBackfillPatch({
+      credentialApprovalMessage: credential.approvalMessage,
+      eventApprovalMessage: event.approvalMessage,
+    });
+  },
+});
 
 export const backfillDojoPomodoroWorkspaceScope = mutation({
   args: {
@@ -148,17 +152,12 @@ export const backfillDojoPomodoroWorkspaceScope = mutation({
     clerkOrganizationId: v.optional(v.string()),
     clerkOrganizationSlug: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    { dryRun = false, clerkOrganizationId, clerkOrganizationSlug },
-  ) => {
+  handler: async (ctx, { dryRun = false, clerkOrganizationId, clerkOrganizationSlug }) => {
     await requireCoucouPlatformMember(ctx);
 
     let workspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (query) =>
-        query.eq("slug", dojoPomodoroWorkspaceSlug),
-      )
+      .withIndex("by_slug", (query) => query.eq("slug", dojoPomodoroWorkspaceSlug))
       .unique();
 
     if (
@@ -166,9 +165,7 @@ export const backfillDojoPomodoroWorkspaceScope = mutation({
       clerkOrganizationId &&
       workspace.clerkOrganizationId !== clerkOrganizationId
     ) {
-      throw new Error(
-        "Dojo Pomodoro workspace is already linked to another Clerk organization",
-      );
+      throw new Error("Dojo Pomodoro workspace is already linked to another Clerk organization");
     }
 
     if (!dryRun && !workspace?.clerkOrganizationId && !clerkOrganizationId) {
@@ -177,12 +174,8 @@ export const backfillDojoPomodoroWorkspaceScope = mutation({
       );
     }
 
-    let workspaceAction:
-      | "unchanged"
-      | "created"
-      | "updated"
-      | "would-create"
-      | "would-update" = "unchanged";
+    let workspaceAction: "unchanged" | "created" | "updated" | "would-create" | "would-update" =
+      "unchanged";
     const workspaceNeedsUpdate =
       workspace !== null &&
       (workspace.name !== dojoPomodoroWorkspaceName ||
@@ -216,9 +209,7 @@ export const backfillDojoPomodoroWorkspaceScope = mutation({
 
     const existingWorkspaceSite = await ctx.db
       .query("workspaceSites")
-      .withIndex("by_siteKey", (query) =>
-        query.eq("siteKey", dojoLegacySiteKey),
-      )
+      .withIndex("by_siteKey", (query) => query.eq("siteKey", dojoLegacySiteKey))
       .unique();
 
     let workspaceSiteAction:
@@ -281,15 +272,13 @@ export const backfillDojoPomodoroWorkspaceScope = mutation({
 
       const eventWorkspaceSlug = event.workspaceSlug ?? dojoLegacySiteKey;
       return (
-        eventWorkspaceSlug === dojoLegacySiteKey ||
-        eventWorkspaceSlug === dojoPomodoroWorkspaceSlug
+        eventWorkspaceSlug === dojoLegacySiteKey || eventWorkspaceSlug === dojoPomodoroWorkspaceSlug
       );
     });
 
     const eventsNeedingPatch = matchingEvents.filter(
       (event) =>
-        event.siteKey !== dojoLegacySiteKey ||
-        event.workspaceSlug !== dojoPomodoroWorkspaceSlug,
+        event.siteKey !== dojoLegacySiteKey || event.workspaceSlug !== dojoPomodoroWorkspaceSlug,
     );
 
     if (!dryRun) {
@@ -326,19 +315,12 @@ export const backfillUserNameInRsvps = migrations.define({
   table: "rsvps",
   migrateOne: async (ctx, rsvp) => {
     // Skip if userName is already populated
-    if (
-      rsvp.userName &&
-      typeof rsvp.userName === "string" &&
-      rsvp.userName.trim() !== ""
-    )
-      return;
+    if (rsvp.userName && typeof rsvp.userName === "string" && rsvp.userName.trim() !== "") return;
 
     // Get user data via clerkUserId
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerkUserId", (q: any) =>
-        q.eq("clerkUserId", rsvp.clerkUserId),
-      )
+      .withIndex("by_clerkUserId", (query) => query.eq("clerkUserId", rsvp.clerkUserId))
       .unique();
 
     if (user) {
@@ -384,9 +366,7 @@ export const backfillRsvpCustomFieldsFromUserMetadata = migrations.define({
 
     const user = (await ctx.db
       .query("users")
-      .withIndex("by_clerkUserId", (query) =>
-        query.eq("clerkUserId", rsvp.clerkUserId),
-      )
+      .withIndex("by_clerkUserId", (query) => query.eq("clerkUserId", rsvp.clerkUserId))
       .unique()) as Doc<"users"> | null;
 
     const userMetadata: MetadataRecord | undefined =
@@ -397,12 +377,8 @@ export const backfillRsvpCustomFieldsFromUserMetadata = migrations.define({
       return;
     }
 
-    const event = (await ctx.db.get(
-      rsvp.eventId as Id<"events">,
-    )) as Doc<"events"> | null;
-    const customFields = event?.customFields as
-      | EventCustomFieldDefinition[]
-      | undefined;
+    const event = (await ctx.db.get(rsvp.eventId as Id<"events">)) as Doc<"events"> | null;
+    const customFields = event?.customFields as EventCustomFieldDefinition[] | undefined;
     if (!customFields || customFields.length === 0) {
       return;
     }
@@ -420,9 +396,7 @@ export const backfillRsvpCustomFieldsFromUserMetadata = migrations.define({
       if (nextValues[metadataKey] !== undefined) continue;
       if (metadataValue === undefined || metadataValue === null) continue;
       const stringValue = String(metadataValue);
-      const finalValue = definition.trimWhitespace === false
-        ? stringValue
-        : stringValue.trim();
+      const finalValue = definition.trimWhitespace === false ? stringValue : stringValue.trim();
       if (!finalValue) continue;
       nextValues[metadataKey] = finalValue;
       modified = true;
@@ -452,10 +426,7 @@ export const backfillRsvpCustomFieldsFromUserMetadata = migrations.define({
 // Consolidate user metadata into RSVP customFieldValues and drop metadata field
 export const migrateUserMetadataIntoRsvpCustomFields = migrations.define({
   table: "users",
-  migrateOne: async (
-    ctx,
-    rawUser,
-  ): Promise<{ metadata?: undefined } | void> => {
+  migrateOne: async (ctx, rawUser): Promise<{ metadata?: undefined } | void> => {
     const user = rawUser as Doc<"users">;
     const userMetadata: MetadataRecord | undefined =
       user.metadata && typeof user.metadata === "object"
@@ -472,9 +443,7 @@ export const migrateUserMetadataIntoRsvpCustomFields = migrations.define({
 
     const rsvps = await ctx.db
       .query("rsvps")
-      .withIndex("by_user", (query) =>
-        query.eq("clerkUserId", clerkUserId),
-      )
+      .withIndex("by_user", (query) => query.eq("clerkUserId", clerkUserId))
       .collect();
 
     for (const rsvp of rsvps) {
@@ -488,12 +457,8 @@ export const migrateUserMetadataIntoRsvpCustomFields = migrations.define({
       }
       const nextValues: Record<string, string> = { ...existingValues };
 
-      const event = (await ctx.db.get(
-        rsvp.eventId as Id<"events">,
-      )) as Doc<"events"> | null;
-      const customFields = event?.customFields as
-        | EventCustomFieldDefinition[]
-        | undefined;
+      const event = (await ctx.db.get(rsvp.eventId as Id<"events">)) as Doc<"events"> | null;
+      const customFields = event?.customFields as EventCustomFieldDefinition[] | undefined;
       if (!customFields || customFields.length === 0) continue;
 
       const fieldMap = new Map<string, EventCustomFieldDefinition>(
@@ -507,9 +472,7 @@ export const migrateUserMetadataIntoRsvpCustomFields = migrations.define({
         if (nextValues[key] !== undefined) continue;
         if (value === undefined || value === null) continue;
         const stringValue = String(value);
-        const finalValue = definition.trimWhitespace === false
-          ? stringValue
-          : stringValue.trim();
+        const finalValue = definition.trimWhitespace === false ? stringValue : stringValue.trim();
         if (!finalValue) continue;
         nextValues[key] = finalValue;
         modified = true;
@@ -558,7 +521,7 @@ export const backfillSmsConsentForEvent = internalMutation({
 
     const rsvps = await ctx.db
       .query("rsvps")
-      .withIndex("by_event", (q: any) => q.eq("eventId", args.eventId))
+      .withIndex("by_event", (query) => query.eq("eventId", args.eventId))
       .collect();
 
     const results = {
@@ -607,11 +570,7 @@ export const backfillSmsConsentForEvent = internalMutation({
 // Phase 1: Validation migrations - Ensure all records have complete listKey data
 export const validateDataIntegrityBeforeCredentialIdSunset = migrations.define({
   table: "rsvps",
-  migrateOne: async (
-    ctx,
-    rawRsvp,
-    { showLogs = false }: { showLogs?: boolean } = {},
-  ) => {
+  migrateOne: async (ctx, rawRsvp, { showLogs = false }: { showLogs?: boolean } = {}) => {
     const rsvp = rawRsvp as Doc<"rsvps">;
     if (!rsvp.listKey || rsvp.listKey.trim() === "") {
       if (showLogs) {
@@ -623,9 +582,7 @@ export const validateDataIntegrityBeforeCredentialIdSunset = migrations.define({
       const credentialId = (rsvp as { credentialId?: Id<"listCredentials"> }).credentialId;
 
       if (credentialId) {
-        const credential = await ctx.db.get(
-          credentialId as Id<"listCredentials">,
-        );
+        const credential = await ctx.db.get(credentialId as Id<"listCredentials">);
         if (credential?.listKey) {
           if (showLogs) {
             console.log(
@@ -636,9 +593,7 @@ export const validateDataIntegrityBeforeCredentialIdSunset = migrations.define({
         }
       }
 
-      throw new Error(
-        `RSVP ${rsvp._id} missing listKey and no credential fallback available.`,
-      );
+      throw new Error(`RSVP ${rsvp._id} missing listKey and no credential fallback available.`);
     }
 
     return;
@@ -647,11 +602,7 @@ export const validateDataIntegrityBeforeCredentialIdSunset = migrations.define({
 
 export const validateApprovalsDataIntegrity = migrations.define({
   table: "approvals",
-  migrateOne: async (
-    ctx,
-    rawApproval,
-    { showLogs = false }: { showLogs?: boolean } = {},
-  ) => {
+  migrateOne: async (ctx, rawApproval, { showLogs = false }: { showLogs?: boolean } = {}) => {
     const approval = rawApproval as Doc<"approvals">;
     if (!approval.listKey || approval.listKey.trim() === "") {
       if (showLogs) {
@@ -663,9 +614,7 @@ export const validateApprovalsDataIntegrity = migrations.define({
       const credentialId = (approval as { credentialId?: Id<"listCredentials"> }).credentialId;
 
       if (credentialId) {
-        const credential = await ctx.db.get(
-          credentialId as Id<"listCredentials">,
-        );
+        const credential = await ctx.db.get(credentialId as Id<"listCredentials">);
         if (credential?.listKey) {
           if (showLogs) {
             console.log(
@@ -686,11 +635,7 @@ export const validateApprovalsDataIntegrity = migrations.define({
 
 export const validateRedemptionsDataIntegrity = migrations.define({
   table: "redemptions",
-  migrateOne: async (
-    ctx,
-    rawRedemption,
-    { showLogs = false }: { showLogs?: boolean } = {},
-  ) => {
+  migrateOne: async (ctx, rawRedemption, { showLogs = false }: { showLogs?: boolean } = {}) => {
     const redemption = rawRedemption as Doc<"redemptions">;
     if (!redemption.listKey || redemption.listKey.trim() === "") {
       if (showLogs) {
@@ -702,9 +647,7 @@ export const validateRedemptionsDataIntegrity = migrations.define({
       const credentialId = (redemption as { credentialId?: Id<"listCredentials"> }).credentialId;
 
       if (credentialId) {
-        const credential = await ctx.db.get(
-          credentialId as Id<"listCredentials">,
-        );
+        const credential = await ctx.db.get(credentialId as Id<"listCredentials">);
         if (credential?.listKey) {
           if (showLogs) {
             console.log(
@@ -726,7 +669,7 @@ export const validateRedemptionsDataIntegrity = migrations.define({
 // Phase 2: CredentialId removal migrations - Remove credentialId fields completely
 export const sunsetCredentialIdFromRsvps = migrations.define({
   table: "rsvps",
-  migrateOne: async (ctx, rsvp, { showLogs = false } = {}) => {
+  migrateOne: async (_ctx, rsvp, { showLogs = false } = {}) => {
     // Only remove credentialId if it exists
     if (rsvp.credentialId !== undefined) {
       if (showLogs) {
@@ -740,12 +683,10 @@ export const sunsetCredentialIdFromRsvps = migrations.define({
 
 export const sunsetCredentialIdFromApprovals = migrations.define({
   table: "approvals",
-  migrateOne: async (ctx, approval, { showLogs = false } = {}) => {
+  migrateOne: async (_ctx, approval, { showLogs = false } = {}) => {
     if (approval.credentialId !== undefined) {
       if (showLogs) {
-        console.log(
-          `[SUNSET] Removing credentialId from approval ${approval._id}`,
-        );
+        console.log(`[SUNSET] Removing credentialId from approval ${approval._id}`);
       }
       return { credentialId: undefined };
     }
@@ -755,12 +696,10 @@ export const sunsetCredentialIdFromApprovals = migrations.define({
 
 export const sunsetCredentialIdFromRedemptions = migrations.define({
   table: "redemptions",
-  migrateOne: async (ctx, redemption, { showLogs = false } = {}) => {
+  migrateOne: async (_ctx, redemption, { showLogs = false } = {}) => {
     if (redemption.credentialId !== undefined) {
       if (showLogs) {
-        console.log(
-          `[SUNSET] Removing credentialId from redemption ${redemption._id}`,
-        );
+        console.log(`[SUNSET] Removing credentialId from redemption ${redemption._id}`);
       }
       return { credentialId: undefined };
     }
@@ -771,7 +710,7 @@ export const sunsetCredentialIdFromRedemptions = migrations.define({
 // Remove legacy name field from users when firstName/lastName are present
 export const removeNameFromUsersWithFirstLastName = migrations.define({
   table: "users",
-  migrateOne: async (ctx, user, { showLogs = false } = {}) => {
+  migrateOne: async (_ctx, user, { showLogs = false } = {}) => {
     // Only remove name if user has firstName OR lastName populated
     if (
       (user.firstName && typeof user.firstName === "string" && user.firstName.trim()) ||
@@ -818,7 +757,7 @@ export const renameCustomFieldKeys = internalMutation({
     const allRsvps = eventId
       ? await ctx.db
           .query("rsvps")
-          .withIndex("by_event", (q) => q.eq("eventId", eventId))
+          .withIndex("by_event", (query) => query.eq("eventId", eventId))
           .collect()
       : await ctx.db.query("rsvps").collect();
 

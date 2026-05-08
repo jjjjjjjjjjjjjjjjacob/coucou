@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import { siteConfiguration } from "@/lib/site";
+import { cn } from "@/lib/utils";
 
 interface SiteBadgeProps {
   className?: string;
@@ -12,10 +12,7 @@ const sizeClasses = {
   lg: "size-12 text-sm",
 } as const;
 
-export function SiteBadge({
-  className,
-  size = "md",
-}: SiteBadgeProps) {
+export function SiteBadge({ className, size = "md" }: SiteBadgeProps) {
   return (
     <div
       className={cn(

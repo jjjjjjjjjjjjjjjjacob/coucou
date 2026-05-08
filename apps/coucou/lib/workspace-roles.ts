@@ -1,10 +1,5 @@
 export function hasWorkspaceWriteAccess(role: string | undefined): boolean {
-  return (
-    role === "org:admin" ||
-    role === "admin" ||
-    role === "org:host" ||
-    role === "host"
-  );
+  return role === "org:admin" || role === "admin" || role === "org:host" || role === "host";
 }
 
 export function hasWorkspaceReadAccess(role: string | undefined): boolean {

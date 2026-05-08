@@ -1,11 +1,10 @@
 "use client";
-import { useMutation } from "convex/react";
-import { usePreloadedQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Preloaded } from "convex/react";
-import { Button } from "@/components/ui/button";
-import React, { useEffect, useState } from "react";
+import { useMutation, usePreloadedQuery } from "convex/react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { siteConfiguration } from "@/lib/site";
 
 interface RedeemClientPageProps {
@@ -13,10 +12,7 @@ interface RedeemClientPageProps {
   redemptionPreload: Preloaded<typeof api.redemptions.validate>;
 }
 
-export default function RedeemClientPage({
-  code,
-  redemptionPreload,
-}: RedeemClientPageProps) {
+export default function RedeemClientPage({ code, redemptionPreload }: RedeemClientPageProps) {
   const normalizedCode = code.toUpperCase();
   const status = usePreloadedQuery(redemptionPreload);
   const redeem = useMutation(api.redemptions.redeem);
@@ -48,7 +44,9 @@ export default function RedeemClientPage({
       </header>
       <section className="space-y-3">
         <div className="rounded border border-foreground/10 p-4 text-sm space-y-2">
-          <div>Status: {status ? status.status : "—"} {doorApproved ? "(door)" : ""}</div>
+          <div>
+            Status: {status ? status.status : "—"} {doorApproved ? "(door)" : ""}
+          </div>
           {status && (status.status === "valid" || status.status === "redeemed") && (
             <div>
               <div>Name: {status.name ?? "(unknown)"}</div>

@@ -20,9 +20,7 @@ function createAuthContext(identity: UserIdentity | null) {
   };
 }
 
-function createAuthContextWithStoredCoucouMembership(
-  identity: UserIdentity | null,
-) {
+function createAuthContextWithStoredCoucouMembership(identity: UserIdentity | null) {
   const db = {
     query: (tableName: string) => ({
       withIndex: () => ({
@@ -70,17 +68,15 @@ describe("requireCoucouPlatformMember", () => {
   it("allows active members of the Coucou organization", async () => {
     const identity = createIdentity({ org_slug: "coucou" });
 
-    await expect(
-      requireCoucouPlatformMember(createAuthContext(identity)),
-    ).resolves.toBe(identity);
+    await expect(requireCoucouPlatformMember(createAuthContext(identity))).resolves.toBe(identity);
   });
 
   it("rejects users without an active Coucou organization", async () => {
     const identity = createIdentity({ org_slug: "tenant-house" });
 
-    await expect(
-      requireCoucouPlatformMember(createAuthContext(identity)),
-    ).rejects.toThrow("Forbidden");
+    await expect(requireCoucouPlatformMember(createAuthContext(identity))).rejects.toThrow(
+      "Forbidden",
+    );
   });
 
   it("allows synced Coucou members without active Coucou organization", async () => {
@@ -90,15 +86,13 @@ describe("requireCoucouPlatformMember", () => {
     });
 
     await expect(
-      requireCoucouPlatformMember(
-        createAuthContextWithStoredCoucouMembership(identity),
-      ),
+      requireCoucouPlatformMember(createAuthContextWithStoredCoucouMembership(identity)),
     ).resolves.toBe(identity);
   });
 
   it("rejects signed-out requests", async () => {
-    await expect(
-      requireCoucouPlatformMember(createAuthContext(null)),
-    ).rejects.toThrow("Unauthorized");
+    await expect(requireCoucouPlatformMember(createAuthContext(null))).rejects.toThrow(
+      "Unauthorized",
+    );
   });
 });

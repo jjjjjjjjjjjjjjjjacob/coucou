@@ -21,18 +21,14 @@ export async function resolveTenantWorkspaceScope(
   if (workspaceSlug) {
     workspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", workspaceSlug),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", workspaceSlug))
       .unique();
   }
 
   if (!workspace && siteKey) {
     const workspaceSite = await ctx.db
       .query("workspaceSites")
-      .withIndex("by_siteKey", (queryBuilder) =>
-        queryBuilder.eq("siteKey", siteKey),
-      )
+      .withIndex("by_siteKey", (queryBuilder) => queryBuilder.eq("siteKey", siteKey))
       .unique();
 
     if (workspaceSite) {
@@ -43,9 +39,7 @@ export async function resolveTenantWorkspaceScope(
   if (!workspace && siteKey) {
     workspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", siteKey),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", siteKey))
       .unique();
   }
 

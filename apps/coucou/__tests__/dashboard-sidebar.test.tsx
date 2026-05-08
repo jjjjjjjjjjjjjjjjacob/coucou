@@ -1,6 +1,5 @@
-import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "bun:test";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { AppSidebar } from "../components/app-sidebar";
 import { SidebarProvider } from "../components/ui/sidebar";
 
@@ -63,22 +62,17 @@ describe("AppSidebar tenant role navigation", () => {
 
     fireEvent.click(appearanceToggleButton);
 
+    expect(document.documentElement.classList.contains(dashboardLightModeClassName)).toBe(true);
+    expect(window.localStorage.getItem(dashboardAppearanceStorageKey)).toBe("light");
     expect(
-      document.documentElement.classList.contains(dashboardLightModeClassName),
-    ).toBe(true);
-    expect(window.localStorage.getItem(dashboardAppearanceStorageKey)).toBe(
-      "light",
-    );
-    expect(
-      screen
-        .getByRole("button", { name: "Switch to dark mode" })
-        .getAttribute("aria-pressed"),
+      screen.getByRole("button", { name: "Switch to dark mode" }).getAttribute("aria-pressed"),
     ).toBe("true");
   });
 
   it("does not render fallback user badge text when user data is missing", () => {
-    (globalThis as typeof globalThis & ClerkTestStateSetter)
-      .__setClerkTestState?.({ isSignedIn: false });
+    (globalThis as typeof globalThis & ClerkTestStateSetter).__setClerkTestState?.({
+      isSignedIn: false,
+    });
 
     renderSidebar(true);
 

@@ -1,18 +1,11 @@
 "use client";
 
-import {
-  useEffect,
-  useRef,
-  type CSSProperties,
-  type HTMLAttributes,
-  type RefObject,
-} from "react";
+import { type CSSProperties, type HTMLAttributes, type RefObject, useEffect, useRef } from "react";
 
 const SIMULATION_RESOLUTION = 512;
 const SIMULATION_TIMESTEP_MS = 1000 / 60;
 const MAX_SIMULATION_STEPS_PER_FRAME = 4;
-const MAX_FRAME_DELTA_MS =
-  SIMULATION_TIMESTEP_MS * MAX_SIMULATION_STEPS_PER_FRAME;
+const MAX_FRAME_DELTA_MS = SIMULATION_TIMESTEP_MS * MAX_SIMULATION_STEPS_PER_FRAME;
 const IDLE_INTERVAL_MS = 2500;
 const MAX_QUEUED_DROPS = 10;
 const MINIMUM_MOVE_DISTANCE = 0.003;
@@ -232,11 +225,7 @@ function clamp(value: number, min: number, max: number) {
 
 function getViewportScale(width: number, height: number): ViewportScale {
   const shortEdge = Math.min(width, height);
-  const radiusScale = clamp(
-    shortEdge / DESKTOP_BASELINE_SHORT_EDGE,
-    MINIMUM_RADIUS_SCALE,
-    1,
-  );
+  const radiusScale = clamp(shortEdge / DESKTOP_BASELINE_SHORT_EDGE, MINIMUM_RADIUS_SCALE, 1);
 
   return {
     radiusScale,
@@ -253,17 +242,13 @@ function getViewportAspect(width: number, height: number): ViewportAspect {
   };
 }
 
-function getEffectiveSettings(
-  settings: RippleSettings,
-  scale: ViewportScale,
-): RippleSettings {
+function getEffectiveSettings(settings: RippleSettings, scale: ViewportScale): RippleSettings {
   return {
     ...settings,
     dropRadius: settings.dropRadius * scale.radiusScale,
     clickRadius: settings.clickRadius * scale.radiusScale,
     refraction: settings.refraction * scale.strengthScale,
-    dropStrengthMultiplier:
-      settings.dropStrengthMultiplier * scale.strengthScale,
+    dropStrengthMultiplier: settings.dropStrengthMultiplier * scale.strengthScale,
     dropStrengthMaximum: settings.dropStrengthMaximum * scale.strengthScale,
     clickStrength: settings.clickStrength * scale.strengthScale,
     clickRippleStrength: settings.clickRippleStrength * scale.strengthScale,
@@ -277,11 +262,7 @@ function shouldReduceMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function compileShader(
-  webGlContext: WebGLRenderingContext,
-  shaderType: number,
-  source: string,
-) {
+function compileShader(webGlContext: WebGLRenderingContext, shaderType: number, source: string) {
   const shader = webGlContext.createShader(shaderType);
   if (!shader) return null;
   webGlContext.shaderSource(shader, source);
@@ -298,11 +279,7 @@ function linkProgram(
   vertexShaderSource: string,
   fragmentShaderSource: string,
 ) {
-  const vertexShader = compileShader(
-    webGlContext,
-    webGlContext.VERTEX_SHADER,
-    vertexShaderSource,
-  );
+  const vertexShader = compileShader(webGlContext, webGlContext.VERTEX_SHADER, vertexShaderSource);
   const fragmentShader = compileShader(
     webGlContext,
     webGlContext.FRAGMENT_SHADER,
@@ -400,21 +377,14 @@ function loadImage(source: string): Promise<HTMLImageElement> {
   return imagePromise;
 }
 
-function resolveCssColor(
-  colorProbe: HTMLSpanElement,
-  colorValue: string,
-): string {
+function resolveCssColor(colorProbe: HTMLSpanElement, colorValue: string): string {
   colorProbe.style.color = "";
   colorProbe.style.color = colorValue;
   return getComputedStyle(colorProbe).color || colorValue;
 }
 
 function isVisibleCssColor(colorValue: string) {
-  return (
-    colorValue.length > 0 &&
-    colorValue !== "transparent" &&
-    colorValue !== "rgba(0, 0, 0, 0)"
-  );
+  return colorValue.length > 0 && colorValue !== "transparent" && colorValue !== "rgba(0, 0, 0, 0)";
 }
 
 function hasDocumentFonts(
@@ -445,8 +415,7 @@ export function ChlorineRippleSurface({
   useEffect(() => {
     needsContentUploadRef.current = true;
     if (refreshDurationMs > 0) {
-      contentRefreshDeadlineMsRef.current =
-        performance.now() + refreshDurationMs;
+      contentRefreshDeadlineMsRef.current = performance.now() + refreshDurationMs;
     }
   }, [foregroundColor, refreshKey, refreshDurationMs]);
 
@@ -496,89 +465,35 @@ export function ChlorineRippleSurface({
     const simulationUniforms = {
       buffer: webGlContext.getUniformLocation(simulationProgram, "u_buffer"),
       texel: webGlContext.getUniformLocation(simulationProgram, "u_texel"),
-      damping: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_damping",
-      ),
+      damping: webGlContext.getUniformLocation(simulationProgram, "u_damping"),
       speed: webGlContext.getUniformLocation(simulationProgram, "u_speed"),
-      waveLength: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_waveLength",
-      ),
-      dropPosition: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_dropPosition",
-      ),
-      dropRadius: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_dropRadius",
-      ),
-      dropStrength: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_dropStrength",
-      ),
-      dropDirection: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_dropDirection",
-      ),
-      dropMomentum: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_dropMomentum",
-      ),
-      viewportAspect: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_viewportAspect",
-      ),
-      rippleCount: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_rippleCount",
-      ),
-      ripples: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_ripples[0]",
-      ),
-      clickOnly: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_clickOnly",
-      ),
+      waveLength: webGlContext.getUniformLocation(simulationProgram, "u_waveLength"),
+      dropPosition: webGlContext.getUniformLocation(simulationProgram, "u_dropPosition"),
+      dropRadius: webGlContext.getUniformLocation(simulationProgram, "u_dropRadius"),
+      dropStrength: webGlContext.getUniformLocation(simulationProgram, "u_dropStrength"),
+      dropDirection: webGlContext.getUniformLocation(simulationProgram, "u_dropDirection"),
+      dropMomentum: webGlContext.getUniformLocation(simulationProgram, "u_dropMomentum"),
+      viewportAspect: webGlContext.getUniformLocation(simulationProgram, "u_viewportAspect"),
+      rippleCount: webGlContext.getUniformLocation(simulationProgram, "u_rippleCount"),
+      ripples: webGlContext.getUniformLocation(simulationProgram, "u_ripples[0]"),
+      clickOnly: webGlContext.getUniformLocation(simulationProgram, "u_clickOnly"),
       clickRippleStrength: webGlContext.getUniformLocation(
         simulationProgram,
         "u_clickRippleStrength",
       ),
-      clickRippleSpeed: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_clickRippleSpeed",
-      ),
-      clickRippleWidth: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_clickRippleWidth",
-      ),
-      clickRippleDecay: webGlContext.getUniformLocation(
-        simulationProgram,
-        "u_clickRippleDecay",
-      ),
+      clickRippleSpeed: webGlContext.getUniformLocation(simulationProgram, "u_clickRippleSpeed"),
+      clickRippleWidth: webGlContext.getUniformLocation(simulationProgram, "u_clickRippleWidth"),
+      clickRippleDecay: webGlContext.getUniformLocation(simulationProgram, "u_clickRippleDecay"),
     };
     const renderUniforms = {
       buffer: webGlContext.getUniformLocation(renderProgram, "u_buffer"),
       content: webGlContext.getUniformLocation(renderProgram, "u_content"),
       texel: webGlContext.getUniformLocation(renderProgram, "u_texel"),
-      refraction: webGlContext.getUniformLocation(
-        renderProgram,
-        "u_refraction",
-      ),
-      specularStrength: webGlContext.getUniformLocation(
-        renderProgram,
-        "u_specularStrength",
-      ),
-      specularPower: webGlContext.getUniformLocation(
-        renderProgram,
-        "u_specularPower",
-      ),
+      refraction: webGlContext.getUniformLocation(renderProgram, "u_refraction"),
+      specularStrength: webGlContext.getUniformLocation(renderProgram, "u_specularStrength"),
+      specularPower: webGlContext.getUniformLocation(renderProgram, "u_specularPower"),
       heightTint: webGlContext.getUniformLocation(renderProgram, "u_heightTint"),
-      waveLength: webGlContext.getUniformLocation(
-        renderProgram,
-        "u_waveLength",
-      ),
+      waveLength: webGlContext.getUniformLocation(renderProgram, "u_waveLength"),
     };
 
     const maybeVertexBuffer = webGlContext.createBuffer();
@@ -593,14 +508,8 @@ export function ChlorineRippleSurface({
       new Float32Array([-1, -1, 3, -1, -1, 3]),
       webGlContext.STATIC_DRAW,
     );
-    const simulationAttribute = webGlContext.getAttribLocation(
-      simulationProgram,
-      "a_position",
-    );
-    const renderAttribute = webGlContext.getAttribLocation(
-      renderProgram,
-      "a_position",
-    );
+    const simulationAttribute = webGlContext.getAttribLocation(simulationProgram, "a_position");
+    const renderAttribute = webGlContext.getAttribLocation(renderProgram, "a_position");
 
     const maybeFirstFramebuffer = makeFramebuffer(
       webGlContext,
@@ -651,10 +560,7 @@ export function ChlorineRippleSurface({
     const viewportScaleRef = { current: getViewportScale(1, 1) };
     const viewportAspectRef = { current: getViewportAspect(1, 1) };
     const effectiveSettingsRef = {
-      current: getEffectiveSettings(
-        DEFAULT_RIPPLE_SETTINGS,
-        viewportScaleRef.current,
-      ),
+      current: getEffectiveSettings(DEFAULT_RIPPLE_SETTINGS, viewportScaleRef.current),
     };
     let lastDropPosition = { x: -1, y: -1 };
     let lastDropTimeMs = 0;
@@ -673,14 +579,7 @@ export function ChlorineRippleSurface({
     function drawTriangle(attribute: number) {
       webGlContext.bindBuffer(webGlContext.ARRAY_BUFFER, vertexBuffer);
       webGlContext.enableVertexAttribArray(attribute);
-      webGlContext.vertexAttribPointer(
-        attribute,
-        2,
-        webGlContext.FLOAT,
-        false,
-        0,
-        0,
-      );
+      webGlContext.vertexAttribPointer(attribute, 2, webGlContext.FLOAT, false, 0, 0);
       webGlContext.drawArrays(webGlContext.TRIANGLES, 0, 3);
     }
 
@@ -701,8 +600,7 @@ export function ChlorineRippleSurface({
       radius: number,
       priority = false,
     ) {
-      const directionLength =
-        Math.sqrt(directionX * directionX + directionY * directionY) || 1;
+      const directionLength = Math.sqrt(directionX * directionX + directionY * directionY) || 1;
       const drop: QueuedDrop = {
         positionX: normalizedX,
         positionY: 1 - normalizedY,
@@ -727,15 +625,7 @@ export function ChlorineRippleSurface({
 
     function queueClickRipple(normalizedX: number, normalizedY: number) {
       const settings = effectiveSettingsRef.current;
-      queueDrop(
-        normalizedX,
-        normalizedY,
-        settings.clickStrength,
-        0,
-        0,
-        settings.clickRadius,
-        true,
-      );
+      queueDrop(normalizedX, normalizedY, settings.clickStrength, 0, 0, settings.clickRadius, true);
       activeRipples.push({
         positionX: normalizedX,
         positionY: 1 - normalizedY,
@@ -748,10 +638,7 @@ export function ChlorineRippleSurface({
 
     function getPointerPosition(clientX: number, clientY: number) {
       const canvasRect = canvas.getBoundingClientRect();
-      const canvasWidth = Math.max(
-        canvasRect.width || canvas.clientWidth || window.innerWidth,
-        1,
-      );
+      const canvasWidth = Math.max(canvasRect.width || canvas.clientWidth || window.innerWidth, 1);
       const canvasHeight = Math.max(
         canvasRect.height || canvas.clientHeight || window.innerHeight,
         1,
@@ -799,6 +686,19 @@ export function ChlorineRippleSurface({
     }
 
     function resolvePieceColor(piece: ChlorineRippleSurfacePiece) {
+      // Always resolve through the non-transitioning colorProbe first.
+      // The wordmark pieces declare a `background-color` CSS transition
+      // (chlorine-split-frame's `colorTransition`, ~900ms ease) so reading
+      // their computed style mid-takeover returns an interpolated color —
+      // which would upload to the WebGL texture and leave the wordmark
+      // visually one-preset behind every tweak. The probe has no
+      // transitions, so its computed color reflects the current --tt-fg
+      // target value immediately.
+      const probedColor = resolveCssColor(colorProbe, foregroundColorRef.current);
+      if (isVisibleCssColor(probedColor)) {
+        return probedColor;
+      }
+
       const element = piece.elementRef?.current;
       if (element) {
         const computedBackgroundColor = getComputedStyle(element).backgroundColor;
@@ -807,7 +707,7 @@ export function ChlorineRippleSurface({
         }
       }
 
-      return resolveCssColor(colorProbe, foregroundColorRef.current);
+      return probedColor;
     }
 
     function uploadContent() {
@@ -815,10 +715,7 @@ export function ChlorineRippleSurface({
 
       const canvasWidth = Math.max(1, canvas.width);
       const canvasHeight = Math.max(1, canvas.height);
-      if (
-        offscreenCanvas.width !== canvasWidth ||
-        offscreenCanvas.height !== canvasHeight
-      ) {
+      if (offscreenCanvas.width !== canvasWidth || offscreenCanvas.height !== canvasHeight) {
         offscreenCanvas.width = canvasWidth;
         offscreenCanvas.height = canvasHeight;
       }
@@ -891,8 +788,7 @@ export function ChlorineRippleSurface({
 
     function renderCurrentFrame() {
       if (!hasUploadedContent) return;
-      const currentFramebuffer =
-        pingPongIndex === 0 ? firstFramebuffer : secondFramebuffer;
+      const currentFramebuffer = pingPongIndex === 0 ? firstFramebuffer : secondFramebuffer;
 
       webGlContext.useProgram(renderProgram);
       webGlContext.bindFramebuffer(webGlContext.FRAMEBUFFER, null);
@@ -901,10 +797,7 @@ export function ChlorineRippleSurface({
       webGlContext.clear(webGlContext.COLOR_BUFFER_BIT);
 
       webGlContext.activeTexture(webGlContext.TEXTURE0);
-      webGlContext.bindTexture(
-        webGlContext.TEXTURE_2D,
-        currentFramebuffer.texture,
-      );
+      webGlContext.bindTexture(webGlContext.TEXTURE_2D, currentFramebuffer.texture);
       webGlContext.uniform1i(renderUniforms.buffer, 0);
 
       webGlContext.activeTexture(webGlContext.TEXTURE1);
@@ -918,10 +811,7 @@ export function ChlorineRippleSurface({
         1 / SIMULATION_RESOLUTION,
       );
       webGlContext.uniform1f(renderUniforms.refraction, settings.refraction);
-      webGlContext.uniform1f(
-        renderUniforms.specularStrength,
-        settings.specular,
-      );
+      webGlContext.uniform1f(renderUniforms.specularStrength, settings.specular);
       webGlContext.uniform1f(renderUniforms.specularPower, settings.specPower);
       webGlContext.uniform1f(renderUniforms.heightTint, settings.heightTint);
       webGlContext.uniform1f(renderUniforms.waveLength, settings.waveLength);
@@ -930,36 +820,18 @@ export function ChlorineRippleSurface({
     }
 
     function handleResize() {
-      viewportAspectRef.current = getViewportAspect(
-        canvas.clientWidth,
-        canvas.clientHeight,
-      );
-      viewportScaleRef.current = getViewportScale(
-        canvas.clientWidth,
-        canvas.clientHeight,
-      );
+      viewportAspectRef.current = getViewportAspect(canvas.clientWidth, canvas.clientHeight);
+      viewportScaleRef.current = getViewportScale(canvas.clientWidth, canvas.clientHeight);
       effectiveSettingsRef.current = getEffectiveSettings(
         DEFAULT_RIPPLE_SETTINGS,
         viewportScaleRef.current,
       );
 
-      devicePixelRatio = Math.min(
-        window.devicePixelRatio || 1,
-        DEVICE_PIXEL_RATIO_CAP,
-      );
-      const nextCanvasWidth = Math.max(
-        1,
-        Math.floor(canvas.clientWidth * devicePixelRatio),
-      );
-      const nextCanvasHeight = Math.max(
-        1,
-        Math.floor(canvas.clientHeight * devicePixelRatio),
-      );
+      devicePixelRatio = Math.min(window.devicePixelRatio || 1, DEVICE_PIXEL_RATIO_CAP);
+      const nextCanvasWidth = Math.max(1, Math.floor(canvas.clientWidth * devicePixelRatio));
+      const nextCanvasHeight = Math.max(1, Math.floor(canvas.clientHeight * devicePixelRatio));
 
-      if (
-        canvas.width !== nextCanvasWidth ||
-        canvas.height !== nextCanvasHeight
-      ) {
+      if (canvas.width !== nextCanvasWidth || canvas.height !== nextCanvasHeight) {
         canvas.width = nextCanvasWidth;
         canvas.height = nextCanvasHeight;
       }
@@ -967,28 +839,15 @@ export function ChlorineRippleSurface({
     }
 
     function runSimulationPass(settings: RippleSettings, drop?: QueuedDrop) {
-      const readFramebuffer =
-        pingPongIndex === 0 ? firstFramebuffer : secondFramebuffer;
-      const writeFramebuffer =
-        pingPongIndex === 0 ? secondFramebuffer : firstFramebuffer;
+      const readFramebuffer = pingPongIndex === 0 ? firstFramebuffer : secondFramebuffer;
+      const writeFramebuffer = pingPongIndex === 0 ? secondFramebuffer : firstFramebuffer;
 
       webGlContext.useProgram(simulationProgram);
-      webGlContext.bindFramebuffer(
-        webGlContext.FRAMEBUFFER,
-        writeFramebuffer.framebuffer,
-      );
-      webGlContext.viewport(
-        0,
-        0,
-        SIMULATION_RESOLUTION,
-        SIMULATION_RESOLUTION,
-      );
+      webGlContext.bindFramebuffer(webGlContext.FRAMEBUFFER, writeFramebuffer.framebuffer);
+      webGlContext.viewport(0, 0, SIMULATION_RESOLUTION, SIMULATION_RESOLUTION);
 
       webGlContext.activeTexture(webGlContext.TEXTURE0);
-      webGlContext.bindTexture(
-        webGlContext.TEXTURE_2D,
-        readFramebuffer.texture,
-      );
+      webGlContext.bindTexture(webGlContext.TEXTURE_2D, readFramebuffer.texture);
       webGlContext.uniform1i(simulationUniforms.buffer, 0);
       webGlContext.uniform2f(
         simulationUniforms.texel,
@@ -997,55 +856,26 @@ export function ChlorineRippleSurface({
       );
       webGlContext.uniform1f(simulationUniforms.damping, settings.damping);
       webGlContext.uniform1f(simulationUniforms.speed, settings.waveSpeed);
-      webGlContext.uniform1f(
-        simulationUniforms.waveLength,
-        settings.waveLength,
-      );
+      webGlContext.uniform1f(simulationUniforms.waveLength, settings.waveLength);
       webGlContext.uniform2f(
         simulationUniforms.viewportAspect,
         viewportAspectRef.current.horizontal,
         viewportAspectRef.current.vertical,
       );
-      webGlContext.uniform1i(
-        simulationUniforms.rippleCount,
-        activeRipples.length,
-      );
+      webGlContext.uniform1i(simulationUniforms.rippleCount, activeRipples.length);
       webGlContext.uniform3fv(simulationUniforms.ripples, rippleUniformData);
       webGlContext.uniform1i(simulationUniforms.clickOnly, 0);
-      webGlContext.uniform1f(
-        simulationUniforms.clickRippleStrength,
-        settings.clickRippleStrength,
-      );
-      webGlContext.uniform1f(
-        simulationUniforms.clickRippleSpeed,
-        settings.clickRippleSpeed,
-      );
-      webGlContext.uniform1f(
-        simulationUniforms.clickRippleWidth,
-        settings.clickRippleWidth,
-      );
-      webGlContext.uniform1f(
-        simulationUniforms.clickRippleDecay,
-        settings.clickRippleDecay,
-      );
+      webGlContext.uniform1f(simulationUniforms.clickRippleStrength, settings.clickRippleStrength);
+      webGlContext.uniform1f(simulationUniforms.clickRippleSpeed, settings.clickRippleSpeed);
+      webGlContext.uniform1f(simulationUniforms.clickRippleWidth, settings.clickRippleWidth);
+      webGlContext.uniform1f(simulationUniforms.clickRippleDecay, settings.clickRippleDecay);
 
       if (drop) {
-        webGlContext.uniform2f(
-          simulationUniforms.dropPosition,
-          drop.positionX,
-          drop.positionY,
-        );
+        webGlContext.uniform2f(simulationUniforms.dropPosition, drop.positionX, drop.positionY);
         webGlContext.uniform1f(simulationUniforms.dropRadius, drop.radius);
         webGlContext.uniform1f(simulationUniforms.dropStrength, drop.strength);
-        webGlContext.uniform2f(
-          simulationUniforms.dropDirection,
-          drop.directionX,
-          drop.directionY,
-        );
-        webGlContext.uniform1f(
-          simulationUniforms.dropMomentum,
-          settings.dropMomentum,
-        );
+        webGlContext.uniform2f(simulationUniforms.dropDirection, drop.directionX, drop.directionY);
+        webGlContext.uniform1f(simulationUniforms.dropMomentum, settings.dropMomentum);
       } else {
         webGlContext.uniform1f(simulationUniforms.dropStrength, 0);
       }
@@ -1055,56 +885,28 @@ export function ChlorineRippleSurface({
     }
 
     function runClickRipplePass(settings: RippleSettings) {
-      const readFramebuffer =
-        pingPongIndex === 0 ? firstFramebuffer : secondFramebuffer;
-      const writeFramebuffer =
-        pingPongIndex === 0 ? secondFramebuffer : firstFramebuffer;
+      const readFramebuffer = pingPongIndex === 0 ? firstFramebuffer : secondFramebuffer;
+      const writeFramebuffer = pingPongIndex === 0 ? secondFramebuffer : firstFramebuffer;
 
       webGlContext.useProgram(simulationProgram);
-      webGlContext.bindFramebuffer(
-        webGlContext.FRAMEBUFFER,
-        writeFramebuffer.framebuffer,
-      );
-      webGlContext.viewport(
-        0,
-        0,
-        SIMULATION_RESOLUTION,
-        SIMULATION_RESOLUTION,
-      );
+      webGlContext.bindFramebuffer(webGlContext.FRAMEBUFFER, writeFramebuffer.framebuffer);
+      webGlContext.viewport(0, 0, SIMULATION_RESOLUTION, SIMULATION_RESOLUTION);
 
       webGlContext.activeTexture(webGlContext.TEXTURE0);
-      webGlContext.bindTexture(
-        webGlContext.TEXTURE_2D,
-        readFramebuffer.texture,
-      );
+      webGlContext.bindTexture(webGlContext.TEXTURE_2D, readFramebuffer.texture);
       webGlContext.uniform1i(simulationUniforms.buffer, 0);
       webGlContext.uniform2f(
         simulationUniforms.viewportAspect,
         viewportAspectRef.current.horizontal,
         viewportAspectRef.current.vertical,
       );
-      webGlContext.uniform1i(
-        simulationUniforms.rippleCount,
-        activeRipples.length,
-      );
+      webGlContext.uniform1i(simulationUniforms.rippleCount, activeRipples.length);
       webGlContext.uniform3fv(simulationUniforms.ripples, rippleUniformData);
       webGlContext.uniform1i(simulationUniforms.clickOnly, 1);
-      webGlContext.uniform1f(
-        simulationUniforms.clickRippleStrength,
-        settings.clickRippleStrength,
-      );
-      webGlContext.uniform1f(
-        simulationUniforms.clickRippleSpeed,
-        settings.clickRippleSpeed,
-      );
-      webGlContext.uniform1f(
-        simulationUniforms.clickRippleWidth,
-        settings.clickRippleWidth,
-      );
-      webGlContext.uniform1f(
-        simulationUniforms.clickRippleDecay,
-        settings.clickRippleDecay,
-      );
+      webGlContext.uniform1f(simulationUniforms.clickRippleStrength, settings.clickRippleStrength);
+      webGlContext.uniform1f(simulationUniforms.clickRippleSpeed, settings.clickRippleSpeed);
+      webGlContext.uniform1f(simulationUniforms.clickRippleWidth, settings.clickRippleWidth);
+      webGlContext.uniform1f(simulationUniforms.clickRippleDecay, settings.clickRippleDecay);
 
       drawTriangle(simulationAttribute);
       pingPongIndex = 1 - pingPongIndex;
@@ -1149,12 +951,8 @@ export function ChlorineRippleSurface({
         const ageSeconds = (now - activeRipples[rippleIndex].startedAtMs) / 1000;
         const radius = ageSeconds * settings.clickRippleSpeed;
         const amplitude =
-          settings.clickRippleStrength *
-          Math.exp(-ageSeconds * settings.clickRippleDecay);
-        if (
-          radius > settings.clickRippleMaximumRadius ||
-          amplitude < 0.0001
-        ) {
+          settings.clickRippleStrength * Math.exp(-ageSeconds * settings.clickRippleDecay);
+        if (radius > settings.clickRippleMaximumRadius || amplitude < 0.0001) {
           activeRipples.splice(rippleIndex, 1);
         }
       }
@@ -1162,19 +960,14 @@ export function ChlorineRippleSurface({
         const uniformOffset = rippleIndex * 3;
         rippleUniformData[uniformOffset] = ripple.positionX;
         rippleUniformData[uniformOffset + 1] = ripple.positionY;
-        rippleUniformData[uniformOffset + 2] =
-          (now - ripple.startedAtMs) / 1000;
+        rippleUniformData[uniformOffset + 2] = (now - ripple.startedAtMs) / 1000;
       }
 
       const simulationSteps = Math.min(
         Math.floor(simulationAccumulatorMs / SIMULATION_TIMESTEP_MS),
         MAX_SIMULATION_STEPS_PER_FRAME,
       );
-      for (
-        let simulationStep = 0;
-        simulationStep < simulationSteps;
-        simulationStep += 1
-      ) {
+      for (let simulationStep = 0; simulationStep < simulationSteps; simulationStep += 1) {
         runSimulationTick(settings);
       }
       if (activeRipples.length > 0) {
@@ -1186,9 +979,7 @@ export function ChlorineRippleSurface({
     }
 
     function resetSimulation() {
-      const blankData = new Float32Array(
-        SIMULATION_RESOLUTION * SIMULATION_RESOLUTION * 4,
-      );
+      const blankData = new Float32Array(SIMULATION_RESOLUTION * SIMULATION_RESOLUTION * 4);
       for (const framebuffer of [firstFramebuffer, secondFramebuffer]) {
         webGlContext.bindTexture(webGlContext.TEXTURE_2D, framebuffer.texture);
         webGlContext.texImage2D(
@@ -1216,10 +1007,7 @@ export function ChlorineRippleSurface({
           effectiveSettingsRef.current.dropRadius,
         );
       }
-      simulationAccumulatorMs = Math.max(
-        simulationAccumulatorMs,
-        SIMULATION_TIMESTEP_MS,
-      );
+      simulationAccumulatorMs = Math.max(simulationAccumulatorMs, SIMULATION_TIMESTEP_MS);
     }
 
     function onMouseMove(mouseEvent: MouseEvent) {
@@ -1237,8 +1025,7 @@ export function ChlorineRippleSurface({
         const scaledDelta = toShortEdgeSpace(deltaX, deltaY);
         const distance = Math.hypot(scaledDelta.x, scaledDelta.y);
         if (distance > MINIMUM_MOVE_DISTANCE) {
-          const velocity =
-            (distance / Math.max(now - lastDropTimeMs, 1)) * 1000;
+          const velocity = (distance / Math.max(now - lastDropTimeMs, 1)) * 1000;
           const strength = Math.min(
             velocity * settings.dropStrengthMultiplier,
             settings.dropStrengthMaximum,
@@ -1265,10 +1052,7 @@ export function ChlorineRippleSurface({
     function onTouchStart(touchEvent: TouchEvent) {
       const touch = touchEvent.touches[0];
       if (!touch) return;
-      const { normalizedX, normalizedY } = getPointerPosition(
-        touch.clientX,
-        touch.clientY,
-      );
+      const { normalizedX, normalizedY } = getPointerPosition(touch.clientX, touch.clientY);
       lastInteractionTimeMs = performance.now();
       lastDropPosition = { x: normalizedX, y: normalizedY };
       touchStartPosition = { x: normalizedX, y: normalizedY };
@@ -1279,10 +1063,7 @@ export function ChlorineRippleSurface({
     function onTouchMove(touchEvent: TouchEvent) {
       const touch = touchEvent.touches[0];
       if (!touch) return;
-      const { normalizedX, normalizedY } = getPointerPosition(
-        touch.clientX,
-        touch.clientY,
-      );
+      const { normalizedX, normalizedY } = getPointerPosition(touch.clientX, touch.clientY);
       const now = performance.now();
       lastInteractionTimeMs = now;
 
@@ -1294,8 +1075,7 @@ export function ChlorineRippleSurface({
         const distance = Math.hypot(scaledDelta.x, scaledDelta.y);
         if (distance > MINIMUM_MOVE_DISTANCE) {
           touchMoved = true;
-          const velocity =
-            (distance / Math.max(now - lastDropTimeMs, 1)) * 1000;
+          const velocity = (distance / Math.max(now - lastDropTimeMs, 1)) * 1000;
           const strength = Math.min(
             velocity * settings.dropStrengthMultiplier,
             settings.dropStrengthMaximum,
@@ -1339,10 +1119,7 @@ export function ChlorineRippleSurface({
       // NaN into the ripple drop queue and poison the WebGL height-map
       // until the canvas renders nothing.
       if (!mouseEvent.isTrusted) return;
-      if (
-        typeof mouseEvent.clientX !== "number" ||
-        typeof mouseEvent.clientY !== "number"
-      ) {
+      if (typeof mouseEvent.clientX !== "number" || typeof mouseEvent.clientY !== "number") {
         return;
       }
       const { normalizedX, normalizedY } = getPointerPosition(

@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
+import { api } from "@convex/_generated/api";
+import { resolvePreset } from "@coucou/sdk";
 import { useConvexAuth, useQuery } from "convex/react";
 import { Check, ChevronsUpDown, Sparkles } from "lucide-react";
-import { resolvePreset } from "@coucou/sdk";
-
-import { api } from "@convex/_generated/api";
+import { useRouter } from "next/navigation";
+import { useMemo } from "react";
+import { CoucouLogoMark } from "@/components/coucou-logo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,13 +22,12 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 import {
   buildRoleAwareDashboardPath,
   hasWorkspaceReadAccess,
   hasWorkspaceWriteAccess,
 } from "@/lib/workspace-roles";
-import { useWorkspaceScope } from "@/lib/use-workspace-scope";
-import { CoucouLogoMark } from "@/components/coucou-logo";
 
 const MAISON_STYLE_VARS = resolvePreset({
   siteConfigurationPreset: "maison",
@@ -57,9 +56,7 @@ function useAccessibleWorkspaces(): AccessibleWorkspace[] {
   );
 
   return useMemo(() => {
-    const tenantWorkspaces = Array.isArray(
-      workspaceNavigationAccess?.tenantWorkspaces,
-    )
+    const tenantWorkspaces = Array.isArray(workspaceNavigationAccess?.tenantWorkspaces)
       ? workspaceNavigationAccess.tenantWorkspaces
       : [];
 
@@ -86,11 +83,7 @@ interface SquareMarkProps {
   size?: "sm" | "md";
 }
 
-export function SquareMark({
-  initial,
-  logo = false,
-  size = "md",
-}: SquareMarkProps) {
+export function SquareMark({ initial, logo = false, size = "md" }: SquareMarkProps) {
   const dimension = size === "sm" ? 24 : 32;
   return (
     <div
@@ -139,15 +132,10 @@ export function SidebarTenantSwitcher() {
                 logo={currentBrandName === "Coucou"}
               />
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">
-                  {currentBrandName}
-                </span>
+                <span className="truncate font-semibold">{currentBrandName}</span>
                 <span className="truncate text-xs">Dashboard</span>
               </div>
-              <ChevronsUpDown
-                className="ml-auto size-4"
-                style={{ color: "var(--tt-fg-dim)" }}
-              />
+              <ChevronsUpDown className="ml-auto size-4" style={{ color: "var(--tt-fg-dim)" }} />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -162,17 +150,11 @@ export function SidebarTenantSwitcher() {
               borderColor: "var(--tt-rule-strong)",
             }}
           >
-            <DropdownMenuLabel
-              className="text-xs"
-              style={{ color: "var(--tt-fg-mute)" }}
-            >
+            <DropdownMenuLabel className="text-xs" style={{ color: "var(--tt-fg-mute)" }}>
               Workspaces
             </DropdownMenuLabel>
             {accessibleWorkspaces.length === 0 ? (
-              <DropdownMenuItem
-                disabled
-                style={{ color: "var(--tt-fg-dim)" }}
-              >
+              <DropdownMenuItem disabled style={{ color: "var(--tt-fg-dim)" }}>
                 No other workspaces
               </DropdownMenuItem>
             ) : (
@@ -192,10 +174,7 @@ export function SidebarTenantSwitcher() {
               })
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => router.push("/dashboard")}
-              className="gap-2"
-            >
+            <DropdownMenuItem onSelect={() => router.push("/dashboard")} className="gap-2">
               <Sparkles className="size-4" />
               <span className="flex-1">Go to Coucou</span>
             </DropdownMenuItem>

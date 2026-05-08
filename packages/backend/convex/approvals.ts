@@ -1,13 +1,13 @@
-import { mutation } from "./functions";
+import type { UserIdentity } from "convex/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
-import { updateRsvpInAggregate } from "./lib/rsvpAggregate";
+import { mutation } from "./functions";
 import { generateApprovalCode } from "./lib/codeGenerators";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import { updateRsvpInAggregate } from "./lib/rsvpAggregate";
 import { ensureEventInSiteScope } from "./lib/siteScope";
-import type { UserIdentity } from "convex/server";
 
-function isEmailHost(evHosts: string[], email?: string | null) {
+function _isEmailHost(evHosts: string[], email?: string | null) {
   if (!email) return false;
   const target = email.toLowerCase();
   return evHosts.some((h) => h.toLowerCase() === target);
@@ -174,7 +174,7 @@ export const approve = mutation({
     } else {
       // Re-enable existing redemption if it was disabled
       redemptionCode = existingRedemption.code;
-       // If redemption already redeemed keep status as redeemed
+      // If redemption already redeemed keep status as redeemed
       if (existingRedemption.redeemedAt) {
         ticketStatus = "redeemed";
       }

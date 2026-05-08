@@ -1,6 +1,5 @@
-import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "bun:test";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DashboardClient } from "../app/dashboard/dashboard-client";
 
 interface DashboardTestGlobal {
@@ -73,7 +72,9 @@ describe("DashboardClient", () => {
     expect(screen.getByText("Your organizations.")).toBeTruthy();
     expect(container.querySelector('[data-preset="maison"]')).toBeTruthy();
     expect(screen.getByText("Coucou Admin")).toBeTruthy();
-    expect(screen.getByText("No tenant organizations are connected to this account yet.")).toBeTruthy();
+    expect(
+      screen.getByText("No tenant organizations are connected to this account yet."),
+    ).toBeTruthy();
   });
 
   it("activates the Coucou organization before entering admin", async () => {
@@ -94,16 +95,13 @@ describe("DashboardClient", () => {
     fireEvent.click(screen.getByRole("button", { name: /Open admin/ }));
 
     await waitFor(() => {
-      expect(getClerkSetActiveCalls()).toEqual([
-        { organization: "org_coucou" },
-      ]);
+      expect(getClerkSetActiveCalls()).toEqual([{ organization: "org_coucou" }]);
       expect(getLocationAssignCalls()).toEqual(["/admin"]);
     });
     const coucouSwitchToast =
       getToastTestCalls().find(
         (toastCall) =>
-          toastCall.kind === "loading" &&
-          toastCall.message === "Switching workspace to Coucou...",
+          toastCall.kind === "loading" && toastCall.message === "Switching workspace to Coucou...",
       ) ?? null;
     expect(coucouSwitchToast?.id).toBe("toast_1");
     expect(coucouSwitchToast?.className).toBe("maison-obscur-toast");
@@ -146,9 +144,7 @@ describe("DashboardClient", () => {
 
     expect(screen.getAllByText("Dojo Pomodoro").length).toBeGreaterThan(0);
     expect(screen.getByText("dojopomodoro.club")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /Open dashboard/ }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Open dashboard/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Host/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Door/ })).toBeNull();
   });
@@ -183,9 +179,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
 
-    expect(
-      screen.getByRole("button", { name: /Open dashboard/ }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Open dashboard/ })).toBeTruthy();
     expect(screen.queryByLabelText("Primary URL")).toBeNull();
   });
 
@@ -222,9 +216,7 @@ describe("DashboardClient", () => {
     fireEvent.change(screen.getByLabelText("Primary URL"), {
       target: { value: "events.dojopomodoro.club" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Save URL for Dojo Pomodoro" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Save URL for Dojo Pomodoro" }));
 
     await waitFor(() => {
       expect(getConvexMutationCalls()).toEqual([

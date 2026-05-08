@@ -1,13 +1,9 @@
-import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "bun:test";
+import { render, screen, waitFor } from "@testing-library/react";
 import { SignInClient } from "../app/sign-in/[[...sign-in]]/sign-in-client";
 
 const internalClerkCopyPattern = new RegExp(["shared", "clerk"].join(" "), "i");
-const developerAuthCopyPattern = new RegExp(
-  ["branded", "sign-in"].join(" "),
-  "i",
-);
+const developerAuthCopyPattern = new RegExp(["branded", "sign-in"].join(" "), "i");
 
 interface SignInTestGlobal {
   __setClerkTestState?: (nextState: {
@@ -44,18 +40,14 @@ describe("SignInClient", () => {
   it("renders the dojo phone sign-in page", () => {
     render(<SignInClient redirectUrl="/events/sample" />);
 
-    expect(
-      screen.getByRole("heading", { name: "Sign in to Dojo Pomodoro" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Sign in to Dojo Pomodoro" })).toBeTruthy();
     expect(
       screen.getByText(
         "Use your phone number to open your tickets, RSVP updates, and event access.",
       ),
     ).toBeTruthy();
     expect(screen.getByLabelText("Phone number")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Text me a code" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Text me a code" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Terms" })).toBeTruthy();
     expect(screen.queryByText(internalClerkCopyPattern)).toBeNull();
     expect(screen.queryByText(developerAuthCopyPattern)).toBeNull();
@@ -65,14 +57,10 @@ describe("SignInClient", () => {
   it("redirects signed-in users to the authenticated destination", async () => {
     setClerkSignedIn(true);
 
-    render(
-      <SignInClient redirectUrl="/events/sample/ticket?source=sign-in#ticket" />,
-    );
+    render(<SignInClient redirectUrl="/events/sample/ticket?source=sign-in#ticket" />);
 
     await waitFor(() => {
-      expect(getRouterReplaceCalls()).toEqual([
-        "/events/sample/ticket?source=sign-in#ticket",
-      ]);
+      expect(getRouterReplaceCalls()).toEqual(["/events/sample/ticket?source=sign-in#ticket"]);
     });
     expect(screen.queryByLabelText("Phone number")).toBeNull();
   });

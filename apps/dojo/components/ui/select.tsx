@@ -1,7 +1,7 @@
 "use client";
-import * as React from "react";
-import { cn } from "@/lib/utils";
+import type * as React from "react";
 import { useHapticContext } from "@/contexts/haptic-context";
+import { cn } from "@/lib/utils";
 
 type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
   onValueChange?: (value: string) => void;

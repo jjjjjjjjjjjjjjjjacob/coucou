@@ -1,17 +1,17 @@
-import { v } from "convex/values";
 import {
   dedupeSocialPlatformConfigs,
+  type InvitedByPrimaryFieldConfig,
   normalizeInvitedByName,
   normalizePrimaryFieldLookupText,
   normalizeSocialHandleInput,
   normalizeSocialPlatformKey,
-  parseInvitedBySocialReference,
-  type InvitedByPrimaryFieldConfig,
   type PrimaryFieldConfig,
   type PrimarySocialPlatformConfig,
+  parseInvitedBySocialReference,
   type WorkspaceEventDefaults,
 } from "@coucou/sdk/shared/primary-fields";
 import { normalizeHexColorInput } from "@coucou/sdk/theming/build-event-theme";
+import { v } from "convex/values";
 
 export const socialPlatformConfigValidator = v.object({
   platformKey: v.string(),
@@ -120,13 +120,9 @@ export function sanitizeWorkspaceEventDefaults(
         .filter((listKey): listKey is string => Boolean(listKey)),
     ),
   );
-  const socialPlatforms = sanitizeSocialPlatformConfigs(
-    defaults.socialPlatforms,
-  );
+  const socialPlatforms = sanitizeSocialPlatformConfigs(defaults.socialPlatforms);
   const invitedBy = sanitizeInvitedByConfig(defaults.invitedBy);
-  const themeBackgroundColor = normalizeHexColorInput(
-    defaults.themeBackgroundColor,
-  );
+  const themeBackgroundColor = normalizeHexColorInput(defaults.themeBackgroundColor);
   const themeTextColor = normalizeHexColorInput(defaults.themeTextColor);
 
   if (
@@ -167,9 +163,7 @@ export function primaryFieldConfigHasEffectiveContent(
 }
 
 export function sanitizeSubmittedSocialProfiles(
-  submittedProfiles:
-    | readonly { platformKey: string; handle: string }[]
-    | undefined,
+  submittedProfiles: readonly { platformKey: string; handle: string }[] | undefined,
   primaryFieldConfig: PrimaryFieldConfig | undefined,
 ): SanitizedSubmittedSocialProfile[] {
   const configuredPlatformKeys = new Set(
@@ -219,9 +213,7 @@ export function collectRequiredPrimaryFieldErrors({
 
   const errors: string[] = [];
   const submittedPlatformKeys = new Set(
-    submittedProfiles.map((profile) =>
-      normalizeSocialPlatformKey(profile.platformKey),
-    ),
+    submittedProfiles.map((profile) => normalizeSocialPlatformKey(profile.platformKey)),
   );
 
   for (const platform of primaryFieldConfig.socialPlatforms ?? []) {
@@ -256,9 +248,7 @@ export function assertRequiredPrimaryFieldValues(input: {
   }
 }
 
-export function buildInvitedByPatch(
-  value: string | null | undefined,
-): InvitedByPatch {
+export function buildInvitedByPatch(value: string | null | undefined): InvitedByPatch {
   const invitedByName = normalizeInvitedByName(value);
   if (!invitedByName) {
     return {

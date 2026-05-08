@@ -1,4 +1,4 @@
-declare module 'qr.js' {
+declare module "qr.js" {
   interface QROptions {
     typeNumber?: number;
     errorCorrectionLevel?: string;

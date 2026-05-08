@@ -10,9 +10,5 @@ export default async function WorkspaceDoorLayout({
 }) {
   const { workspaceSlug } = await params;
 
-  return (
-    <WorkspaceDoorShell workspaceSlug={workspaceSlug}>
-      {children}
-    </WorkspaceDoorShell>
-  );
+  return <WorkspaceDoorShell workspaceSlug={workspaceSlug}>{children}</WorkspaceDoorShell>;
 }

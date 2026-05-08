@@ -1,6 +1,13 @@
 "use client";
 
-import { Input } from "@/components/ui/input";
+import { api } from "@convex/_generated/api";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Html5Qrcode } from "html5-qrcode";
+import { Camera } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,14 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
-import { api } from "@convex/_generated/api";
-import { useRef, useState, useEffect } from "react";
-import { toast } from "sonner";
-import { Camera } from "lucide-react";
-import { useSearchParams } from "next/navigation";
-import { Html5Qrcode } from "html5-qrcode";
+import { Input } from "@/components/ui/input";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 export default function ScanPage() {
@@ -72,22 +72,13 @@ export default function ScanPage() {
           setAutoRedeemed(true);
           await statusQuery.refetch();
           toast.success("Redeemed");
-        } catch (error) {
+        } catch (_error) {
           toast.error("Failed to redeem");
         }
       }
     };
     autoRedeem();
-  }, [
-    status,
-    code,
-    autoRedeemed,
-    lastAction,
-    redeem,
-    isLoading,
-    statusQuery,
-    workspaceScope,
-  ]);
+  }, [status, code, autoRedeemed, lastAction, redeem, isLoading, statusQuery, workspaceScope]);
 
   const startScanner = async () => {
     setIsScannerOpen(true);
@@ -170,16 +161,12 @@ export default function ScanPage() {
   return (
     <section className="space-y-3">
       <p className="text-sm">
-        Scan a QR code or enter the redemption code manually. Valid tickets will
-        be automatically redeemed.
+        Scan a QR code or enter the redemption code manually. Valid tickets will be automatically
+        redeemed.
       </p>
 
       <div className="flex gap-2">
-        <Button
-          variant="outline"
-          onClick={handleCameraClick}
-          className="flex items-center gap-2"
-        >
+        <Button variant="outline" onClick={handleCameraClick} className="flex items-center gap-2">
           <Camera className="h-4 w-4" />
           Open Camera
         </Button>
@@ -189,9 +176,7 @@ export default function ScanPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Scan QR Code</DialogTitle>
-            <DialogDescription>
-              Point your camera at a QR code to scan it
-            </DialogDescription>
+            <DialogDescription>Point your camera at a QR code to scan it</DialogDescription>
           </DialogHeader>
           <div className="rounded border border-foreground/10 overflow-hidden">
             <div id={scannerElementId} />
@@ -234,13 +219,12 @@ export default function ScanPage() {
             "—"
           )}
         </div>
-        {status &&
-          (status.status === "valid" || status.status === "redeemed") && (
-            <div>
-              <div>Name: {status.name ?? "(unknown)"}</div>
-              <div>List: {status.listKey}</div>
-            </div>
-          )}
+        {status && (status.status === "valid" || status.status === "redeemed") && (
+          <div>
+            <div>Name: {status.name ?? "(unknown)"}</div>
+            <div>List: {status.listKey}</div>
+          </div>
+        )}
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -259,9 +243,7 @@ export default function ScanPage() {
             Un-redeem
           </Button>
         </div>
-        {lastAction && (
-          <div className="text-foreground/70">Last action: {lastAction}</div>
-        )}
+        {lastAction && <div className="text-foreground/70">Last action: {lastAction}</div>}
       </div>
     </section>
   );

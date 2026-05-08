@@ -1,9 +1,9 @@
-import { Metadata } from "next";
-import { fetchQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import EventPageClient from "./page-client";
+import { fetchQuery } from "convex/nextjs";
+import type { Metadata } from "next";
 import { formatEventDisplayName } from "@/lib/event-display";
+import EventPageClient from "./page-client";
 
 type Props = {
   params: Promise<{ eventId: string }>;
@@ -13,7 +13,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { eventId } = await params;
 
   try {
-    const event = await fetchQuery(api.events.get, { eventId: eventId as Id<"events"> });
+    const event = await fetchQuery(api.events.get, {
+      eventId: eventId as Id<"events">,
+    });
 
     if (!event) {
       return {
@@ -25,12 +27,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     // Format the date as MM.DD.YYYY in the event's timezone
     const eventDate = new Date(event.eventDate);
     const eventTimezone = event.eventTimezone ?? "UTC";
-    const formattedDate = eventDate.toLocaleDateString("en-US", {
-      month: "2-digit",
-      day: "2-digit",
-      year: "numeric",
-      timeZone: eventTimezone,
-    }).replace(/\//g, ".");
+    const formattedDate = eventDate
+      .toLocaleDateString("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "numeric",
+        timeZone: eventTimezone,
+      })
+      .replace(/\//g, ".");
 
     const title = `Dojo Pomodoro | ${event.location} ${formattedDate}`;
     const eventDisplayName = formatEventDisplayName(event);
@@ -46,7 +50,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     let imageUrl = "/og-image.png"; // Default fallback
     if (event.flyerStorageId) {
       try {
-        const flyerData = await fetchQuery(api.files.getUrl, { storageId: event.flyerStorageId });
+        const flyerData = await fetchQuery(api.files.getUrl, {
+          storageId: event.flyerStorageId,
+        });
         if (flyerData?.url) {
           imageUrl = flyerData.url;
         }

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAction, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { useAction, useMutation } from "convex/react";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -12,13 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  getToastErrorMessage,
-  runMutationWithToast,
-} from "@/lib/toast-mutation";
+import { getToastErrorMessage, runMutationWithToast } from "@/lib/toast-mutation";
 
 interface ApplicationLike {
   _id: Id<"tenantApplications">;
@@ -58,9 +55,7 @@ export function TenantApplicationDetailDialog({
       return;
     }
 
-    setTenantAdminEmail(
-      application.tenantAdminEmail ?? application.operatorEmail ?? "",
-    );
+    setTenantAdminEmail(application.tenantAdminEmail ?? application.operatorEmail ?? "");
   }, [application, open]);
 
   if (!application) return null;
@@ -164,8 +159,7 @@ export function TenantApplicationDetailDialog({
                       {
                         loading: "Denying application...",
                         success: "Application denied",
-                        error: (error) =>
-                          getToastErrorMessage(error, "Failed to deny"),
+                        error: (error) => getToastErrorMessage(error, "Failed to deny"),
                       },
                     );
                     onClose();
@@ -195,8 +189,7 @@ export function TenantApplicationDetailDialog({
                       {
                         loading: "Accepting application...",
                         success: "Application accepted",
-                        error: (error) =>
-                          getToastErrorMessage(error, "Failed to accept"),
+                        error: (error) => getToastErrorMessage(error, "Failed to accept"),
                       },
                     );
                     onClose();

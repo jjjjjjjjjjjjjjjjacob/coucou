@@ -1,4 +1,4 @@
-import { siteConfigurations, type SiteKey } from "@coucou/sdk/site-config";
+import { type SiteKey, siteConfigurations } from "@coucou/sdk/site-config";
 
 type WorkspaceSite = {
   siteKey: string;
@@ -12,19 +12,14 @@ export type PublicUrlWorkspace = {
 } | null;
 
 function ensureProtocol(value: string): string {
-  return value.startsWith("http://") || value.startsWith("https://")
-    ? value
-    : `https://${value}`;
+  return value.startsWith("http://") || value.startsWith("https://") ? value : `https://${value}`;
 }
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
-export function buildPublicEventUrl(
-  workspace: PublicUrlWorkspace,
-  eventId: string,
-): string | null {
+export function buildPublicEventUrl(workspace: PublicUrlWorkspace, eventId: string): string | null {
   if (!workspace) return null;
 
   if (workspace.primaryDomain) {
@@ -34,8 +29,7 @@ export function buildPublicEventUrl(
 
   const sites = workspace.sites ?? [];
   for (const site of sites) {
-    const configuration =
-      siteConfigurations[site.siteKey as SiteKey] ?? undefined;
+    const configuration = siteConfigurations[site.siteKey as SiteKey] ?? undefined;
     if (configuration?.appKind === "client" && configuration.domain) {
       return `${trimTrailingSlash(configuration.domain)}/events/${eventId}`;
     }

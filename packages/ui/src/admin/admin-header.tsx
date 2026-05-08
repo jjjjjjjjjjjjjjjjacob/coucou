@@ -38,10 +38,7 @@ export function AdminHeader({ eyebrow, title, status }: AdminHeaderProps) {
         </div>
       </div>
       {status ? (
-        <div
-          className="text-[13px]"
-          style={{ color: "var(--tt-fg-dim)" }}
-        >
+        <div className="text-[13px]" style={{ color: "var(--tt-fg-dim)" }}>
           {status}
         </div>
       ) : null}

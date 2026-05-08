@@ -1,17 +1,16 @@
 "use client";
-import React from "react";
-import { useUser, UserButton } from "@clerk/nextjs";
-import { useQuery, useMutation } from "convex/react";
+import { UserButton, useUser } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Id } from "@convex/_generated/dataModel";
+import { useMutation, useQuery } from "convex/react";
+import { Calendar, ExternalLink, Mail, Phone, Settings, Users } from "lucide-react";
+import Link from "next/link";
+import React from "react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Mail, Phone, Calendar, Users, Settings, ExternalLink } from "lucide-react";
-import { Spinner } from "@/components/ui/spinner";
-import Link from "next/link";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -20,13 +19,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatEventDateTime } from "@/lib/utils";
-import { toast } from "sonner";
-import type { UserEventSharing } from "@/lib/types";
-import type { Id } from "@convex/_generated/dataModel";
-import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { coucouBaseUrl, siteConfiguration } from "@/lib/site";
+import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import type { UserEventSharing } from "@/lib/types";
+import { formatEventDateTime } from "@/lib/utils";
 
 export default function ProfilePage() {
   const { isLoaded, isSignedIn, user } = useUser();
@@ -41,13 +41,10 @@ export default function ProfilePage() {
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
   const updateSharedFields = useMutation(api.rsvps.updateSharedFields);
   const [editingRsvpId, setEditingRsvpId] = React.useState<string | null>(null);
-  const [pendingFieldValues, setPendingFieldValues] = React.useState<
-    Record<string, string>
-  >({});
-  const [isSavingSharedFields, setIsSavingSharedFields] =
-    React.useState<boolean>(false);
+  const [pendingFieldValues, setPendingFieldValues] = React.useState<Record<string, string>>({});
+  const [isSavingSharedFields, setIsSavingSharedFields] = React.useState<boolean>(false);
   const [smsUpdatingRsvpId, setSmsUpdatingRsvpId] = React.useState<string | null>(null);
-  const exampleHostName = React.useMemo(() => {
+  const _exampleHostName = React.useMemo(() => {
     if (!sharedEvents || sharedEvents.length === 0) {
       return "Neon District Events";
     }
@@ -110,9 +107,7 @@ export default function ProfilePage() {
         rsvpId: sharedEvent.rsvpId as Id<"rsvps">,
         smsConsent: !sharedEvent.smsConsent,
         smsConsentIpAddress:
-          !sharedEvent.smsConsent && consentIpAddress
-            ? consentIpAddress
-            : undefined,
+          !sharedEvent.smsConsent && consentIpAddress ? consentIpAddress : undefined,
       });
       toast.success(
         !sharedEvent.smsConsent
@@ -175,9 +170,7 @@ export default function ProfilePage() {
         <Card>
           <CardContent className="text-center py-12">
             <h2 className="text-lg font-medium mb-2">Not signed in</h2>
-            <p className="text-muted-foreground mb-6">
-              Please sign in to view your profile.
-            </p>
+            <p className="text-muted-foreground mb-6">Please sign in to view your profile.</p>
             <Link href="/sign-in">
               <Button>Sign In</Button>
             </Link>
@@ -188,12 +181,8 @@ export default function ProfilePage() {
   }
 
   const organizationMemberships = user.organizationMemberships || [];
-  const primaryEmail = user.emailAddresses.find(
-    (email) => email.id === user.primaryEmailAddressId
-  );
-  const primaryPhone = user.phoneNumbers.find(
-    (phone) => phone.id === user.primaryPhoneNumberId
-  );
+  const primaryEmail = user.emailAddresses.find((email) => email.id === user.primaryEmailAddressId);
+  const primaryPhone = user.phoneNumbers.find((phone) => phone.id === user.primaryPhoneNumberId);
   const isSharedEventsLoading = sharedEvents === undefined;
   const sharedEventCount = sharedEvents?.length ?? 0;
 
@@ -209,13 +198,12 @@ export default function ProfilePage() {
               <Avatar className="h-12 w-12">
                 <AvatarImage src={user.imageUrl} alt={user.fullName || ""} />
                 <AvatarFallback>
-                  {user.firstName?.[0]}{user.lastName?.[0]}
+                  {user.firstName?.[0]}
+                  {user.lastName?.[0]}
                 </AvatarFallback>
               </Avatar>
               <div>
-                <h2 className="text-xl font-semibold">
-                  {user.fullName || "User"}
-                </h2>
+                <h2 className="text-xl font-semibold">{user.fullName || "User"}</h2>
                 <p className="text-sm text-muted-foreground">
                   Member since{" "}
                   {new Date(user.createdAt!).toLocaleDateString("en-US", {
@@ -253,9 +241,7 @@ export default function ProfilePage() {
 
             <div className="flex items-center gap-3">
               <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span>
-                Joined {new Date(user.createdAt!).toLocaleDateString()}
-              </span>
+              <span>Joined {new Date(user.createdAt!).toLocaleDateString()}</span>
             </div>
           </CardContent>
         </Card>
@@ -270,15 +256,11 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                See all your events, saved info, and shared profile data
-                across every workspace on Coucou.
+                See all your events, saved info, and shared profile data across every workspace on
+                Coucou.
               </p>
               <Button asChild>
-                <a
-                  href={`${coucouBaseUrl}/profile`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <a href={`${coucouBaseUrl}/profile`} target="_blank" rel="noopener noreferrer">
                   Open on Coucou
                   <ExternalLink className="size-4" />
                 </a>
@@ -309,14 +291,10 @@ export default function ProfilePage() {
                           src={membership.organization.imageUrl}
                           alt={membership.organization.name}
                         />
-                        <AvatarFallback>
-                          {membership.organization.name[0]}
-                        </AvatarFallback>
+                        <AvatarFallback>{membership.organization.name[0]}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <h3 className="font-medium">
-                          {membership.organization.name}
-                        </h3>
+                        <h3 className="font-medium">{membership.organization.name}</h3>
                         <p className="text-sm text-muted-foreground">
                           {membership.organization.slug}
                         </p>
@@ -350,12 +328,14 @@ export default function ProfilePage() {
               </div>
             ) : sharedEventCount === 0 ? (
               <p className="text-sm text-muted-foreground">
-                You have not shared details with any events yet. Once you RSVP, your shared information will appear here.
+                You have not shared details with any events yet. Once you RSVP, your shared
+                information will appear here.
               </p>
             ) : (
               <div className="space-y-4">
                 <p className="text-[10px] text-muted-foreground leading-tight">
-                  RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of each event host using Dojo Pomodoro. Msg & data rates may apply. Reply STOP to cancel.
+                  RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of each
+                  event host using Dojo Pomodoro. Msg & data rates may apply. Reply STOP to cancel.
                 </p>
                 {sharedEvents?.map((sharedEvent) => {
                   const smsSenderDisplayName = resolveEventMessagingBrandName(
@@ -367,13 +347,11 @@ export default function ProfilePage() {
                     },
                     { fallback: sharedEvent.eventName ?? "Event Host" },
                   );
-                  const sharedFieldValues =
-                    sharedEvent.customFields.filter((field) => field.value && field.value.length > 0);
+                  const sharedFieldValues = sharedEvent.customFields.filter(
+                    (field) => field.value && field.value.length > 0,
+                  );
                   return (
-                    <div
-                      key={sharedEvent.rsvpId}
-                      className="border rounded-lg p-4 space-y-4"
-                    >
+                    <div key={sharedEvent.rsvpId} className="border rounded-lg p-4 space-y-4">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -478,8 +456,8 @@ export default function ProfilePage() {
               <UserButton
                 appearance={{
                   elements: {
-                    userButtonAvatarBox: "w-8 h-8"
-                  }
+                    userButtonAvatarBox: "w-8 h-8",
+                  },
                 }}
               />
               <span className="text-sm">Manage Account Settings</span>
@@ -500,7 +478,8 @@ export default function ProfilePage() {
           <DialogHeader>
             <DialogTitle>Update shared details</DialogTitle>
             <DialogDescription>
-              Adjust the information you are sharing with the host for this event. Clearing a field removes it from your shared details.
+              Adjust the information you are sharing with the host for this event. Clearing a field
+              removes it from your shared details.
             </DialogDescription>
           </DialogHeader>
           {editingEvent ? (
@@ -527,9 +506,7 @@ export default function ProfilePage() {
                           id={`shared-${field.key}`}
                           value={pendingFieldValues[field.key] ?? ""}
                           placeholder="Not shared"
-                          onChange={(event) =>
-                            handleFieldChange(field.key, event.target.value)
-                          }
+                          onChange={(event) => handleFieldChange(field.key, event.target.value)}
                         />
                         <Button
                           type="button"

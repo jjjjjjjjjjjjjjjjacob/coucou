@@ -1,9 +1,9 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { NavGroup, NavLink } from "@coucou/ui/admin";
+import { useQuery } from "convex/react";
+import { usePathname } from "next/navigation";
 
 interface AdminSidebarItem {
   href: string;

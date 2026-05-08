@@ -1,9 +1,9 @@
 "use node";
-import { action } from "./_generated/server";
+import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
+import { action } from "./_generated/server";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
-import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 
 export const resolveListByPassword = action({
   args: {
@@ -16,8 +16,7 @@ export const resolveListByPassword = action({
     ctx,
     { eventId, password, siteKey, workspaceSlug },
   ): Promise<
-    | { ok: true; listKey: string; matched: "password" | "no-password" }
-    | { ok: false }
+    { ok: true; listKey: string; matched: "password" | "no-password" } | { ok: false }
   > => {
     return await ctx.runQuery(api.credentials.resolveListByPassword, {
       eventId,
@@ -33,7 +32,10 @@ export const resolveEventByPassword = action({
     password: v.string(),
     siteKey: v.optional(v.string()),
   },
-  handler: async (ctx, { password, siteKey }): Promise<{ ok: true; eventId: string; listKey: string } | { ok: false }> => {
+  handler: async (
+    ctx,
+    { password, siteKey },
+  ): Promise<{ ok: true; eventId: string; listKey: string } | { ok: false }> => {
     const credentials = await ctx.runQuery(api.credentials.getByPassword, {
       password,
     });
@@ -82,9 +84,10 @@ export const getPasswordsForEvent = action({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
   },
-  handler: async (ctx, { eventId, siteKey, workspaceSlug }): Promise<
-    { listKey: string; password: string | null; credentialId: string }[]
-  > => {
+  handler: async (
+    ctx,
+    { eventId, siteKey, workspaceSlug },
+  ): Promise<{ listKey: string; password: string | null; credentialId: string }[]> => {
     await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
     const credentials = await ctx.runQuery(api.credentials.getHostCredsForEvent, {

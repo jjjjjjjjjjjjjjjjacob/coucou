@@ -1,11 +1,10 @@
 "use client";
 
+import type { DynamicOptionsLoadingProps } from "next/dynamic";
 import Image from "next/image";
-import React from "react";
 import type { CSSProperties } from "react";
 import { useEventBranding } from "@/contexts/event-branding-context";
 import { cn } from "@/lib/utils";
-import { DynamicOptionsLoadingProps } from "next/dynamic";
 
 export interface ClubChlorineIconProps extends DynamicOptionsLoadingProps {
   size?: number;

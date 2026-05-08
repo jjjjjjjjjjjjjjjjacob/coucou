@@ -15,10 +15,7 @@ export const eventStatusValidator = v.union(
   v.literal("past"),
 );
 
-export const eventLifecycleValidator = v.union(
-  v.literal("draft"),
-  v.literal("published"),
-);
+export const eventLifecycleValidator = v.union(v.literal("draft"), v.literal("published"));
 
 export const eventActValidator = v.object({
   name: v.string(),
@@ -87,22 +84,15 @@ export function sanitizeOptionalEventActs(
     if (trimmedSocialUrl.length > 0) {
       try {
         const parsedSocialUrl = new URL(trimmedSocialUrl);
-        if (
-          parsedSocialUrl.protocol !== "http:" &&
-            parsedSocialUrl.protocol !== "https:"
-        ) {
-          throw new EventMetadataValidationError(
-            "Act social link must use http or https",
-          );
+        if (parsedSocialUrl.protocol !== "http:" && parsedSocialUrl.protocol !== "https:") {
+          throw new EventMetadataValidationError("Act social link must use http or https");
         }
         sanitizedAct.socialUrl = parsedSocialUrl.toString();
       } catch (error) {
         if (error instanceof EventMetadataValidationError) {
           throw error;
         }
-        throw new EventMetadataValidationError(
-          "Act social link must be a valid URL",
-        );
+        throw new EventMetadataValidationError("Act social link must be a valid URL");
       }
     }
 

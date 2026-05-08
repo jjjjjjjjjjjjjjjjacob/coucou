@@ -1,35 +1,26 @@
 "use client";
-import {
-  SignedIn,
-  SignedOut,
-  SignOutButton,
-  useUser,
-} from "@clerk/nextjs";
+import { SignedIn, SignedOut, SignOutButton, useUser } from "@clerk/nextjs";
+import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl, getSiteOrigin } from "@coucou/sdk";
+import { Cog, DoorOpen, LogIn, LogOut, Settings, User } from "lucide-react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
+import DojoPomodoreIcon from "@/components/icons/dojo-pomodoro-icon";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import Link from "next/link";
-import { LogOut, LogIn, Settings, DoorOpen, User, Cog } from "lucide-react";
 import { siteConfiguration } from "@/lib/site";
-import DojoPomodoreIcon from "@/components/icons/dojo-pomodoro-icon";
-import {
-  buildSatelliteReturnUrl,
-  buildTenantPrimarySignInUrl,
-  getSiteOrigin,
-} from "@coucou/sdk";
 
 const workspaceSlug = siteConfiguration.workspaceSlug;
-const workspaceOrganizationId =
-  process.env.NEXT_PUBLIC_DOJO_CLERK_ORGANIZATION_ID ?? "";
-const coucouBaseUrl = (
-  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
-).replace(/\/+$/, "");
+const workspaceOrganizationId = process.env.NEXT_PUBLIC_DOJO_CLERK_ORGANIZATION_ID ?? "";
+const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
+  /\/+$/,
+  "",
+);
 
 function buildCoucouWorkspaceHref(surface: "host" | "door") {
   return `${coucouBaseUrl}/workspaces/${workspaceSlug}/${surface}`;
@@ -51,25 +42,18 @@ function useRoleFlags() {
   const { isSignedIn, user } = useUser();
   const workspaceMembership = user?.organizationMemberships?.find(
     (membership) =>
-      workspaceOrganizationId.length > 0 &&
-      membership.organization.id === workspaceOrganizationId,
+      workspaceOrganizationId.length > 0 && membership.organization.id === workspaceOrganizationId,
   );
   const workspaceRole = workspaceMembership?.role;
-  const isHost =
-    isSignedIn &&
-    (workspaceRole === "org:admin" || workspaceRole === "org:host");
-  const isDoor =
-    isSignedIn &&
-    (workspaceRole === "org:admin" || workspaceRole === "org:door");
+  const isHost = isSignedIn && (workspaceRole === "org:admin" || workspaceRole === "org:host");
+  const isDoor = isSignedIn && (workspaceRole === "org:admin" || workspaceRole === "org:door");
   return { isHost, isDoor };
 }
 
 export default function HeaderClient() {
   const { isHost, isDoor } = useRoleFlags();
   const pathname = usePathname();
-  const signInHref = buildPrimarySignInHref(
-    pathname ?? siteConfiguration.auth.signInRedirectPath,
-  );
+  const signInHref = buildPrimarySignInHref(pathname ?? siteConfiguration.auth.signInRedirectPath);
   const hostHref = buildCoucouWorkspaceHref("host");
   const doorHref = buildCoucouWorkspaceHref("door");
 

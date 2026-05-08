@@ -10,14 +10,10 @@ export interface ClientWorkspaceConfiguration {
 }
 
 export function getCoucouOrganizationSlug(): string {
-  return (
-    process.env.NEXT_PUBLIC_COUCOU_CLERK_ORGANIZATION_SLUG ?? "coucou"
-  ).toLowerCase();
+  return (process.env.NEXT_PUBLIC_COUCOU_CLERK_ORGANIZATION_SLUG ?? "coucou").toLowerCase();
 }
 
-export function isCoucouWorkspaceSlug(
-  workspaceSlug: string | null | undefined,
-): boolean {
+export function isCoucouWorkspaceSlug(workspaceSlug: string | null | undefined): boolean {
   return workspaceSlug === getCoucouOrganizationSlug();
 }
 
@@ -57,19 +53,11 @@ export function buildWorkspaceOperationHref(
   surface: WorkspaceOperationSurface,
   pathname = "",
 ): string {
-  const baseUrl = normalizeCoucouBaseUrl(
-    process.env.NEXT_PUBLIC_COUCOU_BASE_URL,
-  );
-  return `${baseUrl}${buildWorkspaceOperationPath(
-    workspaceSlug,
-    surface,
-    pathname,
-  )}`;
+  const baseUrl = normalizeCoucouBaseUrl(process.env.NEXT_PUBLIC_COUCOU_BASE_URL);
+  return `${baseUrl}${buildWorkspaceOperationPath(workspaceSlug, surface, pathname)}`;
 }
 
-export function getWorkspaceSlugFromPathname(
-  pathname: string | null | undefined,
-): string | null {
+export function getWorkspaceSlugFromPathname(pathname: string | null | undefined): string | null {
   const match = pathname?.match(/^\/workspaces\/([^/]+)(?:\/|$)/);
   return match?.[1] ?? null;
 }

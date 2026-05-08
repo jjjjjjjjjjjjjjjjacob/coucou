@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react";
 import type { CSSProperties } from "react";
-import type { Event } from "@/lib/types";
-import { buildEventThemeStyle } from "@/lib/event-theme";
+import React from "react";
 import { useEventBranding } from "@/contexts/event-branding-context";
+import { buildEventThemeStyle } from "@/lib/event-theme";
+import type { Event } from "@/lib/types";
 
 interface EventThemeProviderProps {
   event: Pick<Event, "themeBackgroundColor" | "themeTextColor"> | null | undefined;
@@ -51,9 +51,7 @@ export function EventThemeProvider({
     };
 
     const resolvedStyle = buildEventThemeStyle(event);
-    Object.entries(resolvedStyle).forEach(([key, value]) =>
-      applyStyleEntry(key, value),
-    );
+    Object.entries(resolvedStyle).forEach(([key, value]) => applyStyleEntry(key, value));
 
     rootElement.dataset.eventTheme = "active";
     bodyElement.dataset.eventTheme = "active";
@@ -100,8 +98,14 @@ export function EventThemeProvider({
   // outer div so the chlorine wordmark behind always shows through. Child
   // shadcn components still pick up the per-event palette via the cascading
   // CSS custom properties (`--background`, `--foreground`, etc.).
-  const { backgroundColor: _bg, color: _fg, ...transparentThemeStyle } =
-    themeStyle as CSSProperties & { backgroundColor?: string; color?: string };
+  const {
+    backgroundColor: _bg,
+    color: _fg,
+    ...transparentThemeStyle
+  } = themeStyle as CSSProperties & {
+    backgroundColor?: string;
+    color?: string;
+  };
 
   return (
     <div style={transparentThemeStyle} data-event-themed="true">

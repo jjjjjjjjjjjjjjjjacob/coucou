@@ -1,5 +1,6 @@
 "use client";
-import React from "react";
+import type { Path, PathValue } from "react-hook-form";
+import { StorageImageUpload } from "@/components/flyer-upload";
 import {
   FormControl,
   FormDescription,
@@ -9,13 +10,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { StorageImageUpload } from "@/components/flyer-upload";
-import type { UseFormReturn, BaseEventFormValues } from "@/lib/types";
-import type { Path, PathValue } from "react-hook-form";
+import type { BaseEventFormValues, UseFormReturn } from "@/lib/types";
 
-export interface EventGuestPageSectionProps<
-  FormValues extends BaseEventFormValues,
-> {
+export interface EventGuestPageSectionProps<FormValues extends BaseEventFormValues> {
   form: UseFormReturn<FormValues>;
   guestPortalImageStorageId: string | null;
   onGuestPortalImageChange: (value: string | null) => void;
@@ -28,9 +25,7 @@ export function EventGuestPageSection<FormValues extends BaseEventFormValues>({
 }: EventGuestPageSectionProps<FormValues>) {
   return (
     <div className="rounded-lg border bg-card p-4 space-y-4">
-      <h3 className="font-medium text-sm text-muted-foreground">
-        GUEST EXPERIENCE
-      </h3>
+      <h3 className="font-medium text-sm text-muted-foreground">GUEST EXPERIENCE</h3>
       <FormField
         control={form.control}
         name={"guestPortalImageStorageId" as Path<FormValues>}
@@ -41,8 +36,8 @@ export function EventGuestPageSection<FormValues extends BaseEventFormValues>({
               <span className="text-sm text-muted-foreground">(optional)</span>
             </FormLabel>
             <FormDescription>
-              Displayed on the guest status screen while approval is pending and
-              beneath approved tickets.
+              Displayed on the guest status screen while approval is pending and beneath approved
+              tickets.
             </FormDescription>
             <FormControl>
               <StorageImageUpload
@@ -76,13 +71,9 @@ export function EventGuestPageSection<FormValues extends BaseEventFormValues>({
               <FormItem>
                 <FormLabel>
                   Guest Link Button Label{" "}
-                  <span className="text-sm text-muted-foreground">
-                    (optional)
-                  </span>
+                  <span className="text-sm text-muted-foreground">(optional)</span>
                 </FormLabel>
-                <FormDescription>
-                  Provide a descriptive call-to-action for guests.
-                </FormDescription>
+                <FormDescription>Provide a descriptive call-to-action for guests.</FormDescription>
                 <FormControl>
                   <Input
                     placeholder="View event guide"
@@ -105,14 +96,11 @@ export function EventGuestPageSection<FormValues extends BaseEventFormValues>({
             return (
               <FormItem>
                 <FormLabel>
-                  Guest Link URL{" "}
-                  <span className="text-sm text-muted-foreground">
-                    (optional)
-                  </span>
+                  Guest Link URL <span className="text-sm text-muted-foreground">(optional)</span>
                 </FormLabel>
                 <FormDescription>
-                  Must be a full URL (https://example.com). Button appears only
-                  when both label and URL are provided.
+                  Must be a full URL (https://example.com). Button appears only when both label and
+                  URL are provided.
                 </FormDescription>
                 <FormControl>
                   <Input

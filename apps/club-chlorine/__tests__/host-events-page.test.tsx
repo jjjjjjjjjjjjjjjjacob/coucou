@@ -1,6 +1,5 @@
-import React from 'react'
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from "bun:test";
+import { render } from "@testing-library/react";
 
 // Mock the async server component
 const MockHostEventsPage = () => {
@@ -12,19 +11,19 @@ const MockHostEventsPage = () => {
         {/* Mock event cards would go here */}
       </div>
     </section>
-  )
-}
+  );
+};
 
-describe('Host Events Page', () => {
-  it('renders host events page without crashing', () => {
-    render(<MockHostEventsPage />)
+describe("Host Events Page", () => {
+  it("renders host events page without crashing", () => {
+    render(<MockHostEventsPage />);
     // Basic render test - just check it doesn't crash
-    expect(document.body).toBeTruthy()
-  })
+    expect(document.body).toBeTruthy();
+  });
 
-  it('displays events management interface', () => {
-    render(<MockHostEventsPage />)
+  it("displays events management interface", () => {
+    render(<MockHostEventsPage />);
     // Test basic functionality without complex mocking
-    expect(document.body).toBeTruthy()
-  })
-})
+    expect(document.body).toBeTruthy();
+  });
+});

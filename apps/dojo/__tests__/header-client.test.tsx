@@ -1,7 +1,6 @@
-import React from "react";
-import { describe, it, expect } from "bun:test";
-import { renderWithProviders, screen } from "./test-wrapper";
+import { describe, expect, it } from "bun:test";
 import userEvent from "@testing-library/user-event";
+import { renderWithProviders, screen } from "./test-wrapper";
 
 async function renderAndOpenMenu() {
   const user = userEvent.setup();
@@ -18,8 +17,12 @@ describe("HeaderClient navigation", () => {
   it("shows profile and account links for signed in users", async () => {
     await renderAndOpenMenu();
 
-    const profileLink = await screen.findByRole("menuitem", { name: /profile/i });
-    const accountLink = await screen.findByRole("menuitem", { name: /account settings/i });
+    const profileLink = await screen.findByRole("menuitem", {
+      name: /profile/i,
+    });
+    const accountLink = await screen.findByRole("menuitem", {
+      name: /account settings/i,
+    });
 
     expect(profileLink).toBeInTheDocument();
     expect(accountLink).toBeInTheDocument();

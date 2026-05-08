@@ -1,18 +1,8 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { siteAuthConfigurations } from "@coucou/sdk/site-config";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import React from "react";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-} from "bun:test";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { PhoneAuthPage } from "./phone-auth-page";
-import { siteAuthConfigurations } from "@coucou/sdk/site-config";
 
 GlobalRegistrator.register({ url: "http://localhost:3000/admin/login" });
 

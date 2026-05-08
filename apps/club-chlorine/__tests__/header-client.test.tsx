@@ -1,9 +1,7 @@
-import React from "react";
-import { describe, it, expect } from "bun:test";
-import { renderWithProviders, screen } from "./test-wrapper";
+import { describe, expect, it } from "bun:test";
 import userEvent from "@testing-library/user-event";
-
 import HeaderClient from "../app/header-client";
+import { renderWithProviders, screen } from "./test-wrapper";
 
 describe("HeaderClient navigation", () => {
   it("opens the hamburger menu and shows the home link", async () => {

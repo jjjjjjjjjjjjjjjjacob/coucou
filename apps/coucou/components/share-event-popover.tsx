@@ -1,18 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useAction } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Copy, Check } from "lucide-react";
+import { useAction } from "convex/react";
+import { Check, Copy } from "lucide-react";
+import type React from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { siteConfiguration } from "@/lib/site";
 
 type StoredCredentialPassword = {
@@ -35,9 +32,7 @@ export function ShareEventPopover({
   const [loading, setLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [copiedBasic, setCopiedBasic] = useState(false);
-  const getStoredPasswords = useAction(
-    api.credentialsNode.getPasswordsForEvent,
-  );
+  const getStoredPasswords = useAction(api.credentialsNode.getPasswordsForEvent);
 
   useEffect(() => {
     if (isOpen) {
@@ -87,9 +82,7 @@ export function ShareEventPopover({
           {/* Basic link without password */}
           <div className="flex items-center justify-between gap-2 p-2 rounded border bg-muted/20">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-muted-foreground">
-                Link only (no password)
-              </p>
+              <p className="text-xs font-medium text-muted-foreground">Link only (no password)</p>
             </div>
             <Button
               variant="outline"
@@ -97,24 +90,16 @@ export function ShareEventPopover({
               className="shrink-0"
               onClick={() => copyToClipboard(baseUrl, "basic")}
             >
-              {copiedBasic ? (
-                <Check className="h-3 w-3" />
-              ) : (
-                <Copy className="h-3 w-3" />
-              )}
+              {copiedBasic ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             </Button>
           </div>
 
           {/* Per-list links with passwords */}
           {loading ? (
-            <p className="text-xs text-muted-foreground text-center py-2">
-              Loading lists...
-            </p>
+            <p className="text-xs text-muted-foreground text-center py-2">Loading lists...</p>
           ) : storedCredentialPasswords.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                Links with password:
-              </p>
+              <p className="text-xs text-muted-foreground">Links with password:</p>
               {storedCredentialPasswords.map((credential, index) => {
                 const listUrl = credential.password
                   ? `${baseUrl}?list=${encodeURIComponent(credential.listKey)}&password=${encodeURIComponent(credential.password)}`

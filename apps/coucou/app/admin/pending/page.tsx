@@ -1,19 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import {
-  AdminHeader,
-  AdminSection,
-  Kpi,
-  KpiRow,
-} from "@coucou/ui/admin";
-import {
-  AdminDataTable,
-  type AdminDataTableColumn,
-} from "@/components/admin/admin-data-table";
+import { AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
+import { useQuery } from "convex/react";
+import { useState } from "react";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
 import { TenantApplicationDetailDialog } from "@/components/admin/tenant-application-detail-dialog";
 import { Select, SelectOption } from "@/components/ui/select";
 
@@ -47,9 +39,9 @@ function formatRelative(timestamp: number): string {
 
 export default function AdminPendingPage() {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "pending" | "accepted" | "denied" | "all"
-  >("pending");
+  const [statusFilter, setStatusFilter] = useState<"pending" | "accepted" | "denied" | "all">(
+    "pending",
+  );
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorStack, setCursorStack] = useState<string[]>([]);
   const [selected, setSelected] = useState<ApplicationRow | null>(null);
@@ -104,9 +96,7 @@ export default function AdminPendingPage() {
       label: "",
       width: "10%",
       alignRight: true,
-      render: () => (
-        <span style={{ color: "var(--tt-fg)" }}>read →</span>
-      ),
+      render: () => <span style={{ color: "var(--tt-fg)" }}>read →</span>,
     },
   ];
 
@@ -117,9 +107,7 @@ export default function AdminPendingPage() {
         title="Pending applications."
         status={
           <span>
-            ·{" "}
-            {applications?.totalCount ?? 0}{" "}
-            {statusFilter === "all" ? "total" : statusFilter}
+            · {applications?.totalCount ?? 0} {statusFilter === "all" ? "total" : statusFilter}
           </span>
         }
       />
@@ -148,13 +136,7 @@ export default function AdminPendingPage() {
             <Select
               value={statusFilter}
               onChange={(event) => {
-                setStatusFilter(
-                  event.target.value as
-                    | "pending"
-                    | "accepted"
-                    | "denied"
-                    | "all",
-                );
+                setStatusFilter(event.target.value as "pending" | "accepted" | "denied" | "all");
                 setCursor(null);
                 setCursorStack([]);
               }}

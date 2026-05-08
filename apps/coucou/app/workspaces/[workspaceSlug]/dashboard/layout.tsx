@@ -11,8 +11,6 @@ export default async function WorkspaceDashboardLayout({
   const { workspaceSlug } = await params;
 
   return (
-    <WorkspaceDashboardShell workspaceSlug={workspaceSlug}>
-      {children}
-    </WorkspaceDashboardShell>
+    <WorkspaceDashboardShell workspaceSlug={workspaceSlug}>{children}</WorkspaceDashboardShell>
   );
 }

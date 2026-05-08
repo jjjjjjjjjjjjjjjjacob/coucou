@@ -1,5 +1,7 @@
 "use client";
-import React from "react";
+import type { Path } from "react-hook-form";
+import { EventIconUpload } from "@/components/event-icon-upload";
+import { FlyerUpload } from "@/components/flyer-upload";
 import {
   FormControl,
   FormDescription,
@@ -9,14 +11,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { FlyerUpload } from "@/components/flyer-upload";
-import { EventIconUpload } from "@/components/event-icon-upload";
-import type { UseFormReturn, BaseEventFormValues } from "@/lib/types";
-import type { Path } from "react-hook-form";
 import {
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
 } from "@/lib/event-theme";
+import type { BaseEventFormValues, UseFormReturn } from "@/lib/types";
 
 export interface EventLookSectionProps<FormValues extends BaseEventFormValues> {
   form: UseFormReturn<FormValues>;
@@ -45,9 +44,7 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
             return (
               <FormItem>
                 <FormLabel>Background Color</FormLabel>
-                <FormDescription>
-                  Applied to guest RSVP and ticket pages.
-                </FormDescription>
+                <FormDescription>Applied to guest RSVP and ticket pages.</FormDescription>
                 <FormControl>
                   <Input
                     type="color"
@@ -72,9 +69,7 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
             return (
               <FormItem>
                 <FormLabel>Primary Text Color</FormLabel>
-                <FormDescription>
-                  Used for emphasis across guest experiences.
-                </FormDescription>
+                <FormDescription>Used for emphasis across guest experiences.</FormDescription>
                 <FormControl>
                   <Input
                     type="color"
@@ -97,20 +92,14 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
           render={() => (
             <FormItem className="md:col-span-2">
               <FormLabel>
-                Event Icon{" "}
-                <span className="text-sm text-muted-foreground">
-                  (optional)
-                </span>
+                Event Icon <span className="text-sm text-muted-foreground">(optional)</span>
               </FormLabel>
               <FormDescription>
-                Overrides the default favicon and navigation icon wherever
-                custom theming is applied.
+                Overrides the default favicon and navigation icon wherever custom theming is
+                applied.
               </FormDescription>
               <FormControl>
-                <EventIconUpload
-                  value={eventIconStorageId}
-                  onChange={onEventIconChange}
-                />
+                <EventIconUpload value={eventIconStorageId} onChange={onEventIconChange} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -142,22 +131,16 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
               return (
                 <FormItem>
                   <FormLabel>
-                    QR Code Color{" "}
-                    <span className="text-sm text-muted-foreground">
-                      (optional)
-                    </span>
+                    QR Code Color <span className="text-sm text-muted-foreground">(optional)</span>
                   </FormLabel>
                   <FormDescription>
-                    Guest QR codes now use the event theme colors above. This
-                    legacy field is kept for compatibility.
+                    Guest QR codes now use the event theme colors above. This legacy field is kept
+                    for compatibility.
                   </FormDescription>
                   <FormControl>
                     <Input
                       type="color"
-                      value={
-                        (typeof value === "string" ? value : undefined) ??
-                        "#000000"
-                      }
+                      value={(typeof value === "string" ? value : undefined) ?? "#000000"}
                       onChange={(event) => onChange(event.target.value)}
                       disabled
                       className="h-10 w-full p-1 disabled:cursor-not-allowed"

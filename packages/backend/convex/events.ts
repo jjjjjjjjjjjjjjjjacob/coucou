@@ -1,41 +1,50 @@
-import { mutation, query } from "./functions";
 import { v } from "convex/values";
-import { EventPatch, ValidationError, NotFoundError } from "./lib/types";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import {
-  ensureEventInSiteScope,
-  eventMatchesSiteScope,
-} from "./lib/siteScope";
-import { requireWorkspaceHost } from "./lib/workspaceAuth";
 import { writeAuditEntry } from "./audit";
+import { mutation, query } from "./functions";
 import {
   primaryFieldConfigFromWorkspaceDefaults,
   primaryFieldConfigHasEffectiveContent,
   primaryFieldConfigValidator,
 } from "./lib/primaryFields";
+import { ensureEventInSiteScope, eventMatchesSiteScope } from "./lib/siteScope";
+import { type EventPatch, NotFoundError, ValidationError } from "./lib/types";
+import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
-async function applyWorkspacePrimaryFieldFallback<
-  TEvent extends Doc<"events"> | null,
->(ctx: QueryCtx, event: TEvent): Promise<TEvent> {
+async function applyWorkspacePrimaryFieldFallback<TEvent extends Doc<"events"> | null>(
+  ctx: QueryCtx,
+  event: TEvent,
+): Promise<TEvent> {
   if (!event) return event;
   if (primaryFieldConfigHasEffectiveContent(event.primaryFieldConfig)) {
     return event;
   }
   if (!event.workspaceSlug) return event;
-  const workspace = await ctx.db
-    .query("workspaces")
-    .withIndex("by_slug", (queryBuilder) =>
-      queryBuilder.eq("slug", event.workspaceSlug!),
-    )
-    .unique();
-  const fallback = primaryFieldConfigFromWorkspaceDefaults(
-    workspace?.eventDefaults,
-  );
+  // Defensive lookup — `unique()` throws on >1 match, and a transient
+  // schema oddity here would otherwise propagate as a Server Error to
+  // the satellite (where it surfaces as a busted error screen on the
+  // post-sign-in redirect). Returning the event as-is is safe: the
+  // caller just doesn't get the workspace fallback.
+  let workspace: Doc<"workspaces"> | null = null;
+  try {
+    workspace = await ctx.db
+      .query("workspaces")
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", event.workspaceSlug!))
+      .unique();
+  } catch (error) {
+    console.error("applyWorkspacePrimaryFieldFallback: workspace lookup failed", {
+      workspaceSlug: event.workspaceSlug,
+      error,
+    });
+    return event;
+  }
+  const fallback = primaryFieldConfigFromWorkspaceDefaults(workspace?.eventDefaults);
   if (!fallback) return event;
   return { ...event, primaryFieldConfig: fallback } as TEvent;
 }
+
 import {
   eventActValidator,
   eventLifecycleValidator,
@@ -106,8 +115,7 @@ export const insertWithCreds = mutation({
     });
 
     const now = Date.now();
-    if (args.eventDate < now)
-      throw new Error("Event date must be in the future");
+    if (args.eventDate < now) throw new Error("Event date must be in the future");
     const eventId = await ctx.db.insert("events", {
       workspaceSlug: args.workspaceSlug,
       siteKey: args.siteKey,
@@ -354,9 +362,9 @@ export const update = mutation({
       const newFields = args.customFields;
 
       // Build maps for comparison (keyed by label to detect renames)
-      const oldFieldMap = new Map<string, typeof oldFields[0]>();
-      const newFieldMap = new Map<string, typeof newFields[0]>();
-      
+      const oldFieldMap = new Map<string, (typeof oldFields)[0]>();
+      const newFieldMap = new Map<string, (typeof newFields)[0]>();
+
       for (const field of oldFields) {
         oldFieldMap.set(field.label, field);
       }
@@ -562,7 +570,9 @@ export const removeListCredential = mutation({
       workspaceSlug,
     });
 
-    console.log(`[DELETE] Removing list credential ${id} (${credential.listKey}) for event ${credential.eventId}`);
+    console.log(
+      `[DELETE] Removing list credential ${id} (${credential.listKey}) for event ${credential.eventId}`,
+    );
 
     // Simply delete the credential - trigger handles cascading automatically!
     await ctx.db.delete(id);
@@ -600,25 +610,30 @@ export const updateListCredentialWithCascade = mutation({
 
     // Check if listKey is changing
     if (patch.listKey && patch.listKey !== credential.listKey) {
-      console.log(`[UPDATE] ListKey changing: ${credential.listKey} → ${patch.listKey} for credential ${id}`);
+      console.log(
+        `[UPDATE] ListKey changing: ${credential.listKey} → ${patch.listKey} for credential ${id}`,
+      );
 
       // Count affected records to determine if we should batch
       const [rsvpCount, approvalCount, redemptionCount] = await Promise.all([
-        ctx.db.query("rsvps")
+        ctx.db
+          .query("rsvps")
           .withIndex("by_event", (q) => q.eq("eventId", credential.eventId))
           .filter((q) => q.eq(q.field("listKey"), credential.listKey))
           .collect()
-          .then(results => results.length),
-        ctx.db.query("approvals")
+          .then((results) => results.length),
+        ctx.db
+          .query("approvals")
           .withIndex("by_event", (q) => q.eq("eventId", credential.eventId))
           .filter((q) => q.eq(q.field("listKey"), credential.listKey))
           .collect()
-          .then(results => results.length),
-        ctx.db.query("redemptions")
+          .then((results) => results.length),
+        ctx.db
+          .query("redemptions")
           .withIndex("by_event_user", (q) => q.eq("eventId", credential.eventId))
           .filter((q) => q.eq(q.field("listKey"), credential.listKey))
           .collect()
-          .then(results => results.length)
+          .then((results) => results.length),
       ]);
 
       const totalAffected = rsvpCount + approvalCount + redemptionCount;
@@ -638,13 +653,15 @@ export const updateListCredentialWithCascade = mutation({
           newListKey: patch.listKey,
           cursor: undefined,
           batchSize: 500,
-          phase: "rsvps"
+          phase: "rsvps",
         });
 
         return { ok: true, batched: true, affectedRecords: totalAffected };
       } else {
         // Inline update for smaller operations - triggers will handle cascade
-        console.log(`[UPDATE] ${totalAffected} records affected, using inline update with triggers`);
+        console.log(
+          `[UPDATE] ${totalAffected} records affected, using inline update with triggers`,
+        );
 
         await ctx.db.patch(id, patch);
         return { ok: true, batched: false, affectedRecords: totalAffected };
@@ -677,9 +694,7 @@ export const listAll = query({
   },
   handler: async (ctx, { siteKey, workspaceSlug }) => {
     const events = await ctx.db.query("events").collect();
-    return events.filter((event) =>
-      eventMatchesSiteScope(event, { siteKey, workspaceSlug }),
-    );
+    return events.filter((event) => eventMatchesSiteScope(event, { siteKey, workspaceSlug }));
   },
 });
 
@@ -749,9 +764,8 @@ export const getFeaturedEvent = query({
       .collect();
 
     const matchingEvent =
-      featuredEvents.find((event) =>
-        eventMatchesSiteScope(event, { siteKey, workspaceSlug }),
-      ) ?? null;
+      featuredEvents.find((event) => eventMatchesSiteScope(event, { siteKey, workspaceSlug })) ??
+      null;
     return await applyWorkspacePrimaryFieldFallback(ctx, matchingEvent);
   },
 });

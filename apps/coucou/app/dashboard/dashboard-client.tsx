@@ -1,44 +1,27 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth, useOrganizationList, useUser } from "@clerk/nextjs";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
+import { AdminEmptyState, AdminHeader, AdminSection } from "@coucou/ui/admin";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { ArrowRight, Loader2, Plus, Save } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowRight,
-  Loader2,
-  Plus,
-  Save,
-} from "lucide-react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  AdminEmptyState,
-  AdminHeader,
-  AdminSection,
-} from "@coucou/ui/admin";
-import { DashboardShell } from "@/components/dashboard-shell";
 import { CoucouLogoMark } from "@/components/coucou-logo";
+import { DashboardShell } from "@/components/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  getCoucouOrganizationSlug,
-} from "@/lib/workspace-config";
-import {
-  buildRoleAwareDashboardPath,
-  hasWorkspaceWriteAccess,
-} from "@/lib/workspace-roles";
-import {
-  getToastErrorMessage,
-  runMutationWithToast,
-} from "@/lib/toast-mutation";
-import {
   activateOrganizationBeforeNavigation,
   MAISON_OBSCUR_TOAST_OPTIONS,
 } from "@/lib/organization-navigation";
+import { getToastErrorMessage, runMutationWithToast } from "@/lib/toast-mutation";
+import { getCoucouOrganizationSlug } from "@/lib/workspace-config";
+import { buildRoleAwareDashboardPath, hasWorkspaceWriteAccess } from "@/lib/workspace-roles";
 
 interface DashboardMembership {
   organizationId: string;
@@ -68,9 +51,7 @@ function optionalString(value: string): string | undefined {
   return trimmedValue ? trimmedValue : undefined;
 }
 
-function readPrimaryDomainFromMutationResult(
-  mutationResult: unknown,
-): string | null | undefined {
+function readPrimaryDomainFromMutationResult(mutationResult: unknown): string | null | undefined {
   if (typeof mutationResult !== "object" || mutationResult === null) {
     return undefined;
   }
@@ -88,10 +69,8 @@ function readPrimaryDomainFromMutationResult(
 export function DashboardClient() {
   const router = useRouter();
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
-  const {
-    isAuthenticated: isConvexAuthenticated,
-    isLoading: isConvexAuthLoading,
-  } = useConvexAuth();
+  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
+    useConvexAuth();
   const { isLoaded: isUserLoaded, user } = useUser();
   const { userMemberships, setActive } = useOrganizationList({
     userMemberships: { infinite: true },
@@ -101,20 +80,17 @@ export function DashboardClient() {
     api.workspaces.setTenantWorkspacePrimaryDomain,
   );
   const [activatingTarget, setActivatingTarget] = useState<string | null>(null);
-  const [savingDomainTarget, setSavingDomainTarget] = useState<string | null>(
-    null,
-  );
-  const [domainDraftsByWorkspaceSlug, setDomainDraftsByWorkspaceSlug] =
-    useState<Record<string, string>>({});
+  const [savingDomainTarget, setSavingDomainTarget] = useState<string | null>(null);
+  const [domainDraftsByWorkspaceSlug, setDomainDraftsByWorkspaceSlug] = useState<
+    Record<string, string>
+  >({});
   const [tenantName, setTenantName] = useState("");
   const [tenantCity, setTenantCity] = useState("");
   const [operatorName, setOperatorName] = useState("");
   const [operatorEmail, setOperatorEmail] = useState("");
   const [requestDetails, setRequestDetails] = useState("");
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
-  const [requestStatusMessage, setRequestStatusMessage] = useState<
-    string | null
-  >(null);
+  const [requestStatusMessage, setRequestStatusMessage] = useState<string | null>(null);
 
   const clerkMemberships = userMemberships?.data;
   const profileMemberships = useMemo(
@@ -123,8 +99,7 @@ export function DashboardClient() {
   );
   const coucouOrganizationSlug = getCoucouOrganizationSlug();
   const primaryEmailAddress = user?.primaryEmailAddress?.emailAddress ?? "";
-  const defaultOperatorName =
-    user?.fullName?.trim() || primaryEmailAddress || "Coucou user";
+  const defaultOperatorName = user?.fullName?.trim() || primaryEmailAddress || "Coucou user";
 
   useEffect(() => {
     if (!operatorName && defaultOperatorName) {
@@ -140,10 +115,7 @@ export function DashboardClient() {
 
   const dashboardMemberships = useMemo<DashboardMembership[]>(() => {
     const membershipByOrganizationId = new Map<string, DashboardMembership>();
-    for (const membership of [
-      ...profileMemberships,
-      ...(clerkMemberships ?? []),
-    ]) {
+    for (const membership of [...profileMemberships, ...(clerkMemberships ?? [])]) {
       membershipByOrganizationId.set(membership.organization.id, {
         organizationId: membership.organization.id,
         organizationName: membership.organization.name,
@@ -158,8 +130,7 @@ export function DashboardClient() {
   const coucouMembership = useMemo(
     () =>
       dashboardMemberships.find(
-        (membership) =>
-          membership.organizationSlug?.toLowerCase() === coucouOrganizationSlug,
+        (membership) => membership.organizationSlug?.toLowerCase() === coucouOrganizationSlug,
       ) ?? null,
     [dashboardMemberships, coucouOrganizationSlug],
   );
@@ -176,8 +147,7 @@ export function DashboardClient() {
     [dashboardAccess?.tenantWorkspaces],
   );
   const hasCoucouOrganizationAccess =
-    Boolean(coucouMembership) ||
-    Boolean(dashboardAccess?.hasCoucouOrganizationAccess);
+    Boolean(coucouMembership) || Boolean(dashboardAccess?.hasCoucouOrganizationAccess);
 
   useEffect(() => {
     setDomainDraftsByWorkspaceSlug((currentDrafts) => {
@@ -208,9 +178,7 @@ export function DashboardClient() {
         fallbackNavigate: (nextHref) => router.push(nextHref),
         toastMessages: {
           loading: loadingMessage,
-          ...(targetKey === "coucou-admin"
-            ? MAISON_OBSCUR_TOAST_OPTIONS
-            : {}),
+          ...(targetKey === "coucou-admin" ? MAISON_OBSCUR_TOAST_OPTIONS : {}),
         },
       });
     } catch {
@@ -263,16 +231,13 @@ export function DashboardClient() {
   ) {
     event.preventDefault();
 
-    const clerkOrganizationId =
-      workspace.organizationId ?? workspace.clerkOrganizationId;
+    const clerkOrganizationId = workspace.organizationId ?? workspace.clerkOrganizationId;
     if (!clerkOrganizationId) {
       toast.error("Workspace organization is not configured.");
       return;
     }
 
-    const primaryDomain = optionalString(
-      domainDraftsByWorkspaceSlug[workspace.slug] ?? "",
-    );
+    const primaryDomain = optionalString(domainDraftsByWorkspaceSlug[workspace.slug] ?? "");
     if (!primaryDomain) {
       toast.error("Primary URL is required.");
       return;
@@ -294,12 +259,9 @@ export function DashboardClient() {
         },
       );
       if (setActive) {
-        void setActive({ organization: clerkOrganizationId }).catch(
-          () => undefined,
-        );
+        void setActive({ organization: clerkOrganizationId }).catch(() => undefined);
       }
-      const savedPrimaryDomain =
-        readPrimaryDomainFromMutationResult(mutationResult);
+      const savedPrimaryDomain = readPrimaryDomainFromMutationResult(mutationResult);
       if (savedPrimaryDomain !== undefined) {
         setDomainDraftsByWorkspaceSlug((currentDrafts) => ({
           ...currentDrafts,
@@ -365,10 +327,7 @@ export function DashboardClient() {
             style={{ borderBottom: "1px solid var(--tt-rule)" }}
           >
             <div className="space-y-1">
-              <div
-                className="flex items-center gap-2"
-                style={{ color: "var(--tt-fg)" }}
-              >
+              <div className="flex items-center gap-2" style={{ color: "var(--tt-fg)" }}>
                 <CoucouLogoMark size={20} />
                 <span>Coucou Admin</span>
               </div>
@@ -376,8 +335,7 @@ export function DashboardClient() {
                 className="max-w-2xl text-[12px] leading-relaxed"
                 style={{ color: "var(--tt-fg-dim)" }}
               >
-                Super-admin views for tenant review, billing, delivery, and
-                platform operations.
+                Super-admin views for tenant review, billing, delivery, and platform operations.
               </div>
             </div>
             <Button
@@ -404,10 +362,7 @@ export function DashboardClient() {
         </AdminSection>
       ) : null}
 
-      <AdminSection
-        title="Tenant workspaces"
-        meta={`${tenantWorkspaces.length} available`}
-      >
+      <AdminSection title="Tenant workspaces" meta={`${tenantWorkspaces.length} available`}>
         {tenantWorkspaces.length > 0 ? (
           <div role="table">
             <div
@@ -431,14 +386,10 @@ export function DashboardClient() {
                 workspace.membershipRole,
               );
               const organizationId =
-                workspace.organizationId ??
-                workspace.clerkOrganizationId ??
-                undefined;
+                workspace.organizationId ?? workspace.clerkOrganizationId ?? undefined;
               const dashboardTargetKey = `${workspace.slug}:dashboard`;
               const domainTargetKey = `${workspace.slug}:domain`;
-              const canEditWorkspaceDomain = hasWorkspaceWriteAccess(
-                workspace.membershipRole,
-              );
+              const canEditWorkspaceDomain = hasWorkspaceWriteAccess(workspace.membershipRole);
               const workspaceStatus = workspace.primaryDomain
                 ? workspace.primaryDomain
                 : !workspace.isWorkspaceConfigured
@@ -481,9 +432,7 @@ export function DashboardClient() {
                     {canEditWorkspaceDomain ? (
                       <form
                         className="space-y-2"
-                        onSubmit={(event) =>
-                          handleTenantDomainSubmit(event, workspace)
-                        }
+                        onSubmit={(event) => handleTenantDomainSubmit(event, workspace)}
                       >
                         <Label
                           htmlFor={`primary-domain-${workspace.slug}`}
@@ -495,16 +444,12 @@ export function DashboardClient() {
                         <div className="flex gap-2">
                           <Input
                             id={`primary-domain-${workspace.slug}`}
-                            value={
-                              domainDraftsByWorkspaceSlug[workspace.slug] ?? ""
-                            }
+                            value={domainDraftsByWorkspaceSlug[workspace.slug] ?? ""}
                             onChange={(event) =>
-                              setDomainDraftsByWorkspaceSlug(
-                                (currentDrafts) => ({
-                                  ...currentDrafts,
-                                  [workspace.slug]: event.target.value,
-                                }),
-                              )
+                              setDomainDraftsByWorkspaceSlug((currentDrafts) => ({
+                                ...currentDrafts,
+                                [workspace.slug]: event.target.value,
+                              }))
                             }
                             placeholder="dojopomodoro.club"
                             inputMode="url"
@@ -527,9 +472,7 @@ export function DashboardClient() {
                         </div>
                       </form>
                     ) : (
-                      <span style={{ color: "var(--tt-fg-dim)" }}>
-                        {workspaceStatus}
-                      </span>
+                      <span style={{ color: "var(--tt-fg-dim)" }}>{workspaceStatus}</span>
                     )}
                   </div>
                   <div role="cell" className="flex md:justify-end">
@@ -568,10 +511,7 @@ export function DashboardClient() {
       </AdminSection>
 
       <AdminSection title="Request a new tenant" meta="Coucou review">
-        <form
-          className="grid gap-5 py-6 md:grid-cols-2"
-          onSubmit={handleTenantRequestSubmit}
-        >
+        <form className="grid gap-5 py-6 md:grid-cols-2" onSubmit={handleTenantRequestSubmit}>
           <div className="space-y-2">
             <Label htmlFor="tenant-name">Tenant name</Label>
             <Input
@@ -645,10 +585,7 @@ export function DashboardClient() {
             />
           </div>
           {requestStatusMessage ? (
-            <p
-              className="text-[13px] md:col-span-2"
-              style={{ color: "var(--tt-fg-dim)" }}
-            >
+            <p className="text-[13px] md:col-span-2" style={{ color: "var(--tt-fg-dim)" }}>
               {requestStatusMessage}
             </p>
           ) : null}

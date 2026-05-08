@@ -11,4 +11,3 @@ export function FlyerUploadField({ name }: { name: string }) {
     </div>
   );
 }
-

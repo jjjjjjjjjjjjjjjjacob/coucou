@@ -1,8 +1,4 @@
-export type RawRsvpStatus =
-  | "pending"
-  | "approved"
-  | "denied"
-  | "attending";
+export type RawRsvpStatus = "pending" | "approved" | "denied" | "attending";
 
 export type ApprovalStatus = "pending" | "approved" | "denied";
 
@@ -15,9 +11,7 @@ export const ALL_RAW_RSVP_STATUSES: readonly RawRsvpStatus[] = [
   "denied",
 ];
 
-export function deriveApprovalStatus(
-  rawStatus: string | undefined,
-): ApprovalStatus {
+export function deriveApprovalStatus(rawStatus: string | undefined): ApprovalStatus {
   if (rawStatus === "approved" || rawStatus === "attending") {
     return "approved";
   }
@@ -53,19 +47,13 @@ export function matchesApprovalFilter(
     return true;
   }
 
-  return getRawStatusesForApprovalFilter(approvalFilter).includes(
-    rawStatus as RawRsvpStatus,
-  );
+  return getRawStatusesForApprovalFilter(approvalFilter).includes(rawStatus as RawRsvpStatus);
 }
 
-export function hasApprovedRsvpStatus(
-  rawStatus: string | undefined,
-): boolean {
+export function hasApprovedRsvpStatus(rawStatus: string | undefined): boolean {
   return deriveApprovalStatus(rawStatus) === "approved";
 }
 
-export function canManuallyEditTicket(
-  rawStatus: string | undefined,
-): boolean {
+export function canManuallyEditTicket(rawStatus: string | undefined): boolean {
   return rawStatus === "approved" || rawStatus === "attending";
 }

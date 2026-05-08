@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
 import { resolvePreset } from "@coucou/sdk";
+import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
+import { usePathname, useRouter } from "next/navigation";
+import { type ReactNode, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkspaceAccessGate } from "@/components/workspace-access-gate";
@@ -29,10 +29,7 @@ interface WorkspaceDoorShellProps {
   children: ReactNode;
 }
 
-export function WorkspaceDoorShell({
-  workspaceSlug,
-  children,
-}: WorkspaceDoorShellProps) {
+export function WorkspaceDoorShell({ workspaceSlug, children }: WorkspaceDoorShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const workspaceScope = useWorkspaceScope();
@@ -56,8 +53,7 @@ export function WorkspaceDoorShell({
               {workspaceScope?.brandName ?? "Workspace"} Door
             </h1>
             <p className="text-sm text-foreground/70">
-              Validate and redeem guest entries, view tickets, and check guest
-              lists.
+              Validate and redeem guest entries, view tickets, and check guest lists.
             </p>
           </header>
           <Tabs
@@ -75,9 +71,7 @@ export function WorkspaceDoorShell({
           {children}
           <Button
             variant="outline"
-            onClick={() =>
-              router.push(buildWorkspaceOperationPath(workspaceSlug, "host"))
-            }
+            onClick={() => router.push(buildWorkspaceOperationPath(workspaceSlug, "host"))}
           >
             Dashboard
           </Button>

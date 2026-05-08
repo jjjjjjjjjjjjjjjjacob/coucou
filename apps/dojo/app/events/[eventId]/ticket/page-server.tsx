@@ -1,8 +1,8 @@
 import { currentUser } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
-import { preloadQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { preloadQuery } from "convex/nextjs";
+import { redirect } from "next/navigation";
 import { siteConfiguration } from "@/lib/site";
 import TicketClientPage from "./ticket-client";
 
@@ -35,10 +35,6 @@ export default async function TicketServerPage({
 
   // Pass the preloaded data to the client component
   return (
-    <TicketClientPage
-      eventId={eventId}
-      eventPreload={eventPreload}
-      statusPreload={statusPreload}
-    />
+    <TicketClientPage eventId={eventId} eventPreload={eventPreload} statusPreload={statusPreload} />
   );
 }

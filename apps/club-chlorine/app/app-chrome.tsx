@@ -1,46 +1,41 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { ChlorineAppShell } from "@coucou/ui/tenant-template";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChlorineLanding } from "@coucou/ui/tenant-template";
-import HeaderClient from "./header-client";
+import type { ReactNode } from "react";
 import { Footer } from "@/components/footer";
+import HeaderClient from "./header-client";
 
 export function AppChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  // The Club Chlorine animated split wordmark IS the chrome — three-phase
-  // intro (centered → split → content fades in) anchors CLUB to the top
-  // edge and CHLORINE to the bottom. We mount it ONCE here so every shell
-  // route (home, sign-in, every /events/<id>/* subpath) shares the same
-  // wordmark instance — navigating between them only swaps `children`,
-  // never re-measures or re-animates the marks.
-  const isHomeRoute = pathname === "/" || pathname === "/events";
-  const isLandingShellRoute =
-    isHomeRoute ||
-    (pathname?.startsWith("/sign-in") ?? false) ||
-    /^\/events\/[^/]+\/?$/.test(pathname ?? "");
-  const isFormShellRoute = /^\/events\/[^/]+\/(rsvp|status|ticket|denied)(?:\/|$)/.test(
-    pathname ?? "",
-  );
-  const isShellRoute = isLandingShellRoute || isFormShellRoute;
-
-  if (isShellRoute) {
-    return (
-      <>
-        <HeaderClient />
-        <ChlorineLanding linkComponent={Link} wordmarkHref="/">
-          {children}
-        </ChlorineLanding>
-        <Footer />
-      </>
-    );
-  }
+  // One persistent shell hosts the chlorine wordmark for every route. The
+  // mode prop drives the layout — `expanded` for the landing (split top/
+  // bottom anchors with a centered band of events) and `collapsed` for
+  // every post-landing page (small upper-left wordmark, content centered
+  // in the rest of the viewport). The wordmark instance never unmounts,
+  // so a `/` → `/events/[id]` navigation just flips the mode and the
+  // existing CSS transforms tween the SVG pieces between layouts.
+  const isLandingRoute = pathname === "/";
+  const mode = isLandingRoute ? "expanded" : "collapsed";
+  // 650px = source wordmark width — keeps event lists / RSVP / status /
+  // ticket forms aligned with the wordmark anchors. Account and profile
+  // host wider Clerk surfaces and own their own internal max-widths, so
+  // we drop the shell constraint there.
+  const isWideContentRoute = pathname === "/account" || pathname === "/profile";
+  const contentMaxWidth = isWideContentRoute ? undefined : 650;
 
   return (
     <>
       <HeaderClient />
-      <main className="flex-1">{children}</main>
+      <ChlorineAppShell
+        mode={mode}
+        linkComponent={Link}
+        wordmarkHref="/"
+        contentMaxWidthPx={contentMaxWidth}
+      >
+        {children}
+      </ChlorineAppShell>
       <Footer />
     </>
   );

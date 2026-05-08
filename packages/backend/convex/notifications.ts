@@ -1,11 +1,11 @@
 "use node";
-import { action } from "./_generated/server";
+import { resolveApprovalMessageText } from "@coucou/sdk/shared/approval-messages";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { resolveApprovalMessageText } from "@coucou/sdk/shared/approval-messages";
-import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import { action } from "./_generated/server";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
+import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
 
 type ApprovalEventSummary = {
   name: string;
@@ -90,10 +90,7 @@ export function resolveSendQrOnApproval(
   if (typeof event?.sendQrOnApproval === "boolean") {
     return event.sendQrOnApproval;
   }
-  if (
-    listCredential?.defersQrDelivery === false ||
-    event?.defersQrDelivery === false
-  ) {
+  if (listCredential?.defersQrDelivery === false || event?.defersQrDelivery === false) {
     return true;
   }
   return false;
@@ -123,9 +120,7 @@ ${approvalMessage}
 View your ticket here: ${ticketUrl}`;
 }
 
-function formatDeferredApprovalMessage(
-  event: ApprovalEventSummary,
-): string {
+function formatDeferredApprovalMessage(event: ApprovalEventSummary): string {
   const header = getSmsMessageHeader(event as SmsConsentEventSummary);
   const eventLabel = event.name?.trim() || "the event";
   return `${header}:
@@ -133,9 +128,7 @@ function formatDeferredApprovalMessage(
 You're approved for ${eventLabel}. Your QR code will arrive closer to the event.`;
 }
 
-function getSmsMessageHeader(
-  event: SmsConsentEventSummary,
-): string {
+function getSmsMessageHeader(event: SmsConsentEventSummary): string {
   // Production company takes precedence
   if (event.productionCompany?.trim()) {
     return event.productionCompany.trim().toUpperCase();
@@ -164,9 +157,9 @@ function getSmsMessageHeader(
   if (validNames.length === 2) {
     return `${validNames[0].toUpperCase()} & ${validNames[1].toUpperCase()}`;
   }
-  
+
   // 3+ names: "NAME1, NAME2, ..., & NAMEN"
-  const allButLast = validNames.slice(0, -1).map(name => name.toUpperCase());
+  const allButLast = validNames.slice(0, -1).map((name) => name.toUpperCase());
   const last = validNames[validNames.length - 1].toUpperCase();
   return `${allButLast.join(", ")}, & ${last}`;
 }
@@ -180,7 +173,7 @@ function formatSmsConsentMessage(
   const header = getSmsMessageHeader(event);
   const eventLabel = event.name?.trim() || "this event";
   const statusUrl = `${baseUrl}/events/${eventId}/status`;
-  
+
   if (consentEnabled) {
     return `${header}:
 
@@ -190,7 +183,7 @@ Reply STOP to cancel.
 
 Manage & View Status: ${statusUrl}`;
   }
-  
+
   return `${header}:
 
 SMS updates disabled for ${eventLabel}. You won't receive texts about the event.
@@ -214,7 +207,9 @@ export const sendApprovalSms = action({
     // Check if Twilio is disabled in development
     const isDevDisabled = process.env.DEV_TWILIO_ENABLED === "false";
     if (isDevDisabled) {
-      console.warn("⚠️  SMS disabled in development (DEV_TWILIO_ENABLED=false). Skipping approval SMS.");
+      console.warn(
+        "⚠️  SMS disabled in development (DEV_TWILIO_ENABLED=false). Skipping approval SMS.",
+      );
       return { skipped: "missing_env" };
     }
 
@@ -294,12 +289,9 @@ export const sendApprovalSms = action({
         );
 
         // Get publicly accessible URL for the QR code
-        const qrCodeUrl = await ctx.runAction(
-          internal.lib.qrCodeGenerator.getQrCodeUrl,
-          {
-            storageId: qrCodeStorageId,
-          },
-        );
+        const qrCodeUrl = await ctx.runAction(internal.lib.qrCodeGenerator.getQrCodeUrl, {
+          storageId: qrCodeStorageId,
+        });
         qrCodeMediaUrl = qrCodeUrl || undefined;
       }
 
@@ -317,16 +309,13 @@ export const sendApprovalSms = action({
             );
 
       // Create SMS notification record
-      const notificationId = await ctx.runMutation(
-        internal.sms.createNotification,
-        {
-          eventId: args.eventId,
-          recipientClerkUserId: args.clerkUserId,
-          recipientPhoneObfuscated: obfuscatePhoneNumber(userRecord.phone),
-          type: "approval",
-          message: approvalMessage,
-        },
-      );
+      const notificationId = await ctx.runMutation(internal.sms.createNotification, {
+        eventId: args.eventId,
+        recipientClerkUserId: args.clerkUserId,
+        recipientPhoneObfuscated: obfuscatePhoneNumber(userRecord.phone),
+        type: "approval",
+        message: approvalMessage,
+      });
 
       // Send SMS/MMS via Twilio
       const result = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
@@ -351,8 +340,7 @@ export const sendApprovalSms = action({
         notificationId,
       };
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error sending approval SMS";
+      const message = error instanceof Error ? error.message : "Unknown error sending approval SMS";
       console.error("Failed to send approval SMS:", error);
       return {
         skipped: "send_failed",
@@ -372,7 +360,9 @@ export const sendSmsConsentStatusMessage = action({
     // Check if Twilio is disabled in development
     const isDevDisabled = process.env.DEV_TWILIO_ENABLED === "false";
     if (isDevDisabled) {
-      console.warn("⚠️  SMS disabled in development (DEV_TWILIO_ENABLED=false). Skipping SMS consent notification.");
+      console.warn(
+        "⚠️  SMS disabled in development (DEV_TWILIO_ENABLED=false). Skipping SMS consent notification.",
+      );
       return { skipped: "missing_env" };
     }
 
@@ -420,18 +410,13 @@ export const sendSmsConsentStatusMessage = action({
         args.consentEnabled,
       );
 
-      const notificationId = await ctx.runMutation(
-        internal.sms.createNotification,
-        {
-          eventId: args.eventId,
-          recipientClerkUserId: args.clerkUserId,
-          recipientPhoneObfuscated: obfuscatePhoneNumber(userRecord.phone),
-          type: args.consentEnabled
-            ? "sms_consent_enabled"
-            : "sms_consent_disabled",
-          message,
-        },
-      );
+      const notificationId = await ctx.runMutation(internal.sms.createNotification, {
+        eventId: args.eventId,
+        recipientClerkUserId: args.clerkUserId,
+        recipientPhoneObfuscated: obfuscatePhoneNumber(userRecord.phone),
+        type: args.consentEnabled ? "sms_consent_enabled" : "sms_consent_disabled",
+        message,
+      });
 
       const result = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
         phoneNumber: userRecord.phone,
@@ -442,13 +427,10 @@ export const sendSmsConsentStatusMessage = action({
 
       // If user enabled SMS consent and they have an approved RSVP, send approval message
       if (args.consentEnabled) {
-        const approvedRsvpInfo = await ctx.runQuery(
-          internal.rsvps.getApprovedRsvpWithRedemption,
-          {
-            eventId: args.eventId,
-            clerkUserId: args.clerkUserId,
-          },
-        );
+        const approvedRsvpInfo = await ctx.runQuery(internal.rsvps.getApprovedRsvpWithRedemption, {
+          eventId: args.eventId,
+          clerkUserId: args.clerkUserId,
+        });
 
         if (approvedRsvpInfo && approvedRsvpInfo.shareContact && approvedRsvpInfo.listKey) {
           // Small delay to ensure opt-in message is sent first
@@ -482,9 +464,7 @@ export const sendSmsConsentStatusMessage = action({
       };
     } catch (error: unknown) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Unknown error sending SMS consent notification";
+        error instanceof Error ? error.message : "Unknown error sending SMS consent notification";
       console.error("Failed to send SMS consent notification:", error);
       return {
         skipped: "send_failed",

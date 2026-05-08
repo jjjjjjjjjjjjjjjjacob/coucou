@@ -1,20 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
-import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import {
-  isEventOpenForRsvp,
-  resolveEventRsvpCutoff,
-} from "@coucou/sdk/shared/event-availability";
-import {
-  ChlorineEventRow,
-  useMobile,
-  type ChlorineLandingEvent,
-} from "@coucou/ui/tenant-template";
+import { isEventOpenForRsvp, resolveEventRsvpCutoff } from "@coucou/sdk/shared/event-availability";
+import { ChlorineEventRow, type ChlorineLandingEvent, useMobile } from "@coucou/ui/tenant-template";
+import { useQuery } from "convex/react";
+import Link from "next/link";
+import { useMemo } from "react";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import { siteConfiguration } from "@/lib/site";
 
@@ -26,8 +19,7 @@ function formatLandingDate(timestamp: number, timezone?: string): string {
     timeZone: timezone ?? "UTC",
   });
   const parts = dateFormatter.formatToParts(new Date(timestamp));
-  const weekday =
-    parts.find((part) => part.type === "weekday")?.value.toUpperCase() ?? "";
+  const weekday = parts.find((part) => part.type === "weekday")?.value.toUpperCase() ?? "";
   const month = parts.find((part) => part.type === "month")?.value ?? "";
   const day = parts.find((part) => part.type === "day")?.value ?? "";
   return `${weekday} ${month}.${day}`;
@@ -50,10 +42,7 @@ export default function Home() {
     const now = Date.now();
     return allEvents
       .filter((event) => resolveEventRsvpCutoff(event) >= now)
-      .sort(
-        (firstEvent, secondEvent) =>
-          firstEvent.eventDate - secondEvent.eventDate,
-      )
+      .sort((firstEvent, secondEvent) => firstEvent.eventDate - secondEvent.eventDate)
       .map((event) => ({
         id: event._id,
         date: formatLandingDate(event.eventDate, event.eventTimezone),
@@ -76,8 +65,7 @@ export default function Home() {
     return (
       <div
         style={{
-          fontFamily:
-            'var(--font-geist-mono), "Geist Mono", ui-monospace, monospace',
+          fontFamily: 'var(--font-geist-mono), "Geist Mono", ui-monospace, monospace',
           fontSize: 12,
           letterSpacing: "0.08em",
           color: "var(--tt-fg-mute)",
@@ -93,12 +81,7 @@ export default function Home() {
   return (
     <div>
       {landingRowSeeds.map((rowSeed, index) => (
-        <HomeEventRow
-          key={rowSeed.id}
-          rowSeed={rowSeed}
-          mobile={isMobile}
-          delayMs={index * 140}
-        />
+        <HomeEventRow key={rowSeed.id} rowSeed={rowSeed} mobile={isMobile} delayMs={index * 140} />
       ))}
     </div>
   );
@@ -121,17 +104,12 @@ function HomeEventRow({ rowSeed, mobile, delayMs }: HomeEventRowProps) {
   const { isSignedIn, isLoaded } = useAuth();
   const rsvpStatus = useQuery(
     api.rsvps.statusForUserEvent,
-    isLoaded && isSignedIn
-      ? { eventId: rowSeed.id, siteKey: siteConfiguration.siteKey }
-      : "skip",
+    isLoaded && isSignedIn ? { eventId: rowSeed.id, siteKey: siteConfiguration.siteKey } : "skip",
   );
 
   const status = rsvpStatus?.status;
   const hasRsvp =
-    status === "pending" ||
-    status === "approved" ||
-    status === "attending" ||
-    status === "denied";
+    status === "pending" || status === "approved" || status === "attending" || status === "denied";
   const existingRsvpHref =
     status === "approved" || status === "attending"
       ? `/events/${rowSeed.id}/ticket`

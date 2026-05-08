@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
+  isEventOpenForRsvp,
   RSVP_CLOSE_GRACE_PERIOD_AFTER_START_MS,
   RSVP_CLOSE_GRACE_PERIOD_MS,
-  isEventOpenForRsvp,
   resolveEventRsvpCutoff,
   resolveEventRsvpCutoffFromStart,
 } from "../src/shared/event-availability";

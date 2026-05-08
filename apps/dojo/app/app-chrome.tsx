@@ -1,9 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import HeaderClient from "./header-client";
+import type { ReactNode } from "react";
 import { Footer } from "@/components/footer";
+import HeaderClient from "./header-client";
 
 export function AppChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();

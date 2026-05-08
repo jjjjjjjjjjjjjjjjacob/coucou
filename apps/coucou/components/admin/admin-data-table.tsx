@@ -1,13 +1,9 @@
 "use client";
 
+import { AdminTable, AdminTableEmpty, AdminTableRow } from "@coucou/ui/admin";
 import type { ReactNode } from "react";
-import {
-  AdminTable,
-  AdminTableEmpty,
-  AdminTableRow,
-} from "@coucou/ui/admin";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export interface AdminDataTableColumn<TRow> {
   key: string;

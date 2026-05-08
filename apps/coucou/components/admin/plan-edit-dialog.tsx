@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
+import { useMutation } from "convex/react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,10 +13,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectOption } from "@/components/ui/select";
-import { toast } from "sonner";
 
 interface WorkspaceLike {
   slug: string;
@@ -38,17 +38,14 @@ export function PlanEditDialog({
   const setPlan = useMutation(api.workspaces.setWorkspacePlan);
   const [tier, setTier] = useState("");
   const [priceDollars, setPriceDollars] = useState("");
-  const [billingStatus, setBillingStatus] =
-    useState<"ok" | "watch" | "overdue">("ok");
+  const [billingStatus, setBillingStatus] = useState<"ok" | "watch" | "overdue">("ok");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (workspace?.plan) {
       setTier(workspace.plan.tier);
       setPriceDollars(
-        workspace.plan.priceCents
-          ? (workspace.plan.priceCents / 100).toString()
-          : "",
+        workspace.plan.priceCents ? (workspace.plan.priceCents / 100).toString() : "",
       );
       setBillingStatus(workspace.plan.billingStatus ?? "ok");
     } else {
@@ -71,8 +68,8 @@ export function PlanEditDialog({
         <DialogHeader>
           <DialogTitle>Plan · {workspace.name}</DialogTitle>
           <DialogDescription>
-            Stored on the workspace. No external billing provider is wired up
-            yet — values are display-only metadata.
+            Stored on the workspace. No external billing provider is wired up yet — values are
+            display-only metadata.
           </DialogDescription>
         </DialogHeader>
 
@@ -106,9 +103,7 @@ export function PlanEditDialog({
             <Select
               value={billingStatus}
               onChange={(event) =>
-                setBillingStatus(
-                  event.target.value as "ok" | "watch" | "overdue",
-                )
+                setBillingStatus(event.target.value as "ok" | "watch" | "overdue")
               }
             >
               <SelectOption value="ok">ok</SelectOption>
@@ -130,9 +125,7 @@ export function PlanEditDialog({
                 toast.success("Plan cleared");
                 onClose();
               } catch (error) {
-                toast.error(
-                  error instanceof Error ? error.message : "Failed",
-                );
+                toast.error(error instanceof Error ? error.message : "Failed");
               } finally {
                 setSubmitting(false);
               }
@@ -160,9 +153,7 @@ export function PlanEditDialog({
                 toast.success("Plan saved");
                 onClose();
               } catch (error) {
-                toast.error(
-                  error instanceof Error ? error.message : "Failed",
-                );
+                toast.error(error instanceof Error ? error.message : "Failed");
               } finally {
                 setSubmitting(false);
               }

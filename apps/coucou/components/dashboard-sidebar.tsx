@@ -1,19 +1,16 @@
 "use client";
 
-import * as React from "react";
-import { usePathname, useRouter } from "next/navigation";
 import { SignOutButton, useAuth, useOrganizationList } from "@clerk/nextjs";
-import { useConvexAuth, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { NavGroup, NavLink } from "@coucou/ui/admin";
+import { useConvexAuth, useQuery } from "convex/react";
+import { usePathname, useRouter } from "next/navigation";
+import * as React from "react";
 import {
   activateOrganizationBeforeNavigation,
   MAISON_OBSCUR_TOAST_OPTIONS,
 } from "@/lib/organization-navigation";
-import {
-  buildRoleAwareDashboardPath,
-  hasWorkspaceReadAccess,
-} from "@/lib/workspace-roles";
+import { buildRoleAwareDashboardPath, hasWorkspaceReadAccess } from "@/lib/workspace-roles";
 
 interface AccessibleWorkspaceEntry {
   slug: string;
@@ -33,9 +30,7 @@ interface AdminSidebarButtonProps {
 function getAdminNavigationItemStyle(active?: boolean): React.CSSProperties {
   return {
     color: active ? "var(--tt-fg)" : "var(--tt-fg-dim)",
-    borderLeft: active
-      ? "1px solid var(--tt-fg)"
-      : "1px solid transparent",
+    borderLeft: active ? "1px solid var(--tt-fg)" : "1px solid transparent",
   };
 }
 
@@ -62,13 +57,7 @@ function AdminSidebarButton({
   );
 }
 
-function AdminSidebarAnchor({
-  children,
-  href,
-}: {
-  children: React.ReactNode;
-  href: string;
-}) {
+function AdminSidebarAnchor({ children, href }: { children: React.ReactNode; href: string }) {
   return (
     <a
       href={href}
@@ -93,9 +82,7 @@ function useDashboardNavigationAccess(): {
   );
 
   return React.useMemo(() => {
-    const tenantWorkspaces = Array.isArray(
-      workspaceNavigationAccess?.tenantWorkspaces,
-    )
+    const tenantWorkspaces = Array.isArray(workspaceNavigationAccess?.tenantWorkspaces)
       ? workspaceNavigationAccess.tenantWorkspaces
       : [];
     const accessibleWorkspaces = tenantWorkspaces.flatMap((workspace) => {
@@ -104,8 +91,7 @@ function useDashboardNavigationAccess(): {
         {
           slug: workspace.slug,
           name: workspace.name,
-          organizationId:
-            workspace.organizationId ?? workspace.clerkOrganizationId,
+          organizationId: workspace.organizationId ?? workspace.clerkOrganizationId,
           membershipRole: workspace.membershipRole,
         },
       ];
@@ -113,11 +99,8 @@ function useDashboardNavigationAccess(): {
 
     return {
       accessibleWorkspaces,
-      hasCoucouAdminAccess: Boolean(
-        workspaceNavigationAccess?.hasCoucouOrganizationAccess,
-      ),
-      coucouOrganizationId:
-        workspaceNavigationAccess?.coucouOrganizationId ?? null,
+      hasCoucouAdminAccess: Boolean(workspaceNavigationAccess?.hasCoucouOrganizationAccess),
+      coucouOrganizationId: workspaceNavigationAccess?.coucouOrganizationId ?? null,
     };
   }, [workspaceNavigationAccess]);
 }
@@ -126,11 +109,8 @@ export function DashboardSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { setActive } = useOrganizationList();
-  const {
-    accessibleWorkspaces,
-    hasCoucouAdminAccess,
-    coucouOrganizationId,
-  } = useDashboardNavigationAccess();
+  const { accessibleWorkspaces, hasCoucouAdminAccess, coucouOrganizationId } =
+    useDashboardNavigationAccess();
 
   const navigateToOrganizationPath = React.useCallback(
     async (
@@ -159,24 +139,17 @@ export function DashboardSidebar() {
         <NavLink href="/dashboard" active={pathname === "/dashboard"}>
           Home
         </NavLink>
-        <AdminSidebarAnchor href="mailto:hello@coucou.events">
-          Inquire
-        </AdminSidebarAnchor>
+        <AdminSidebarAnchor href="mailto:hello@coucou.events">Inquire</AdminSidebarAnchor>
       </NavGroup>
 
       {accessibleWorkspaces.length > 0 ? (
         <NavGroup label="Organization access">
           {accessibleWorkspaces.map((workspace) => {
-            const href = buildRoleAwareDashboardPath(
-              workspace.slug,
-              workspace.membershipRole,
-            );
+            const href = buildRoleAwareDashboardPath(workspace.slug, workspace.membershipRole);
             return (
               <AdminSidebarButton
                 key={`${workspace.slug}-dashboard`}
-                active={pathname?.startsWith(
-                  `/workspaces/${workspace.slug}/dashboard`,
-                )}
+                active={pathname?.startsWith(`/workspaces/${workspace.slug}/dashboard`)}
                 onClick={() =>
                   void navigateToOrganizationPath(
                     workspace.organizationId,

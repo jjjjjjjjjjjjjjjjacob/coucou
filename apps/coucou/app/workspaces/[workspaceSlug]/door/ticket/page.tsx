@@ -1,21 +1,21 @@
 "use client";
 
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import QRCode from "react-qr-code";
-import { Spinner } from "@/components/ui/spinner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  getEventThemeColors,
-  getColorContrastRatio,
-  getAccessibleTextColor,
-  EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
-} from "@/lib/event-theme";
-import { hasEventSecondaryTitle } from "@/lib/event-display";
+import { Spinner } from "@/components/ui/spinner";
 import { useEventBranding } from "@/contexts/event-branding-context";
+import { hasEventSecondaryTitle } from "@/lib/event-display";
+import {
+  EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
+  getAccessibleTextColor,
+  getColorContrastRatio,
+  getEventThemeColors,
+} from "@/lib/event-theme";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 export default function TicketPage() {
@@ -45,7 +45,10 @@ export default function TicketPage() {
     }
     const brandingSourceId = `door:${featuredEventId}`;
     if (featuredEventIconUrl) {
-      applyBranding({ sourceId: brandingSourceId, iconUrl: featuredEventIconUrl });
+      applyBranding({
+        sourceId: brandingSourceId,
+        iconUrl: featuredEventIconUrl,
+      });
       return () => {
         clearBranding(brandingSourceId);
       };
@@ -70,9 +73,7 @@ export default function TicketPage() {
         <Card>
           <CardHeader>
             <CardTitle>No Active Event</CardTitle>
-            <CardDescription>
-              There is no featured event at this time.
-            </CardDescription>
+            <CardDescription>There is no featured event at this time.</CardDescription>
           </CardHeader>
         </Card>
       </section>
@@ -83,10 +84,7 @@ export default function TicketPage() {
   const eventDate = new Date(featuredEvent.eventDate);
   const { backgroundColor: eventBackgroundColor, textColor: eventTextColor } =
     getEventThemeColors(featuredEvent);
-  const contrastRatio = getColorContrastRatio(
-    eventTextColor,
-    eventBackgroundColor,
-  );
+  const contrastRatio = getColorContrastRatio(eventTextColor, eventBackgroundColor);
   const hasAdequateContrast = contrastRatio >= 4.5;
   const qrForegroundColor = hasAdequateContrast
     ? eventTextColor
@@ -114,14 +112,12 @@ export default function TicketPage() {
               day: "numeric",
               year: "numeric",
               timeZone: featuredEvent.eventTimezone ?? "UTC",
-            })} at {featuredEvent.location}
+            })}{" "}
+            at {featuredEvent.location}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center space-y-4">
-          <div
-            className="p-4 rounded-lg"
-            style={{ backgroundColor: qrBackgroundColor }}
-          >
+          <div className="p-4 rounded-lg" style={{ backgroundColor: qrBackgroundColor }}>
             <QRCode
               value={ticketUrl}
               size={256}

@@ -11,11 +11,7 @@ interface WorkspacePatch {
   updatedAt: number;
 }
 
-export type ClerkSatelliteVerificationStatus =
-  | "unconfigured"
-  | "pending"
-  | "verified"
-  | "failed";
+export type ClerkSatelliteVerificationStatus = "unconfigured" | "pending" | "verified" | "failed";
 
 interface WorkspaceSitePatch {
   workspaceId?: Id<"workspaces">;
@@ -80,9 +76,7 @@ export function normalizePrimaryDomain(value: string): string {
   return parsedUrl.host.toLowerCase();
 }
 
-function normalizeOptionalPrimaryDomain(
-  value: string | undefined,
-): string | undefined {
+function normalizeOptionalPrimaryDomain(value: string | undefined): string | undefined {
   const trimmedValue = optionalTrimmedString(value);
   return trimmedValue ? normalizePrimaryDomain(trimmedValue) : undefined;
 }
@@ -152,9 +146,7 @@ export async function upsertWorkspaceSiteRecord(
   const now = Date.now();
   const existingWorkspaceSite = await ctx.db
     .query("workspaceSites")
-    .withIndex("by_siteKey", (queryBuilder) =>
-      queryBuilder.eq("siteKey", args.siteKey),
-    )
+    .withIndex("by_siteKey", (queryBuilder) => queryBuilder.eq("siteKey", args.siteKey))
     .unique();
 
   if (existingWorkspaceSite) {
@@ -168,8 +160,7 @@ export async function upsertWorkspaceSiteRecord(
       patch.clerkFrontendApiUrl = args.clerkFrontendApiUrl;
     }
     if (args.clerkSatelliteVerificationStatus !== undefined) {
-      patch.clerkSatelliteVerificationStatus =
-        args.clerkSatelliteVerificationStatus;
+      patch.clerkSatelliteVerificationStatus = args.clerkSatelliteVerificationStatus;
     }
     if (args.clerkSatelliteAuthEnabled !== undefined) {
       patch.clerkSatelliteAuthEnabled = args.clerkSatelliteAuthEnabled;
@@ -206,9 +197,7 @@ export async function syncWorkspacePrimaryDomainSites(
 ): Promise<void> {
   const workspaceSites = await ctx.db
     .query("workspaceSites")
-    .withIndex("by_workspace", (queryBuilder) =>
-      queryBuilder.eq("workspaceId", args.workspaceId),
-    )
+    .withIndex("by_workspace", (queryBuilder) => queryBuilder.eq("workspaceId", args.workspaceId))
     .collect();
 
   if (workspaceSites.length === 0) {
@@ -246,19 +235,14 @@ export async function upsertTenantWorkspaceRecordForClerkOrganization(
 }> {
   const normalizedSlug = normalizeTenantWorkspaceSlug(args.slug);
   const normalizedClerkOrganizationSlug =
-    optionalTrimmedString(args.clerkOrganizationSlug)?.toLowerCase() ??
-    normalizedSlug;
-  const normalizedPrimaryDomain = normalizeOptionalPrimaryDomain(
-    args.primaryDomain,
-  );
+    optionalTrimmedString(args.clerkOrganizationSlug)?.toLowerCase() ?? normalizedSlug;
+  const normalizedPrimaryDomain = normalizeOptionalPrimaryDomain(args.primaryDomain);
   const trimmedName = args.name.trim() || normalizedSlug;
   const now = Date.now();
 
   const workspaceBySlug = await ctx.db
     .query("workspaces")
-    .withIndex("by_slug", (queryBuilder) =>
-      queryBuilder.eq("slug", normalizedSlug),
-    )
+    .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", normalizedSlug))
     .unique();
 
   if (
@@ -277,8 +261,7 @@ export async function upsertTenantWorkspaceRecordForClerkOrganization(
         )
         .unique();
 
-  const existingWorkspace =
-    workspaceBySlug ?? workspaceByClerkOrganizationId ?? null;
+  const existingWorkspace = workspaceBySlug ?? workspaceByClerkOrganizationId ?? null;
 
   if (existingWorkspace) {
     if (
@@ -353,11 +336,8 @@ export async function upsertAdminWorkspaceRecordForClerkOrganization(
 ): Promise<Id<"workspaces">> {
   const workspaceSlug = getCoucouOrganizationSlug();
   const normalizedClerkOrganizationSlug =
-    optionalTrimmedString(args.clerkOrganizationSlug)?.toLowerCase() ??
-    workspaceSlug;
-  const normalizedPrimaryDomain = normalizeOptionalPrimaryDomain(
-    args.primaryDomain,
-  );
+    optionalTrimmedString(args.clerkOrganizationSlug)?.toLowerCase() ?? workspaceSlug;
+  const normalizedPrimaryDomain = normalizeOptionalPrimaryDomain(args.primaryDomain);
   const trimmedName = args.name.trim() || "Coucou";
   const workspaceId = await upsertWorkspaceRecord(ctx, {
     slug: workspaceSlug,

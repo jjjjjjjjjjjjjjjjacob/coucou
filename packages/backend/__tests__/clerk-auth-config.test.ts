@@ -30,8 +30,7 @@ describe("Clerk Convex auth config", () => {
   it("maps each Frontend API URL to a Convex auth provider", () => {
     expect(
       buildClerkAuthProviders({
-        CLERK_FRONTEND_API_URLS:
-          "https://clerk.coucou.events,https://clerk.dojopomodoro.club",
+        CLERK_FRONTEND_API_URLS: "https://clerk.coucou.events,https://clerk.dojopomodoro.club",
       }),
     ).toEqual([
       {

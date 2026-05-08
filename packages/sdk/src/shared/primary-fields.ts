@@ -34,40 +34,39 @@ export interface InvitedBySocialReference {
   handle: string;
 }
 
-export const DEFAULT_SOCIAL_PLATFORM_CONFIGS: readonly PrimarySocialPlatformConfig[] =
-  [
-    {
-      platformKey: "instagram",
-      label: "Instagram",
-      placeholder: "@handle",
-      profileUrlPrefix: "https://instagram.com/",
-      required: true,
-    },
-    {
-      platformKey: "tiktok",
-      label: "TikTok",
-      placeholder: "@handle",
-      profileUrlPrefix: "https://www.tiktok.com/@",
-    },
-    {
-      platformKey: "beli",
-      label: "Beli",
-      placeholder: "Beli username",
-      profileUrlPrefix: "https://beliapp.com/profile/",
-    },
-    {
-      platformKey: "x",
-      label: "X",
-      placeholder: "@handle",
-      profileUrlPrefix: "https://x.com/",
-    },
-    {
-      platformKey: "linkedin",
-      label: "LinkedIn",
-      placeholder: "LinkedIn profile",
-      profileUrlPrefix: "https://www.linkedin.com/in/",
-    },
-  ];
+export const DEFAULT_SOCIAL_PLATFORM_CONFIGS: readonly PrimarySocialPlatformConfig[] = [
+  {
+    platformKey: "instagram",
+    label: "Instagram",
+    placeholder: "@handle",
+    profileUrlPrefix: "https://instagram.com/",
+    required: true,
+  },
+  {
+    platformKey: "tiktok",
+    label: "TikTok",
+    placeholder: "@handle",
+    profileUrlPrefix: "https://www.tiktok.com/@",
+  },
+  {
+    platformKey: "beli",
+    label: "Beli",
+    placeholder: "Beli username",
+    profileUrlPrefix: "https://beliapp.com/profile/",
+  },
+  {
+    platformKey: "x",
+    label: "X",
+    placeholder: "@handle",
+    profileUrlPrefix: "https://x.com/",
+  },
+  {
+    platformKey: "linkedin",
+    label: "LinkedIn",
+    placeholder: "LinkedIn profile",
+    profileUrlPrefix: "https://www.linkedin.com/in/",
+  },
+];
 
 const socialPlatformAliases: Record<string, readonly string[]> = {
   instagram: [
@@ -79,23 +78,9 @@ const socialPlatformAliases: Record<string, readonly string[]> = {
     "insta handle",
     "instagram username",
   ],
-  tiktok: [
-    "tiktok",
-    "tik tok",
-    "tt",
-    "tiktok handle",
-    "tik tok handle",
-    "tiktok username",
-  ],
+  tiktok: ["tiktok", "tik tok", "tt", "tiktok handle", "tik tok handle", "tiktok username"],
   beli: ["beli", "beli handle", "beli username"],
-  x: [
-    "x",
-    "twitter",
-    "x handle",
-    "twitter handle",
-    "x username",
-    "twitter username",
-  ],
+  x: ["x", "twitter", "x handle", "twitter handle", "x username", "twitter username"],
   linkedin: [
     "linkedin",
     "linked in",
@@ -145,9 +130,7 @@ export function getPresetSocialPlatformConfig(
   key: string,
 ): PrimarySocialPlatformConfig | undefined {
   const normalized = normalizeSocialPlatformKey(key);
-  return DEFAULT_SOCIAL_PLATFORM_CONFIGS.find(
-    (platform) => platform.platformKey === normalized,
-  );
+  return DEFAULT_SOCIAL_PLATFORM_CONFIGS.find((platform) => platform.platformKey === normalized);
 }
 
 const invitedByAliases = new Set([
@@ -196,14 +179,10 @@ function candidateMatchesSocialAlias(candidate: string, alias: string): boolean 
     return false;
   }
 
-  return new RegExp(
-    `(?:^|\\s)${escapeRegExp(normalizedAlias)}(?:\\s|$)`,
-  ).test(candidate);
+  return new RegExp(`(?:^|\\s)${escapeRegExp(normalizedAlias)}(?:\\s|$)`).test(candidate);
 }
 
-export function detectSocialPlatformKeyFromCustomField(
-  field: CustomFieldLike,
-): string | null {
+export function detectSocialPlatformKeyFromCustomField(field: CustomFieldLike): string | null {
   const candidates = [
     normalizePrimaryFieldLookupText(field.key),
     normalizePrimaryFieldLookupText(field.label ?? ""),
@@ -241,9 +220,7 @@ export function normalizeSocialHandleInput(
   let candidate = trimmedValue;
   try {
     const parsedUrl = new URL(
-      /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate)
-        ? candidate
-        : `https://${candidate}`,
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate) ? candidate : `https://${candidate}`,
     );
     const host = parsedUrl.hostname.toLowerCase();
     const pathSegments = parsedUrl.pathname
@@ -255,23 +232,19 @@ export function normalizeSocialHandleInput(
 
     if (
       firstPathSegment &&
-      (host.includes("instagram.com") ||
-        host.includes("tiktok.com") ||
-        host.includes("beli"))
+      (host.includes("instagram.com") || host.includes("tiktok.com") || host.includes("beli"))
     ) {
       candidate = firstPathSegment;
     } else if (
       firstPathSegment &&
-      (host === "x.com" ||
-        host.endsWith(".x.com") ||
-        host.includes("twitter.com"))
+      (host === "x.com" || host.endsWith(".x.com") || host.includes("twitter.com"))
     ) {
       candidate = firstPathSegment;
     } else if (host.includes("linkedin.com")) {
       candidate =
         firstPathSegment === "in" && secondPathSegment
           ? secondPathSegment
-          : firstPathSegment ?? candidate;
+          : (firstPathSegment ?? candidate);
     }
   } catch {
     candidate = trimmedValue;
@@ -279,9 +252,7 @@ export function normalizeSocialHandleInput(
 
   const withoutLeadingAt = candidate.replace(/^@+/, "").trim();
   const withoutQuery = withoutLeadingAt.split(/[?#]/)[0] ?? withoutLeadingAt;
-  const normalizedPlatformKey = platformKey
-    ? normalizeSocialPlatformKey(platformKey)
-    : "";
+  const normalizedPlatformKey = platformKey ? normalizeSocialPlatformKey(platformKey) : "";
 
   if (normalizedPlatformKey === "tiktok") {
     return withoutQuery.replace(/^@+/, "") || undefined;
@@ -290,9 +261,7 @@ export function normalizeSocialHandleInput(
   return withoutQuery || undefined;
 }
 
-export function normalizeInvitedByName(
-  value: string | null | undefined,
-): string | undefined {
+export function normalizeInvitedByName(value: string | null | undefined): string | undefined {
   const normalizedValue = value?.replace(/\s+/g, " ").trim();
   return normalizedValue || undefined;
 }

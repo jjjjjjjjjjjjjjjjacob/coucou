@@ -25,35 +25,19 @@ export function getCoucouOrganizationSlug(): string {
   return (process.env.COUCOU_CLERK_ORGANIZATION_SLUG ?? "coucou").toLowerCase();
 }
 
-export function getIdentityOrganizationSlug(
-  identity: UserIdentity,
-): string | null {
-  return getStringClaim(identity, [
-    "orgSlug",
-    "org_slug",
-    "organizationSlug",
-    "organization_slug",
-  ]);
+export function getIdentityOrganizationSlug(identity: UserIdentity): string | null {
+  return getStringClaim(identity, ["orgSlug", "org_slug", "organizationSlug", "organization_slug"]);
 }
 
 export function getIdentityOrganizationId(identity: UserIdentity): string | null {
-  return getStringClaim(identity, [
-    "orgId",
-    "org_id",
-    "organizationId",
-    "organization_id",
-  ]);
+  return getStringClaim(identity, ["orgId", "org_id", "organizationId", "organization_id"]);
 }
 
-export function getIdentityOrganizationRole(
-  identity: UserIdentity,
-): string | null {
+export function getIdentityOrganizationRole(identity: UserIdentity): string | null {
   return getStringClaim(identity, ["role", "orgRole", "org_role"]);
 }
 
-async function getCoucouWorkspaceOrganizationId(
-  ctx: PlatformAuthReader,
-): Promise<string | null> {
+async function getCoucouWorkspaceOrganizationId(ctx: PlatformAuthReader): Promise<string | null> {
   if (!ctx.db) {
     return null;
   }
@@ -61,9 +45,7 @@ async function getCoucouWorkspaceOrganizationId(
   const coucouOrganizationSlug = getCoucouOrganizationSlug();
   const workspaceBySlug = await ctx.db
     .query("workspaces")
-    .withIndex("by_slug", (queryBuilder) =>
-      queryBuilder.eq("slug", coucouOrganizationSlug),
-    )
+    .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", coucouOrganizationSlug))
     .unique();
 
   if (workspaceBySlug?.clerkOrganizationId) {
@@ -89,23 +71,16 @@ async function hasStoredCoucouMembership(
 
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_user", (queryBuilder) =>
-      queryBuilder.eq("clerkUserId", identity.subject),
-    )
+    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
     .filter((queryBuilder) =>
-      queryBuilder.eq(
-        queryBuilder.field("organizationId"),
-        coucouOrganizationId,
-      ),
+      queryBuilder.eq(queryBuilder.field("organizationId"), coucouOrganizationId),
     )
     .unique();
 
   return Boolean(membership);
 }
 
-export async function requireCoucouPlatformMember(
-  ctx: PlatformAuthReader,
-): Promise<UserIdentity> {
+export async function requireCoucouPlatformMember(ctx: PlatformAuthReader): Promise<UserIdentity> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
     throw new Error("Unauthorized");
@@ -116,8 +91,7 @@ export async function requireCoucouPlatformMember(
     const coucouOrganizationId = await getCoucouWorkspaceOrganizationId(ctx);
     const activeOrganizationId = getIdentityOrganizationId(identity);
     const hasActiveCoucouOrganization =
-      Boolean(coucouOrganizationId) &&
-      activeOrganizationId === coucouOrganizationId;
+      Boolean(coucouOrganizationId) && activeOrganizationId === coucouOrganizationId;
     const hasSyncedCoucouMembership =
       coucouOrganizationId === null
         ? false

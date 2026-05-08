@@ -1,9 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import HeaderClient from "./header-client";
+import type { ReactNode } from "react";
 import { Footer } from "@/components/footer";
+import HeaderClient from "./header-client";
 
 // Routes whose pages own their full chrome (sidebar shell, sign-in shell,
 // etc.). On these routes AppChrome steps aside so we don't stack the
@@ -16,6 +16,10 @@ const SELF_CHROMED_PREFIXES = [
   "/door",
   "/workspaces",
   "/dashboard",
+  // Satellite handoff: `/clients/[siteKey]/sign-in` renders the
+  // tenant's own shell (e.g. ChlorineAppShell) and must not be stacked
+  // under coucou's masthead/footer.
+  "/clients",
 ];
 
 function ownsChrome(pathname: string | null | undefined): boolean {

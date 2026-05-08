@@ -43,12 +43,7 @@ export default defineSchema({
     clerkOrganizationId: v.optional(v.string()),
     clerkOrganizationSlug: v.optional(v.string()),
     preset: v.optional(
-      v.union(
-        v.literal("maison"),
-        v.literal("dojo"),
-        v.literal("atrium"),
-        v.literal("coucou"),
-      ),
+      v.union(v.literal("maison"), v.literal("dojo"), v.literal("atrium"), v.literal("coucou")),
     ),
     authBranding: v.optional(
       v.object({
@@ -74,11 +69,7 @@ export default defineSchema({
         tier: v.string(),
         priceCents: v.optional(v.number()),
         billingStatus: v.optional(
-          v.union(
-            v.literal("ok"),
-            v.literal("watch"),
-            v.literal("overdue"),
-          ),
+          v.union(v.literal("ok"), v.literal("watch"), v.literal("overdue")),
         ),
         nextInvoiceAt: v.optional(v.number()),
         lastInvoiceAt: v.optional(v.number()),
@@ -241,9 +232,7 @@ export default defineSchema({
 
   profiles: defineTable({
     clerkUserId: v.string(),
-    phoneEnc: v.optional(
-      v.object({ ivB64: v.string(), ctB64: v.string(), tagB64: v.string() }),
-    ), // deprecated
+    phoneEnc: v.optional(v.object({ ivB64: v.string(), ctB64: v.string(), tagB64: v.string() })), // deprecated
     phoneObfuscated: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -312,11 +301,7 @@ export default defineSchema({
   })
     .index("by_user", ["clerkUserId"])
     .index("by_user_field", ["clerkUserId", "fieldKey"])
-    .index("by_user_field_value", [
-      "clerkUserId",
-      "fieldKey",
-      "normalizedValue",
-    ]),
+    .index("by_user_field_value", ["clerkUserId", "fieldKey", "normalizedValue"]),
 
   workspaceProfileValueGrants: defineTable({
     workspaceId: v.optional(v.id("workspaces")),
@@ -334,11 +319,7 @@ export default defineSchema({
     .index("by_user", ["clerkUserId"])
     .index("by_workspace", ["workspaceId"])
     .index("by_workspace_user", ["workspaceId", "clerkUserId"])
-    .index("by_workspace_user_field", [
-      "workspaceId",
-      "clerkUserId",
-      "fieldKey",
-    ])
+    .index("by_workspace_user_field", ["workspaceId", "clerkUserId", "fieldKey"])
     .index("by_workspace_user_field_value", [
       "workspaceId",
       "clerkUserId",
@@ -374,11 +355,7 @@ export default defineSchema({
     .index("by_rsvp", ["rsvpId"])
     .index("by_rsvp_platform", ["rsvpId", "platformKey"])
     .index("by_event_platform", ["eventId", "platformKey"])
-    .index("by_event_platform_handle", [
-      "eventId",
-      "platformKey",
-      "normalizedHandle",
-    ]),
+    .index("by_event_platform_handle", ["eventId", "platformKey", "normalizedHandle"]),
 
   approvals: defineTable({
     eventId: v.id("events"),
@@ -486,11 +463,7 @@ export default defineSchema({
     operatorEmail: v.optional(v.string()),
     body: v.optional(v.string()),
     submittedAt: v.number(),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("accepted"),
-      v.literal("denied"),
-    ),
+    status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("denied")),
     workspaceId: v.optional(v.id("workspaces")),
     tenantAdminEmail: v.optional(v.string()),
     clerkOrganizationId: v.optional(v.string()),
@@ -511,11 +484,7 @@ export default defineSchema({
     observedAt: v.number(),
     workspaceId: v.optional(v.id("workspaces")),
     sourceModule: v.optional(v.string()),
-    status: v.union(
-      v.literal("open"),
-      v.literal("ack"),
-      v.literal("resolved"),
-    ),
+    status: v.union(v.literal("open"), v.literal("ack"), v.literal("resolved")),
     resolvedAt: v.optional(v.number()),
     resolvedByClerkUserId: v.optional(v.string()),
   })

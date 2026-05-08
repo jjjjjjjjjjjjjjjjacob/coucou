@@ -1,15 +1,14 @@
-import React from "react";
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
-import { fetchQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import type { Event } from "@/lib/types";
-import { EventThemeProvider } from "@/components/event-theme-provider";
-import { SignInClient } from "./sign-in-client";
-import { siteConfiguration } from "@/lib/site";
 import { getClientSiteRedirectOrigins } from "@coucou/sdk";
 import { resolveSafeRedirectUrl } from "@coucou/sdk/routes";
+import { fetchQuery } from "convex/nextjs";
+import { redirect } from "next/navigation";
+import { EventThemeProvider } from "@/components/event-theme-provider";
+import { siteConfiguration } from "@/lib/site";
+import type { Event } from "@/lib/types";
+import { SignInClient } from "./sign-in-client";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 type ThemedEvent = Pick<
@@ -83,11 +82,7 @@ async function resolveIconUrl(event: ThemedEvent | null): Promise<string | null>
   }
 }
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams?: Promise<RawSearchParams>;
-}) {
+export default async function Page({ searchParams }: { searchParams?: Promise<RawSearchParams> }) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const redirectParam = ensureString(resolvedSearchParams.redirect_url);
   const redirectUrl = resolveSafeRedirectUrl(

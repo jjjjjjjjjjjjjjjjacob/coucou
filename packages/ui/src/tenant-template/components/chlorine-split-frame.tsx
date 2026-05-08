@@ -1,15 +1,15 @@
 "use client";
 
 import {
+  type AnchorHTMLAttributes,
+  type ComponentType,
+  type CSSProperties,
+  type RefObject,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type AnchorHTMLAttributes,
-  type ComponentType,
-  type CSSProperties,
-  type RefObject,
 } from "react";
 import {
   CHLORINE_MARK_SOURCE_HEIGHT,
@@ -24,8 +24,7 @@ import {
   type ChlorineRippleSurfacePiece,
 } from "./marks/chlorine-ripple-surface";
 
-const useIsomorphicLayoutEffect =
-  typeof window === "undefined" ? useEffect : useLayoutEffect;
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export const CHLORINE_PHASE_SPLIT_MS = 1400;
 export const CHLORINE_PHASE_CASCADE_MS = 2200;
@@ -33,7 +32,11 @@ export const CHLORINE_COLOR_FADE_MS = 900;
 export const CHLORINE_LOGO_RIPPLE_REFRESH_MS = 1400;
 
 export const CHLORINE_MOBILE_BREAKPOINT_PX = 720;
-const SHORT_DESKTOP_CENTER_BAND_HEIGHT_PX = 500;
+// Below this viewport height the desktop layout collapses to the upper-
+// left grouped wordmark — there isn't enough vertical room for the split
+// anchors at that point. Direct viewport check (not a derived center-band
+// calculation) so the breakpoint is predictable from the value alone.
+const SHORT_DESKTOP_VIEWPORT_HEIGHT_PX = 600;
 const FALLBACK_VIEWPORT_DIMENSIONS = { width: 1024, height: 768 } as const;
 
 export type ChlorinePhase = 0 | 1 | 2;
@@ -78,9 +81,7 @@ export function useLandingViewport(
     measureLandingElement();
 
     const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(measureLandingElement);
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measureLandingElement);
     resizeObserver?.observe(landingElement);
     window.addEventListener("resize", measureLandingElement);
 
@@ -90,10 +91,8 @@ export function useLandingViewport(
     };
   }, [landingElementRef]);
 
-  const isMobile =
-    forceMobile ?? viewportState.width < CHLORINE_MOBILE_BREAKPOINT_PX;
-  const isShortDesktop =
-    !isMobile && shouldUseShortDesktopLayout(viewportState, isMobile);
+  const isMobile = forceMobile ?? viewportState.width < CHLORINE_MOBILE_BREAKPOINT_PX;
+  const isShortDesktop = !isMobile && shouldUseShortDesktopLayout(viewportState, isMobile);
 
   return {
     width: viewportState.width,
@@ -104,33 +103,9 @@ export function useLandingViewport(
   };
 }
 
-function shouldUseShortDesktopLayout(
-  viewportDimensions: ViewportDimensions,
-  isMobile: boolean,
-) {
+function shouldUseShortDesktopLayout(viewportDimensions: ViewportDimensions, isMobile: boolean) {
   if (isMobile) return false;
-
-  const landingViewport = {
-    ...viewportDimensions,
-    isMobile,
-    isShortDesktop: false,
-    hasMeasuredViewport: true,
-  };
-  const initialScale = calculateInitialLogoScale(landingViewport);
-  const edgeOffset = 48;
-  const topGroupHeight =
-    Math.max(
-      chlorineMarkPieces.club.top + chlorineMarkPieces.club.height,
-      chlorineMarkPieces.icon.top + chlorineMarkPieces.icon.height,
-    ) * initialScale;
-  const bottomGroupHeight = chlorineMarkPieces.chlorine.height * initialScale;
-  const centerBandHeight =
-    viewportDimensions.height -
-    edgeOffset * 2 -
-    topGroupHeight -
-    bottomGroupHeight;
-
-  return centerBandHeight < SHORT_DESKTOP_CENTER_BAND_HEIGHT_PX;
+  return viewportDimensions.height < SHORT_DESKTOP_VIEWPORT_HEIGHT_PX;
 }
 
 type ChlorinePiece = (typeof chlorineMarkPieces)[keyof typeof chlorineMarkPieces];
@@ -148,6 +123,14 @@ interface AnimatedPieceStyleInput {
   hasEnabledIntroTransitions: boolean;
   hasStartedIntroColor: boolean;
   landingViewport: LandingViewport;
+  /**
+   * When true, position pieces in the upper-left "collapsed" arrangement
+   * regardless of phase — used by the app shell on post-landing routes.
+   * Layered on top of the existing `isShortDesktop` viewport check; flipping
+   * this from false to true after mount tweens the pieces from split anchors
+   * to grouped corner via the existing CSS transitions.
+   */
+  forceCollapsed?: boolean;
 }
 
 function buildAnimatedPieceStyle({
@@ -157,13 +140,12 @@ function buildAnimatedPieceStyle({
   hasEnabledIntroTransitions,
   hasStartedIntroColor,
   landingViewport,
+  forceCollapsed = false,
 }: AnimatedPieceStyleInput): CSSProperties {
-  const target = buildPieceTarget(piece, group, phase, landingViewport);
-  const isReadyToAnimate =
-    landingViewport.hasMeasuredViewport && hasEnabledIntroTransitions;
+  const target = buildPieceTarget(piece, group, phase, landingViewport, forceCollapsed);
+  const isReadyToAnimate = landingViewport.hasMeasuredViewport && hasEnabledIntroTransitions;
   const colorTransition = `background-color ${CHLORINE_COLOR_FADE_MS}ms ease`;
-  const transformTransition =
-    "transform 1100ms cubic-bezier(0.65, 0, 0.2, 1)";
+  const transformTransition = "transform 1100ms cubic-bezier(0.65, 0, 0.2, 1)";
 
   return {
     position: "absolute",
@@ -174,9 +156,7 @@ function buildAnimatedPieceStyle({
     backgroundColor: hasStartedIntroColor ? "var(--tt-fg)" : "var(--tt-bg)",
     transform: `translate3d(${target.left}px, ${target.top}px, 0) scale(${target.scale})`,
     transformOrigin: "top left",
-    transition: isReadyToAnimate
-      ? `${colorTransition}, ${transformTransition}`
-      : "none",
+    transition: isReadyToAnimate ? `${colorTransition}, ${transformTransition}` : "none",
     zIndex: 2,
     willChange: "background-color, transform",
   };
@@ -187,11 +167,14 @@ function buildPieceTarget(
   group: ChlorinePieceGroup,
   phase: ChlorinePhase,
   landingViewport: LandingViewport,
+  forceCollapsed: boolean = false,
 ): PieceTarget {
   const initialScale = calculateInitialLogoScale(landingViewport);
   const initialOrigin = calculateCenteredOrigin(landingViewport, initialScale);
 
-  if (phase === 0) {
+  // When the parent forces collapsed, we never sit at the centered origin
+  // (intro animation is owned by the parent and skipped on collapsed mounts).
+  if (phase === 0 && !forceCollapsed) {
     return {
       left: initialOrigin.left + piece.left * initialScale,
       top: initialOrigin.top + piece.top * initialScale,
@@ -199,7 +182,7 @@ function buildPieceTarget(
     };
   }
 
-  if (landingViewport.isShortDesktop) {
+  if (forceCollapsed || landingViewport.isShortDesktop) {
     const groupedScale = calculateShortDesktopLogoScale(landingViewport);
     const groupedOrigin = calculateShortDesktopOrigin(landingViewport);
 
@@ -211,8 +194,7 @@ function buildPieceTarget(
   }
 
   const edgeOffset = landingViewport.isMobile ? 24 : 48;
-  const splitOriginLeft =
-    (landingViewport.width - CHLORINE_MARK_SOURCE_WIDTH * initialScale) / 2;
+  const splitOriginLeft = (landingViewport.width - CHLORINE_MARK_SOURCE_WIDTH * initialScale) / 2;
 
   if (group === "bottom") {
     return {
@@ -223,9 +205,7 @@ function buildPieceTarget(
   }
 
   const topGroupSourceTop =
-    piece === chlorineMarkPieces.icon
-      ? calculateClubCenteredIconSourceTop()
-      : piece.top;
+    piece === chlorineMarkPieces.icon ? calculateClubCenteredIconSourceTop() : piece.top;
 
   return {
     left: splitOriginLeft + piece.left * initialScale,
@@ -241,10 +221,7 @@ function calculateClubCenteredIconSourceTop() {
   );
 }
 
-function calculateCenteredOrigin(
-  landingViewport: LandingViewport,
-  scale: number,
-) {
+function calculateCenteredOrigin(landingViewport: LandingViewport, scale: number) {
   return {
     left: (landingViewport.width - CHLORINE_MARK_SOURCE_WIDTH * scale) / 2,
     top: (landingViewport.height - CHLORINE_MARK_SOURCE_HEIGHT * scale) / 2,
@@ -258,22 +235,14 @@ function calculateInitialLogoScale(landingViewport: LandingViewport) {
 function calculateInitialLogoWidth(landingViewport: LandingViewport) {
   const horizontalPadding = landingViewport.isMobile ? 24 : 48;
   const verticalPadding = landingViewport.isMobile ? 48 : 64;
-  const availableWidth = Math.max(
-    120,
-    landingViewport.width - horizontalPadding * 2,
-  );
+  const availableWidth = Math.max(120, landingViewport.width - horizontalPadding * 2);
   const availableHeightAsWidth = Math.max(
     120,
-    ((landingViewport.height - verticalPadding * 2) *
-      CHLORINE_MARK_SOURCE_WIDTH) /
+    ((landingViewport.height - verticalPadding * 2) * CHLORINE_MARK_SOURCE_WIDTH) /
       CHLORINE_MARK_SOURCE_HEIGHT,
   );
 
-  return Math.min(
-    CHLORINE_MARK_SOURCE_WIDTH,
-    availableWidth,
-    availableHeightAsWidth,
-  );
+  return Math.min(CHLORINE_MARK_SOURCE_WIDTH, availableWidth, availableHeightAsWidth);
 }
 
 function calculateShortDesktopLogoScale(landingViewport: LandingViewport) {
@@ -288,11 +257,32 @@ function calculateShortDesktopOrigin(landingViewport: LandingViewport) {
   };
 }
 
+/**
+ * Y-coordinate (in px) of the bottom edge of the collapsed (upper-left
+ * grouped) wordmark — the parent shell uses this to size its top reserve
+ * dynamically so content never sits under the wordmark regardless of the
+ * scale factor that ends up applied. Returns 0 in expanded layouts where
+ * the wordmark anchors top + bottom and there's no single "bottom edge"
+ * to clear.
+ */
+export function calculateCollapsedWordmarkBottomPx(landingViewport: LandingViewport): number {
+  const groupedScale = calculateShortDesktopLogoScale(landingViewport);
+  const groupedOrigin = calculateShortDesktopOrigin(landingViewport);
+  return groupedOrigin.top + CHLORINE_MARK_SOURCE_HEIGHT * groupedScale;
+}
+
 interface ChlorineComposedLogoProps {
   phase: ChlorinePhase;
   hasEnabledIntroTransitions: boolean;
   hasStartedIntroColor: boolean;
   landingViewport: LandingViewport;
+  /**
+   * Forces the pieces into the upper-left grouped position regardless of
+   * phase. The parent shell drives this when transitioning from the landing
+   * (split) layout to a post-login (collapsed) layout — the existing CSS
+   * transitions on the SVG transforms tween the pieces between targets.
+   */
+  forceCollapsed?: boolean;
   /**
    * When set together with `linkComponent`, transparent click-catcher links
    * are rendered over each wordmark piece so clicking the wordmark routes
@@ -305,9 +295,7 @@ interface ChlorineComposedLogoProps {
    * framework-agnostic and accepts the consumer's link to keep client-side
    * navigation behavior consistent.
    */
-  linkComponent?: ComponentType<
-    AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }
-  >;
+  linkComponent?: ComponentType<AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }>;
   /**
    * Accessible label applied to the click-catcher links. Defaults to
    * "Home".
@@ -320,6 +308,7 @@ export function ChlorineComposedLogo({
   hasEnabledIntroTransitions,
   hasStartedIntroColor,
   landingViewport,
+  forceCollapsed = false,
   wordmarkHref,
   linkComponent: LinkComponent,
   wordmarkLinkLabel = "Home",
@@ -335,6 +324,7 @@ export function ChlorineComposedLogo({
     hasEnabledIntroTransitions,
     hasStartedIntroColor,
     landingViewport,
+    forceCollapsed,
   });
   const iconStyle = buildAnimatedPieceStyle({
     piece: chlorineMarkPieces.icon,
@@ -343,6 +333,7 @@ export function ChlorineComposedLogo({
     hasEnabledIntroTransitions,
     hasStartedIntroColor,
     landingViewport,
+    forceCollapsed,
   });
   const chlorineStyle = buildAnimatedPieceStyle({
     piece: chlorineMarkPieces.chlorine,
@@ -351,6 +342,7 @@ export function ChlorineComposedLogo({
     hasEnabledIntroTransitions,
     hasStartedIntroColor,
     landingViewport,
+    forceCollapsed,
   });
   const ripplePieces = useMemo<readonly ChlorineRippleSurfacePiece[]>(
     () => [
@@ -376,6 +368,7 @@ export function ChlorineComposedLogo({
     landingViewport.height,
     hasEnabledIntroTransitions,
     hasStartedIntroColor,
+    forceCollapsed ? "collapsed" : "expanded",
   ].join(":");
   const fallbackOpacity = isRippleReady ? 0 : 1;
 

@@ -1,52 +1,39 @@
 "use client";
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import EditEventDialog from "./edit-event-dialog";
+import { resolveEventEndTimestamp } from "@convex/lib/eventTiming";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { CheckCircle, Edit, ExternalLink, MoreHorizontal, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { toast } from "sonner";
+import { ShareEventPopover } from "@/components/share-event-popover";
 import {
   AlertDialog,
-  AlertDialogTrigger,
+  AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Event } from "@/lib/types";
-import { formatEventDateTime } from "@/lib/utils";
-import { resolveEventEndTimestamp } from "@convex/lib/eventTiming";
-import { toast } from "sonner";
-import { ShareEventPopover } from "@/components/share-event-popover";
-import {
-  MoreHorizontal,
-  ExternalLink,
-  Edit,
-  Trash2,
-  CheckCircle,
-} from "lucide-react";
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatEventTitleInline } from "@/lib/event-display";
-import {
-  useWorkspaceOperationPath,
-  useWorkspaceScope,
-} from "@/lib/use-workspace-scope";
 import { buildPublicEventUrl } from "@/lib/event-public-url";
+import type { Event } from "@/lib/types";
+import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { formatEventDateTime } from "@/lib/utils";
+import EditEventDialog from "./edit-event-dialog";
 
 export default function EventCardClient({
   event,
@@ -57,14 +44,8 @@ export default function EventCardClient({
 }) {
   const router = useRouter();
   const workspaceScope = useWorkspaceScope();
-  const rsvpsPath = useWorkspaceOperationPath(
-    "host",
-    `rsvps?eventId=${event._id}`,
-  );
-  const editDraftPath = useWorkspaceOperationPath(
-    "host",
-    `new?draftId=${event._id}`,
-  );
+  const rsvpsPath = useWorkspaceOperationPath("host", `rsvps?eventId=${event._id}`);
+  const editDraftPath = useWorkspaceOperationPath("host", `new?draftId=${event._id}`);
   const workspace = useQuery(
     api.workspaces.getWorkspaceBySlug,
     workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
@@ -76,9 +57,7 @@ export default function EventCardClient({
   const sendDeferredQrBatch = useAction(api.qrDelivery.sendDeferredQrBatch);
   const pendingDeferredCount = useQuery(
     api.qrDelivery.countPendingDeferredRecipients,
-    workspaceScope
-      ? { eventId: event._id, ...workspaceScope.queryArgs }
-      : "skip",
+    workspaceScope ? { eventId: event._id, ...workspaceScope.queryArgs } : "skip",
   );
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [sendingQrBatch, setSendingQrBatch] = useState(false);
@@ -94,8 +73,7 @@ export default function EventCardClient({
     }) ?? 0;
   const isPast = !isDraft && endTimestamp > 0 && endTimestamp < now;
   const badgeLabel = isDraft ? "Draft" : isPast ? "Past" : "Published";
-  const badgeVariant: "outline" | "success" =
-    isDraft || isPast ? "outline" : "success";
+  const badgeVariant: "outline" | "success" = isDraft || isPast ? "outline" : "success";
   const publicEventUrl = buildPublicEventUrl(workspace ?? null, event._id);
 
   const togglePublish = async () => {
@@ -153,19 +131,14 @@ export default function EventCardClient({
     }
   };
 
-  const showSendQrCodesButton =
-    !isDraft && (pendingDeferredCount ?? 0) > 0;
+  const showSendQrCodesButton = !isDraft && (pendingDeferredCount ?? 0) > 0;
 
   return (
     <Card className="flex flex-col h-content">
       <CardHeader className="pb-0">
         {fileUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={fileUrl}
-            alt="Flyer"
-            className="h-24 w-full object-cover rounded mb-3"
-          />
+          <img src={fileUrl} alt="Flyer" className="h-24 w-full object-cover rounded mb-3" />
         ) : (
           <div className="h-24 bg-foreground/5 rounded mb-3" />
         )}
@@ -181,10 +154,7 @@ export default function EventCardClient({
                 Featured
               </Badge>
             )}
-            <Badge
-              variant={badgeVariant}
-              className="text-xs capitalize"
-            >
+            <Badge variant={badgeVariant} className="text-xs capitalize">
               {badgeLabel}
             </Badge>
           </div>
@@ -195,18 +165,10 @@ export default function EventCardClient({
         <CardFooter className="pt-0">
           <div className="w-full flex items-center justify-between mt-3 gap-1">
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleViewClick}
-              >
+              <Button variant="outline" size="sm" onClick={handleViewClick}>
                 {isDraft ? "Continue editing" : "View"}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push(rsvpsPath)}
-              >
+              <Button variant="outline" size="sm" onClick={() => router.push(rsvpsPath)}>
                 RSVPs
               </Button>
               <Button variant="outline" size="sm" onClick={togglePublish}>
@@ -219,9 +181,7 @@ export default function EventCardClient({
                   onClick={sendPendingQrCodes}
                   disabled={sendingQrBatch}
                 >
-                  {sendingQrBatch
-                    ? "Sending…"
-                    : `Send QR codes (${pendingDeferredCount})`}
+                  {sendingQrBatch ? "Sending…" : `Send QR codes (${pendingDeferredCount})`}
                 </Button>
               )}
             </div>
@@ -230,11 +190,7 @@ export default function EventCardClient({
               <ShareEventPopover eventId={event._id}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="aspect-square"
-                    >
+                    <Button variant="outline" size="sm" className="aspect-square">
                       <ExternalLink className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
@@ -261,15 +217,10 @@ export default function EventCardClient({
                           eventId: event._id,
                           ...workspaceScope.queryArgs,
                         });
-                        toast.success(
-                          `"${inlineTitle}" is now the featured event`,
-                        );
+                        toast.success(`"${inlineTitle}" is now the featured event`);
                         router.refresh();
                       } catch (error) {
-                        toast.error(
-                          "Failed to set featured event: " +
-                            (error as Error).message,
-                        );
+                        toast.error("Failed to set featured event: " + (error as Error).message);
                       }
                     }}
                   >
@@ -291,8 +242,7 @@ export default function EventCardClient({
                       <AlertDialogHeader>
                         <AlertDialogTitle>Delete this event?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will permanently remove the event and its list
-                          credentials.
+                          This will permanently remove the event and its list credentials.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>

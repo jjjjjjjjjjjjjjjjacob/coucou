@@ -22,7 +22,8 @@ export default function Error({
           <h1 className="text-4xl font-bold text-destructive">Oops!</h1>
           <h2 className="text-2xl font-semibold">Something went wrong</h2>
           <p className="text-foreground/70">
-            We encountered an unexpected error. Please try again or contact support if the problem persists.
+            We encountered an unexpected error. Please try again or contact support if the problem
+            persists.
           </p>
 
           {process.env.NODE_ENV === "development" && (
@@ -48,11 +49,7 @@ export default function Error({
             Try Again
           </Button>
 
-          <Button
-            variant="outline"
-            onClick={() => window.location.href = "/"}
-            className="w-full"
-          >
+          <Button variant="outline" onClick={() => (window.location.href = "/")} className="w-full">
             Go Home
           </Button>
         </div>

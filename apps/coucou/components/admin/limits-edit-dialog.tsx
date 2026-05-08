@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
+import { useMutation } from "convex/react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,9 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
 
 interface WorkspaceLike {
   slug: string;
@@ -59,8 +59,8 @@ export function LimitsEditDialog({
         <DialogHeader>
           <DialogTitle>Limits · {workspace.name}</DialogTitle>
           <DialogDescription>
-            Stored on the workspace. Enforcement is not yet wired in — these
-            are advisory caps for the superadmin view.
+            Stored on the workspace. Enforcement is not yet wired in — these are advisory caps for
+            the superadmin view.
           </DialogDescription>
         </DialogHeader>
 
@@ -115,9 +115,7 @@ export function LimitsEditDialog({
                 toast.success("Limits cleared");
                 onClose();
               } catch (error) {
-                toast.error(
-                  error instanceof Error ? error.message : "Failed",
-                );
+                toast.error(error instanceof Error ? error.message : "Failed");
               } finally {
                 setSubmitting(false);
               }
@@ -131,8 +129,7 @@ export function LimitsEditDialog({
             onClick={async () => {
               try {
                 setSubmitting(true);
-                const parse = (value: string) =>
-                  value.trim() ? parseInt(value, 10) : undefined;
+                const parse = (value: string) => (value.trim() ? parseInt(value, 10) : undefined);
                 await setLimits({
                   slug: workspace.slug,
                   limits: {
@@ -144,9 +141,7 @@ export function LimitsEditDialog({
                 toast.success("Limits saved");
                 onClose();
               } catch (error) {
-                toast.error(
-                  error instanceof Error ? error.message : "Failed",
-                );
+                toast.error(error instanceof Error ? error.message : "Failed");
               } finally {
                 setSubmitting(false);
               }

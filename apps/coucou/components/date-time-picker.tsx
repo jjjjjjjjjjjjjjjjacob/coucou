@@ -1,7 +1,6 @@
 "use client";
+import { ChevronDown } from "lucide-react";
 import React from "react";
-import { Calendar as CalendarIcon, ChevronDown, Clock } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -9,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectOption } from "@/components/ui/select";
 import { getTimeZoneOptions } from "@/lib/date-utils";
+import { cn } from "@/lib/utils";
 
 export type DateTimePickerProps = {
   date: string | undefined; // YYYY-MM-DD
@@ -38,9 +38,7 @@ export function DateTimePicker({
 
   const selectedDate = React.useMemo(() => {
     if (!date) return undefined;
-    const [year, month, day] = date
-      .split("-")
-      .map((value) => parseInt(value, 10));
+    const [year, month, day] = date.split("-").map((value) => parseInt(value, 10));
     if (!year || !month || !day) return undefined;
     return new Date(year, month - 1, day);
   }, [date]);
@@ -51,7 +49,10 @@ export function DateTimePicker({
   }, [selectedDate]);
 
   const timezoneOptions = React.useMemo(() => getTimeZoneOptions(), []);
-  const fromYear = React.useMemo(() => selectedDate?.getFullYear() ?? new Date().getFullYear(), [selectedDate]);
+  const fromYear = React.useMemo(
+    () => selectedDate?.getFullYear() ?? new Date().getFullYear(),
+    [selectedDate],
+  );
   const yearRangeStart = fromYear - 10;
   const yearRangeEnd = fromYear + 10;
   const resolvedTimezone = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;

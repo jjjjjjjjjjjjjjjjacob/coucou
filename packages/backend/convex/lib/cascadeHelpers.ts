@@ -1,5 +1,5 @@
-import { MutationCtx } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
+import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { updateRsvpInAggregate } from "./rsvpAggregate";
 
 /**
@@ -23,17 +23,19 @@ export async function cascadeListKeyUpdate(
   ctx: MutationCtx,
   eventId: Id<"events">,
   oldListKey: string,
-  newListKey: string
+  newListKey: string,
 ): Promise<CascadeStats> {
   const stats: CascadeStats = {
     rsvpsUpdated: 0,
     approvalsUpdated: 0,
     redemptionsUpdated: 0,
     customFieldsBackfilled: 0,
-    errors: []
+    errors: [],
   };
 
-  console.log(`[CASCADE] Starting listKey update cascade: ${oldListKey} → ${newListKey} for event ${eventId}`);
+  console.log(
+    `[CASCADE] Starting listKey update cascade: ${oldListKey} → ${newListKey} for event ${eventId}`,
+  );
 
   try {
     // Update RSVPs
@@ -47,7 +49,7 @@ export async function cascadeListKeyUpdate(
       const oldRsvp = { ...rsvp };
       await ctx.db.patch(rsvp._id, {
         listKey: newListKey,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       });
 
       // Update RSVP aggregate to maintain consistency
@@ -83,8 +85,9 @@ export async function cascadeListKeyUpdate(
       stats.redemptionsUpdated++;
     }
 
-    console.log(`[CASCADE] Completed listKey update: ${stats.rsvpsUpdated} RSVPs, ${stats.approvalsUpdated} approvals, ${stats.redemptionsUpdated} redemptions updated`);
-
+    console.log(
+      `[CASCADE] Completed listKey update: ${stats.rsvpsUpdated} RSVPs, ${stats.approvalsUpdated} approvals, ${stats.redemptionsUpdated} redemptions updated`,
+    );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     stats.errors.push(`Cascade listKey update failed: ${errorMessage}`);
@@ -101,17 +104,19 @@ export async function cascadeListKeyUpdate(
  * @deprecated Use cascadeListKeyUpdate instead
  */
 export async function nullifyCredentialReferences(
-  ctx: MutationCtx,
-  credentialId: Id<"listCredentials">,
-  eventId: Id<"events">
+  _ctx: MutationCtx,
+  _credentialId: Id<"listCredentials">,
+  _eventId: Id<"events">,
 ): Promise<CascadeStats> {
-  console.log(`[CASCADE] nullifyCredentialReferences is deprecated - credentialId no longer exists in schema`);
+  console.log(
+    `[CASCADE] nullifyCredentialReferences is deprecated - credentialId no longer exists in schema`,
+  );
 
   return {
     rsvpsUpdated: 0,
     approvalsUpdated: 0,
     redemptionsUpdated: 0,
-    errors: []
+    errors: [],
   };
 }
 
@@ -121,22 +126,25 @@ export async function nullifyCredentialReferences(
  */
 export async function shouldBatchCascade(
   ctx: MutationCtx,
-  eventId: Id<"events">
+  eventId: Id<"events">,
 ): Promise<{ shouldBatch: boolean; estimatedSize: number }> {
   // Count total records that would be affected
   const [rsvpCount, approvalCount, redemptionCount] = await Promise.all([
-    ctx.db.query("rsvps")
+    ctx.db
+      .query("rsvps")
       .withIndex("by_event", (q) => q.eq("eventId", eventId))
       .collect()
-      .then(results => results.length),
-    ctx.db.query("approvals")
+      .then((results) => results.length),
+    ctx.db
+      .query("approvals")
       .withIndex("by_event", (q) => q.eq("eventId", eventId))
       .collect()
-      .then(results => results.length),
-    ctx.db.query("redemptions")
+      .then((results) => results.length),
+    ctx.db
+      .query("redemptions")
       .withIndex("by_event_user", (q) => q.eq("eventId", eventId))
       .collect()
-      .then(results => results.length)
+      .then((results) => results.length),
   ]);
 
   const totalSize = rsvpCount + approvalCount + redemptionCount;
@@ -144,6 +152,6 @@ export async function shouldBatchCascade(
   // Batch if more than 100 total records (conservative threshold)
   return {
     shouldBatch: totalSize > 100,
-    estimatedSize: totalSize
+    estimatedSize: totalSize,
   };
 }

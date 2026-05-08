@@ -1,18 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import {
-  AdminEmptyState,
-  AdminHeader,
-  AdminSection,
-  Kpi,
-  KpiRow,
-} from "@coucou/ui/admin";
-import { Button } from "@/components/ui/button";
+import { AdminEmptyState, AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
+import { useQuery } from "convex/react";
+import { useState } from "react";
 import { SenderEditDialog } from "@/components/admin/sender-edit-dialog";
+import { Button } from "@/components/ui/button";
 
 interface WorkspaceShape {
   _id: Id<"workspaces">;
@@ -73,8 +67,7 @@ export default function AdminSendersPage() {
           label="Verified"
           value={(grouped ?? []).reduce(
             (sum: number, group: GroupedRow) =>
-              sum +
-              group.senders.filter((sender) => sender.verifiedAt).length,
+              sum + group.senders.filter((sender) => sender.verifiedAt).length,
             0,
           )}
           last
@@ -103,9 +96,7 @@ export default function AdminSendersPage() {
                 variant="ghost"
                 className="h-7 px-2 text-[12px]"
                 style={{ color: "var(--tt-fg)" }}
-                onClick={() =>
-                  setEditing({ workspace: group.workspace, sender: null })
-                }
+                onClick={() => setEditing({ workspace: group.workspace, sender: null })}
               >
                 + add sender
               </Button>
@@ -142,38 +133,25 @@ export default function AdminSendersPage() {
                     }}
                   >
                     <div style={{ width: "26%" }}>{sender.phoneNumber}</div>
-                    <div
-                      style={{ width: "26%", color: "var(--tt-fg-dim)" }}
-                    >
+                    <div style={{ width: "26%", color: "var(--tt-fg-dim)" }}>
                       {sender.brandLabel ?? "—"}
                     </div>
-                    <div
-                      style={{ width: "12%", color: "var(--tt-fg-dim)" }}
-                    >
+                    <div style={{ width: "12%", color: "var(--tt-fg-dim)" }}>
                       {sender.isDefault ? "default" : "—"}
                     </div>
-                    <div
-                      style={{ width: "14%", color: "var(--tt-fg-dim)" }}
-                    >
+                    <div style={{ width: "14%", color: "var(--tt-fg-dim)" }}>
                       {sender.verifiedAt ? formatDateOrDash(sender.verifiedAt) : "—"}
                     </div>
-                    <div
-                      style={{ width: "12%", color: "var(--tt-fg-dim)" }}
-                    >
+                    <div style={{ width: "12%", color: "var(--tt-fg-dim)" }}>
                       {formatDateOrDash(sender.lastUsedAt)}
                     </div>
-                    <div
-                      style={{ width: "10%" }}
-                      className="text-right"
-                    >
+                    <div style={{ width: "10%" }} className="text-right">
                       <Button
                         size="sm"
                         variant="ghost"
                         className="h-7 px-2 text-[12px]"
                         style={{ color: "var(--tt-fg)" }}
-                        onClick={() =>
-                          setEditing({ workspace: group.workspace, sender })
-                        }
+                        onClick={() => setEditing({ workspace: group.workspace, sender })}
                       >
                         edit
                       </Button>

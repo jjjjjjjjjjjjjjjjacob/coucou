@@ -1,20 +1,14 @@
 "use client";
-import React, { use, useMemo } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import {
-  isEventOpenForRsvp,
-  resolveEventRsvpCutoff,
-} from "@coucou/sdk/shared/event-availability";
+import { isEventOpenForRsvp, resolveEventRsvpCutoff } from "@coucou/sdk/shared/event-availability";
+import { ChlorineEventRow, type ChlorineLandingEvent, useMobile } from "@coucou/ui/tenant-template";
+import { useQuery } from "convex/react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import type React from "react";
+import { use, useMemo } from "react";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  ChlorineEventRow,
-  useMobile,
-  type ChlorineLandingEvent,
-} from "@coucou/ui/tenant-template";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import { siteConfiguration } from "@/lib/site";
 
@@ -30,8 +24,7 @@ function formatLandingDate(timestamp: number, timezone?: string): string {
     timeZone: timezone ?? "UTC",
   });
   const parts = dateFormatter.formatToParts(new Date(timestamp));
-  const weekday =
-    parts.find((part) => part.type === "weekday")?.value.toUpperCase() ?? "";
+  const weekday = parts.find((part) => part.type === "weekday")?.value.toUpperCase() ?? "";
   const month = parts.find((part) => part.type === "month")?.value ?? "";
   const day = parts.find((part) => part.type === "day")?.value ?? "";
   return `${weekday} ${month}.${day}`;
@@ -70,8 +63,7 @@ function formatEndTime(timestamp: number, timezone?: string): string {
 }
 
 const monoLabelStyle: React.CSSProperties = {
-  fontFamily:
-    'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+  fontFamily: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
   fontSize: 11,
   letterSpacing: "0.1em",
   textTransform: "uppercase",
@@ -79,8 +71,7 @@ const monoLabelStyle: React.CSSProperties = {
 };
 
 const monoBodyStyle: React.CSSProperties = {
-  fontFamily:
-    'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+  fontFamily: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
   fontSize: 12,
   letterSpacing: "0.04em",
   color: "var(--tt-fg-dim)",
@@ -112,10 +103,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     const now = Date.now();
     return allEvents
       .filter((event) => resolveEventRsvpCutoff(event) >= now)
-      .sort(
-        (firstEvent, secondEvent) =>
-          firstEvent.eventDate - secondEvent.eventDate,
-      );
+      .sort((firstEvent, secondEvent) => firstEvent.eventDate - secondEvent.eventDate);
   }, [allEvents]);
 
   const focusedEventInList = useMemo(() => {
@@ -139,8 +127,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     return (
       <div
         style={{
-          fontFamily:
-            'var(--font-geist-mono), "Geist Mono", ui-monospace, monospace',
+          fontFamily: 'var(--font-geist-mono), "Geist Mono", ui-monospace, monospace',
           fontSize: 12,
           letterSpacing: "0.08em",
           color: "var(--tt-fg-mute)",
@@ -185,21 +172,16 @@ export default function EventPageClient({ params }: EventPageClientProps) {
 
   const expandedContent = (
     <div className="flex flex-col gap-5">
-      <dl
-        className="grid gap-x-6 gap-y-2"
-        style={{ gridTemplateColumns: "min-content 1fr" }}
-      >
+      <dl className="grid gap-x-6 gap-y-2" style={{ gridTemplateColumns: "min-content 1fr" }}>
         <dt style={monoLabelStyle}>When</dt>
         <dd style={monoBodyStyle}>
-          {formatExpandedDate(
-            resolvedFocusedEvent.eventDate,
-            resolvedFocusedEvent.eventTimezone,
-          )}
+          {formatExpandedDate(resolvedFocusedEvent.eventDate, resolvedFocusedEvent.eventTimezone)}
           {resolvedFocusedEvent.eventEndDate ? (
-            <span> — until {formatEndTime(
-              resolvedFocusedEvent.eventEndDate,
-              resolvedFocusedEvent.eventTimezone,
-            )}</span>
+            <span>
+              {" "}
+              — until{" "}
+              {formatEndTime(resolvedFocusedEvent.eventEndDate, resolvedFocusedEvent.eventTimezone)}
+            </span>
           ) : null}
         </dd>
         {resolvedFocusedEvent.location ? (
@@ -211,17 +193,13 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         {resolvedFocusedEvent.hosts && resolvedFocusedEvent.hosts.length > 0 ? (
           <>
             <dt style={monoLabelStyle}>Hosts</dt>
-            <dd style={monoBodyStyle}>
-              {resolvedFocusedEvent.hosts.join(", ")}
-            </dd>
+            <dd style={monoBodyStyle}>{resolvedFocusedEvent.hosts.join(", ")}</dd>
           </>
         ) : null}
         {resolvedFocusedEvent.productionCompany ? (
           <>
             <dt style={monoLabelStyle}>Presented by</dt>
-            <dd style={monoBodyStyle}>
-              {resolvedFocusedEvent.productionCompany}
-            </dd>
+            <dd style={monoBodyStyle}>{resolvedFocusedEvent.productionCompany}</dd>
           </>
         ) : null}
       </dl>
@@ -260,10 +238,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     allRows.push({
       landingEvent: {
         id: resolvedFocusedEvent._id,
-        date: formatLandingDate(
-          resolvedFocusedEvent.eventDate,
-          resolvedFocusedEvent.eventTimezone,
-        ),
+        date: formatLandingDate(resolvedFocusedEvent.eventDate, resolvedFocusedEvent.eventTimezone),
         lineup: getPublicEventActs(resolvedFocusedEvent).map((act) => ({
           label: act.displayName,
           descriptorBadges: act.descriptorBadges,
@@ -296,14 +271,8 @@ export default function EventPageClient({ params }: EventPageClientProps) {
           // nest anchors inside their detailHref wrap.
           href: isFocused ? act.socialUrl : undefined,
         })),
-        rsvpHref: isFocused
-          ? focusedBrickHref
-          : `/events/${event._id}/rsvp`,
-        rsvpLabel: isFocused
-          ? focusedBrickLabel
-          : eventIsOpen
-            ? "RSVP"
-            : "CLOSED",
+        rsvpHref: isFocused ? focusedBrickHref : `/events/${event._id}/rsvp`,
+        rsvpLabel: isFocused ? focusedBrickLabel : eventIsOpen ? "RSVP" : "CLOSED",
         rsvpDisabled: isFocused ? focusedBrickDisabled : !eventIsOpen,
       },
       isFocused,
@@ -346,9 +315,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
             delayMs={index * 90}
             linkComponent={Link}
             variant={row.isFocused ? "expanded" : "minimized"}
-            detailHref={
-              row.isFocused ? undefined : `/events/${row.landingEvent.id}`
-            }
+            detailHref={row.isFocused ? undefined : `/events/${row.landingEvent.id}`}
             expandedContent={row.isFocused ? expandedContent : undefined}
           />
         </div>

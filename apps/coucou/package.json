@@ -7,7 +7,8 @@
     "build": "next build",
     "deploy": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "biome lint .",
+    "lint:eslint": "eslint ."
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.8",

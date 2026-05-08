@@ -1,8 +1,8 @@
 "use client";
 
+import type { PresetKey } from "@coucou/sdk";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { PresetKey } from "@coucou/sdk";
 import { TenantTemplateProvider } from "../provider";
 import { usePreset } from "../use-preset";
 
@@ -43,11 +43,7 @@ export function TenantLegalFooter({
 }: TenantLegalFooterProps) {
   return (
     <TenantTemplateProvider siteConfigurationPreset={preset} applyToBody>
-      <LegalFooterInner
-        brandName={brandName}
-        contact={contact}
-        links={links}
-      />
+      <LegalFooterInner brandName={brandName} contact={contact} links={links} />
     </TenantTemplateProvider>
   );
 }
@@ -73,8 +69,7 @@ function LegalFooterInner({ brandName, contact, links }: LegalFooterInnerProps) 
     >
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-6 py-8 text-[12px] sm:px-12">
         <span style={{ color: "var(--tt-fg)" }}>
-          {(preset.upper ? resolvedBrand.toUpperCase() : resolvedBrand)} ·
-          2026
+          {preset.upper ? resolvedBrand.toUpperCase() : resolvedBrand} · 2026
         </span>
         <nav
           aria-label="Legal"

@@ -2,16 +2,8 @@
 
 import { useSignIn, useSignUp, useUser } from "@clerk/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  initialPhoneAuthState,
-  type PhoneAuthError,
-  type PhoneAuthState,
-} from "../config/types";
-import {
-  digitsOnly,
-  mapClerkErrorToPhoneAuth,
-  getClerkErrorCode,
-} from "../internal-utils";
+import { initialPhoneAuthState, type PhoneAuthError, type PhoneAuthState } from "../config/types";
+import { digitsOnly, getClerkErrorCode, mapClerkErrorToPhoneAuth } from "../internal-utils";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
@@ -47,16 +39,8 @@ export function usePhoneAuthFlow({
   onSuccess,
   onError,
 }: UsePhoneAuthFlowOptions): UsePhoneAuthFlowReturn {
-  const {
-    signIn,
-    setActive: setSignInActive,
-    isLoaded: isSignInLoaded,
-  } = useSignIn();
-  const {
-    signUp,
-    setActive: setSignUpActive,
-    isLoaded: isSignUpLoaded,
-  } = useSignUp();
+  const { signIn, setActive: setSignInActive, isLoaded: isSignInLoaded } = useSignIn();
+  const { signUp, setActive: setSignUpActive, isLoaded: isSignUpLoaded } = useSignUp();
 
   const { isSignedIn } = useUser();
 
@@ -74,11 +58,7 @@ export function usePhoneAuthFlow({
   // the redirect can happen before the session cookie is set, looping the
   // user back to the phone form.
   useEffect(() => {
-    if (
-      awaitingSessionRef.current &&
-      state.step === "completing" &&
-      isSignedIn
-    ) {
+    if (awaitingSessionRef.current && state.step === "completing" && isSignedIn) {
       awaitingSessionRef.current = false;
       onSuccessRef.current();
     }

@@ -1,9 +1,9 @@
-import { query } from "./_generated/server";
+import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { v } from "convex/values";
+import { query } from "./_generated/server";
+import { normalizeCredentialPassword } from "./lib/credentialPasswords";
 import { ensureEventInSiteScope } from "./lib/siteScope";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
-import { normalizeCredentialPassword } from "./lib/credentialPasswords";
-import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 
 function toPublicCredential(credential: {
   _id: string;
@@ -108,12 +108,8 @@ export const resolveListByPassword = query({
       const matchingCredential = credentials.find((credential) => {
         const storedNormalized =
           credential.passwordNormalized?.trim() ||
-          (credential.password
-            ? normalizeCredentialPassword(credential.password)
-            : "");
-        return (
-          storedNormalized.length > 0 && storedNormalized === passwordNormalized
-        );
+          (credential.password ? normalizeCredentialPassword(credential.password) : "");
+        return storedNormalized.length > 0 && storedNormalized === passwordNormalized;
       });
       if (matchingCredential) {
         return {
@@ -145,9 +141,7 @@ export const getByPassword = query({
     const passwordNormalized = normalizeCredentialPassword(password);
     const credentials = await ctx.db
       .query("listCredentials")
-      .withIndex("by_passwordNormalized", (q) =>
-        q.eq("passwordNormalized", passwordNormalized),
-      )
+      .withIndex("by_passwordNormalized", (q) => q.eq("passwordNormalized", passwordNormalized))
       .collect();
     return credentials.map((credential) => ({
       _id: credential._id,

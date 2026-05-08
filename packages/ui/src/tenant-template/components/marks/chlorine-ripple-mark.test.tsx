@@ -1,16 +1,6 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, render } from "@testing-library/react";
-import React from "react";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-} from "bun:test";
 import { ChlorineLanding } from "../chlorine-landing";
 import { ChlorineRippleMark } from "./chlorine-ripple-mark";
 
@@ -227,8 +217,7 @@ function installBrowserMocks() {
 
 function getUniform1iCalls(uniformName: string) {
   return webGlContext.uniform1i.mock.calls.filter(
-    ([location]) =>
-      (location as { name?: string } | null)?.name === uniformName,
+    ([location]) => (location as { name?: string } | null)?.name === uniformName,
   );
 }
 
@@ -303,12 +292,8 @@ describe("ChlorineRippleMark", () => {
     const { container, getByRole } = render(<ChlorineRippleMark size={120} />);
 
     expect(getByRole("img", { name: "Club Chlorine" })).toBeTruthy();
-    expect(
-      container.querySelector('[data-chlorine-ripple-canvas="true"]'),
-    ).toBeTruthy();
-    expect(
-      canvasGetContext.mock.calls.some(([contextId]) => contextId === "webgl"),
-    ).toBe(true);
+    expect(container.querySelector('[data-chlorine-ripple-canvas="true"]')).toBeTruthy();
+    expect(canvasGetContext.mock.calls.some(([contextId]) => contextId === "webgl")).toBe(true);
   });
 
   it("does not start WebGL when reduced motion is requested", () => {
@@ -316,9 +301,7 @@ describe("ChlorineRippleMark", () => {
 
     render(<ChlorineRippleMark size={120} />);
 
-    expect(
-      canvasGetContext.mock.calls.some(([contextId]) => contextId === "webgl"),
-    ).toBe(false);
+    expect(canvasGetContext.mock.calls.some(([contextId]) => contextId === "webgl")).toBe(false);
   });
 
   it("queues the TNM click ripple pass after a click", async () => {
@@ -334,9 +317,7 @@ describe("ChlorineRippleMark", () => {
     );
     await advanceAnimationFrameBy(1000 / 60);
 
-    expect(
-      getUniform1iCalls("u_clickOnly").some(([, value]) => value === 1),
-    ).toBe(true);
+    expect(getUniform1iCalls("u_clickOnly").some(([, value]) => value === 1)).toBe(true);
   });
 
   it("keeps the landing RSVP link clickable below the transparent ripple canvas", () => {
@@ -372,8 +353,6 @@ describe("ChlorineRippleMark", () => {
       await Promise.resolve();
     });
 
-    expect(
-      canvasGetContext.mock.calls.some(([contextId]) => contextId === "webgl"),
-    ).toBe(true);
+    expect(canvasGetContext.mock.calls.some(([contextId]) => contextId === "webgl")).toBe(true);
   });
 });

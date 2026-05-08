@@ -16,6 +16,9 @@
     "lint": {
       "outputs": []
     },
+    "lint:eslint": {
+      "outputs": []
+    },
     "test": {
       "outputs": []
     }

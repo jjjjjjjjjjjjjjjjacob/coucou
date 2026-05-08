@@ -15,47 +15,55 @@ export default function Error({
     console.error("Application error:", error);
   }, [error]);
 
+  // No min-h-screen — the chlorine app shell already owns the viewport
+  // height, and stacking another 100vh section pushes the wordmark out
+  // of view. Fit naturally inside the shell's centered content band.
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="text-center space-y-6 max-w-md">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold text-destructive">Oops!</h1>
-          <h2 className="text-2xl font-semibold">Something went wrong</h2>
-          <p className="text-foreground/70">
-            We encountered an unexpected error. Please try again or contact support if the problem persists.
-          </p>
+    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-6 py-10 text-center">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold" style={{ color: "var(--tt-fg)" }}>
+          Oops!
+        </h1>
+        <h2 className="text-lg font-semibold" style={{ color: "var(--tt-fg)" }}>
+          Something went wrong
+        </h2>
+        <p className="text-sm" style={{ color: "var(--tt-fg-dim)" }}>
+          We encountered an unexpected error. Please try again or contact support if the problem
+          persists.
+        </p>
 
-          {process.env.NODE_ENV === "development" && (
-            <details className="mt-4 text-left">
-              <summary className="cursor-pointer text-sm text-foreground/60 hover:text-foreground">
-                Error Details (Development Only)
-              </summary>
-              <pre className="mt-2 text-xs bg-muted p-3 rounded overflow-auto">
-                {error.message}
-                {error.stack && (
-                  <>
-                    {"\n\nStack Trace:\n"}
-                    {error.stack}
-                  </>
-                )}
-              </pre>
-            </details>
-          )}
-        </div>
+        {process.env.NODE_ENV === "development" && (
+          <details className="mt-4 text-left">
+            <summary className="cursor-pointer text-xs" style={{ color: "var(--tt-fg-mute)" }}>
+              Error Details (Development Only)
+            </summary>
+            <pre
+              className="mt-2 overflow-auto rounded p-3 text-xs"
+              style={{
+                background: "var(--tt-bg-elevated, rgba(0,0,0,0.04))",
+                color: "var(--tt-fg-dim)",
+              }}
+            >
+              {error.message}
+              {error.stack && (
+                <>
+                  {"\n\nStack Trace:\n"}
+                  {error.stack}
+                </>
+              )}
+            </pre>
+          </details>
+        )}
+      </div>
 
-        <div className="space-y-3">
-          <Button onClick={reset} className="w-full">
-            Try Again
-          </Button>
+      <div className="flex w-full flex-col gap-3">
+        <Button onClick={reset} className="w-full">
+          Try Again
+        </Button>
 
-          <Button
-            variant="outline"
-            onClick={() => window.location.href = "/"}
-            className="w-full"
-          >
-            Go Home
-          </Button>
-        </div>
+        <Button variant="outline" onClick={() => (window.location.href = "/")} className="w-full">
+          Go Home
+        </Button>
       </div>
     </div>
   );

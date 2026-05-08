@@ -82,10 +82,7 @@ export function splitCommaSeparatedValues(value) {
 
 export function validateProductionEnvironmentValues(environmentVariables) {
   const validationMessages = [];
-  const appBaseUrl = getEnvironmentVariableValue(
-    environmentVariables,
-    "APP_BASE_URL",
-  );
+  const appBaseUrl = getEnvironmentVariableValue(environmentVariables, "APP_BASE_URL");
   const clerkFrontendApiUrl = getEnvironmentVariableValue(
     environmentVariables,
     "CLERK_FRONTEND_API_URL",
@@ -105,17 +102,11 @@ export function validateProductionEnvironmentValues(environmentVariables) {
     );
   }
 
-  if (
-    hasNonEmptyValue(clerkFrontendApiUrl) &&
-    !isProductionHttpsUrl(clerkFrontendApiUrl)
-  ) {
-    validationMessages.push(
-      "CLERK_FRONTEND_API_URL must be a production HTTPS URL.",
-    );
+  if (hasNonEmptyValue(clerkFrontendApiUrl) && !isProductionHttpsUrl(clerkFrontendApiUrl)) {
+    validationMessages.push("CLERK_FRONTEND_API_URL must be a production HTTPS URL.");
   }
 
-  const configuredClerkFrontendApiUrls =
-    splitCommaSeparatedValues(clerkFrontendApiUrls);
+  const configuredClerkFrontendApiUrls = splitCommaSeparatedValues(clerkFrontendApiUrls);
   for (const configuredClerkFrontendApiUrl of configuredClerkFrontendApiUrls) {
     if (!isProductionHttpsUrl(configuredClerkFrontendApiUrl)) {
       validationMessages.push(
@@ -126,9 +117,7 @@ export function validateProductionEnvironmentValues(environmentVariables) {
   }
 
   if (developmentTwilioEnabled?.trim().toLowerCase() === "true") {
-    validationMessages.push(
-      "DEV_TWILIO_ENABLED must not be true for the Production environment.",
-    );
+    validationMessages.push("DEV_TWILIO_ENABLED must not be true for the Production environment.");
   }
 
   return validationMessages;

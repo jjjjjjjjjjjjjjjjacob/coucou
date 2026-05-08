@@ -2,8 +2,8 @@
 
 import { Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
-import { combineClassNames } from "./internal-utils";
 import { usePhoneAuthFlow } from "./hooks/use-phone-auth-flow";
+import { combineClassNames } from "./internal-utils";
 import { OtpInput } from "./otp-input";
 import { PhoneInput } from "./phone-input";
 
@@ -18,15 +18,8 @@ interface PhoneAuthFlowProps {
  * resolve from the active tenant template.
  */
 export function PhoneAuthFlow({ onSuccess, className }: PhoneAuthFlowProps) {
-  const {
-    state,
-    setPhone,
-    setCountryCode,
-    sendVerificationCode,
-    verifyCode,
-    resendCode,
-    goBack,
-  } = usePhoneAuthFlow({ onSuccess });
+  const { state, setPhone, setCountryCode, sendVerificationCode, verifyCode, resendCode, goBack } =
+    usePhoneAuthFlow({ onSuccess });
 
   const [otpValue, setOtpValue] = useState("");
 
@@ -105,9 +98,7 @@ export function PhoneAuthFlow({ onSuccess, className }: PhoneAuthFlowProps) {
                 Resend code
               </button>
             ) : state.resendCooldown > 0 ? (
-              <span style={{ color: "var(--tt-fg-mute)" }}>
-                Resend in {state.resendCooldown}s
-              </span>
+              <span style={{ color: "var(--tt-fg-mute)" }}>Resend in {state.resendCooldown}s</span>
             ) : null}
           </div>
         </div>
@@ -115,14 +106,8 @@ export function PhoneAuthFlow({ onSuccess, className }: PhoneAuthFlowProps) {
 
       {state.step === "completing" ? (
         <div className="flex flex-col items-center gap-4 py-8">
-          <Loader2
-            className="h-8 w-8 animate-spin"
-            style={{ color: "var(--tt-fg)" }}
-          />
-          <p
-            className="text-[13px]"
-            style={{ color: "var(--tt-fg-dim)" }}
-          >
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: "var(--tt-fg)" }} />
+          <p className="text-[13px]" style={{ color: "var(--tt-fg-dim)" }}>
             Verifying…
           </p>
         </div>

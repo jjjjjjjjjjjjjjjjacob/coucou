@@ -1,9 +1,4 @@
-import type {
-  AnchorHTMLAttributes,
-  ComponentType,
-  HTMLAttributes,
-  ReactNode,
-} from "react";
+import type { AnchorHTMLAttributes, ComponentType, HTMLAttributes, ReactNode } from "react";
 import { combineClassNames } from "../../internal-utils";
 
 export interface EyebrowProps extends HTMLAttributes<HTMLDivElement> {
@@ -16,12 +11,7 @@ export interface EyebrowProps extends HTMLAttributes<HTMLDivElement> {
   trailing?: ReactNode;
 }
 
-export function Eyebrow({
-  className,
-  children,
-  trailing,
-  ...rest
-}: EyebrowProps) {
+export function Eyebrow({ className, children, trailing, ...rest }: EyebrowProps) {
   if (trailing) {
     return (
       <div
@@ -39,10 +29,7 @@ export function Eyebrow({
   }
   return (
     <div
-      className={combineClassNames(
-        "mb-6 text-[11px] uppercase tracking-[0.06em]",
-        className,
-      )}
+      className={combineClassNames("mb-6 text-[11px] uppercase tracking-[0.06em]", className)}
       style={{ color: "var(--tt-fg-mute)" }}
       {...rest}
     >
@@ -58,9 +45,7 @@ export interface EyebrowPillProps {
    * Router-aware link component (e.g. Next.js `Link`). Falls back to a
    * plain `<a>` when omitted.
    */
-  linkComponent?: ComponentType<
-    AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }
-  >;
+  linkComponent?: ComponentType<AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }>;
   className?: string;
 }
 
@@ -94,11 +79,7 @@ export function EyebrowPill({
   };
   if (LinkComponent) {
     return (
-      <LinkComponent
-        href={href}
-        className={pillClassName}
-        style={pillStyle}
-      >
+      <LinkComponent href={href} className={pillClassName} style={pillStyle}>
         {children}
       </LinkComponent>
     );

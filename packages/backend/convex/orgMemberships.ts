@@ -1,9 +1,6 @@
-import { mutation, query } from "./functions";
 import { v } from "convex/values";
-import {
-  getCoucouOrganizationSlug,
-  requireCoucouPlatformMember,
-} from "./lib/platformAuth";
+import { mutation, query } from "./functions";
+import { getCoucouOrganizationSlug, requireCoucouPlatformMember } from "./lib/platformAuth";
 
 export const upsertMembership = mutation({
   args: {
@@ -71,18 +68,13 @@ export const listAllMembershipsPaginated = query({
     roleFilter: v.optional(v.string()),
     organizationId: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    { cursor, pageSize = 25, search, roleFilter, organizationId },
-  ) => {
+  handler: async (ctx, { cursor, pageSize = 25, search, roleFilter, organizationId }) => {
     await requireCoucouPlatformMember(ctx);
     const allMemberships = await ctx.db.query("orgMemberships").collect();
 
     const trimmedSearch = search?.trim().toLowerCase() ?? "";
 
-    const userIds = new Set(
-      allMemberships.map((membership) => membership.clerkUserId),
-    );
+    const userIds = new Set(allMemberships.map((membership) => membership.clerkUserId));
     const usersByClerkId = new Map<
       string,
       { firstName?: string; lastName?: string; phone?: string; email?: string }
@@ -104,10 +96,7 @@ export const listAllMembershipsPaginated = query({
     }
 
     const allWorkspaces = await ctx.db.query("workspaces").collect();
-    const workspaceByOrgId = new Map<
-      string,
-      { name: string; slug: string; _id: string }
-    >();
+    const workspaceByOrgId = new Map<string, { name: string; slug: string; _id: string }>();
     for (const workspace of allWorkspaces) {
       if (workspace.clerkOrganizationId) {
         workspaceByOrgId.set(workspace.clerkOrganizationId, {
@@ -120,8 +109,7 @@ export const listAllMembershipsPaginated = query({
 
     const tenanciesByUser = new Map<string, Set<string>>();
     for (const membership of allMemberships) {
-      const set =
-        tenanciesByUser.get(membership.clerkUserId) ?? new Set<string>();
+      const set = tenanciesByUser.get(membership.clerkUserId) ?? new Set<string>();
       set.add(membership.organizationId);
       tenanciesByUser.set(membership.clerkUserId, set);
     }
@@ -134,11 +122,7 @@ export const listAllMembershipsPaginated = query({
       ) {
         return false;
       }
-      if (
-        roleFilter &&
-        roleFilter !== "all" &&
-        membership.role !== roleFilter
-      ) {
+      if (roleFilter && roleFilter !== "all" && membership.role !== roleFilter) {
         return false;
       }
       if (organizationId && membership.organizationId !== organizationId) {
@@ -175,14 +159,10 @@ export const listAllMembershipsPaginated = query({
           email: userInfo?.email ?? null,
           phone: userInfo?.phone ?? null,
           workspace: workspace ?? null,
-          tenancyCount:
-            tenanciesByUser.get(membership.clerkUserId)?.size ?? 0,
+          tenancyCount: tenanciesByUser.get(membership.clerkUserId)?.size ?? 0,
         };
       }),
-      nextCursor:
-        cursorIndex + pageSize < filtered.length
-          ? String(cursorIndex + pageSize)
-          : null,
+      nextCursor: cursorIndex + pageSize < filtered.length ? String(cursorIndex + pageSize) : null,
       isDone: cursorIndex + pageSize >= filtered.length,
       totalCount: filtered.length,
     };

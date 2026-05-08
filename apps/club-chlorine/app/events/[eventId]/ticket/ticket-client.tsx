@@ -1,33 +1,25 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
-import { useConvexMutation } from "@convex-dev/react-query";
-import {
-  useQuery as useConvexQuery,
-  Preloaded,
-  usePreloadedQuery,
-} from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { toast } from "sonner";
-import { Check, Download } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import {
-  formatEventTitleInline,
-  hasEventSecondaryTitle,
-} from "@/lib/event-display";
-import { siteConfiguration } from "@/lib/site";
+import { useConvexMutation } from "@convex-dev/react-query";
 import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
-import Link from "next/link";
 import {
   EyebrowPill,
-  Ticket,
   TenantButton,
+  Ticket,
   type TicketDetailRow,
 } from "@coucou/ui/tenant-template";
+import { useMutation } from "@tanstack/react-query";
+import { type Preloaded, useQuery as useConvexQuery, usePreloadedQuery } from "convex/react";
+import { Check, Download } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Spinner } from "@/components/ui/spinner";
+import { formatEventTitleInline, hasEventSecondaryTitle } from "@/lib/event-display";
+import { siteConfiguration } from "@/lib/site";
 
 const QR_SVG_ID = "ticket-qr-svg";
 
@@ -162,12 +154,7 @@ export default function TicketClientPage({
 
   // Trigger acceptRsvp once when an approval is observed.
   useEffect(() => {
-    if (
-      event?.name &&
-      status?.status === "approved" &&
-      !acceptRsvp.isPending &&
-      !hasCelebrated
-    ) {
+    if (event?.name && status?.status === "approved" && !acceptRsvp.isPending && !hasCelebrated) {
       acceptRsvp.mutate(
         {
           eventId: eventId as Id<"events">,
@@ -194,16 +181,13 @@ export default function TicketClientPage({
     return (
       <div className="text-center" style={{ color: "var(--tt-fg-dim)" }}>
         <p className="text-lg font-medium">Event Not Found</p>
-        <p className="mt-2 text-sm">
-          This event may not exist or may have been removed.
-        </p>
+        <p className="mt-2 text-sm">This event may not exist or may have been removed.</p>
       </div>
     );
   }
 
   // Loading the redemption when we know we should have one.
-  const expectingQr =
-    status?.status === "approved" || status?.status === "attending";
+  const expectingQr = status?.status === "approved" || status?.status === "attending";
   const isLoadingRedemption = expectingQr && myRedemption === undefined;
   const hasRedemption = Boolean(myRedemption?.code);
   const generatesQr = status?.generateQR !== false;
@@ -240,9 +224,7 @@ export default function TicketClientPage({
             </EyebrowPill>
           }
           eventName={event.name}
-          secondaryTitle={
-            eventHasSecondaryTitle ? event.secondaryTitle : null
-          }
+          secondaryTitle={eventHasSecondaryTitle ? event.secondaryTitle : null}
           whenLabel={dateText || null}
           whereLabel={event.location ?? null}
           qrValue={qrValue}
@@ -255,10 +237,7 @@ export default function TicketClientPage({
             generatesQr ? (
               <div className="flex flex-col items-center gap-2">
                 <Spinner />
-                <div
-                  className="text-[12px]"
-                  style={{ color: "var(--tt-fg-dim)" }}
-                >
+                <div className="text-[12px]" style={{ color: "var(--tt-fg-dim)" }}>
                   Generating your QR code…
                 </div>
               </div>

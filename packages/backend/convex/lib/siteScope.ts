@@ -1,5 +1,5 @@
-import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 export type SiteScope = {
   siteKey?: string | null;
@@ -12,10 +12,7 @@ type TextBlastScopeRecord = Doc<"textBlasts">;
 
 type SiteScopedDatabaseReader = Pick<QueryCtx | MutationCtx, "db">;
 
-export function eventMatchesSiteScope(
-  event: EventScopeRecord | null,
-  scope: SiteScope,
-): boolean {
+export function eventMatchesSiteScope(event: EventScopeRecord | null, scope: SiteScope): boolean {
   if (!event) {
     return false;
   }

@@ -1,10 +1,8 @@
 "use client";
-import React from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Copy } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import React from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -13,6 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export type CustomFieldDef = {
   key: string;
@@ -32,13 +32,10 @@ function CustomFieldPreview({ field }: { field: CustomFieldDef }) {
       <div className="text-xs text-muted-foreground mb-1">PREVIEW:</div>
       <div className="space-y-1">
         <label className="text-sm font-medium">
-          {field.label}{" "}
-          {field.required && <span className="text-red-500">*</span>}
+          {field.label} {field.required && <span className="text-red-500">*</span>}
         </label>
         <Input
-          placeholder={
-            field.placeholder || `Enter ${field.label.toLowerCase()}`
-          }
+          placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
           disabled
           className="opacity-60"
         />
@@ -57,14 +54,9 @@ function normalizeReservedKey(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function buildReservedKeyMap(
-  reservedKeys: string[] | undefined,
-): Map<string, string> {
+function buildReservedKeyMap(reservedKeys: string[] | undefined): Map<string, string> {
   const map = new Map<string, string>();
-  for (const reservedKey of [
-    ...RESERVED_PRIMARY_FIELD_KEYS,
-    ...(reservedKeys ?? []),
-  ]) {
+  for (const reservedKey of [...RESERVED_PRIMARY_FIELD_KEYS, ...(reservedKeys ?? [])]) {
     const normalized = normalizeReservedKey(reservedKey);
     if (!normalized) continue;
     if (!map.has(normalized)) {
@@ -74,9 +66,7 @@ function buildReservedKeyMap(
   return map;
 }
 
-function applyCustomFieldDefaults(
-  customFields: CustomFieldDef[],
-): CustomFieldDef[] {
+function applyCustomFieldDefaults(customFields: CustomFieldDef[]): CustomFieldDef[] {
   return customFields.map((customField) => ({
     key: customField.key ?? "",
     label: customField.label ?? "",
@@ -84,10 +74,7 @@ function applyCustomFieldDefaults(
     required: customField.required ?? false,
     copyEnabled: customField.copyEnabled ?? false,
     prependUrl: customField.prependUrl ?? "",
-    trimWhitespace:
-      customField.trimWhitespace === undefined
-        ? true
-        : customField.trimWhitespace,
+    trimWhitespace: customField.trimWhitespace === undefined ? true : customField.trimWhitespace,
   }));
 }
 
@@ -147,11 +134,7 @@ function CustomFieldsBuilder({
     }
   }, [fields, onChange, mode]);
 
-  const set = (
-    index: number,
-    key: keyof CustomFieldDef,
-    value: string | boolean,
-  ) =>
+  const set = (index: number, key: keyof CustomFieldDef, value: string | boolean) =>
     setFields((currentFields) =>
       currentFields.map((customField, fieldIndex) =>
         fieldIndex === index ? { ...customField, [key]: value } : customField,
@@ -159,9 +142,7 @@ function CustomFieldsBuilder({
     );
 
   const remove = (index: number) =>
-    setFields((currentFields) =>
-      currentFields.filter((_, fieldIndex) => fieldIndex !== index),
-    );
+    setFields((currentFields) => currentFields.filter((_, fieldIndex) => fieldIndex !== index));
 
   const add = () =>
     setFields((currentFields) => [
@@ -191,10 +172,7 @@ function CustomFieldsBuilder({
     });
   };
 
-  const reservedKeyMap = React.useMemo(
-    () => buildReservedKeyMap(reservedKeys),
-    [reservedKeys],
-  );
+  const reservedKeyMap = React.useMemo(() => buildReservedKeyMap(reservedKeys), [reservedKeys]);
 
   const reservedKeyConflict = React.useCallback(
     (key: string): string | null => {
@@ -208,172 +186,163 @@ function CustomFieldsBuilder({
 
   return (
     <div className="rounded-lg border bg-card p-4 space-y-4">
-      <h3 className="font-medium text-sm text-muted-foreground">
-        CUSTOM RSVP FIELDS
-      </h3>
+      <h3 className="font-medium text-sm text-muted-foreground">CUSTOM RSVP FIELDS</h3>
       <div className="space-y-6">
         {fields.map((field, index) => {
           const conflict = reservedKeyConflict(field.key);
           return (
-          <div key={index} className="space-y-4">
-            {index > 0 && <div className="border-t" />}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Field Configuration */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Field Key
-                    </label>
-                    <Input
-                      placeholder="e.g. instagram, phone, dietary"
-                      value={field.key}
-                      onChange={(e) => set(index, "key", e.target.value)}
-                      aria-invalid={conflict ? true : undefined}
-                    />
-                    {conflict ? (
-                      <p className="text-xs text-destructive mt-1">
-                        &ldquo;{conflict}&rdquo; is reserved for a primary
-                        field. Pick a different key or remove that primary
-                        field above.
-                      </p>
-                    ) : null}
+            <div key={index} className="space-y-4">
+              {index > 0 && <div className="border-t" />}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Field Configuration */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground">Field Key</label>
+                      <Input
+                        placeholder="e.g. instagram, phone, dietary"
+                        value={field.key}
+                        onChange={(e) => set(index, "key", e.target.value)}
+                        aria-invalid={conflict ? true : undefined}
+                      />
+                      {conflict ? (
+                        <p className="text-xs text-destructive mt-1">
+                          &ldquo;{conflict}&rdquo; is reserved for a primary field. Pick a different
+                          key or remove that primary field above.
+                        </p>
+                      ) : null}
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Display Label
+                      </label>
+                      <Input
+                        placeholder="e.g. Instagram Handle"
+                        value={field.label}
+                        onChange={(e) => set(index, "label", e.target.value)}
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">
-                      Display Label
+                      Placeholder Text
                     </label>
                     <Input
-                      placeholder="e.g. Instagram Handle"
-                      value={field.label}
-                      onChange={(e) => set(index, "label", e.target.value)}
+                      placeholder="e.g. @username or Enter your dietary restrictions"
+                      value={field.placeholder || ""}
+                      onChange={(e) => set(index, "placeholder", e.target.value)}
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Placeholder Text
-                  </label>
-                  <Input
-                    placeholder="e.g. @username or Enter your dietary restrictions"
-                    value={field.placeholder || ""}
-                    onChange={(e) =>
-                      set(index, "placeholder", e.target.value)
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Prepend URL (optional)
-                  </label>
-                  <Input
-                    placeholder="e.g. https://instagram.com/ or https://twitter.com/"
-                    value={field.prependUrl || ""}
-                    onChange={(e) =>
-                      set(index, "prependUrl", e.target.value)
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    When provided, creates clickable links by prepending this URL to field values
-                  </p>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Prepend URL (optional)
+                    </label>
+                    <Input
+                      placeholder="e.g. https://instagram.com/ or https://twitter.com/"
+                      value={field.prependUrl || ""}
+                      onChange={(e) => set(index, "prependUrl", e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      When provided, creates clickable links by prepending this URL to field values
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size={!isMobile ? "default" : "sm"}
+                          className="justify-between"
+                        >
+                          Options
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-52">
+                        <DropdownMenuLabel>Toggle behaviors</DropdownMenuLabel>
+                        <DropdownMenuCheckboxItem
+                          checked={!!field.required}
+                          onCheckedChange={(isRequired) =>
+                            set(index, "required", Boolean(isRequired))
+                          }
+                        >
+                          Required response
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={field.trimWhitespace !== false}
+                          onCheckedChange={(shouldTrim) =>
+                            set(
+                              index,
+                              "trimWhitespace",
+                              shouldTrim === undefined ? true : Boolean(shouldTrim),
+                            )
+                          }
+                        >
+                          Trim whitespace on submit
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel>RSVP display</DropdownMenuLabel>
+                        <DropdownMenuCheckboxItem
+                          checked={!!field.copyEnabled}
+                          onCheckedChange={(copyEnabled) =>
+                            set(index, "copyEnabled", Boolean(copyEnabled))
+                          }
+                        >
+                          Enable copy shortcut
+                        </DropdownMenuCheckboxItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <div className="flex items-center gap-2">
                       <Button
                         type="button"
                         variant="outline"
                         size={!isMobile ? "default" : "sm"}
-                        className="justify-between"
+                        onClick={() => copy(index)}
+                        className="flex items-center gap-1"
                       >
-                        Options
+                        <Copy className="h-3 w-3" />
+                        Duplicate
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-52">
-                      <DropdownMenuLabel>Toggle behaviors</DropdownMenuLabel>
-                      <DropdownMenuCheckboxItem
-                        checked={!!field.required}
-                        onCheckedChange={(isRequired) =>
-                          set(index, "required", Boolean(isRequired))
-                        }
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size={!isMobile ? "default" : "sm"}
+                        onClick={() => remove(index)}
                       >
-                        Required response
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuCheckboxItem
-                        checked={field.trimWhitespace !== false}
-                        onCheckedChange={(shouldTrim) =>
-                          set(
-                            index,
-                            "trimWhitespace",
-                            shouldTrim === undefined ? true : Boolean(shouldTrim),
-                          )
-                        }
-                      >
-                        Trim whitespace on submit
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel>RSVP display</DropdownMenuLabel>
-                      <DropdownMenuCheckboxItem
-                        checked={!!field.copyEnabled}
-                        onCheckedChange={(copyEnabled) =>
-                          set(index, "copyEnabled", Boolean(copyEnabled))
-                        }
-                      >
-                        Enable copy shortcut
-                      </DropdownMenuCheckboxItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size={!isMobile ? "default" : "sm"}
-                      onClick={() => copy(index)}
-                      className="flex items-center gap-1"
-                    >
-                      <Copy className="h-3 w-3" />
-                      Duplicate
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size={!isMobile ? "default" : "sm"}
-                      onClick={() => remove(index)}
-                    >
-                      Remove
-                    </Button>
+                        Remove
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Preview */}
-              <div className="space-y-2">
-                <div className="flex flex-wrap gap-2">
-                  {field.required && (
-                    <Badge variant="secondary" className="text-xs">
-                      Required
-                    </Badge>
-                  )}
-                  {field.copyEnabled && (
-                    <Badge variant="secondary" className="text-xs">
-                      Copy shortcut
-                    </Badge>
-                  )}
-                  {field.trimWhitespace === false && (
-                    <Badge variant="secondary" className="text-xs">
-                      Preserve whitespace
-                    </Badge>
-                  )}
-                  {field.prependUrl && (
-                    <Badge variant="secondary" className="text-xs">
-                      Link enabled
-                    </Badge>
-                  )}
+                {/* Preview */}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {field.required && (
+                      <Badge variant="secondary" className="text-xs">
+                        Required
+                      </Badge>
+                    )}
+                    {field.copyEnabled && (
+                      <Badge variant="secondary" className="text-xs">
+                        Copy shortcut
+                      </Badge>
+                    )}
+                    {field.trimWhitespace === false && (
+                      <Badge variant="secondary" className="text-xs">
+                        Preserve whitespace
+                      </Badge>
+                    )}
+                    {field.prependUrl && (
+                      <Badge variant="secondary" className="text-xs">
+                        Link enabled
+                      </Badge>
+                    )}
+                  </div>
+                  <CustomFieldPreview field={field} />
                 </div>
-                <CustomFieldPreview field={field} />
               </div>
             </div>
-          </div>
           );
         })}
 
@@ -381,29 +350,19 @@ function CustomFieldsBuilder({
           <div className="text-center py-8 text-muted-foreground">
             <p className="text-sm">No custom fields added yet.</p>
             <p className="text-xs">
-              Custom fields allow you to collect additional information from
-              guests during RSVP.
+              Custom fields allow you to collect additional information from guests during RSVP.
             </p>
           </div>
         )}
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={add}
-          className="w-full"
-        >
+        <Button type="button" variant="outline" onClick={add} className="w-full">
           + Add Custom Field
         </Button>
       </div>
 
       {/* Hidden form input for form mode */}
       {mode === "form" && (
-        <input
-          type="hidden"
-          name="customFields"
-          value={JSON.stringify(fields)}
-        />
+        <input type="hidden" name="customFields" value={JSON.stringify(fields)} />
       )}
     </div>
   );

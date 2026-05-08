@@ -8,9 +8,7 @@ interface ClerkApiErrorShape {
   }>;
 }
 
-export function combineClassNames(
-  ...classNames: Array<string | false | null | undefined>
-): string {
+export function combineClassNames(...classNames: Array<string | false | null | undefined>): string {
   return classNames.filter(Boolean).join(" ");
 }
 
@@ -19,8 +17,7 @@ export function getClerkErrorCode(error: unknown): string | undefined {
 }
 
 export function getClerkErrorMessage(error: unknown): string | undefined {
-  const firstError = (error as ClerkApiErrorShape | null | undefined)
-    ?.errors?.[0];
+  const firstError = (error as ClerkApiErrorShape | null | undefined)?.errors?.[0];
   return firstError?.longMessage ?? firstError?.message;
 }
 
@@ -73,10 +70,7 @@ export function digitsOnly(value: string): string {
   return value.replace(/\D/g, "");
 }
 
-export function isPhoneNumberLikelyValid(
-  value: string,
-  countryCode: string,
-): boolean {
+export function isPhoneNumberLikelyValid(value: string, countryCode: string): boolean {
   const digits = digitsOnly(value);
   if (countryCode === "+1") {
     return digits.length >= 10;
@@ -84,10 +78,7 @@ export function isPhoneNumberLikelyValid(
   return digits.length >= 8;
 }
 
-export function formatPhoneNumberForDisplay(
-  value: string,
-  countryCode: string,
-): string {
+export function formatPhoneNumberForDisplay(value: string, countryCode: string): string {
   const digits = digitsOnly(value);
   if (countryCode === "+1") {
     let formatted = "";

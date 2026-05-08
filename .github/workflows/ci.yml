@@ -34,6 +34,7 @@ jobs:
           bun-version: "1.2.18"
 
       - run: bun install --frozen-lockfile
-      - run: bun run lint
+      - name: Biome check
+        run: bun run check
       - run: bun run test
       - run: bun run build

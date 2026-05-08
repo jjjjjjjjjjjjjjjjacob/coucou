@@ -1,19 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import {
-  AdminEmptyState,
-  AdminHeader,
-  AdminSection,
-  Kpi,
-  KpiRow,
-} from "@coucou/ui/admin";
-import {
-  AdminDataTable,
-  type AdminDataTableColumn,
-} from "@/components/admin/admin-data-table";
+import { AdminEmptyState, AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
+import { useQuery } from "convex/react";
+import { useState } from "react";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
 import { buildWorkspaceOperationPath } from "@/lib/workspace-config";
 
 interface DeliveryRow {
@@ -49,12 +40,15 @@ export default function AdminDeliveryPage() {
     0,
   );
   const overallDeliveredRate =
-    totalSends > 0
-      ? Math.round(((totalSends - totalFailed) / totalSends) * 1000) / 10
-      : 0;
+    totalSends > 0 ? Math.round(((totalSends - totalFailed) / totalSends) * 1000) / 10 : 0;
 
   const columns: AdminDataTableColumn<DeliveryRow>[] = [
-    { key: "name", label: "Workspace", width: "26%", render: (row) => row.name },
+    {
+      key: "name",
+      label: "Workspace",
+      width: "26%",
+      render: (row) => row.name,
+    },
     {
       key: "domain",
       label: "Domain",

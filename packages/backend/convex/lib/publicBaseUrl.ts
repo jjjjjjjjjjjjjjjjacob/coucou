@@ -6,7 +6,8 @@ function trimTrailingSlash(url: string): string {
 
 export function resolvePublicBaseUrlForSite(siteKey?: string | null): string | null {
   const normalizedSiteKey = siteKey ?? "dojo";
-  const siteConfiguration = siteConfigurations[normalizedSiteKey as keyof typeof siteConfigurations];
+  const siteConfiguration =
+    siteConfigurations[normalizedSiteKey as keyof typeof siteConfigurations];
 
   if (siteConfiguration?.domain) {
     return trimTrailingSlash(siteConfiguration.domain);

@@ -2,8 +2,8 @@
 
 import { OTPInput, type SlotProps } from "input-otp";
 import { useCallback } from "react";
-import { combineClassNames } from "./internal-utils";
 import { usePresetOptional } from "../tenant-template/use-preset";
+import { combineClassNames } from "./internal-utils";
 
 interface OtpInputProps {
   value: string;
@@ -50,22 +50,14 @@ export function OtpInput({
         render={({ slots }) => (
           <>
             {slots.map((slot, index) => (
-              <Slot
-                key={`otp-slot-${index}`}
-                {...slot}
-                hasError={Boolean(error)}
-              />
+              <Slot key={`otp-slot-${index}`} {...slot} hasError={Boolean(error)} />
             ))}
           </>
         )}
       />
 
       {error ? (
-        <p
-          className="text-[13px] leading-snug"
-          role="alert"
-          style={{ color: "var(--tt-fg)" }}
-        >
+        <p className="text-[13px] leading-snug" role="alert" style={{ color: "var(--tt-fg)" }}>
           {error}
         </p>
       ) : null}
@@ -90,15 +82,12 @@ function Slot({ char, isActive, hasFakeCaret, hasError }: SlotComponentProps) {
         background: "var(--tt-bg-2)",
         color: "var(--tt-fg)",
         border: `1px solid ${
-          hasError
-            ? "var(--tt-fg)"
-            : isActive
-              ? "var(--tt-fg)"
-              : "var(--tt-rule-strong)"
+          hasError ? "var(--tt-fg)" : isActive ? "var(--tt-fg)" : "var(--tt-rule-strong)"
         }`,
-        boxShadow: isActive && !hasError
-          ? `0 0 0 3px color-mix(in srgb, var(--tt-fg) 16%, transparent)`
-          : undefined,
+        boxShadow:
+          isActive && !hasError
+            ? `0 0 0 3px color-mix(in srgb, var(--tt-fg) 16%, transparent)`
+            : undefined,
         fontFamily: '"JetBrains Mono", ui-monospace, monospace',
       }
     : {
@@ -107,9 +96,7 @@ function Slot({ char, isActive, hasFakeCaret, hasError }: SlotComponentProps) {
         borderRadius: 0,
         background: "var(--tt-bg-2)",
         color: "var(--tt-fg)",
-        border: `1px solid ${
-          hasError || isActive ? "var(--tt-fg)" : "var(--tt-rule-strong)"
-        }`,
+        border: `1px solid ${hasError || isActive ? "var(--tt-fg)" : "var(--tt-rule-strong)"}`,
         fontFamily: "var(--tt-text)",
       };
 
@@ -123,10 +110,7 @@ function Slot({ char, isActive, hasFakeCaret, hasError }: SlotComponentProps) {
       {char}
       {hasFakeCaret ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div
-            className="h-6 w-px animate-pulse"
-            style={{ background: "var(--tt-fg)" }}
-          />
+          <div className="h-6 w-px animate-pulse" style={{ background: "var(--tt-fg)" }} />
         </div>
       ) : null}
     </div>

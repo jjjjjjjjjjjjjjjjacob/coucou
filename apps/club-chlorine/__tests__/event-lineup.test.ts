@@ -1,9 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  formatPublicEventActLabel,
-  getPublicEventActs,
-} from "../lib/event-lineup";
+import { formatPublicEventActLabel, getPublicEventActs } from "../lib/event-lineup";
 import type { Event } from "../lib/types";
 
 function buildEvent(overrides: Partial<Event>): Event {

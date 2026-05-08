@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import type { Path } from "react-hook-form";
 import {
   FormControl,
   FormDescription,
@@ -10,8 +10,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { UseFormReturn, BaseEventFormValues } from "@/lib/types";
-import type { Path } from "react-hook-form";
+import type { BaseEventFormValues, UseFormReturn } from "@/lib/types";
 
 export interface EventDetailsSectionProps<FormValues extends BaseEventFormValues> {
   form: UseFormReturn<FormValues>;
@@ -22,9 +21,7 @@ export function EventDetailsSection<FormValues extends BaseEventFormValues>({
 }: EventDetailsSectionProps<FormValues>) {
   return (
     <div className="rounded-lg border bg-card p-4 space-y-4">
-      <h3 className="font-medium text-sm text-muted-foreground">
-        EVENT DETAILS
-      </h3>
+      <h3 className="font-medium text-sm text-muted-foreground">EVENT DETAILS</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <FormField
           control={form.control}
@@ -57,10 +54,7 @@ export function EventDetailsSection<FormValues extends BaseEventFormValues>({
             return (
               <FormItem>
                 <FormLabel>
-                  Secondary Title{" "}
-                  <span className="text-sm text-muted-foreground">
-                    (optional)
-                  </span>
+                  Secondary Title <span className="text-sm text-muted-foreground">(optional)</span>
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -85,9 +79,7 @@ export function EventDetailsSection<FormValues extends BaseEventFormValues>({
               <FormItem className="md:col-span-2">
                 <FormLabel>
                   Event Description{" "}
-                  <span className="text-sm text-muted-foreground">
-                    (optional)
-                  </span>
+                  <span className="text-sm text-muted-foreground">(optional)</span>
                 </FormLabel>
                 <FormControl>
                   <Textarea
@@ -158,10 +150,7 @@ export function EventDetailsSection<FormValues extends BaseEventFormValues>({
           return (
             <FormItem>
               <FormLabel>
-                Production Company{" "}
-                <span className="text-sm text-muted-foreground">
-                  (optional)
-                </span>
+                Production Company <span className="text-sm text-muted-foreground">(optional)</span>
               </FormLabel>
               <FormDescription>
                 Overrides host names in consent messaging and SMS notifications.

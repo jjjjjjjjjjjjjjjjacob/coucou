@@ -3,10 +3,7 @@ import { spawn } from "node:child_process";
 import { appendFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  hasNonEmptyValue,
-  isProductionHttpsUrl,
-} from "./backend-production-env.mjs";
+import { hasNonEmptyValue, isProductionHttpsUrl } from "./backend-production-env.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryDirectory = join(scriptDirectory, "..");
@@ -61,11 +58,7 @@ export function normalizeProductionHttpsOrigin(value, label = "URL") {
   }
 
   const parsedUrl = new URL(trimmedValue);
-  if (
-    (parsedUrl.pathname && parsedUrl.pathname !== "/") ||
-    parsedUrl.search ||
-    parsedUrl.hash
-  ) {
+  if ((parsedUrl.pathname && parsedUrl.pathname !== "/") || parsedUrl.search || parsedUrl.hash) {
     throw new Error(`${label} must be an origin without a path.`);
   }
 
@@ -78,9 +71,7 @@ export function buildClerkFrontendApiUrlFromSiteDomain(siteDomain) {
     throw new Error("Static site domain is required.");
   }
 
-  const siteDomainWithProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(
-    trimmedSiteDomain,
-  )
+  const siteDomainWithProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmedSiteDomain)
     ? trimmedSiteDomain
     : `https://${trimmedSiteDomain}`;
   const parsedSiteDomain = new URL(siteDomainWithProtocol);
@@ -95,25 +86,16 @@ export function buildClerkFrontendApiUrlFromSiteDomain(siteDomain) {
 
   const hostname = parsedSiteDomain.hostname.toLowerCase();
   const frontendApiUrl = `https://${clerkFrontendApiSubdomain}.${hostname}`;
-  return normalizeProductionHttpsOrigin(
-    frontendApiUrl,
-    `Clerk Frontend API URL for ${hostname}`,
-  );
+  return normalizeProductionHttpsOrigin(frontendApiUrl, `Clerk Frontend API URL for ${hostname}`);
 }
 
-export function buildStaticFallbackClerkFrontendApiUrls(
-  staticSiteConfigurations,
-) {
+export function buildStaticFallbackClerkFrontendApiUrls(staticSiteConfigurations) {
   return staticSiteConfigurations
     .filter((siteConfiguration) => siteConfiguration.appKind === "client")
-    .map((siteConfiguration) =>
-      buildClerkFrontendApiUrlFromSiteDomain(siteConfiguration.domain),
-    );
+    .map((siteConfiguration) => buildClerkFrontendApiUrlFromSiteDomain(siteConfiguration.domain));
 }
 
-export function collectVerifiedWorkspaceSiteClerkFrontendApiUrls(
-  workspaceSites,
-) {
+export function collectVerifiedWorkspaceSiteClerkFrontendApiUrls(workspaceSites) {
   const clerkFrontendApiUrls = [];
 
   for (const workspaceSite of workspaceSites) {
@@ -152,16 +134,11 @@ export function buildClerkFrontendApiAllowlist({
 
   if (hasNonEmptyValue(primaryClerkFrontendApiUrl)) {
     clerkFrontendApiUrls.push(
-      normalizeProductionHttpsOrigin(
-        primaryClerkFrontendApiUrl,
-        "CLERK_FRONTEND_API_URL",
-      ),
+      normalizeProductionHttpsOrigin(primaryClerkFrontendApiUrl, "CLERK_FRONTEND_API_URL"),
     );
   }
 
-  clerkFrontendApiUrls.push(
-    ...collectVerifiedWorkspaceSiteClerkFrontendApiUrls(workspaceSites),
-  );
+  clerkFrontendApiUrls.push(...collectVerifiedWorkspaceSiteClerkFrontendApiUrls(workspaceSites));
 
   for (const verifiedWorkspaceSiteClerkFrontendApiUrl of verifiedWorkspaceSiteClerkFrontendApiUrls) {
     clerkFrontendApiUrls.push(
@@ -172,9 +149,7 @@ export function buildClerkFrontendApiAllowlist({
     );
   }
 
-  clerkFrontendApiUrls.push(
-    ...buildStaticFallbackClerkFrontendApiUrls(staticSiteConfigurations),
-  );
+  clerkFrontendApiUrls.push(...buildStaticFallbackClerkFrontendApiUrls(staticSiteConfigurations));
 
   return dedupeClerkFrontendApiUrls(clerkFrontendApiUrls);
 }
@@ -185,16 +160,11 @@ export function parseJsonArrayFromConvexRunOutput(output) {
     return [];
   }
 
-  const candidateJsonValues = [
-    trimmedOutput,
-    ...trimmedOutput.split(/\r?\n/).reverse(),
-  ];
+  const candidateJsonValues = [trimmedOutput, ...trimmedOutput.split(/\r?\n/).reverse()];
   const arrayStartIndex = trimmedOutput.lastIndexOf("[");
   const arrayEndIndex = trimmedOutput.lastIndexOf("]");
   if (arrayStartIndex >= 0 && arrayEndIndex > arrayStartIndex) {
-    candidateJsonValues.push(
-      trimmedOutput.slice(arrayStartIndex, arrayEndIndex + 1),
-    );
+    candidateJsonValues.push(trimmedOutput.slice(arrayStartIndex, arrayEndIndex + 1));
   }
 
   for (const candidateJsonValue of candidateJsonValues) {
@@ -211,9 +181,7 @@ export function parseJsonArrayFromConvexRunOutput(output) {
 
         return entry;
       });
-    } catch {
-      continue;
-    }
+    } catch {}
   }
 
   throw new Error("Unable to parse Convex Frontend API URL query output.");
@@ -225,13 +193,7 @@ export async function fetchVerifiedWorkspaceSiteClerkFrontendApiUrlsFromConvex({
 } = {}) {
   const { standardOutput } = await commandRunner(
     "bunx",
-    [
-      "convex",
-      "run",
-      "workspaces:listVerifiedClerkFrontendApiUrls",
-      "{}",
-      "--prod",
-    ],
+    ["convex", "run", "workspaces:listVerifiedClerkFrontendApiUrls", "{}", "--prod"],
     {
       cwd: convexBackendDirectory,
     },
@@ -265,8 +227,7 @@ async function buildProductionClerkFrontendApiAllowlist({
   }
 
   return buildClerkFrontendApiAllowlist({
-    primaryClerkFrontendApiUrl:
-      environmentVariables.CLERK_FRONTEND_API_URL ?? "",
+    primaryClerkFrontendApiUrl: environmentVariables.CLERK_FRONTEND_API_URL ?? "",
     verifiedWorkspaceSiteClerkFrontendApiUrls,
     staticSiteConfigurations,
   });
@@ -276,17 +237,15 @@ async function main() {
   try {
     const shouldWriteGitHubEnvironment = process.argv.includes("--github-env");
     const shouldSkipConvexQuery = process.argv.includes("--skip-convex");
-    const clerkFrontendApiAllowlist =
-      await buildProductionClerkFrontendApiAllowlist({
-        skipConvexQuery: shouldSkipConvexQuery,
-      });
+    const clerkFrontendApiAllowlist = await buildProductionClerkFrontendApiAllowlist({
+      skipConvexQuery: shouldSkipConvexQuery,
+    });
 
     if (clerkFrontendApiAllowlist.length === 0) {
       throw new Error("No Clerk Frontend API URLs were generated.");
     }
 
-    const clerkFrontendApiAllowlistValue =
-      clerkFrontendApiAllowlist.join(",");
+    const clerkFrontendApiAllowlistValue = clerkFrontendApiAllowlist.join(",");
 
     if (shouldWriteGitHubEnvironment) {
       const githubEnvironmentPath = process.env.GITHUB_ENV;

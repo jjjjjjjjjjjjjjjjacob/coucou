@@ -1,10 +1,23 @@
 "use client";
-import React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@convex/_generated/api";
-import { useQuery as useConvexQuery } from "convex/react";
 import type { Id } from "@convex/_generated/dataModel";
-import { Select, SelectOption } from "@/components/ui/select";
+import {
+  type CellContext,
+  type ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  type HeaderContext,
+  type RowData,
+  type SortingState,
+  useReactTable,
+} from "@tanstack/react-table";
+import { useQuery as useConvexQuery } from "convex/react";
+import { Columns, Copy, GripVertical, X } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React from "react";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Pagination,
@@ -13,44 +26,14 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip";
-import { Spinner } from "@/components/ui/spinner";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectOption } from "@/components/ui/select";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
-import {
-  Copy,
-  Columns,
-  X,
-  GripVertical,
-} from "lucide-react";
-import {
-  ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  SortingState,
-  useReactTable,
-  RowData,
-  HeaderContext,
-  CellContext,
-} from "@tanstack/react-table";
-import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatEventTitleInline } from "@/lib/event-display";
 import type { Event } from "@/lib/types";
-import {
-  useWorkspaceOperationPath,
-  useWorkspaceScope,
-} from "@/lib/use-workspace-scope";
+import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { cn } from "@/lib/utils";
 
 type PaginatedSmsNotificationResult = {
   page: Array<{
@@ -75,9 +58,7 @@ type PaginatedSmsNotificationResult = {
 const hasStringAccessorKey = <TData extends RowData>(
   columnDefinition: ColumnDef<TData>,
 ): columnDefinition is ColumnDef<TData> & { accessorKey: string } => {
-  const candidateAccessorKey = (
-    columnDefinition as { accessorKey?: unknown }
-  ).accessorKey;
+  const candidateAccessorKey = (columnDefinition as { accessorKey?: unknown }).accessorKey;
   return typeof candidateAccessorKey === "string";
 };
 
@@ -96,8 +77,7 @@ export default function TextsPage() {
       (events ?? [])
         .slice()
         .sort(
-          (firstEvent, secondEvent) =>
-            (secondEvent.eventDate ?? 0) - (firstEvent.eventDate ?? 0),
+          (firstEvent, secondEvent) => (secondEvent.eventDate ?? 0) - (firstEvent.eventDate ?? 0),
         ),
     [events],
   );
@@ -111,9 +91,7 @@ export default function TextsPage() {
 
   // Cursor-based pagination state with history for Previous button
   const [cursor, setCursor] = React.useState<string | null>(null);
-  const [cursorHistory, setCursorHistory] = React.useState<(string | null)[]>(
-    [],
-  );
+  const [cursorHistory, setCursorHistory] = React.useState<(string | null)[]>([]);
   const pageSize = parseInt(searchParams.get("pageSize") || "20");
 
   // Filter state
@@ -163,8 +141,7 @@ export default function TextsPage() {
   );
 
   // Column visibility state
-  const [columnVisibilityOpen, setColumnVisibilityOpen] =
-    React.useState(false);
+  const [columnVisibilityOpen, setColumnVisibilityOpen] = React.useState(false);
 
   // Get all available column IDs
   const getAllAvailableColumnIds = React.useCallback((): string[] => {
@@ -183,21 +160,19 @@ export default function TextsPage() {
   }, []);
 
   // Initialize visible columns
-  const [visibleColumns, setVisibleColumns] = React.useState<Set<string>>(
-    () => {
-      const allColumnIds = [
-        "select",
-        "recipient",
-        "phone",
-        "event",
-        "type",
-        "status",
-        "message",
-        "createdAt",
-      ];
-      return new Set(allColumnIds);
-    },
-  );
+  const [visibleColumns, setVisibleColumns] = React.useState<Set<string>>(() => {
+    const allColumnIds = [
+      "select",
+      "recipient",
+      "phone",
+      "event",
+      "type",
+      "status",
+      "message",
+      "createdAt",
+    ];
+    return new Set(allColumnIds);
+  });
 
   // Create base columns
   const baseCols = React.useMemo<ColumnDef<PaginatedSmsNotificationResult["page"][0]>[]>(
@@ -235,7 +210,7 @@ export default function TextsPage() {
                       try {
                         await navigator.clipboard.writeText(phone);
                         // toast.success("Phone number copied");
-                      } catch (err) {
+                      } catch (_err) {
                         // toast.error("Failed to copy");
                       }
                     }}
@@ -303,10 +278,7 @@ export default function TextsPage() {
             pending: "bg-amber-100 text-amber-800 border-amber-200",
           };
           return (
-            <Badge
-              variant="outline"
-              className={cn("text-xs", statusColors[status] || "")}
-            >
+            <Badge variant="outline" className={cn("text-xs", statusColors[status] || "")}>
               {status.charAt(0).toUpperCase() + status.slice(1)}
             </Badge>
           );
@@ -322,8 +294,7 @@ export default function TextsPage() {
         maxSize: 500,
         cell: ({ row }) => {
           const message = row.original.message;
-          const truncatedMessage =
-            message.length > 50 ? `${message.substring(0, 50)}...` : message;
+          const truncatedMessage = message.length > 50 ? `${message.substring(0, 50)}...` : message;
           return (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -331,10 +302,7 @@ export default function TextsPage() {
                   {truncatedMessage}
                 </span>
               </TooltipTrigger>
-              <TooltipContent
-                align="start"
-                className="max-w-xs whitespace-pre-line"
-              >
+              <TooltipContent align="start" className="max-w-xs whitespace-pre-line">
                 {message}
               </TooltipContent>
             </Tooltip>
@@ -352,9 +320,7 @@ export default function TextsPage() {
         cell: ({ row }) => {
           const errorMessage = row.original.errorMessage;
           if (!errorMessage) {
-            return (
-              <span className="text-sm text-muted-foreground">—</span>
-            );
+            return <span className="text-sm text-muted-foreground">—</span>;
           }
           return (
             <Tooltip>
@@ -363,10 +329,7 @@ export default function TextsPage() {
                   {errorMessage}
                 </span>
               </TooltipTrigger>
-              <TooltipContent
-                align="start"
-                className="max-w-xs whitespace-pre-line"
-              >
+              <TooltipContent align="start" className="max-w-xs whitespace-pre-line">
                 {errorMessage}
               </TooltipContent>
             </Tooltip>
@@ -408,9 +371,7 @@ export default function TextsPage() {
         cell: ({ row }) => {
           const timestamp = row.original.sentAt;
           if (!timestamp) {
-            return (
-              <span className="text-sm text-muted-foreground">—</span>
-            );
+            return <span className="text-sm text-muted-foreground">—</span>;
           }
           const date = new Date(timestamp);
           return (
@@ -430,15 +391,11 @@ export default function TextsPage() {
     [],
   );
 
-  const [sorting, setSorting] = React.useState<SortingState>([
-    { id: "createdAt", desc: true },
-  ]);
+  const [sorting, setSorting] = React.useState<SortingState>([{ id: "createdAt", desc: true }]);
   const [columnSizing, setColumnSizing] = React.useState<Record<string, number>>({});
 
   // Selection state management
-  const [selectedRows, setSelectedRows] = React.useState<Set<string>>(
-    new Set(),
-  );
+  const [selectedRows, setSelectedRows] = React.useState<Set<string>>(new Set());
 
   // Clear selection when filters change or page changes
   React.useEffect(() => {
@@ -448,10 +405,7 @@ export default function TextsPage() {
   // Calculate pagination info
   const currentPage = cursorHistory.length + 1;
   const startItem = (currentPage - 1) * pageSize + 1;
-  const endItem = Math.min(
-    currentPage * pageSize,
-    startItem + (notifications?.length || 0) - 1,
-  );
+  const endItem = Math.min(currentPage * pageSize, startItem + (notifications?.length || 0) - 1);
 
   // Navigation handlers
   const goToNextPage = React.useCallback(() => {
@@ -541,9 +495,7 @@ export default function TextsPage() {
       const isSameOrder =
         missingColumnIdentifiers.length === 0 &&
         filteredColumnOrder.length === previousColumnOrder.length &&
-        filteredColumnOrder.every(
-          (identifier, index) => identifier === previousColumnOrder[index],
-        );
+        filteredColumnOrder.every((identifier, index) => identifier === previousColumnOrder[index]);
 
       if (isSameOrder) {
         return previousColumnOrder;
@@ -568,8 +520,7 @@ export default function TextsPage() {
     getSortedRowModel: getSortedRowModel(),
   });
 
-  const [draggedColumnIdentifier, setDraggedColumnIdentifier] =
-    React.useState<string | null>(null);
+  const [draggedColumnIdentifier, setDraggedColumnIdentifier] = React.useState<string | null>(null);
   const [dragHoverDetails, setDragHoverDetails] = React.useState<{
     columnId: string;
     position: "before" | "after";
@@ -582,15 +533,11 @@ export default function TextsPage() {
     if (!identifier) {
       return "Column";
     }
-    const withSpacing = identifier
-      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-      .replace(/[_-]+/g, " ");
+    const withSpacing = identifier.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
     return withSpacing
       .split(" ")
       .filter(Boolean)
-      .map(
-        (segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase(),
-      )
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
       .join(" ");
   }, []);
 
@@ -626,10 +573,7 @@ export default function TextsPage() {
     if (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) {
       return true;
     }
-    if (
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function"
-    ) {
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
       try {
         return window.matchMedia("(pointer: coarse)").matches;
       } catch {
@@ -640,10 +584,7 @@ export default function TextsPage() {
   }, []);
 
   const createDragPreviewElement = React.useCallback(
-    (
-      event: React.DragEvent<HTMLTableHeaderCellElement>,
-      columnDisplayLabel: string,
-    ) => {
+    (event: React.DragEvent<HTMLTableHeaderCellElement>, columnDisplayLabel: string) => {
       if (typeof document === "undefined" || typeof window === "undefined") {
         return;
       }
@@ -653,8 +594,7 @@ export default function TextsPage() {
       const headerElement = event.currentTarget;
       const headerStyles = window.getComputedStyle(headerElement);
       const resolvedBackgroundColor =
-        headerStyles.backgroundColor &&
-        headerStyles.backgroundColor !== "rgba(0, 0, 0, 0)"
+        headerStyles.backgroundColor && headerStyles.backgroundColor !== "rgba(0, 0, 0, 0)"
           ? headerStyles.backgroundColor
           : "rgba(255, 255, 255, 0.96)";
       const resolvedTextColor =
@@ -714,11 +654,7 @@ export default function TextsPage() {
       const dataTransfer = event.dataTransfer;
       if (dataTransfer && typeof dataTransfer.setDragImage === "function") {
         try {
-          dataTransfer.setDragImage(
-            previewElement,
-            previewWidth / 2,
-            previewHeight / 2,
-          );
+          dataTransfer.setDragImage(previewElement, previewWidth / 2, previewHeight / 2);
         } catch {
           // Some browsers (iOS Safari) may throw - ignore and continue
         }
@@ -731,12 +667,7 @@ export default function TextsPage() {
         );
       }
     },
-    [
-      formatColumnIdentifier,
-      hasCoarsePointer,
-      removeDragPreviewElement,
-      updateDragPreviewPosition,
-    ],
+    [formatColumnIdentifier, hasCoarsePointer, removeDragPreviewElement, updateDragPreviewPosition],
   );
 
   const handleColumnDragStart = React.useCallback(
@@ -764,10 +695,7 @@ export default function TextsPage() {
   );
 
   const handleColumnDragOver = React.useCallback(
-    (
-      event: React.DragEvent<HTMLTableHeaderCellElement>,
-      targetColumnIdentifier: string,
-    ) => {
+    (event: React.DragEvent<HTMLTableHeaderCellElement>, targetColumnIdentifier: string) => {
       event.preventDefault();
       if (event.dataTransfer) {
         event.dataTransfer.dropEffect = "move";
@@ -777,10 +705,7 @@ export default function TextsPage() {
         event.clientY ?? event.nativeEvent?.clientY ?? null,
       );
 
-      if (
-        !draggedColumnIdentifier ||
-        draggedColumnIdentifier === targetColumnIdentifier
-      ) {
+      if (!draggedColumnIdentifier || draggedColumnIdentifier === targetColumnIdentifier) {
         setDragHoverDetails(null);
         return;
       }
@@ -800,10 +725,7 @@ export default function TextsPage() {
   );
 
   const handleColumnDrop = React.useCallback(
-    (
-      event: React.DragEvent<HTMLTableHeaderCellElement>,
-      targetColumnIdentifier: string,
-    ) => {
+    (event: React.DragEvent<HTMLTableHeaderCellElement>, targetColumnIdentifier: string) => {
       event.preventDefault();
       event.stopPropagation();
 
@@ -822,8 +744,7 @@ export default function TextsPage() {
       }
 
       const dropPosition =
-        dragHoverDetails &&
-        dragHoverDetails.columnId === targetColumnIdentifier
+        dragHoverDetails && dragHoverDetails.columnId === targetColumnIdentifier
           ? dragHoverDetails.position
           : "before";
 
@@ -842,8 +763,7 @@ export default function TextsPage() {
         if (targetIndex === -1) {
           return previousColumnOrder;
         }
-        const insertionIndex =
-          dropPosition === "after" ? targetIndex + 1 : targetIndex;
+        const insertionIndex = dropPosition === "after" ? targetIndex + 1 : targetIndex;
         updatedOrder.splice(insertionIndex, 0, activeColumnIdentifier);
         return updatedOrder;
       });
@@ -870,22 +790,14 @@ export default function TextsPage() {
   // Selection state management (computed values after table creation)
   const currentPageRows = table.getRowModel().rows;
   const currentPageIds = currentPageRows.map((row) => row.original._id);
-  const currentPageSelectedCount = currentPageIds.filter((id) =>
-    selectedRows.has(id),
-  ).length;
+  const currentPageSelectedCount = currentPageIds.filter((id) => selectedRows.has(id)).length;
 
   const allSelected = React.useMemo(() => {
-    return (
-      currentPageRows.length > 0 &&
-      currentPageSelectedCount === currentPageRows.length
-    );
+    return currentPageRows.length > 0 && currentPageSelectedCount === currentPageRows.length;
   }, [currentPageSelectedCount, currentPageRows.length]);
 
   const someSelected = React.useMemo(() => {
-    return (
-      currentPageSelectedCount > 0 &&
-      currentPageSelectedCount < currentPageRows.length
-    );
+    return currentPageSelectedCount > 0 && currentPageSelectedCount < currentPageRows.length;
   }, [currentPageSelectedCount, currentPageRows.length]);
 
   // Update the toggle select all function
@@ -919,62 +831,57 @@ export default function TextsPage() {
   }, [toggleSelectAllCurrent]);
 
   // Create the final columns with proper header checkbox, filtered by visibility
-  const finalCols = React.useMemo<ColumnDef<PaginatedSmsNotificationResult["page"][0]>[]>(
-    () => {
-      const allCols = [
-        {
-          id: "select",
-          header: ({ table }: HeaderContext<PaginatedSmsNotificationResult["page"][0], unknown>) => (
-            <Checkbox
-              checked={allSelected || someSelected ? true : false}
-              onCheckedChange={toggleSelectAllCurrent}
-              aria-label="Select all"
-              className="ml-2"
-              ref={(el: HTMLButtonElement | null) => {
-                if (el) {
-                  const input = el.querySelector(
-                    'input[type="checkbox"]',
-                  ) as HTMLInputElement;
-                  if (input) {
-                    input.indeterminate = someSelected;
-                  }
+  const finalCols = React.useMemo<ColumnDef<PaginatedSmsNotificationResult["page"][0]>[]>(() => {
+    const allCols = [
+      {
+        id: "select",
+        header: (_context: HeaderContext<PaginatedSmsNotificationResult["page"][0], unknown>) => (
+          <Checkbox
+            checked={allSelected || someSelected ? true : false}
+            onCheckedChange={toggleSelectAllCurrent}
+            aria-label="Select all"
+            className="ml-2"
+            ref={(el: HTMLButtonElement | null) => {
+              if (el) {
+                const input = el.querySelector('input[type="checkbox"]') as HTMLInputElement;
+                if (input) {
+                  input.indeterminate = someSelected;
                 }
-              }}
-            />
-          ),
-          cell: ({ row }: CellContext<PaginatedSmsNotificationResult["page"][0], unknown>) => (
-            <Checkbox
-              checked={selectedRows.has(row.original._id)}
-              onCheckedChange={() => toggleSelectRow(row.original._id)}
-              aria-label="Select row"
-              className="ml-2"
-            />
-          ),
-          enableSorting: false,
-          enableHiding: false,
-        },
-        ...baseCols,
-      ];
+              }
+            }}
+          />
+        ),
+        cell: ({ row }: CellContext<PaginatedSmsNotificationResult["page"][0], unknown>) => (
+          <Checkbox
+            checked={selectedRows.has(row.original._id)}
+            onCheckedChange={() => toggleSelectRow(row.original._id)}
+            aria-label="Select row"
+            className="ml-2"
+          />
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
+      ...baseCols,
+    ];
 
-      // Filter columns based on visibility (always show select column)
-      return allCols.filter((col) => {
-        const columnId = col.id;
-        if (columnId === "select") {
-          return true; // Always show select column
-        }
-        return columnId ? visibleColumns.has(columnId) : true;
-      });
-    },
-    [
-      baseCols,
-      selectedRows,
-      allSelected,
-      someSelected,
-      toggleSelectAllCurrent,
-      toggleSelectRow,
-      visibleColumns,
-    ],
-  );
+    // Filter columns based on visibility (always show select column)
+    return allCols.filter((col) => {
+      const columnId = col.id;
+      if (columnId === "select") {
+        return true; // Always show select column
+      }
+      return columnId ? visibleColumns.has(columnId) : true;
+    });
+  }, [
+    baseCols,
+    selectedRows,
+    allSelected,
+    someSelected,
+    toggleSelectAllCurrent,
+    toggleSelectRow,
+    visibleColumns,
+  ]);
 
   // Update table columns
   React.useEffect(() => {
@@ -986,9 +893,7 @@ export default function TextsPage() {
 
   // Check if any main queries are loading
   const isLoading =
-    events === undefined ||
-    notificationsPaginated === undefined ||
-    totalCount === undefined;
+    events === undefined || notificationsPaginated === undefined || totalCount === undefined;
 
   // Helper function to get column display name
   const getColumnDisplayName = React.useCallback(
@@ -1020,9 +925,7 @@ export default function TextsPage() {
 
   // Check if any filters are active
   const hasActiveFilters =
-    phoneSearch.trim() !== "" ||
-    statusFilter !== "all" ||
-    typeFilter !== "all";
+    phoneSearch.trim() !== "" || statusFilter !== "all" || typeFilter !== "all";
 
   // Get unique values for filter dropdowns
   const uniqueStatuses = React.useMemo(() => {
@@ -1040,9 +943,7 @@ export default function TextsPage() {
           <div className="flex items-start justify-between gap-3 sm:block">
             <h2 className="text-3xl font-bold tracking-tight">Texts</h2>
           </div>
-          <p className="text-muted-foreground">
-            View SMS message logs and delivery status
-          </p>
+          <p className="text-muted-foreground">View SMS message logs and delivery status</p>
         </div>
       </div>
 
@@ -1071,11 +972,7 @@ export default function TextsPage() {
           onChange={(e) => setPhoneSearch(e.target.value)}
         />
         <span className="mx-2 h-6 w-px bg-foreground/20" />
-        <Select
-          value={statusFilter}
-          onValueChange={setStatusFilter}
-          className="w-32"
-        >
+        <Select value={statusFilter} onValueChange={setStatusFilter} className="w-32">
           <SelectOption value="all">All Status</SelectOption>
           {uniqueStatuses.map((status) => (
             <SelectOption key={status} value={status}>
@@ -1083,11 +980,7 @@ export default function TextsPage() {
             </SelectOption>
           ))}
         </Select>
-        <Select
-          value={typeFilter}
-          onValueChange={setTypeFilter}
-          className="w-32"
-        >
+        <Select value={typeFilter} onValueChange={setTypeFilter} className="w-32">
           <SelectOption value="all">All Types</SelectOption>
           {uniqueTypes.map((type) => (
             <SelectOption key={type} value={type}>
@@ -1098,9 +991,7 @@ export default function TextsPage() {
         <span className="mx-2 h-6 w-px bg-foreground/20" />
         <Popover open={columnVisibilityOpen} onOpenChange={setColumnVisibilityOpen}>
           <PopoverTrigger asChild>
-            <button
-              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-8"
-            >
+            <button className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-8">
               <Columns className="h-4 w-4 mr-2" />
               Columns
             </button>
@@ -1123,9 +1014,7 @@ export default function TextsPage() {
                           checked={isVisible}
                           onCheckedChange={(checked) => {
                             setVisibleColumns((previousVisibleColumns) => {
-                              const updatedVisibleColumns = new Set(
-                                previousVisibleColumns,
-                              );
+                              const updatedVisibleColumns = new Set(previousVisibleColumns);
                               if (checked === true) {
                                 updatedVisibleColumns.add(columnId);
                               } else {
@@ -1175,8 +1064,7 @@ export default function TextsPage() {
           )}
           {statusFilter !== "all" && (
             <Badge variant="secondary" className="gap-1">
-              Status:{" "}
-              {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+              Status: {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
               <button
                 onClick={() => setStatusFilter("all")}
                 className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
@@ -1187,8 +1075,7 @@ export default function TextsPage() {
           )}
           {typeFilter !== "all" && (
             <Badge variant="secondary" className="gap-1">
-              Type:{" "}
-              {typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1).replace(/_/g, " ")}
+              Type: {typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1).replace(/_/g, " ")}
               <button
                 onClick={() => setTypeFilter("all")}
                 className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
@@ -1207,9 +1094,7 @@ export default function TextsPage() {
       {selectedRows.size > 0 && (
         <div className="flex items-center justify-between bg-muted/50 border rounded-md p-3">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">
-              {selectedRows.size} selected
-            </span>
+            <span className="text-sm font-medium">{selectedRows.size} selected</span>
             <button
               onClick={() => setSelectedRows(new Set())}
               className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-8"
@@ -1227,10 +1112,7 @@ export default function TextsPage() {
           <table className="min-w-full text-sm" style={{ tableLayout: "fixed" }}>
             <thead>
               {table.getHeaderGroups().map((headerGroup) => (
-                <tr
-                  key={headerGroup.id}
-                  className="text-left text-foreground/70"
-                >
+                <tr key={headerGroup.id} className="text-left text-foreground/70">
                   {headerGroup.headers.map((header) => {
                     const columnIdentifier =
                       header.column.id ??
@@ -1241,8 +1123,9 @@ export default function TextsPage() {
                       ? header.column.getToggleSortingHandler()
                       : undefined;
                     const isDragSourceEnabled = columnIdentifier !== "select";
-                    const columnMeta = header.column
-                      .columnDef.meta as { label?: string } | undefined;
+                    const columnMeta = header.column.columnDef.meta as
+                      | { label?: string }
+                      | undefined;
                     const columnDisplayLabel =
                       typeof header.column.columnDef.header === "string" &&
                       header.column.columnDef.header.trim().length > 0
@@ -1256,17 +1139,14 @@ export default function TextsPage() {
                         key={header.id}
                         className={cn(
                           "px-2 py-1 select-none group border-b border-foreground/10 relative",
-                          isDraggingColumn
-                            ? "cursor-grabbing"
-                            : "cursor-pointer",
+                          isDraggingColumn ? "cursor-grabbing" : "cursor-pointer",
                           dragHoverDetails?.columnId === columnIdentifier &&
                             dragHoverDetails.position === "before" &&
                             "border-l-2 border-l-foreground/40",
                           dragHoverDetails?.columnId === columnIdentifier &&
                             dragHoverDetails.position === "after" &&
                             "border-r-2 border-r-foreground/40",
-                          draggedColumnIdentifier === columnIdentifier &&
-                            "opacity-60",
+                          draggedColumnIdentifier === columnIdentifier && "opacity-60",
                         )}
                         style={{
                           width: header.getSize(),
@@ -1288,22 +1168,24 @@ export default function TextsPage() {
                             event.stopPropagation();
                             return;
                           }
-                          
+
                           if (sortingHandler) {
                             sortingHandler(event);
                           }
                         }}
                       >
-                        <div 
+                        <div
                           className="flex items-center gap-1"
                           draggable={isDragSourceEnabled}
                           onDragStart={
                             isDragSourceEnabled
                               ? (event) => {
                                   // Get the header element since we're dragging from a div
-                                  const headerElement = event.currentTarget.closest('th') as HTMLTableHeaderCellElement | null;
+                                  const headerElement = event.currentTarget.closest(
+                                    "th",
+                                  ) as HTMLTableHeaderCellElement | null;
                                   if (!headerElement) return;
-                                  
+
                                   // Create a synthetic event with the header element as currentTarget
                                   const syntheticEvent = {
                                     ...event,
@@ -1329,13 +1211,9 @@ export default function TextsPage() {
                             />
                           )}
                           <div className="flex items-center gap-1">
-                            {flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                            {{ asc: " ▲", desc: " ▼" }[
-                              header.column.getIsSorted() as string
-                            ] ?? null}
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                            {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ??
+                              null}
                           </div>
                         </div>
                       </th>
@@ -1361,10 +1239,7 @@ export default function TextsPage() {
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
-                        className={cn(
-                          "px-2 py-1",
-                          cell.column.id !== "select" && "cursor-pointer",
-                        )}
+                        className={cn("px-2 py-1", cell.column.id !== "select" && "cursor-pointer")}
                         style={{
                           width: cell.column.getSize(),
                           minWidth: cell.column.columnDef.minSize,
@@ -1376,10 +1251,7 @@ export default function TextsPage() {
                             : undefined
                         }
                       >
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
                   </tr>
@@ -1438,9 +1310,7 @@ export default function TextsPage() {
                 </PaginationItem>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    Page {currentPage}
-                  </span>
+                  <span className="text-sm text-muted-foreground">Page {currentPage}</span>
                 </div>
 
                 <PaginationItem>

@@ -1,21 +1,24 @@
 "use client";
 
-import * as React from "react";
+import { useUser } from "@clerk/nextjs";
 import {
-  Calendar,
-  Users,
-  Settings,
   BarChart3,
-  Home,
-  Plus,
-  User,
-  MessageSquare,
+  Calendar,
   DoorOpen,
   FileText,
+  Home,
+  MessageSquare,
   Moon,
+  Plus,
+  Settings,
   Sun,
+  User,
+  Users,
 } from "lucide-react";
-
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import * as React from "react";
+import { SidebarTenantSwitcher } from "@/components/sidebar-tenant-switcher";
 import {
   Sidebar,
   SidebarContent,
@@ -29,15 +32,11 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { usePathname } from "next/navigation";
-import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 import {
   buildWorkspaceOperationPath,
   type WorkspaceOperationSurface,
 } from "@/lib/workspace-config";
-import { useWorkspaceScope } from "@/lib/use-workspace-scope";
-import { SidebarTenantSwitcher } from "@/components/sidebar-tenant-switcher";
 
 type DashboardNavigationAccess = "read" | "write";
 type DashboardAppearance = "dark" | "light";
@@ -136,9 +135,7 @@ export const quickActions: DashboardNavigationItem[] = [
   },
 ];
 
-function isDashboardAppearance(
-  value: string | null,
-): value is DashboardAppearance {
+function isDashboardAppearance(value: string | null): value is DashboardAppearance {
   return value === "dark" || value === "light";
 }
 
@@ -148,13 +145,9 @@ function getStoredDashboardAppearance(): DashboardAppearance {
   }
 
   try {
-    const storedDashboardAppearance = window.localStorage.getItem(
-      DASHBOARD_APPEARANCE_STORAGE_KEY,
-    );
+    const storedDashboardAppearance = window.localStorage.getItem(DASHBOARD_APPEARANCE_STORAGE_KEY);
 
-    return isDashboardAppearance(storedDashboardAppearance)
-      ? storedDashboardAppearance
-      : "dark";
+    return isDashboardAppearance(storedDashboardAppearance) ? storedDashboardAppearance : "dark";
   } catch {
     return "dark";
   }
@@ -187,18 +180,13 @@ function storeDashboardAppearance(dashboardAppearance: DashboardAppearance) {
   }
 
   try {
-    window.localStorage.setItem(
-      DASHBOARD_APPEARANCE_STORAGE_KEY,
-      dashboardAppearance,
-    );
+    window.localStorage.setItem(DASHBOARD_APPEARANCE_STORAGE_KEY, dashboardAppearance);
   } catch {
     return;
   }
 }
 
-function normalizeUserBadgeText(
-  value: string | null | undefined,
-): string | null {
+function normalizeUserBadgeText(value: string | null | undefined): string | null {
   const trimmedValue = value?.trim();
   return trimmedValue ? trimmedValue : null;
 }
@@ -211,8 +199,7 @@ export function AppSidebar({ canWrite = true, ...props }: AppSidebarProps) {
   const pathname = usePathname();
   const { user } = useUser();
   const workspaceScope = useWorkspaceScope();
-  const [dashboardAppearance, setDashboardAppearance] =
-    React.useState<DashboardAppearance>("dark");
+  const [dashboardAppearance, setDashboardAppearance] = React.useState<DashboardAppearance>("dark");
 
   React.useEffect(() => {
     const storedDashboardAppearance = getStoredDashboardAppearance();
@@ -267,17 +254,14 @@ export function AppSidebar({ canWrite = true, ...props }: AppSidebarProps) {
   const userEmailAddress =
     normalizeUserBadgeText(user?.primaryEmailAddress?.emailAddress) ??
     normalizeUserBadgeText(
-      user?.emailAddresses?.find(
-        (emailAddress) => emailAddress.id === user?.primaryEmailAddressId,
-      )?.emailAddress,
+      user?.emailAddresses?.find((emailAddress) => emailAddress.id === user?.primaryEmailAddressId)
+        ?.emailAddress,
     ) ??
     normalizeUserBadgeText(user?.emailAddresses?.[0]?.emailAddress);
   const userNameParts = [
     normalizeUserBadgeText(user?.firstName),
     normalizeUserBadgeText(user?.lastName),
-  ].filter(
-    (namePart): namePart is string => Boolean(namePart),
-  );
+  ].filter((namePart): namePart is string => Boolean(namePart));
   const userDisplayName =
     normalizeUserBadgeText(user?.fullName) ??
     (userNameParts.length > 0 ? userNameParts.join(" ") : null);
@@ -352,11 +336,7 @@ export function AppSidebar({ canWrite = true, ...props }: AppSidebarProps) {
               tooltip={dashboardAppearanceLabel}
               onClick={handleDashboardAppearanceToggle}
             >
-              {isLightModeEnabled ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
+              {isLightModeEnabled ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               <span>Light mode</span>
               <span className="ml-auto text-xs text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
                 {isLightModeEnabled ? "On" : "Off"}
@@ -378,13 +358,9 @@ export function AppSidebar({ canWrite = true, ...props }: AppSidebarProps) {
                     <User className="size-4" />
                   </div>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">
-                      {userPrimaryText}
-                    </span>
+                    <span className="truncate font-semibold">{userPrimaryText}</span>
                     {userSecondaryText ? (
-                      <span className="truncate text-xs">
-                        {userSecondaryText}
-                      </span>
+                      <span className="truncate text-xs">{userSecondaryText}</span>
                     ) : null}
                   </div>
                 </Link>

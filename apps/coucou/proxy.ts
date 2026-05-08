@@ -1,8 +1,14 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { siteConfigurations } from "@coucou/sdk";
+import { resolveSafeRedirectPath, resolveSafeRedirectUrl } from "@coucou/sdk/routes";
+import type { SiteKey } from "@coucou/sdk/site-config";
 import { NextResponse } from "next/server";
-import { AuthObject } from "@/lib/types";
+import {
+  buildClientAuthAllowedRedirectOrigins,
+  resolveSatelliteHomeUrl,
+} from "@/lib/client-auth-origins";
 import { siteConfiguration } from "@/lib/site";
-import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
+import type { AuthObject } from "@/lib/types";
 
 const isLegacyClientRoute = createRouteMatcher([
   "/host(.*)",
@@ -18,6 +24,7 @@ const isPublicRoute = createRouteMatcher([
   "/profile",
   "/account",
   "/sign-in(.*)",
+  "/clients/(.*)/sign-in",
   "/api/public(.*)",
   "/terms",
   "/privacy",
@@ -41,10 +48,21 @@ function matchWorkspaceLoginPath(pathname: string): string | null {
 }
 
 function matchWorkspaceOperationPath(pathname: string): string | null {
-  const match = pathname.match(
-    /^\/workspaces\/([^/]+)\/(?:dashboard|host|door)(?:\/|$)/,
-  );
+  const match = pathname.match(/^\/workspaces\/([^/]+)\/(?:dashboard|host|door)(?:\/|$)/);
   return match?.[1] ?? null;
+}
+
+function matchClientAuthPath(pathname: string): SiteKey | null {
+  const match = pathname.match(/^\/clients\/([^/]+)\/sign-in\/?$/);
+  if (!match) return null;
+  const candidate = match[1];
+  if (candidate !== "dojo" && candidate !== "club-chlorine" && candidate !== "coucou") {
+    return null;
+  }
+  if (siteConfigurations[candidate].appKind !== "client") {
+    return null;
+  }
+  return candidate;
 }
 
 function buildCurrentPath(req: Request & { nextUrl: URL }): string {
@@ -55,11 +73,40 @@ export default clerkMiddleware(async (auth, req) => {
   const pathname = req.nextUrl.pathname;
   const workspaceLoginSlug = matchWorkspaceLoginPath(pathname);
   const isAdminLoginRoute = isAdminLoginPath(pathname);
+  const clientAuthSiteKey = matchClientAuthPath(pathname);
 
   if (pathname === "/") {
     const authObj = (await auth()) as AuthObject;
     if (authObj.userId) {
       return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+    return NextResponse.next();
+  }
+
+  if (clientAuthSiteKey) {
+    // Client/satellite auth handoff: signed-in users always bounce back
+    // to the satellite (cross-origin). Allow-list and satellite-home
+    // fallback are derived from the inbound request's own signals
+    // (redirect_url query origin + Referer) so a localhost satellite
+    // round-trips to localhost, a preview satellite to preview, etc. —
+    // never to the hard-coded production URL when running in dev.
+    const authObj = (await auth()) as AuthObject;
+    if (authObj.userId) {
+      const redirectUrlParam = req.nextUrl.searchParams.get("redirect_url");
+      const refererHeader = req.headers.get("referer");
+      const candidateOrigins = [redirectUrlParam, refererHeader];
+      const allowedOrigins = buildClientAuthAllowedRedirectOrigins(clientAuthSiteKey, {
+        candidateOrigins,
+      });
+      const satelliteHomeUrl = resolveSatelliteHomeUrl(clientAuthSiteKey, {
+        candidateOrigins,
+      });
+      const resolvedRedirect = resolveSafeRedirectUrl(
+        redirectUrlParam,
+        satelliteHomeUrl,
+        allowedOrigins,
+      );
+      return NextResponse.redirect(resolvedRedirect);
     }
     return NextResponse.next();
   }
@@ -73,10 +120,7 @@ export default clerkMiddleware(async (auth, req) => {
           ? `/workspaces/${workspaceLoginSlug}/dashboard`
           : siteConfiguration.auth.signInRedirectPath;
       const authenticatedRedirectUrl = new URL(
-        resolveSafeRedirectPath(
-          req.nextUrl.searchParams.get("redirect_url"),
-          fallbackPath,
-        ),
+        resolveSafeRedirectPath(req.nextUrl.searchParams.get("redirect_url"), fallbackPath),
         req.url,
       );
       return NextResponse.redirect(authenticatedRedirectUrl);
@@ -100,9 +144,7 @@ export default clerkMiddleware(async (auth, req) => {
   const authObj = (await auth()) as AuthObject;
   const { userId } = authObj;
   if (!userId) {
-    const loginPath = pathname.startsWith("/admin")
-      ? "/admin/login"
-      : "/sign-in";
+    const loginPath = pathname.startsWith("/admin") ? "/admin/login" : "/sign-in";
     const signInUrl = new URL(loginPath, req.url);
     signInUrl.searchParams.set("redirect_url", buildCurrentPath(req));
     return NextResponse.redirect(signInUrl);

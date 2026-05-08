@@ -17,17 +17,16 @@ export default function DataCollection() {
       lastUpdated={lastUpdated}
       intro={
         <>
-          Transparency about what data we collect, why we collect it, and how
-          you can control your information.
+          Transparency about what data we collect, why we collect it, and how you can control your
+          information.
         </>
       }
     >
       <LegalSection title="1. Overview" rule={false}>
         <p>
-          We collect only the data necessary to provide our event management
-          services effectively and securely. All data collection follows
-          privacy-by-design principles and complies with GDPR, CCPA, and other
-          applicable privacy regulations.
+          We collect only the data necessary to provide our event management services effectively
+          and securely. All data collection follows privacy-by-design principles and complies with
+          GDPR, CCPA, and other applicable privacy regulations.
         </p>
         <p style={{ color: "var(--tt-fg)" }}>
           <strong>We never sell your personal data to third parties.</strong>
@@ -35,7 +34,10 @@ export default function DataCollection() {
       </LegalSection>
 
       <LegalSection title="2. Required Data for Core Services">
-        <p className="text-[13px] uppercase tracking-[0.06em]" style={{ color: "var(--tt-fg-mute)" }}>
+        <p
+          className="text-[13px] uppercase tracking-[0.06em]"
+          style={{ color: "var(--tt-fg-mute)" }}
+        >
           Account creation
         </p>
         <p>Collected data:</p>
@@ -53,7 +55,10 @@ export default function DataCollection() {
           <li>Legal compliance and verification.</li>
         </ul>
 
-        <p className="mt-6 text-[13px] uppercase tracking-[0.06em]" style={{ color: "var(--tt-fg-mute)" }}>
+        <p
+          className="mt-6 text-[13px] uppercase tracking-[0.06em]"
+          style={{ color: "var(--tt-fg-mute)" }}
+        >
           RSVP and event participation
         </p>
         <p>Collected data:</p>
@@ -78,10 +83,22 @@ export default function DataCollection() {
       <LegalSection title="3. SMS and Communication Data">
         <p>How we handle phone numbers:</p>
         <ul className="ml-5 list-disc space-y-2">
-          <li><strong>Storage:</strong> Phone numbers are stored for account, RSVP, and SMS delivery features.</li>
-          <li><strong>Display:</strong> Host-facing views use obfuscated phone numbers where full numbers are not required.</li>
-          <li><strong>Access:</strong> Authorized systems use phone numbers for message delivery and event operations.</li>
-          <li><strong>Deletion:</strong> Phone numbers are permanently deleted when consent is withdrawn, while minimal consent logs are retained for compliance.</li>
+          <li>
+            <strong>Storage:</strong> Phone numbers are stored for account, RSVP, and SMS delivery
+            features.
+          </li>
+          <li>
+            <strong>Display:</strong> Host-facing views use obfuscated phone numbers where full
+            numbers are not required.
+          </li>
+          <li>
+            <strong>Access:</strong> Authorized systems use phone numbers for message delivery and
+            event operations.
+          </li>
+          <li>
+            <strong>Deletion:</strong> Phone numbers are permanently deleted when consent is
+            withdrawn, while minimal consent logs are retained for compliance.
+          </li>
         </ul>
         <p className="mt-4">SMS consent tracking:</p>
         <ul className="ml-5 list-disc space-y-2">
@@ -93,9 +110,9 @@ export default function DataCollection() {
           <li>Opt-out history and reasons for legal compliance.</li>
         </ul>
         <p style={{ color: "var(--tt-fg-dim)" }}>
-          SMS messages are sent by Coucou on behalf of the event host you
-          RSVP&apos;d to using {brandName} as a messaging platform service
-          provider, and delivered through Twilio SMS infrastructure.
+          SMS messages are sent by Coucou on behalf of the event host you RSVP&apos;d to using{" "}
+          {brandName} as a messaging platform service provider, and delivered through Twilio SMS
+          infrastructure.
         </p>
       </LegalSection>
 
@@ -119,21 +136,47 @@ export default function DataCollection() {
 
       <LegalSection title="5. Data We Do Not Collect">
         <ul className="ml-5 list-disc space-y-2">
-          <li><strong>Financial information:</strong> Credit card numbers, bank account details.</li>
-          <li><strong>Biometric data:</strong> Fingerprints, facial recognition, voice prints.</li>
-          <li><strong>Social media content:</strong> Posts or activity from other platforms.</li>
-          <li><strong>Browsing history:</strong> Your activity on other websites.</li>
-          <li><strong>Private communications:</strong> Content of messages or calls outside our platform.</li>
-          <li><strong>Sensitive personal data:</strong> Political views, religious beliefs, health information (unless voluntarily provided for accessibility).</li>
+          <li>
+            <strong>Financial information:</strong> Credit card numbers, bank account details.
+          </li>
+          <li>
+            <strong>Biometric data:</strong> Fingerprints, facial recognition, voice prints.
+          </li>
+          <li>
+            <strong>Social media content:</strong> Posts or activity from other platforms.
+          </li>
+          <li>
+            <strong>Browsing history:</strong> Your activity on other websites.
+          </li>
+          <li>
+            <strong>Private communications:</strong> Content of messages or calls outside our
+            platform.
+          </li>
+          <li>
+            <strong>Sensitive personal data:</strong> Political views, religious beliefs, health
+            information (unless voluntarily provided for accessibility).
+          </li>
         </ul>
       </LegalSection>
 
       <LegalSection title="6. Data Retention Periods">
         <ul className="ml-5 list-disc space-y-2">
-          <li><strong>Account data:</strong> Retained while your account is active. Deleted within 30 days of account closure unless legal obligations require longer retention.</li>
-          <li><strong>Event and RSVP data:</strong> Maintained for historical records and host analytics. Personal identifiers anonymized after 2 years unless consent is maintained.</li>
-          <li><strong>SMS consent and phone data:</strong> Deleted immediately upon consent withdrawal. Opt-out records maintained indefinitely for compliance.</li>
-          <li><strong>Operational diagnostics:</strong> Retained only as long as needed to investigate incidents, prevent abuse, and maintain reliability.</li>
+          <li>
+            <strong>Account data:</strong> Retained while your account is active. Deleted within 30
+            days of account closure unless legal obligations require longer retention.
+          </li>
+          <li>
+            <strong>Event and RSVP data:</strong> Maintained for historical records and host
+            analytics. Personal identifiers anonymized after 2 years unless consent is maintained.
+          </li>
+          <li>
+            <strong>SMS consent and phone data:</strong> Deleted immediately upon consent
+            withdrawal. Opt-out records maintained indefinitely for compliance.
+          </li>
+          <li>
+            <strong>Operational diagnostics:</strong> Retained only as long as needed to investigate
+            incidents, prevent abuse, and maintain reliability.
+          </li>
         </ul>
       </LegalSection>
 
@@ -154,9 +197,15 @@ export default function DataCollection() {
       <LegalSection title="8. Data Sharing and Third Parties">
         <p>Service providers we share data with:</p>
         <ul className="ml-5 list-disc space-y-2">
-          <li><strong>Clerk:</strong> User authentication and account management.</li>
-          <li><strong>Twilio:</strong> SMS message delivery on behalf of the hosting business.</li>
-          <li><strong>Convex:</strong> Secure database hosting and real-time features.</li>
+          <li>
+            <strong>Clerk:</strong> User authentication and account management.
+          </li>
+          <li>
+            <strong>Twilio:</strong> SMS message delivery on behalf of the hosting business.
+          </li>
+          <li>
+            <strong>Convex:</strong> Secure database hosting and real-time features.
+          </li>
         </ul>
         <p className="mt-4">We never share data for:</p>
         <ul className="ml-5 list-disc space-y-2">
@@ -170,26 +219,23 @@ export default function DataCollection() {
 
       <LegalSection title="9. International Data Transfers">
         <p>
-          Your data may be processed in countries other than your residence.
-          We ensure appropriate safeguards are in place, including standard
-          contractual clauses and adequacy decisions where applicable.
+          Your data may be processed in countries other than your residence. We ensure appropriate
+          safeguards are in place, including standard contractual clauses and adequacy decisions
+          where applicable.
         </p>
       </LegalSection>
 
       <LegalSection title="10. Contact">
         <p>
-          To exercise your data rights or ask questions about data collection,
-          visit{" "}
-          <a
-            href={siteConfiguration.domain}
-            className="underline"
-            target="_blank"
-            rel="noreferrer"
-          >
+          To exercise your data rights or ask questions about data collection, visit{" "}
+          <a href={siteConfiguration.domain} className="underline" target="_blank" rel="noreferrer">
             {siteConfiguration.domain.replace(/^https?:\/\//, "")}
           </a>{" "}
           or read our{" "}
-          <a href="/privacy" className="underline">Privacy Policy</a>.
+          <a href="/privacy" className="underline">
+            Privacy Policy
+          </a>
+          .
         </p>
       </LegalSection>
     </LegalPage>

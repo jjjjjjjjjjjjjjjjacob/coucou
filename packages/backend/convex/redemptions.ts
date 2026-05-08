@@ -1,6 +1,6 @@
-import { mutation, query } from "./functions";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { mutation, query } from "./functions";
 import { generateRedemptionCode } from "./lib/codeGenerators";
 import { canManuallyEditTicket } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";
@@ -17,9 +17,7 @@ async function getScopedRedemptionByCode(
   const normalizedCode = args.code.toUpperCase();
   const redemptionRecord = await ctx.db
     .query("redemptions")
-    .withIndex("by_code", (queryBuilder) =>
-      queryBuilder.eq("code", normalizedCode),
-    )
+    .withIndex("by_code", (queryBuilder) => queryBuilder.eq("code", normalizedCode))
     .unique();
 
   if (!redemptionRecord) {
@@ -55,13 +53,13 @@ export const byCode = query({
       .query("users")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", rec.clerkUserId))
       .unique();
-    const name = user?.firstName && user?.lastName
-      ? `${user.firstName} ${user.lastName}`.trim()
-      : user?.firstName || user?.lastName || undefined;
+    const name =
+      user?.firstName && user?.lastName
+        ? `${user.firstName} ${user.lastName}`.trim()
+        : user?.firstName || user?.lastName || undefined;
 
     if (rec.disabledAt) return { status: "invalid" as const };
-    if (rec.redeemedAt)
-      return { status: "redeemed" as const, name, listKey: rec.listKey };
+    if (rec.redeemedAt) return { status: "redeemed" as const, name, listKey: rec.listKey };
     return { status: "valid" as const, name, listKey: rec.listKey };
   },
 });
@@ -84,14 +82,25 @@ export const validate = query({
       .query("users")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", rec.clerkUserId))
       .unique();
-    const name = user?.firstName && user?.lastName
-      ? `${user.firstName} ${user.lastName}`.trim()
-      : user?.firstName || user?.lastName || undefined;
+    const name =
+      user?.firstName && user?.lastName
+        ? `${user.firstName} ${user.lastName}`.trim()
+        : user?.firstName || user?.lastName || undefined;
 
     if (rec.disabledAt) return { status: "invalid" as const, eventId: rec.eventId };
     if (rec.redeemedAt)
-      return { status: "redeemed" as const, name, listKey: rec.listKey, eventId: rec.eventId };
-    return { status: "valid" as const, name, listKey: rec.listKey, eventId: rec.eventId };
+      return {
+        status: "redeemed" as const,
+        name,
+        listKey: rec.listKey,
+        eventId: rec.eventId,
+      };
+    return {
+      status: "valid" as const,
+      name,
+      listKey: rec.listKey,
+      eventId: rec.eventId,
+    };
   },
 });
 
@@ -224,7 +233,7 @@ export const forCurrentUserEvent = query({
 
     // Query user document first to establish reactive dependency
     // This ensures the query re-runs when user document becomes available
-    const userDocument = await ctx.db
+    const _userDocument = await ctx.db
       .query("users")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
       .unique();
@@ -259,9 +268,7 @@ export const getRedemptionByRsvpId = query({
     const redemptionRecord = await ctx.db
       .query("redemptions")
       .withIndex("by_event_user", (q) =>
-        q
-          .eq("eventId", rsvpRecord.eventId)
-          .eq("clerkUserId", rsvpRecord.clerkUserId),
+        q.eq("eventId", rsvpRecord.eventId).eq("clerkUserId", rsvpRecord.clerkUserId),
       )
       .unique();
 
@@ -304,9 +311,7 @@ export const toggleRedemptionStatus = mutation({
     const redemptionRecord = await ctx.db
       .query("redemptions")
       .withIndex("by_event_user", (q) =>
-        q
-          .eq("eventId", rsvpRecord.eventId)
-          .eq("clerkUserId", rsvpRecord.clerkUserId),
+        q.eq("eventId", rsvpRecord.eventId).eq("clerkUserId", rsvpRecord.clerkUserId),
       )
       .unique();
 
@@ -362,24 +367,16 @@ export const updateTicketStatus = mutation({
     const existingRedemption = await ctx.db
       .query("redemptions")
       .withIndex("by_event_user", (q) =>
-        q
-          .eq("eventId", rsvpRecord.eventId)
-          .eq("clerkUserId", rsvpRecord.clerkUserId),
+        q.eq("eventId", rsvpRecord.eventId).eq("clerkUserId", rsvpRecord.clerkUserId),
       )
       .unique();
 
     const now = Date.now();
     let nextTicketStatus: "not-issued" | "issued" | "disabled" | "redeemed" =
-      (rsvpRecord.ticketStatus as
-        | "not-issued"
-        | "issued"
-        | "disabled"
-        | "redeemed") ?? "not-issued";
+      (rsvpRecord.ticketStatus as "not-issued" | "issued" | "disabled" | "redeemed") ??
+      "not-issued";
 
-    if (
-      !canManuallyEditTicket(rsvpRecord.status) &&
-      existingRedemption?.redeemedAt
-    ) {
+    if (!canManuallyEditTicket(rsvpRecord.status) && existingRedemption?.redeemedAt) {
       throw new Error("Cannot remove a redeemed ticket from a pending RSVP");
     }
 
@@ -416,9 +413,7 @@ export const updateTicketStatus = mutation({
         await ctx.db.patch(existingRedemption._id, {
           disabledAt: undefined,
         });
-        nextTicketStatus = existingRedemption.redeemedAt
-          ? "redeemed"
-          : "issued";
+        nextTicketStatus = existingRedemption.redeemedAt ? "redeemed" : "issued";
       } else if (existingRedemption.redeemedAt) {
         nextTicketStatus = "redeemed";
       } else {
@@ -466,7 +461,7 @@ export const createForRSVP = mutation({
     const existing = await ctx.db
       .query("redemptions")
       .withIndex("by_event_user", (q) =>
-        q.eq("eventId", args.eventId).eq("clerkUserId", args.clerkUserId)
+        q.eq("eventId", args.eventId).eq("clerkUserId", args.clerkUserId),
       )
       .unique();
 
@@ -524,7 +519,7 @@ export const deleteForRSVP = mutation({
     const redemption = await ctx.db
       .query("redemptions")
       .withIndex("by_event_user", (q) =>
-        q.eq("eventId", rsvp.eventId).eq("clerkUserId", rsvp.clerkUserId)
+        q.eq("eventId", rsvp.eventId).eq("clerkUserId", rsvp.clerkUserId),
       )
       .unique();
 

@@ -1,11 +1,11 @@
 "use node";
-import { action } from "./functions";
+import { createClerkClient } from "@clerk/backend";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { createClerkClient } from "@clerk/backend";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import type { Id, Doc } from "./_generated/dataModel";
 import type { ExportContext } from "./exportsQueries";
+import { action } from "./functions";
 import { requireWorkspaceRead } from "./lib/workspaceAuth";
 
 type ExportRsvpRow = {
@@ -71,37 +71,24 @@ export const exportRsvpsCsv = action({
   ): Promise<ExportRsvpsCsvResult> => {
     await requireWorkspaceRead(ctx, { siteKey, workspaceSlug });
 
-    const {
-      event,
-      rsvps,
-      rsvpSocialProfiles,
-      listCredentials,
-      usersByClerkUserId,
-    }: ExportContext = await ctx.runQuery(
-      internal.exportsQueries.getRsvpsForExportInternal,
-      {
+    const { event, rsvps, rsvpSocialProfiles, listCredentials, usersByClerkUserId }: ExportContext =
+      await ctx.runQuery(internal.exportsQueries.getRsvpsForExportInternal, {
         eventId,
         siteKey,
         workspaceSlug,
         listKeys,
         statusFilters,
-      },
-    );
+      });
 
     const listKeyToName: Record<string, string> = Object.fromEntries(
-      listCredentials.map((credential) => [
-        credential.listKey,
-        credential.listKey,
-      ] as const),
+      listCredentials.map((credential) => [credential.listKey, credential.listKey] as const),
     );
 
     const phoneCache = new Map<string, string | null>();
     const clerkSecretKey = process.env.CLERK_SECRET_KEY;
     let clerkClient: ReturnType<typeof createClerkClient> | null = null;
 
-    const resolvePhoneForUser = async (
-      clerkUserId: string,
-    ): Promise<string | null> => {
+    const resolvePhoneForUser = async (clerkUserId: string): Promise<string | null> => {
       if (phoneCache.has(clerkUserId)) {
         return phoneCache.get(clerkUserId) ?? null;
       }
@@ -120,9 +107,8 @@ export const exportRsvpsCsv = action({
           const clerkUser = await clerkClient.users.getUser(clerkUserId);
           const preferredPhone =
             (clerkUser.primaryPhoneNumberId &&
-              clerkUser.phoneNumbers.find(
-                (phone) => phone.id === clerkUser.primaryPhoneNumberId,
-              )?.phoneNumber) ||
+              clerkUser.phoneNumbers.find((phone) => phone.id === clerkUser.primaryPhoneNumberId)
+                ?.phoneNumber) ||
             clerkUser.phoneNumbers[0]?.phoneNumber;
           if (preferredPhone) {
             resolvedPhone = preferredPhone;
@@ -142,8 +128,7 @@ export const exportRsvpsCsv = action({
     const enrichedRsvps: ExportRsvpRow[] = [];
     const socialProfilesByRsvpId = new Map<string, Record<string, string>>();
     for (const socialProfile of rsvpSocialProfiles) {
-      const profilesForRsvp =
-        socialProfilesByRsvpId.get(socialProfile.rsvpId) ?? {};
+      const profilesForRsvp = socialProfilesByRsvpId.get(socialProfile.rsvpId) ?? {};
       profilesForRsvp[socialProfile.platformKey] = socialProfile.handle;
       socialProfilesByRsvpId.set(socialProfile.rsvpId, profilesForRsvp);
     }
@@ -154,9 +139,7 @@ export const exportRsvpsCsv = action({
       const lastName = userRecord?.lastName ?? "";
       const metadataName = userRecord?.metadata?.name ?? "";
       const fullName =
-        [firstName, lastName]
-          .filter((segment) => segment && segment.length > 0)
-          .join(" ") ||
+        [firstName, lastName].filter((segment) => segment && segment.length > 0).join(" ") ||
         metadataName ||
         rsvp.userName ||
         "";
@@ -180,9 +163,7 @@ export const exportRsvpsCsv = action({
       });
     }
 
-    enrichedRsvps.sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-    );
+    enrichedRsvps.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
     const customFieldKeys = includeCustomFields
       ? (event.customFields ?? []).map((field) => field.key)
@@ -191,11 +172,10 @@ export const exportRsvpsCsv = action({
       ? (event.customFields ?? []).map((field) => field.label)
       : [];
     const socialPlatforms = includePrimaryFields
-      ? event.primaryFieldConfig?.socialPlatforms ?? []
+      ? (event.primaryFieldConfig?.socialPlatforms ?? [])
       : [];
     const includeInvitedBy =
-      includePrimaryFields &&
-      event.primaryFieldConfig?.invitedBy?.enabled === true;
+      includePrimaryFields && event.primaryFieldConfig?.invitedBy?.enabled === true;
 
     const groupedByList = enrichedRsvps.reduce<Record<string, ExportRsvpRow[]>>(
       (accumulator, rsvp) => {
@@ -209,8 +189,7 @@ export const exportRsvpsCsv = action({
     );
 
     const csvSections: string[] = [];
-    const exportTimestampText =
-      exportTimestamp || new Date().toISOString();
+    const exportTimestampText = exportTimestamp || new Date().toISOString();
 
     for (const listKey of Object.keys(groupedByList)) {
       const rsvps = groupedByList[listKey] ?? [];
@@ -238,9 +217,7 @@ export const exportRsvpsCsv = action({
         if (includePhone) row.push(rsvp.phoneNumber);
         if (includeInvitedBy) row.push(rsvp.invitedByName);
         row.push(
-          ...socialPlatforms.map(
-            (platform) => rsvp.socialProfiles[platform.platformKey] ?? "",
-          ),
+          ...socialPlatforms.map((platform) => rsvp.socialProfiles[platform.platformKey] ?? ""),
         );
         if (includeAttendees) row.push(String(rsvp.attendees));
         if (includeNote) row.push(rsvp.note);

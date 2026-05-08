@@ -47,10 +47,7 @@ interface CoucouLogoWordmarkProps {
   markSize?: number;
 }
 
-export function CoucouLogoWordmark({
-  className,
-  markSize = 18,
-}: CoucouLogoWordmarkProps) {
+export function CoucouLogoWordmark({ className, markSize = 18 }: CoucouLogoWordmarkProps) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <CoucouLogoMark size={markSize} />

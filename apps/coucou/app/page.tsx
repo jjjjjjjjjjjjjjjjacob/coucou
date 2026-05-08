@@ -1,17 +1,20 @@
-import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
-import HeaderClient from "./header-client";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Footer } from "@/components/footer";
 import { RedirectIfAuthed } from "@/components/redirect-if-authed";
+import HeaderClient from "./header-client";
 
-const PRINCIPLES: Array<{ number: string; title: string; description: string }> = [
+const PRINCIPLES: Array<{
+  number: string;
+  title: string;
+  description: string;
+}> = [
   {
     number: "01",
     title: "Yours, not ours.",
-    description:
-      "The list, the tags, the threads — exportable, never shared.",
+    description: "The list, the tags, the threads — exportable, never shared.",
   },
   {
     number: "02",
@@ -21,14 +24,12 @@ const PRINCIPLES: Array<{ number: string; title: string; description: string }> 
   {
     number: "03",
     title: "No advertising.",
-    description:
-      "Subscription is our only business — your guests are not the product.",
+    description: "Subscription is our only business — your guests are not the product.",
   },
   {
     number: "04",
     title: "White-label, by engagement.",
-    description:
-      "Bespoke branding for every house. We set it up with you. Coucou never appears.",
+    description: "Bespoke branding for every house. We set it up with you. Coucou never appears.",
   },
 ];
 
@@ -41,11 +42,9 @@ const APPARATUS: Array<{ label: string; meta: string }> = [
   { label: "Event pages", meta: "Look like you. Not us." },
 ];
 
-const sectionClass =
-  "flex min-h-[100dvh] flex-col justify-center [scroll-snap-align:start] py-24";
+const sectionClass = "flex min-h-[100dvh] flex-col justify-center [scroll-snap-align:start] py-24";
 
-const contentClass =
-  "mx-auto flex w-full max-w-[980px] flex-col px-6 sm:px-12 md:px-20";
+const contentClass = "mx-auto flex w-full max-w-[980px] flex-col px-6 sm:px-12 md:px-20";
 
 export default async function Home() {
   const { userId } = await auth();
@@ -88,8 +87,8 @@ export default async function Home() {
                   color: "var(--tt-fg-dim)",
                 }}
               >
-                Quiet infrastructure for members&apos; clubs, recurring parties,
-                and operators who know their room by name.
+                Quiet infrastructure for members&apos; clubs, recurring parties, and operators who
+                know their room by name.
               </p>
               <div className="flex gap-8 text-[14px]">
                 <Link
@@ -110,10 +109,7 @@ export default async function Home() {
           </div>
         </section>
 
-        <section
-          className={sectionClass}
-          style={{ borderTop: "1px solid var(--tt-rule)" }}
-        >
+        <section className={sectionClass} style={{ borderTop: "1px solid var(--tt-rule)" }}>
           <div className={contentClass}>
             {PRINCIPLES.map((principle) => (
               <div
@@ -121,16 +117,10 @@ export default async function Home() {
                 className="grid grid-cols-[40px_1fr] items-baseline gap-x-4 gap-y-2 py-6 sm:grid-cols-[60px_200px_1fr] sm:gap-x-6"
                 style={{ borderBottom: "1px solid var(--tt-rule)" }}
               >
-                <span
-                  className="text-[13px]"
-                  style={{ color: "var(--tt-fg-mute)" }}
-                >
+                <span className="text-[13px]" style={{ color: "var(--tt-fg-mute)" }}>
                   {principle.number}
                 </span>
-                <span
-                  className="text-[14px]"
-                  style={{ color: "var(--tt-fg)" }}
-                >
+                <span className="text-[14px]" style={{ color: "var(--tt-fg)" }}>
                   {principle.title}
                 </span>
                 <span
@@ -144,10 +134,7 @@ export default async function Home() {
           </div>
         </section>
 
-        <section
-          className={sectionClass}
-          style={{ borderTop: "1px solid var(--tt-rule)" }}
-        >
+        <section className={sectionClass} style={{ borderTop: "1px solid var(--tt-rule)" }}>
           <div className={contentClass}>
             <div
               className="mb-12 text-[12px] uppercase tracking-[0.06em]"
@@ -163,10 +150,7 @@ export default async function Home() {
                   style={{ borderBottom: "1px solid var(--tt-rule)" }}
                 >
                   <span>{row.label}</span>
-                  <span
-                    className="text-right"
-                    style={{ color: "var(--tt-fg-dim)" }}
-                  >
+                  <span className="text-right" style={{ color: "var(--tt-fg-dim)" }}>
                     {row.meta}
                   </span>
                 </div>
@@ -207,9 +191,8 @@ export default async function Home() {
                   color: "var(--tt-fg-dim)",
                 }}
               >
-                We&apos;re enterprise-only for now. Every Coucou is white-labeled
-                and stood up by us in collaboration with your team — domain,
-                brand, voice. Pricing by negotiation.
+                We&apos;re enterprise-only for now. Every Coucou is white-labeled and stood up by us
+                in collaboration with your team — domain, brand, voice. Pricing by negotiation.
               </p>
               <Link
                 href="mailto:hello@coucou.events"

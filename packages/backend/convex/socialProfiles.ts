@@ -1,19 +1,16 @@
-import { mutation, query } from "./functions";
-import { v } from "convex/values";
 import {
   normalizePrimaryFieldLookupText,
   normalizeSocialHandleInput,
   normalizeSocialPlatformKey,
 } from "@coucou/sdk/shared/primary-fields";
+import { v } from "convex/values";
+import { mutation, query } from "./functions";
 import {
   socialPlatformKeyFromProfileFieldKey,
   upsertProfileFieldValue,
 } from "./lib/profileValueRecords";
 import { upsertUserSocialProfile } from "./lib/socialProfileRecords";
-import {
-  eventMatchesTenantScope,
-  resolveTenantWorkspaceScope,
-} from "./lib/workspaceScope";
+import { eventMatchesTenantScope, resolveTenantWorkspaceScope } from "./lib/workspaceScope";
 
 export const listForCurrentUser = query({
   args: {},
@@ -23,15 +20,11 @@ export const listForCurrentUser = query({
 
     const profileFieldValues = await ctx.db
       .query("profileFieldValues")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
       .collect();
     const socialProfileFieldValues = profileFieldValues
       .map((profileFieldValue) => {
-        const platformKey = socialPlatformKeyFromProfileFieldKey(
-          profileFieldValue.fieldKey,
-        );
+        const platformKey = socialPlatformKeyFromProfileFieldKey(profileFieldValue.fieldKey);
         if (!platformKey) return null;
         return {
           _id: profileFieldValue._id,
@@ -49,21 +42,18 @@ export const listForCurrentUser = query({
         (
           profile,
         ): profile is {
-          _id: typeof profileFieldValues[number]["_id"];
+          _id: (typeof profileFieldValues)[number]["_id"];
           platformKey: string;
           handle: string;
           normalizedHandle: string;
-          profileFieldValueId: typeof profileFieldValues[number]["_id"];
+          profileFieldValueId: (typeof profileFieldValues)[number]["_id"];
           fieldKey: string;
           label: string | undefined;
           createdAt: number;
           updatedAt: number;
         } => profile !== null,
       )
-      .sort(
-        (firstProfile, secondProfile) =>
-          secondProfile.updatedAt - firstProfile.updatedAt,
-      );
+      .sort((firstProfile, secondProfile) => secondProfile.updatedAt - firstProfile.updatedAt);
 
     if (socialProfileFieldValues.length > 0) {
       return socialProfileFieldValues;
@@ -71,9 +61,7 @@ export const listForCurrentUser = query({
 
     return await ctx.db
       .query("userSocialProfiles")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
       .collect();
   },
 });
@@ -96,20 +84,16 @@ export const listForCurrentUserInWorkspace = query({
 
     const userRsvps = await ctx.db
       .query("rsvps")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
       .collect();
 
     if (userRsvps.length === 0) return [];
 
     const eventEntries = await Promise.all(
-      Array.from(new Set(userRsvps.map((rsvp) => rsvp.eventId))).map(
-        async (eventId) => ({
-          eventId,
-          event: await ctx.db.get(eventId),
-        }),
-      ),
+      Array.from(new Set(userRsvps.map((rsvp) => rsvp.eventId))).map(async (eventId) => ({
+        eventId,
+        event: await ctx.db.get(eventId),
+      })),
     );
     const inScopeEventIds = new Set<string>();
     for (const entry of eventEntries) {
@@ -120,17 +104,13 @@ export const listForCurrentUserInWorkspace = query({
     }
     if (inScopeEventIds.size === 0) return [];
 
-    const inScopeRsvps = userRsvps.filter((rsvp) =>
-      inScopeEventIds.has(rsvp.eventId),
-    );
+    const inScopeRsvps = userRsvps.filter((rsvp) => inScopeEventIds.has(rsvp.eventId));
 
     const socialRows = await Promise.all(
       inScopeRsvps.map((rsvp) =>
         ctx.db
           .query("rsvpSocialProfiles")
-          .withIndex("by_rsvp", (queryBuilder) =>
-            queryBuilder.eq("rsvpId", rsvp._id),
-          )
+          .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
           .collect(),
       ),
     );
@@ -175,10 +155,7 @@ export const upsertForCurrentUser = mutation({
     if (!identity) throw new Error("Unauthorized");
 
     const normalizedPlatformKey = normalizeSocialPlatformKey(platformKey);
-    const normalizedHandle = normalizeSocialHandleInput(
-      handle,
-      normalizedPlatformKey,
-    );
+    const normalizedHandle = normalizeSocialHandleInput(handle, normalizedPlatformKey);
     if (!normalizedPlatformKey) {
       throw new Error("Social platform is required");
     }

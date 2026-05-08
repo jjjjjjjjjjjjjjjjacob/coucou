@@ -1,27 +1,26 @@
 "use client";
 
-import React, { use, useCallback, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
-import { toast } from "sonner";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
+import { CHLORINE_PHASE_SPLIT_MS, RsvpPending } from "@coucou/ui/tenant-template";
+import { useMutation, useQuery } from "convex/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { use, useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { siteConfiguration } from "@/lib/site";
-import { RsvpPending } from "@coucou/ui/tenant-template";
-import { ApplicationError, Event } from "@/lib/types";
-import {
-  RsvpAcceptedForm,
-  type RsvpCollectedArgs,
-} from "./rsvp-accepted-form";
+import type { ApplicationError, Event } from "@/lib/types";
+import { RsvpAcceptedForm, type RsvpCollectedArgs } from "./rsvp-accepted-form";
 
-export default function RsvpPage({
-  params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
+const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
+  /\/+$/,
+  "",
+);
+
+export default function RsvpPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -69,17 +68,41 @@ export default function RsvpPage({
     }
   }, [status, eventId, router]);
 
-  // Sign-in gate. Push unauthenticated users through Clerk first.
+  // Sign-in gate. The satellite never serves its own auth surface — bounce
+  // unauthenticated visitors to the chlorine-branded phone-auth page hosted
+  // on coucou.events with a return URL pointing back to this RSVP entry.
+  // We deliberately hold the redirect until the wordmark's split→collapsed
+  // transition has had time to settle — without the delay, the user would
+  // see the wordmark mid-tween at the moment the cross-domain navigation
+  // started and the coucou page would mount with a visible position jump.
+  // The bouncing-dots Spinner below renders during the wait.
   useEffect(() => {
     if (!isLoaded) return;
     if (isSignedIn) return;
-    const intended = `/events/${eventId}/rsvp${
+    if (typeof window === "undefined") return;
+    const intendedPath = `/events/${eventId}/rsvp${
       queryParamPassword
         ? `?${new URLSearchParams({ password: queryParamPassword }).toString()}`
         : ""
     }`;
-    router.replace(`/sign-in?redirect_url=${encodeURIComponent(intended)}`);
-  }, [isLoaded, isSignedIn, eventId, queryParamPassword, router]);
+    // Anchor the return URL at the *live* origin so the user lands back
+    // on the same satellite they came from (localhost during dev,
+    // clubchlorine.party in prod). Hard-coding `siteConfiguration.domain`
+    // here would always send the post-auth bounce to production, which is
+    // wrong on local and on Vercel preview deploys.
+    const satelliteReturnUrl = buildSatelliteReturnUrl(window.location.origin, intendedPath);
+    const primarySignInUrl = buildTenantPrimarySignInUrl({
+      primaryBaseUrl: coucouBaseUrl,
+      siteConfiguration,
+      redirectUrl: satelliteReturnUrl,
+    });
+    const redirectTimeoutId = window.setTimeout(() => {
+      window.location.assign(primarySignInUrl);
+    }, CHLORINE_PHASE_SPLIT_MS);
+    return () => {
+      window.clearTimeout(redirectTimeoutId);
+    };
+  }, [isLoaded, isSignedIn, eventId, queryParamPassword]);
 
   const handleInfoCollected = useCallback(
     async (args: RsvpCollectedArgs) => {
@@ -100,20 +123,14 @@ export default function RsvpPage({
         router.replace(`/events/${eventId}/status`);
       } catch (error: unknown) {
         const errorDetails = error as ApplicationError | Error;
-        const errorMessage =
-          errorDetails?.message || "Failed to submit request";
+        const errorMessage = errorDetails?.message || "Failed to submit request";
         toast.error("Request failed", { description: errorMessage });
       }
     },
     [eventIsOpenForRsvp, submitRsvp, eventId, router],
   );
 
-  if (
-    !event ||
-    !isLoaded ||
-    (!isSignedIn && isLoaded) ||
-    (isSignedIn && status === undefined)
-  ) {
+  if (!event || !isLoaded || (!isSignedIn && isLoaded) || (isSignedIn && status === undefined)) {
     return (
       <div className="flex w-full items-center justify-center py-10">
         <Spinner />

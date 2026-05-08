@@ -19,8 +19,7 @@ const accountSettingsAppearance: Appearance = {
     navbarItemIcon: "text-primary",
     profileSection: "border border-primary/10 rounded-xl",
     formFieldLabel: "text-sm font-medium text-foreground",
-    formFieldInput:
-      "border border-primary/20 focus:border-primary focus-visible:ring-primary/40",
+    formFieldInput: "border border-primary/20 focus:border-primary focus-visible:ring-primary/40",
     formButtonPrimary:
       "bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-primary/40",
   },
@@ -43,4 +42,3 @@ export default function AccountSettingsPage() {
     </div>
   );
 }
-

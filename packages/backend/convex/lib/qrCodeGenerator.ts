@@ -1,8 +1,8 @@
 "use node";
-import QRCode from "qrcode";
-import { v } from "convex/values";
-import { internalAction, action } from "../_generated/server";
 import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
+import { v } from "convex/values";
+import QRCode from "qrcode";
+import { action, internalAction } from "../_generated/server";
 
 /**
  * Generate a QR code image and upload it to Convex storage
@@ -29,9 +29,7 @@ export const generateAndUploadQrCode = internalAction({
     // Upload to Convex storage
     // Convert Buffer to Uint8Array for Blob compatibility
     const qrCodeUint8Array = new Uint8Array(qrCodeBuffer);
-    const storageId = await ctx.storage.store(
-      new Blob([qrCodeUint8Array], { type: "image/png" }),
-    );
+    const storageId = await ctx.storage.store(new Blob([qrCodeUint8Array], { type: "image/png" }));
 
     return storageId;
   },
@@ -63,9 +61,7 @@ export const generateAndUploadQrCodeWithAuth = action({
     // Upload to Convex storage using the calling action's authentication context
     // Convert Buffer to Uint8Array for Blob compatibility
     const qrCodeUint8Array = new Uint8Array(qrCodeBuffer);
-    const storageId = await ctx.storage.store(
-      new Blob([qrCodeUint8Array], { type: "image/png" }),
-    );
+    const storageId = await ctx.storage.store(new Blob([qrCodeUint8Array], { type: "image/png" }));
 
     // Get publicly accessible URL for the QR code
     const url = await ctx.storage.getUrl(storageId);

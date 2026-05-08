@@ -4,13 +4,7 @@
 export type PhoneAuthStep = "phone" | "verification" | "completing";
 
 export interface PhoneAuthError {
-  type:
-    | "invalid_code"
-    | "expired_code"
-    | "rate_limit"
-    | "invalid_phone"
-    | "network"
-    | "unknown";
+  type: "invalid_code" | "expired_code" | "rate_limit" | "invalid_phone" | "network" | "unknown";
   message: string;
 }
 

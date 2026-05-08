@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useMemo, type ReactNode } from "react";
-import { PhoneAuthPage, type AuthBrandingOverrides } from "@coucou/ui/auth";
 import { getClientSiteRedirectOrigins, type PresetKey } from "@coucou/sdk";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
-import { siteConfiguration } from "@/lib/site";
+import { type AuthBrandingOverrides, PhoneAuthPage } from "@coucou/ui/auth";
+import { type ReactNode, useMemo } from "react";
 import { CoucouLogoMark } from "@/components/coucou-logo";
+import { siteConfiguration } from "@/lib/site";
 
 interface SignInClientProps {
   redirectUrl: string;
@@ -16,6 +16,17 @@ interface SignInClientProps {
   authBranding?: AuthBrandingOverrides | null;
   brandMarkSlot?: ReactNode;
   postAuthNavigation?: "router" | "document-replace";
+  noShell?: boolean;
+  /**
+   * Origins the post-auth redirect is allowed to point at. The workspace
+   * login route resolves this server-side from the workspace's site
+   * domains plus the dev env-var allow-list and forwards it here so the
+   * client-side `resolveSafeRedirectUrl` agrees with the server about
+   * which satellite origins are valid (otherwise localhost / preview
+   * deploys would be silently rejected and the user would stay on
+   * coucou after sign-in).
+   */
+  allowedRedirectOrigins?: readonly string[];
 }
 
 export function SignInClient({
@@ -27,6 +38,8 @@ export function SignInClient({
   authBranding = null,
   brandMarkSlot,
   postAuthNavigation = "router",
+  noShell = false,
+  allowedRedirectOrigins: allowedRedirectOriginsOverride,
 }: SignInClientProps) {
   // When the user reaches sign-in via redirect from an event page, the
   // server-side page.tsx hands us the event's theme override pair so the
@@ -38,15 +51,22 @@ export function SignInClient({
       themeTextColor: eventThemeTextColor ?? undefined,
     };
   }, [eventThemeBackgroundColor, eventThemeTextColor]);
-  const isCoucouPlatformAuthentication =
-    siteAuthConfiguration === siteConfiguration.auth;
+  const isCoucouPlatformAuthentication = siteAuthConfiguration === siteConfiguration.auth;
   const resolvedBrandMarkSlot =
-    brandMarkSlot ??
-    (isCoucouPlatformAuthentication ? <CoucouLogoMark size={64} /> : undefined);
-  const allowedRedirectOrigins = useMemo(
-    () => getClientSiteRedirectOrigins(),
-    [],
-  );
+    brandMarkSlot ?? (isCoucouPlatformAuthentication ? <CoucouLogoMark size={64} /> : undefined);
+  const allowedRedirectOrigins = useMemo(() => {
+    if (allowedRedirectOriginsOverride && allowedRedirectOriginsOverride.length > 0) {
+      // Merge with the default client-site origins so satellites still
+      // work even if the server only forwarded a workspace-specific
+      // subset (and so the dev env-var origins land here client-side).
+      const merged = new Set<string>([
+        ...allowedRedirectOriginsOverride,
+        ...getClientSiteRedirectOrigins(),
+      ]);
+      return [...merged];
+    }
+    return getClientSiteRedirectOrigins();
+  }, [allowedRedirectOriginsOverride]);
 
   return (
     <PhoneAuthPage
@@ -58,6 +78,7 @@ export function SignInClient({
       allowedRedirectOrigins={allowedRedirectOrigins}
       event={eventThemeOverride}
       postAuthNavigation={postAuthNavigation}
+      noShell={noShell}
     />
   );
 }

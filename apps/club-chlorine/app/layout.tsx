@@ -1,12 +1,12 @@
-import type { Metadata } from "next";
-import { Bowlby_One, Geist, Geist_Mono, Noto_Emoji } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { buildTenantPrimarySignInUrl } from "@coucou/sdk";
+import type { Metadata } from "next";
+import { Bowlby_One, Geist, Geist_Mono, Noto_Emoji } from "next/font/google";
 import "./globals.css";
-import Providers from "./providers";
-import { AppChrome } from "./app-chrome";
 import { DevColorTweakPanel } from "@/components/dev-color-tweak-panel";
 import { clubChlorineIconPaths, siteConfiguration } from "@/lib/site";
+import { AppChrome } from "./app-chrome";
+import Providers from "./providers";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,16 +35,16 @@ const notoEmoji = Noto_Emoji({
   subsets: ["emoji"],
   display: "swap",
 });
-const coucouBaseUrl = (
-  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
-).replace(/\/+$/, "");
+const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
+  /\/+$/,
+  "",
+);
 const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
   primaryBaseUrl: coucouBaseUrl,
   siteConfiguration,
 });
 const clerkSatelliteDomain =
-  process.env.NEXT_PUBLIC_CLERK_DOMAIN ??
-  new URL(siteConfiguration.domain).host;
+  process.env.NEXT_PUBLIC_CLERK_DOMAIN ?? new URL(siteConfiguration.domain).host;
 
 export const metadata: Metadata = {
   title: siteConfiguration.brandName,
@@ -102,10 +102,7 @@ export default function RootLayout({
 }>) {
   const inner = (
     <Providers>
-      <div
-        {...vaulDrawerWrapperAttribute}
-        className="flex min-h-screen flex-col bg-background"
-      >
+      <div {...vaulDrawerWrapperAttribute} className="flex min-h-screen flex-col bg-background">
         <AppChrome>{children}</AppChrome>
       </div>
       <DevColorTweakPanel />

@@ -1,6 +1,6 @@
+import { v } from "convex/values";
 import { internalQuery } from "./_generated/server";
 import { query } from "./functions";
-import { v } from "convex/values";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 
 export const getForClerk = query({

@@ -1,22 +1,19 @@
 "use client";
 import { SignOutButton, useAuth } from "@clerk/nextjs";
-import { useConvexAuth, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import { usePathname } from "next/navigation";
-import Link from "next/link";
-import { siteConfiguration } from "@/lib/site";
 import { buildSignInPath } from "@coucou/sdk/routes";
-import {
-  buildRoleAwareDashboardPath,
-  hasWorkspaceReadAccess,
-} from "@/lib/workspace-roles";
 import {
   HamburgerMenuItem,
   HamburgerMenuSection,
   HeaderHamburgerMenu,
   TenantMasthead,
 } from "@coucou/ui/tenant-template";
+import { useConvexAuth, useQuery } from "convex/react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { CoucouLogoWordmark } from "@/components/coucou-logo";
+import { siteConfiguration } from "@/lib/site";
+import { buildRoleAwareDashboardPath, hasWorkspaceReadAccess } from "@/lib/workspace-roles";
 
 interface WorkspaceMenuLink {
   href: string;
@@ -33,19 +30,14 @@ function useHeaderNavigationAccess(): {
     api.workspaces.listAccessibleWorkspaceNavigationForUser,
     !isSignedIn || !isAuthenticated ? "skip" : {},
   );
-  const tenantWorkspaces = Array.isArray(
-    workspaceNavigationAccess?.tenantWorkspaces,
-  )
+  const tenantWorkspaces = Array.isArray(workspaceNavigationAccess?.tenantWorkspaces)
     ? workspaceNavigationAccess.tenantWorkspaces
     : [];
   const workspaceMenuLinks = tenantWorkspaces.flatMap((workspace) => {
     if (!hasWorkspaceReadAccess(workspace.membershipRole)) return [];
     return [
       {
-        href: buildRoleAwareDashboardPath(
-          workspace.slug,
-          workspace.membershipRole,
-        ),
+        href: buildRoleAwareDashboardPath(workspace.slug, workspace.membershipRole),
         label: `${workspace.name} Dashboard`,
       },
     ];
@@ -53,9 +45,7 @@ function useHeaderNavigationAccess(): {
 
   return {
     workspaceMenuLinks,
-    hasCoucouMembership: Boolean(
-      workspaceNavigationAccess?.hasCoucouOrganizationAccess,
-    ),
+    hasCoucouMembership: Boolean(workspaceNavigationAccess?.hasCoucouOrganizationAccess),
   };
 }
 
@@ -72,12 +62,9 @@ interface HeaderClientProps {
 
 export default function HeaderClient({ sticky = false }: HeaderClientProps = {}) {
   const { isLoaded, isSignedIn } = useAuth();
-  const { workspaceMenuLinks, hasCoucouMembership } =
-    useHeaderNavigationAccess();
+  const { workspaceMenuLinks, hasCoucouMembership } = useHeaderNavigationAccess();
   const pathname = usePathname();
-  const signInPath = buildSignInPath(
-    pathname ?? siteConfiguration.auth.signInRedirectPath,
-  );
+  const signInPath = buildSignInPath(pathname ?? siteConfiguration.auth.signInRedirectPath);
 
   const rightSlot = (
     <>
@@ -90,9 +77,7 @@ export default function HeaderClient({ sticky = false }: HeaderClientProps = {})
       </Link>
       <HeaderHamburgerMenu brandName={siteConfiguration.brandName}>
         <HamburgerMenuItem href="/">Home</HamburgerMenuItem>
-        <HamburgerMenuItem href="mailto:hello@coucou.events">
-          Inquire
-        </HamburgerMenuItem>
+        <HamburgerMenuItem href="mailto:hello@coucou.events">Inquire</HamburgerMenuItem>
         {isLoaded && isSignedIn ? (
           <>
             <HamburgerMenuItem href="/dashboard">Dashboard</HamburgerMenuItem>
@@ -104,10 +89,7 @@ export default function HeaderClient({ sticky = false }: HeaderClientProps = {})
             {workspaceMenuLinks.length > 0 ? (
               <HamburgerMenuSection label="Organization access">
                 {workspaceMenuLinks.map((workspaceMenuLink) => (
-                  <HamburgerMenuItem
-                    key={workspaceMenuLink.href}
-                    href={workspaceMenuLink.href}
-                  >
+                  <HamburgerMenuItem key={workspaceMenuLink.href} href={workspaceMenuLink.href}>
                     {workspaceMenuLink.label}
                   </HamburgerMenuItem>
                 ))}
@@ -115,9 +97,7 @@ export default function HeaderClient({ sticky = false }: HeaderClientProps = {})
             ) : null}
             <HamburgerMenuSection label="Account">
               <HamburgerMenuItem href="/profile">Profile</HamburgerMenuItem>
-              <HamburgerMenuItem href="/account">
-                Account settings
-              </HamburgerMenuItem>
+              <HamburgerMenuItem href="/account">Account settings</HamburgerMenuItem>
               <SignOutButton>
                 <HamburgerMenuItem dim>Sign out</HamburgerMenuItem>
               </SignOutButton>

@@ -1,34 +1,24 @@
 "use client";
-import React from "react";
-import { Input } from "@/components/ui/input";
+import { Info } from "lucide-react";
+import type { Path } from "react-hook-form";
 import { Button } from "@/components/ui/button";
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormMessage,
-} from "@/components/ui/form";
-import type { Event, CustomField, UseFormReturn, RSVPFormData } from "@/lib/types";
-import type { Path } from "react-hook-form";
-import { Info } from "lucide-react";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import type { CustomField, Event, RSVPFormData, UseFormReturn } from "@/lib/types";
 
 export function GuestInfoFields({
   form,
   event,
-  name,
   setName,
   firstName,
   setFirstName,
   lastName,
   setLastName,
-  custom,
   setCustom,
-  socialProfiles,
   setSocialProfiles,
   invitedByName,
   setInvitedByName,
@@ -45,13 +35,9 @@ export function GuestInfoFields({
   lastName: string;
   setLastName: (v: string) => void;
   custom: Record<string, string>;
-  setCustom: (
-    updater: (m: Record<string, string>) => Record<string, string>,
-  ) => void;
+  setCustom: (updater: (m: Record<string, string>) => Record<string, string>) => void;
   socialProfiles: Record<string, string>;
-  setSocialProfiles: (
-    updater: (current: Record<string, string>) => Record<string, string>,
-  ) => void;
+  setSocialProfiles: (updater: (current: Record<string, string>) => Record<string, string>) => void;
   invitedByName: string;
   setInvitedByName: (value: string) => void;
   phone: string;
@@ -128,7 +114,7 @@ export function GuestInfoFields({
               : undefined
           }
           render={({ field }) => {
-            const { value, onChange, ref, ...rest } = field
+            const { value, onChange, ref, ...rest } = field;
             return (
               <FormItem>
                 <FormLabel className="text-primary text-xs font-medium flex items-center gap-1">
@@ -143,12 +129,17 @@ export function GuestInfoFields({
                         <Info className="size-3" />
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent align="start" className="text-xs leading-relaxed text-primary/80">
+                    <PopoverContent
+                      align="start"
+                      className="text-xs leading-relaxed text-primary/80"
+                    >
                       <p className="mb-2">
-                        Hosts review these answers to understand guest needs, manage capacity, and make approval decisions. Provide accurate details so they can plan properly.
+                        Hosts review these answers to understand guest needs, manage capacity, and
+                        make approval decisions. Provide accurate details so they can plan properly.
                       </p>
                       <p className="mb-2">
-                        After your RSVP is submitted you can revisit and update these values anytime from your account dashboard.
+                        After your RSVP is submitted you can revisit and update these values anytime
+                        from your account dashboard.
                       </p>
                       <a
                         href="/profile"
@@ -164,22 +155,18 @@ export function GuestInfoFields({
                 </FormLabel>
                 <FormControl>
                   <Input
-                    placeholder={
-                      customField.placeholder ||
-                      customField.label ||
-                      customField.key
-                    }
+                    placeholder={customField.placeholder || customField.label || customField.key}
                     className="border border-primary/20 placeholder:text-primary/50 text-primary"
                     value={(value as string | undefined) ?? ""}
                     onChange={(event) => {
-                      const rawValue = event.target.value
-                      const shouldTrim = customField.trimWhitespace !== false
-                      const nextValue = shouldTrim ? rawValue.trim() : rawValue
+                      const rawValue = event.target.value;
+                      const shouldTrim = customField.trimWhitespace !== false;
+                      const nextValue = shouldTrim ? rawValue.trim() : rawValue;
                       setCustom((m) => ({
                         ...m,
                         [customField.key]: nextValue,
-                      }))
-                      onChange(nextValue)
+                      }));
+                      onChange(nextValue);
                     }}
                     ref={ref}
                     {...rest}
@@ -187,7 +174,7 @@ export function GuestInfoFields({
                 </FormControl>
                 <FormMessage />
               </FormItem>
-            )
+            );
           }}
         />
       ))}
@@ -260,8 +247,7 @@ export function GuestInfoFields({
               <FormControl>
                 <Input
                   placeholder={
-                    event.primaryFieldConfig?.invitedBy?.placeholder ??
-                    "Who invited you?"
+                    event.primaryFieldConfig?.invitedBy?.placeholder ?? "Who invited you?"
                   }
                   className="border border-primary/20 placeholder:text-primary/50 text-primary"
                   value={invitedByName}
@@ -298,9 +284,7 @@ export function GuestInfoFields({
               UPDATE
             </Button>
           ) : (
-            <div className="text-xs text-primary/60 flex items-center">
-              Sign in to update
-            </div>
+            <div className="text-xs text-primary/60 flex items-center">Sign in to update</div>
           )}
         </div>
       </div>
@@ -313,9 +297,7 @@ export function GuestInfoFields({
           <FormItem>
             <FormLabel className="text-xs text-primary font-medium">
               ATTENDEES{" "}
-              {event.maxAttendees && event.maxAttendees > 1
-                ? `(${event.maxAttendees} max)`
-                : null}
+              {event.maxAttendees && event.maxAttendees > 1 ? `(${event.maxAttendees} max)` : null}
             </FormLabel>
             <FormControl>
               {(event?.maxAttendees ?? 1) === 1 ? (
@@ -357,9 +339,7 @@ export function NoteForHostsField({
 }) {
   return (
     <div className="rounded border border-primary/30 p-3 space-y-2">
-      <div className="font-medium text-xs text-primary">
-        NOTE FOR HOSTS (optional)
-      </div>
+      <div className="font-medium text-xs text-primary">NOTE FOR HOSTS (optional)</div>
       <Textarea
         placeholder="Anything hosts should know"
         className="border border-primary/20 placeholder:text-primary/30 text-primary"

@@ -89,10 +89,7 @@ export function AdminTableRow({ cells }: AdminTableRowProps) {
 
 export function AdminTableEmpty({ children }: { children: ReactNode }) {
   return (
-    <div
-      className="py-6 text-[13px]"
-      style={{ color: "var(--tt-fg-dim)" }}
-    >
+    <div className="py-6 text-[13px]" style={{ color: "var(--tt-fg-dim)" }}>
       {children}
     </div>
   );

@@ -1,8 +1,9 @@
 import type { Event } from "./types";
+
 export {
-  resolveEventMessagingBrandName,
   type EventMessagingBrandSource,
   type ResolveEventMessagingBrandNameOptions,
+  resolveEventMessagingBrandName,
 } from "@coucou/sdk/shared/event-branding";
 
 type EventTitleSource = Pick<Event, "name" | "secondaryTitle"> | null | undefined;

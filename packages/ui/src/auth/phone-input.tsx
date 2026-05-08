@@ -1,14 +1,14 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useCallback, type ChangeEvent, type KeyboardEvent } from "react";
+import { type ChangeEvent, type KeyboardEvent, useCallback } from "react";
+import { usePresetOptional } from "../tenant-template/use-preset";
 import { CountrySelector } from "./country-selector";
 import {
   combineClassNames,
   formatPhoneNumberForDisplay,
   isPhoneNumberLikelyValid,
 } from "./internal-utils";
-import { usePresetOptional } from "../tenant-template/use-preset";
 
 interface PhoneInputProps {
   value: string;
@@ -71,9 +71,7 @@ export function PhoneInput({
       <div
         className="flex items-stretch transition-colors"
         style={{
-          border: `1px solid ${
-            error ? "var(--tt-fg)" : "var(--tt-rule-strong)"
-          }`,
+          border: `1px solid ${error ? "var(--tt-fg)" : "var(--tt-rule-strong)"}`,
           background: "transparent",
           borderRadius: preset.ctaShape === "rounded" ? 8 : 0,
         }}
@@ -114,11 +112,7 @@ export function PhoneInput({
       </CtaButton>
 
       {error ? (
-        <p
-          className="text-[13px] leading-snug"
-          role="alert"
-          style={{ color: "var(--tt-fg)" }}
-        >
+        <p className="text-[13px] leading-snug" role="alert" style={{ color: "var(--tt-fg)" }}>
           {error}
         </p>
       ) : null}

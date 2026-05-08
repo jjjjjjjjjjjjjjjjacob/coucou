@@ -1,38 +1,32 @@
 "use client";
-import React, { use, useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@clerk/nextjs";
-import { useQuery } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter, useSearchParams } from "next/navigation";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { hasEventSecondaryTitle } from "@/lib/event-display";
 
-export default function EventPageClient({
-  params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
+export default function EventPageClient({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn } = useAuth();
 
-  const eventQuery = useQuery(
-    convexQuery(api.events.get, { eventId: eventId as Id<"events"> }),
-  );
+  const eventQuery = useQuery(convexQuery(api.events.get, { eventId: eventId as Id<"events"> }));
   const event = eventQuery.data;
 
   const queryParamPassword = searchParams?.get("password") || "";
@@ -104,9 +98,7 @@ export default function EventPageClient({
       ) : (
         <header className="w-full max-w-2xl space-y-4 text-center text-primary animate-in! fade-in! duration-1000">
           <div className="space-y-1">
-            <h1 className="text-4xl font-semibold uppercase">
-              {event.name}
-            </h1>
+            <h1 className="text-4xl font-semibold uppercase">{event.name}</h1>
             {hasEventSecondaryTitle(event) && (
               <p className="text-2xl uppercase tracking-wide text-primary/85 font-semibold">
                 {event?.secondaryTitle}
@@ -129,9 +121,7 @@ export default function EventPageClient({
               </DialogTrigger>
               <DialogContent className="text-primary">
                 <DialogHeader className="text-primary">
-                  <DialogTitle>
-                    Enter List Password
-                  </DialogTitle>
+                  <DialogTitle>Enter List Password</DialogTitle>
                   <DialogDescription className="text-primary">
                     Provide the password for your guest list to continue.
                   </DialogDescription>
@@ -151,9 +141,7 @@ export default function EventPageClient({
                     {isLoading ? "Continuing…" : "Continue"}
                   </Button>
                 </div>
-                {message && (
-                  <div className="text-sm text-red-500">{message}</div>
-                )}
+                {message && <div className="text-sm text-red-500">{message}</div>}
                 <DialogFooter />
               </DialogContent>
             </Dialog>

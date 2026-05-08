@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 
 describe("Redemptions Functions", () => {
   it("should validate redemption code format", () => {
@@ -28,7 +28,7 @@ describe("Redemptions Functions", () => {
     const mockIdentityUser = { role: "org:user" };
 
     // Simulate the function logic
-    const hasJwtDoorOrHost = (identity: any) => {
+    const hasJwtDoorOrHost = (identity: { role?: string } | null | undefined) => {
       const role = identity?.role as string | null | undefined;
       return role === "org:member" || role === "org:admin";
     };
@@ -60,4 +60,3 @@ describe("Redemptions Functions", () => {
     expect(typeof mockRedemption.code).toBe("string");
   });
 });
-

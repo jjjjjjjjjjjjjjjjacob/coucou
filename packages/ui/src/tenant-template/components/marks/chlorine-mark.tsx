@@ -39,13 +39,7 @@ interface ChlorineSvgPieceProps extends ChlPieceProps {
   source: string;
 }
 
-function ChlorineSvgPiece({
-  source,
-  fg,
-  foregroundColor,
-  style,
-  ...props
-}: ChlorineSvgPieceProps) {
+function ChlorineSvgPiece({ source, fg, foregroundColor, style, ...props }: ChlorineSvgPieceProps) {
   const resolvedForegroundColor = foregroundColor ?? fg ?? "currentColor";
 
   return (
@@ -79,9 +73,7 @@ export function ChlIconSvg(props: ChlPieceProps) {
 }
 
 export function ChlChlorineSvg(props: ChlPieceProps) {
-  return (
-    <ChlorineSvgPiece source={chlorineMarkPieces.chlorine.source} {...props} />
-  );
+  return <ChlorineSvgPiece source={chlorineMarkPieces.chlorine.source} {...props} />;
 }
 
 export function ChlWordmarkSvg(props: ChlPieceProps) {
@@ -120,8 +112,7 @@ export function ChlorineMark({
   ariaLabel = "Club Chlorine",
 }: ChlorineMarkProps) {
   const width = size;
-  const height =
-    (size * CHLORINE_MARK_SOURCE_HEIGHT) / CHLORINE_MARK_SOURCE_WIDTH;
+  const height = (size * CHLORINE_MARK_SOURCE_HEIGHT) / CHLORINE_MARK_SOURCE_WIDTH;
   const resolvedForegroundColor = foregroundColor ?? fg ?? "currentColor";
 
   return (

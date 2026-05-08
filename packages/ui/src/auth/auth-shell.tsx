@@ -1,16 +1,11 @@
 "use client";
 
+import { type EventThemeColorSource, PRESET_DEFINITIONS, type PresetKey } from "@coucou/sdk";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
-import {
-  PRESET_DEFINITIONS,
-  type EventThemeColorSource,
-  type PresetKey,
-} from "@coucou/sdk";
 import type { ReactNode } from "react";
-import { combineClassNames } from "./internal-utils";
-import { BrandMark } from "./brand-mark";
 import { TenantTemplateProvider } from "../tenant-template/provider";
-import { usePresetOptional } from "../tenant-template/use-preset";
+import { BrandMark } from "./brand-mark";
+import { combineClassNames } from "./internal-utils";
 
 export interface AuthBrandingOverrides {
   heading?: string | null;
@@ -97,16 +92,12 @@ export function AuthShell({
     siteAuthConfiguration.description ??
     presetDefinition.authCopy.sub;
   const eyebrowCopy =
-    trimmedOrUndefined(authBranding?.eyebrow) ??
-    presetDefinition.authCopy.eyebrow;
+    trimmedOrUndefined(authBranding?.eyebrow) ?? presetDefinition.authCopy.eyebrow;
   const brandMarkStyle = authBranding?.brandMarkStyle ?? undefined;
   const showAttribution = Boolean(authBranding?.showCoucouAttribution);
 
   return (
-    <TenantTemplateProvider
-      siteConfigurationPreset={preset}
-      event={event}
-    >
+    <TenantTemplateProvider siteConfigurationPreset={preset} event={event}>
       <main
         className="flex min-h-dvh flex-col"
         style={{
@@ -123,12 +114,7 @@ export function AuthShell({
 
         {/* Centered content column */}
         <div className="flex flex-1 items-center justify-center px-6 py-12 sm:py-16">
-          <section
-            className={combineClassNames(
-              "w-full max-w-[360px] space-y-8",
-              className,
-            )}
-          >
+          <section className={combineClassNames("w-full max-w-[360px] space-y-8", className)}>
             {/* Brand mark + uppercased brand name + eyebrow */}
             <div className="flex flex-col items-center gap-3 text-center">
               {brandMarkSlot ?? (
@@ -174,10 +160,7 @@ export function AuthShell({
               >
                 {headingCopy}
               </h1>
-              <p
-                className="m-0 text-[13px] leading-relaxed"
-                style={{ color: "var(--tt-fg-dim)" }}
-              >
+              <p className="m-0 text-[13px] leading-relaxed" style={{ color: "var(--tt-fg-dim)" }}>
                 {subCopy}
               </p>
             </div>

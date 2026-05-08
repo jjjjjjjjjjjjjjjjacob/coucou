@@ -1,7 +1,7 @@
 "use client";
 
-import { useTenantTemplate, useTenantTemplateOptional } from "./provider";
 import type { PresetDefinition, PresetKey } from "@coucou/sdk";
+import { useTenantTemplate, useTenantTemplateOptional } from "./provider";
 
 /**
  * Hook for components that must render inside <TenantTemplateProvider>.

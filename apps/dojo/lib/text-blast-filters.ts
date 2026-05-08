@@ -42,7 +42,10 @@ export const encodeRecipientFilter = (state: RecipientFilterState): string | und
       return JSON.stringify({ type: "status", status: state.status });
     case "custom_field_missing":
       if (!state.fieldKey) return undefined;
-      return JSON.stringify({ type: "custom_field_missing", fieldKey: state.fieldKey });
+      return JSON.stringify({
+        type: "custom_field_missing",
+        fieldKey: state.fieldKey,
+      });
     case "rsvp_before": {
       if (!state.isoDateTime) return undefined;
       const timestamp = Date.parse(state.isoDateTime);
@@ -69,7 +72,10 @@ export const decodeRecipientFilter = (value: string | null | undefined): Recipie
       return { type: "all" };
     }
 
-    const candidate = parsed as { type?: RecipientFilterType; [key: string]: unknown };
+    const candidate = parsed as {
+      type?: RecipientFilterType;
+      [key: string]: unknown;
+    };
     switch (candidate.type) {
       case "all":
         return { type: "all" };
@@ -77,7 +83,10 @@ export const decodeRecipientFilter = (value: string | null | undefined): Recipie
         return { type: "approved_no_approval_sms" };
       case "status": {
         const status = candidate.status;
-        if (typeof status === "string" && ["pending", "approved", "attending", "denied"].includes(status)) {
+        if (
+          typeof status === "string" &&
+          ["pending", "approved", "attending", "denied"].includes(status)
+        ) {
           return { type: "status", status: status as RSVP["status"] };
         }
         return { type: "status", status: DEFAULT_STATUS_FILTER };
@@ -92,7 +101,10 @@ export const decodeRecipientFilter = (value: string | null | undefined): Recipie
       case "rsvp_before": {
         const timestamp = candidate.timestamp;
         if (typeof timestamp === "number" && Number.isFinite(timestamp)) {
-          return { type: "rsvp_before", isoDateTime: toDateTimeLocalString(timestamp) };
+          return {
+            type: "rsvp_before",
+            isoDateTime: toDateTimeLocalString(timestamp),
+          };
         }
         return { type: "rsvp_before", isoDateTime: "" };
       }

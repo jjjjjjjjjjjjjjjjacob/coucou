@@ -16,17 +16,39 @@ export {
   normalizeHexColorInput,
 } from "@coucou/sdk/theming/build-event-theme";
 
-const maisonPreset = PRESET_DEFINITIONS.maison;
+const chlorinePreset = PRESET_DEFINITIONS.chlorine;
 
-// Club Chlorine is locked to the maison preset, so any event without explicit
-// theme colors should fall back to maison's bone/black pair instead of the
-// SDK's dojo defaults (white/red).
+// Tokens that drive popovers, dropdowns, and card surfaces. Club Chlorine
+// keeps these neutral regardless of the event takeover so menus stay on the
+// app's white-default brand instead of picking up a tinted (or dark) event
+// background. Event overrides still flow through every other token —
+// background, primary, accent, border, sidebar — so the page itself adopts
+// the takeover; only the floating surfaces stay neutral.
+const NEUTRAL_SURFACE_VARIABLES = new Set([
+  "--card",
+  "--card-foreground",
+  "--popover",
+  "--popover-foreground",
+]);
+
+function stripNeutralSurfaceOverrides(style: CSSProperties): CSSProperties {
+  const filteredEntries = Object.entries(style).filter(
+    ([key]) => !NEUTRAL_SURFACE_VARIABLES.has(key),
+  );
+  return Object.fromEntries(filteredEntries) as CSSProperties;
+}
+
+// Club Chlorine ships the chlorine preset (pool-blue on white). Events without
+// explicit theme colors fall back to chlorine's white/blue pair, and event
+// overrides leave the popover/card tokens untouched so dropdowns and cards
+// stay on the white-default brand even when the rest of the page goes dark.
 export function buildEventThemeStyle(
   event: EventThemeColorSource | null | undefined,
   fallbacks?: { backgroundColor?: string; textColor?: string },
 ): CSSProperties {
-  return baseBuildEventThemeStyle(event, {
-    backgroundColor: fallbacks?.backgroundColor ?? maisonPreset.bg,
-    textColor: fallbacks?.textColor ?? maisonPreset.fg,
+  const baseStyle = baseBuildEventThemeStyle(event, {
+    backgroundColor: fallbacks?.backgroundColor ?? chlorinePreset.bg,
+    textColor: fallbacks?.textColor ?? chlorinePreset.fg,
   });
+  return stripNeutralSurfaceOverrides(baseStyle);
 }

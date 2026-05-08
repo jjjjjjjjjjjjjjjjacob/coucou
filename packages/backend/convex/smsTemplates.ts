@@ -13,14 +13,14 @@ export interface SmsTemplateData {
 
 export class SmsTemplates {
   static approval(data: SmsTemplateData): string {
-    return `🎉 ${data.firstName || 'Hi'}! Your RSVP for ${data.eventName} is approved!
+    return `🎉 ${data.firstName || "Hi"}! Your RSVP for ${data.eventName} is approved!
 
 📅 ${data.eventDate}
 📍 ${data.eventLocation}
 
 🎫 Your ticket: ${data.ticketUrl}
 
-Show this at the door for entry.${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ''}`;
+Show this at the door for entry.${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ""}`;
   }
 
   static reminder(data: SmsTemplateData): string {
@@ -29,7 +29,7 @@ Show this at the door for entry.${data.unsubscribeUrl ? `\n\nText STOP to opt ou
 📅 ${data.eventDate}
 📍 ${data.eventLocation}
 
-See you there! 🎉${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ''}`;
+See you there! 🎉${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ""}`;
   }
 
   static lastCall(data: SmsTemplateData): string {
@@ -38,16 +38,16 @@ See you there! 🎉${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.uns
 📅 ${data.eventDate}
 📍 ${data.eventLocation}
 
-RSVP now or miss out!${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ''}`;
+RSVP now or miss out!${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ""}`;
   }
 
   static eventUpdate(data: SmsTemplateData & { updateMessage: string }): string {
     return `📢 Update for ${data.eventName}:
 
-${(data as any).updateMessage}
+${data.updateMessage}
 
 📅 ${data.eventDate}
-📍 ${data.eventLocation}${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ''}`;
+📍 ${data.eventLocation}${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ""}`;
   }
 
   static cancellation(data: SmsTemplateData): string {
@@ -55,8 +55,8 @@ ${(data as any).updateMessage}
 
 We're sorry to inform you that ${data.eventName} scheduled for ${data.eventDate} has been cancelled.
 
-We'll notify you of any rescheduled dates.${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ''}`;
+We'll notify you of any rescheduled dates.${data.unsubscribeUrl ? `\n\nText STOP to opt out: ${data.unsubscribeUrl}` : ""}`;
   }
 }
 
-export type SmsTemplateType = 'approval' | 'reminder' | 'lastCall' | 'eventUpdate' | 'cancellation';
+export type SmsTemplateType = "approval" | "reminder" | "lastCall" | "eventUpdate" | "cancellation";

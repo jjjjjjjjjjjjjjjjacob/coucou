@@ -1,42 +1,31 @@
 "use client";
-import React, { use } from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
-  useConvexAuth,
-  useMutation,
-  useQuery as useConvexQuery,
-} from "convex/react";
-import { convexQuery } from "@convex-dev/react-query";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { useAuth } from "@clerk/nextjs";
-import { Spinner } from "@/components/ui/spinner";
-import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useConvexAuth, useQuery as useConvexQuery, useMutation } from "convex/react";
 import { CheckCircle2, CircleDashed } from "lucide-react";
-import { getEventThemeColors } from "@/lib/event-theme";
+import React, { use } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
+import { getEventThemeColors } from "@/lib/event-theme";
 import { siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
 
-export default function StatusPage({
-  params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
+export default function StatusPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = use(params);
   const { isSignedIn, isLoaded } = useAuth();
-  const {
-    isAuthenticated: isConvexAuthenticated,
-    isLoading: isConvexAuthLoading,
-  } = useConvexAuth();
-  const canLoadAuthenticatedStatus =
-    isLoaded && isSignedIn && isConvexAuthenticated;
+  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
+    useConvexAuth();
+  const canLoadAuthenticatedStatus = isLoaded && isSignedIn && isConvexAuthenticated;
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
   const [isUpdatingSmsPreference, setIsUpdatingSmsPreference] = React.useState(false);
-  const [smsConsentIpAddress, setSmsConsentIpAddress] = React.useState<
-    string | undefined
-  >(undefined);
+  const [smsConsentIpAddress, setSmsConsentIpAddress] = React.useState<string | undefined>(
+    undefined,
+  );
 
   const statusQuery = useQuery(
     convexQuery(
@@ -58,10 +47,7 @@ export default function StatusPage({
 
   const status = statusQuery.data;
   const event = eventQuery.data;
-  const eventThemeColors = React.useMemo(
-    () => getEventThemeColors(event ?? null),
-    [event],
-  );
+  const eventThemeColors = React.useMemo(() => getEventThemeColors(event ?? null), [event]);
   const smsSenderDisplayName = React.useMemo(
     () =>
       resolveEventMessagingBrandName(
@@ -87,10 +73,7 @@ export default function StatusPage({
   const guestPortalImageUrl = guestPortalImageResponse?.url ?? null;
 
   React.useEffect(() => {
-    if (
-      typeof status?.smsConsentIpAddress === "string" &&
-      status.smsConsentIpAddress.length > 0
-    ) {
+    if (typeof status?.smsConsentIpAddress === "string" && status.smsConsentIpAddress.length > 0) {
       setSmsConsentIpAddress(status.smsConsentIpAddress);
     }
   }, [status?.smsConsentIpAddress]);
@@ -109,10 +92,7 @@ export default function StatusPage({
       await updateSmsPreference({
         rsvpId: status.rsvpId as Id<"rsvps">,
         smsConsent: desiredSmsConsent,
-        smsConsentIpAddress:
-          desiredSmsConsent && consentIpAddress
-            ? consentIpAddress
-            : undefined,
+        smsConsentIpAddress: desiredSmsConsent && consentIpAddress ? consentIpAddress : undefined,
       });
       await statusQuery.refetch();
       toast.success(
@@ -134,10 +114,7 @@ export default function StatusPage({
   };
 
   // Show loading while auth is initializing
-  if (
-    !isLoaded ||
-    (isSignedIn && (isConvexAuthLoading || !isConvexAuthenticated))
-  ) {
+  if (!isLoaded || (isSignedIn && (isConvexAuthLoading || !isConvexAuthenticated))) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
         <div className="flex items-center text-primary justify-center py-10">
@@ -169,17 +146,13 @@ export default function StatusPage({
           <header className="space-y-1">
             <h1 className="text-2xl font-semibold text-primary">RSVP Status</h1>
             <div className="space-y-1 text-primary">
-              <p className="text-3xl font-semibold leading-tight">
-                {event.name}
-              </p>
+              <p className="text-3xl font-semibold leading-tight">{event.name}</p>
               {event.secondaryTitle?.trim() && (
                 <p className="text-2xl leading-tight text-primary/85 font-medium">
                   {event.secondaryTitle}
                 </p>
               )}
-              {event.location && (
-                <p className="text-sm text-primary/70">{event.location}</p>
-              )}
+              {event.location && <p className="text-sm text-primary/70">{event.location}</p>}
             </div>
           </header>
           {(guestPortalImageUrl || shouldShowGuestLink) && (
@@ -213,13 +186,10 @@ export default function StatusPage({
           {status?.status === "pending" && (
             <div className="flex flex-col text-sm text-primary gap-2">
               <p>
-                Your request is{" "}
-                <span className="font-medium">pending host approval</span>.
-                You’ll receive instructions once approved.
+                Your request is <span className="font-medium">pending host approval</span>. You’ll
+                receive instructions once approved.
               </p>
-              <p className="font-medium">
-                IMPORTANT: Approval is necessary to access the event.
-              </p>
+              <p className="font-medium">IMPORTANT: Approval is necessary to access the event.</p>
             </div>
           )}
           {status && (
@@ -240,14 +210,10 @@ export default function StatusPage({
                     className="min-w-[7rem]"
                     onClick={() => handleSmsPreferenceChange(false)}
                     disabled={
-                      statusQuery.isLoading ||
-                      statusQuery.isFetching ||
-                      isUpdatingSmsPreference
+                      statusQuery.isLoading || statusQuery.isFetching || isUpdatingSmsPreference
                     }
                   >
-                    {isUpdatingSmsPreference && (
-                      <Spinner className="h-3.5 w-3.5" />
-                    )}
+                    {isUpdatingSmsPreference && <Spinner className="h-3.5 w-3.5" />}
                     SMS On
                   </Button>
                 </div>
@@ -265,20 +231,26 @@ export default function StatusPage({
                     variant="outline"
                     onClick={() => handleSmsPreferenceChange(true)}
                     disabled={
-                      statusQuery.isLoading ||
-                      statusQuery.isFetching ||
-                      isUpdatingSmsPreference
+                      statusQuery.isLoading || statusQuery.isFetching || isUpdatingSmsPreference
                     }
                   >
-                    {isUpdatingSmsPreference && (
-                      <Spinner className="h-3.5 w-3.5" />
-                    )}
+                    {isUpdatingSmsPreference && <Spinner className="h-3.5 w-3.5" />}
                     Enable SMS Updates
                   </Button>
                 </div>
               )}
               <p className="text-[10px] text-muted-foreground text-center leading-tight max-w-sm">
-                RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply STOP to cancel. Consent not required for purchase. <a href="/terms" className="underline">Terms</a> & <a href="/privacy" className="underline">Privacy</a>.
+                RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+                {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply STOP
+                to cancel. Consent not required for purchase.{" "}
+                <a href="/terms" className="underline">
+                  Terms
+                </a>{" "}
+                &{" "}
+                <a href="/privacy" className="underline">
+                  Privacy
+                </a>
+                .
               </p>
             </div>
           )}
@@ -288,9 +260,7 @@ export default function StatusPage({
             </div>
           )}
           {!status?.status && (
-            <div className="text-sm text-foreground/70">
-              No request on file yet.
-            </div>
+            <div className="text-sm text-foreground/70">No request on file yet.</div>
           )}
         </div>
       )}

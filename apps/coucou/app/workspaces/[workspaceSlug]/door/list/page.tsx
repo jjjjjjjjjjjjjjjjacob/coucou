@@ -1,33 +1,27 @@
 "use client";
-import React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { Select, SelectOption } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
+import { useQuery } from "convex/react";
+import { Filter, Search, X } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Pagination,
   PaginationContent,
   PaginationItem,
-  PaginationLink,
   PaginationNext,
   PaginationPrevious,
-  PaginationEllipsis,
 } from "@/components/ui/pagination";
-import { useDebounce } from "@/lib/hooks/use-debounce";
-import { Spinner } from "@/components/ui/spinner";
+import { Select, SelectOption } from "@/components/ui/select";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
-import { Search, Filter, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { hasEventSecondaryTitle } from "@/lib/event-display";
-import {
-  useWorkspaceOperationPath,
-  useWorkspaceScope,
-} from "@/lib/use-workspace-scope";
+import { useDebounce } from "@/lib/hooks/use-debounce";
 import type { CredentialResponse, Event } from "@/lib/types";
+import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { cn } from "@/lib/utils";
 
 type DoorListRsvp = {
   _id?: string;
@@ -52,10 +46,7 @@ export default function GuestListPage() {
   }) as Event[] | undefined;
   const eventsSorted = (events ?? [])
     .slice()
-    .sort(
-      (firstEvent, secondEvent) =>
-        (secondEvent.eventDate ?? 0) - (firstEvent.eventDate ?? 0),
-    );
+    .sort((firstEvent, secondEvent) => (secondEvent.eventDate ?? 0) - (firstEvent.eventDate ?? 0));
   const initialId = searchParams.get("eventId") ?? eventsSorted[0]?._id;
   const [eventId, setEventId] = React.useState<string | undefined>(initialId);
   const firstSortedEventId = eventsSorted[0]?._id as string | undefined;
@@ -182,17 +173,13 @@ export default function GuestListPage() {
             return (
               <SelectOption key={event._id} value={event._id}>
                 <div className="flex flex-col">
-                  <span className="font-medium leading-tight">
-                    {event.name}
-                  </span>
+                  <span className="font-medium leading-tight">{event.name}</span>
                   {hasEventSecondaryTitle(event) && (
                     <span className="text-xs text-muted-foreground leading-tight">
                       {event.secondaryTitle}
                     </span>
                   )}
-                  <span className="text-xs text-muted-foreground">
-                    {formattedDate}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{formattedDate}</span>
                 </div>
               </SelectOption>
             );
@@ -217,11 +204,7 @@ export default function GuestListPage() {
 
       <div className="flex gap-2 items-center flex-wrap">
         <Filter className="h-4 w-4 text-muted-foreground" />
-        <Select
-          value={statusFilter}
-          onValueChange={setStatusFilter}
-          className="w-32"
-        >
+        <Select value={statusFilter} onValueChange={setStatusFilter} className="w-32">
           <SelectOption value="all">All Status</SelectOption>
           <SelectOption value="pending">Pending</SelectOption>
           <SelectOption value="approved">Approved</SelectOption>
@@ -231,11 +214,7 @@ export default function GuestListPage() {
           <SelectOption value="redeemed">Redeemed</SelectOption>
         </Select>
 
-        <Select
-          value={listFilter}
-          onValueChange={setListFilter}
-          className="w-32"
-        >
+        <Select value={listFilter} onValueChange={setListFilter} className="w-32">
           <SelectOption value="all">All Lists</SelectOption>
           {(listCredentials ?? []).map((credential) => (
             <SelectOption key={credential._id} value={credential.listKey}>
@@ -245,12 +224,7 @@ export default function GuestListPage() {
         </Select>
 
         {hasActiveFilters && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={clearAllFilters}
-            className="text-xs"
-          >
+          <Button size="sm" variant="outline" onClick={clearAllFilters} className="text-xs">
             Clear All
           </Button>
         )}
@@ -308,28 +282,20 @@ export default function GuestListPage() {
           </thead>
           <tbody>
             {paginatedRsvps.map((rsvp) => (
-              <tr
-                key={rsvp.id ?? rsvp._id}
-                className="border-b hover:bg-muted/20"
-              >
-                <td className="px-4 py-3">{rsvp.name || rsvp.firstName || rsvp.lastName || "(unknown)"}</td>
+              <tr key={rsvp.id ?? rsvp._id} className="border-b hover:bg-muted/20">
                 <td className="px-4 py-3">
-                  <Badge
-                    variant="outline"
-                    className={cn(getStatusBadgeClass(rsvp.status))}
-                  >
+                  {rsvp.name || rsvp.firstName || rsvp.lastName || "(unknown)"}
+                </td>
+                <td className="px-4 py-3">
+                  <Badge variant="outline" className={cn(getStatusBadgeClass(rsvp.status))}>
                     {rsvp.status}
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-muted-foreground">
-                    {rsvp.listKey.toUpperCase()}
-                  </span>
+                  <span className="text-muted-foreground">{rsvp.listKey.toUpperCase()}</span>
                 </td>
                 <td className="px-4 py-3">{rsvp.attendees ?? 1}</td>
-                <td className="px-4 py-3 max-w-xs truncate">
-                  {rsvp.note || "—"}
-                </td>
+                <td className="px-4 py-3 max-w-xs truncate">{rsvp.note || "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -388,9 +354,7 @@ export default function GuestListPage() {
                     onClick={() => setPageIndex(Math.max(0, pageIndex - 1))}
                     className={cn(
                       "h-8 w-8 sm:h-9 sm:w-auto sm:px-3",
-                      pageIndex === 0
-                        ? "pointer-events-none opacity-50"
-                        : "cursor-pointer",
+                      pageIndex === 0 ? "pointer-events-none opacity-50" : "cursor-pointer",
                     )}
                   />
                 </PaginationItem>

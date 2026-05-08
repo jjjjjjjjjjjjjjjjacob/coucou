@@ -26,17 +26,11 @@ function collectIconElements(): HTMLLinkElement[] {
   );
 }
 
-export function EventBrandingProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [branding, setBranding] = React.useState<EventBrandingDetails | null>(
-    null,
+export function EventBrandingProvider({ children }: { children: React.ReactNode }) {
+  const [branding, setBranding] = React.useState<EventBrandingDetails | null>(null);
+  const defaultIconSnapshotRef = React.useRef<Array<{ element: HTMLLinkElement; href: string }>>(
+    [],
   );
-  const defaultIconSnapshotRef = React.useRef<
-    Array<{ element: HTMLLinkElement; href: string }>
-  >([]);
   const hasCapturedDefaultsRef = React.useRef(false);
 
   const captureDefaultIcons = React.useCallback(() => {
@@ -80,9 +74,7 @@ export function EventBrandingProvider({
       iconElements.forEach((element) => {
         const fallbackHref =
           element.dataset.defaultIconHref ||
-          defaultIconSnapshotRef.current.find(
-            (snapshot) => snapshot.element === element,
-          )?.href ||
+          defaultIconSnapshotRef.current.find((snapshot) => snapshot.element === element)?.href ||
           element.href;
         element.href = fallbackHref;
         element.removeAttribute("data-event-icon");
@@ -92,11 +84,7 @@ export function EventBrandingProvider({
 
   const applyBranding = React.useCallback((details: EventBrandingDetails) => {
     setBranding((current) => {
-      if (
-        current &&
-        current.sourceId === details.sourceId &&
-        current.iconUrl === details.iconUrl
-      ) {
+      if (current && current.sourceId === details.sourceId && current.iconUrl === details.iconUrl) {
         return current;
       }
       return details;
@@ -121,11 +109,7 @@ export function EventBrandingProvider({
     [branding, applyBranding, clearBranding],
   );
 
-  return (
-    <EventBrandingContext.Provider value={value}>
-      {children}
-    </EventBrandingContext.Provider>
-  );
+  return <EventBrandingContext.Provider value={value}>{children}</EventBrandingContext.Provider>;
 }
 
 export function useEventBranding(): EventBrandingContextValue {

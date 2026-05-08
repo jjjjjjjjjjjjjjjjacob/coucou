@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { usePreset } from "../use-preset";
 import { useMobile } from "../use-mobile";
-import { TenantShell } from "./tenant-shell";
+import { usePreset } from "../use-preset";
 import { Eyebrow } from "./primitives/eyebrow";
+import { TenantShell } from "./tenant-shell";
 
 export interface RsvpPendingProps {
   /**
@@ -68,7 +68,7 @@ const DEFAULT_DESCRIPTION: Record<string, string> = {
   coucou: "Your request is in. We'll let you know once it's been reviewed.",
 };
 
-const DEFAULT_STATUS: Record<string, string> = {
+const _DEFAULT_STATUS: Record<string, string> = {
   dojo: "Awaiting review",
   atrium: "Awaiting review",
   maison: "Awaiting review",
@@ -82,8 +82,6 @@ export function RsvpPending({
   heading,
   eyebrow = "Pending",
   eyebrowTrailing,
-  statusLabel,
-  footerContact,
   extras,
   noShell = false,
 }: RsvpPendingProps) {
@@ -91,58 +89,51 @@ export function RsvpPending({
   const isMobile = useMobile();
 
   const resolvedHeading = heading ?? DEFAULT_HEADING[presetKey];
-  const resolvedDescription =
-    description ?? DEFAULT_DESCRIPTION[presetKey];
+  const resolvedDescription = description ?? DEFAULT_DESCRIPTION[presetKey];
 
-  const sectionPadding = noShell
-    ? 0
-    : isMobile
-      ? "60px 0 48px"
-      : "100px 0 80px";
+  const sectionPadding = noShell ? 0 : isMobile ? "60px 0 48px" : "100px 0 80px";
   const pendingSection = (
     <section style={{ padding: sectionPadding }}>
-        <Eyebrow trailing={eyebrowTrailing}>
-          {preset.upper ? eyebrow.toUpperCase() : eyebrow}
-        </Eyebrow>
-        <h2
-          className="m-0 mb-8"
-          style={{
-            fontFamily: "var(--tt-display)",
-            fontWeight: presetKey === "dojo" ? 700 : 400,
-            fontSize: isMobile ? 22 : 26,
-            lineHeight: 1.3,
-            letterSpacing: "-0.005em",
-            color: "var(--tt-fg)",
-          }}
-        >
-          {resolvedHeading}
-        </h2>
+      <Eyebrow trailing={eyebrowTrailing}>{preset.upper ? eyebrow.toUpperCase() : eyebrow}</Eyebrow>
+      <h2
+        className="m-0 mb-8"
+        style={{
+          fontFamily: "var(--tt-display)",
+          fontWeight: presetKey === "dojo" ? 700 : 400,
+          fontSize: isMobile ? 22 : 26,
+          lineHeight: 1.3,
+          letterSpacing: "-0.005em",
+          color: "var(--tt-fg)",
+        }}
+      >
+        {resolvedHeading}
+      </h2>
 
+      <div
+        className="m-0 max-w-[540px]"
+        style={{
+          fontSize: 14,
+          lineHeight: 1.7,
+          color: "var(--tt-fg)",
+        }}
+      >
+        {resolvedDescription}
+      </div>
+
+      {submittedAtLabel ? (
         <div
-          className="m-0 max-w-[540px]"
+          className="mt-6"
           style={{
-            fontSize: 14,
-            lineHeight: 1.7,
-            color: "var(--tt-fg)",
+            fontSize: 13,
+            color: "var(--tt-fg-dim)",
+            lineHeight: 1.6,
           }}
         >
-          {resolvedDescription}
+          {submittedAtLabel}
         </div>
+      ) : null}
 
-        {submittedAtLabel ? (
-          <div
-            className="mt-6"
-            style={{
-              fontSize: 13,
-              color: "var(--tt-fg-dim)",
-              lineHeight: 1.6,
-            }}
-          >
-            {submittedAtLabel}
-          </div>
-        ) : null}
-
-        {extras ? <div className="mt-10">{extras}</div> : null}
+      {extras ? <div className="mt-10">{extras}</div> : null}
     </section>
   );
 

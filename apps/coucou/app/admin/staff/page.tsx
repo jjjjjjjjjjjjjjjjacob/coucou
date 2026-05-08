@@ -1,21 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
-import {
-  AdminEmptyState,
-  AdminHeader,
-  AdminSection,
-  Kpi,
-  KpiRow,
-} from "@coucou/ui/admin";
-import {
-  AdminDataTable,
-  type AdminDataTableColumn,
-} from "@/components/admin/admin-data-table";
-import { Select, SelectOption } from "@/components/ui/select";
+import { AdminEmptyState, AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
+import { useMutation, useQuery } from "convex/react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
+import { Select, SelectOption } from "@/components/ui/select";
 
 interface MembershipRow {
   _id: string;
@@ -56,15 +47,12 @@ export default function AdminStaffPage() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorStack, setCursorStack] = useState<string[]>([]);
 
-  const memberships = useQuery(
-    api.orgMemberships.listAllMembershipsPaginated,
-    {
-      cursor: cursor ?? undefined,
-      pageSize: 25,
-      search: search.trim() ? search.trim() : undefined,
-      roleFilter: roleFilter === "all" ? undefined : roleFilter,
-    },
-  );
+  const memberships = useQuery(api.orgMemberships.listAllMembershipsPaginated, {
+    cursor: cursor ?? undefined,
+    pageSize: 25,
+    search: search.trim() ? search.trim() : undefined,
+    roleFilter: roleFilter === "all" ? undefined : roleFilter,
+  });
 
   const updateRole = useMutation(api.orgMemberships.updateMembershipRole);
 
@@ -77,9 +65,7 @@ export default function AdminStaffPage() {
         <div className="flex flex-col">
           <span>{buildDisplayName(row)}</span>
           {row.email ? (
-            <span style={{ color: "var(--tt-fg-mute)", fontSize: 11 }}>
-              {row.email}
-            </span>
+            <span style={{ color: "var(--tt-fg-mute)", fontSize: 11 }}>{row.email}</span>
           ) : null}
         </div>
       ),
@@ -89,9 +75,7 @@ export default function AdminStaffPage() {
       label: "Workspace",
       width: "22%",
       render: (row) =>
-        row.workspace
-          ? row.workspace.name
-          : `Clerk org ${row.organizationId.slice(0, 8)}…`,
+        row.workspace ? row.workspace.name : `Clerk org ${row.organizationId.slice(0, 8)}…`,
       cellStyle: (row) => ({
         color: row.workspace ? "var(--tt-fg-dim)" : "var(--tt-fg-mute)",
       }),
@@ -113,9 +97,7 @@ export default function AdminStaffPage() {
               });
               toast.success(`Role updated to ${next}`);
             } catch (error) {
-              toast.error(
-                error instanceof Error ? error.message : "Failed",
-              );
+              toast.error(error instanceof Error ? error.message : "Failed");
             }
           }}
           onClick={(event) => event.stopPropagation()}

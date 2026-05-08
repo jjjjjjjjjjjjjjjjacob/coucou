@@ -1,12 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { usePreset } from "../use-preset";
 import { useMobile } from "../use-mobile";
-import { TenantShell } from "./tenant-shell";
+import { usePreset } from "../use-preset";
 import { Eyebrow } from "./primitives/eyebrow";
 import { MetaRow } from "./primitives/meta-row";
-import { TenantButton } from "./primitives/button";
+import { TenantShell } from "./tenant-shell";
 
 export interface TenantLandingEvent {
   /**
@@ -100,8 +99,7 @@ const DEFAULT_ABOUT_COPY: Record<string, string> = {
     "Atrium is a small reading-room for new work. Members keep a chair; guests are welcome by invitation.",
   maison:
     "Maison Obscure is a small, recurring evening for a particular crowd. If you have found this page, someone we trust has sent you.",
-  chlorine:
-    "Club Chlorine is a recurring pool-hours series. RSVP access opens by event.",
+  chlorine: "Club Chlorine is a recurring pool-hours series. RSVP access opens by event.",
 };
 
 const DEFAULT_HERO_EYEBROW: Record<string, string> = {
@@ -129,7 +127,6 @@ export function TenantLanding({
   event,
   aboutCopy,
   recentEvents,
-  contactEmail,
   primaryCta,
   secondaryCta,
   noShell = false,
@@ -144,23 +141,17 @@ export function TenantLanding({
   const showRecent = (recentEvents?.length ?? 0) > 0;
   const showLineup = (event.lineup?.length ?? 0) > 0;
 
-  const sectionPadding = noShell
-    ? 0
-    : isMobile
-      ? "60px 0 48px"
-      : "120px 0 96px";
+  const sectionPadding = noShell ? 0 : isMobile ? "60px 0 48px" : "120px 0 96px";
   const landingSection = (
     <>
-    <section style={{ padding: sectionPadding }}>
+      <section style={{ padding: sectionPadding }}>
         <Eyebrow>{heroEyebrow}</Eyebrow>
         <h1
           className="m-0 mb-6 max-w-[640px] leading-[1.15]"
           style={{
             fontFamily: "var(--tt-display)",
             fontWeight: presetKey === "dojo" ? 700 : 400,
-            fontSize: isMobile
-              ? Math.min(preset.titleSize, 30)
-              : preset.titleSize,
+            fontSize: isMobile ? Math.min(preset.titleSize, 30) : preset.titleSize,
             letterSpacing: preset.upper ? "-0.01em" : "-0.005em",
             color: "var(--tt-fg)",
           }}
@@ -178,25 +169,14 @@ export function TenantLanding({
               letterSpacing: preset.upper ? "0.04em" : "-0.005em",
             }}
           >
-            {preset.upper
-              ? event.secondaryTitle.toUpperCase()
-              : event.secondaryTitle}
+            {preset.upper ? event.secondaryTitle.toUpperCase() : event.secondaryTitle}
           </div>
         ) : null}
 
-        <div
-          className="my-10 flex flex-col border-t"
-          style={{ borderTopColor: "var(--tt-rule)" }}
-        >
-          {event.whenLabel ? (
-            <MetaRow label="When">{event.whenLabel}</MetaRow>
-          ) : null}
-          {event.whereLabel ? (
-            <MetaRow label="Where">{event.whereLabel}</MetaRow>
-          ) : null}
-          {event.dressLabel ? (
-            <MetaRow label="Dress">{event.dressLabel}</MetaRow>
-          ) : null}
+        <div className="my-10 flex flex-col border-t" style={{ borderTopColor: "var(--tt-rule)" }}>
+          {event.whenLabel ? <MetaRow label="When">{event.whenLabel}</MetaRow> : null}
+          {event.whereLabel ? <MetaRow label="Where">{event.whereLabel}</MetaRow> : null}
+          {event.dressLabel ? <MetaRow label="Dress">{event.dressLabel}</MetaRow> : null}
         </div>
 
         {showLineup ? (
@@ -209,10 +189,7 @@ export function TenantLanding({
                 <>
                   <span>{preset.upper ? act.displayName.toUpperCase() : act.displayName}</span>
                   {act.descriptorBadges?.length ? (
-                    <span
-                      className="inline-flex flex-wrap gap-1.5"
-                      style={{ marginLeft: 8 }}
-                    >
+                    <span className="inline-flex flex-wrap gap-1.5" style={{ marginLeft: 8 }}>
                       {act.descriptorBadges.map((descriptorBadge) => (
                         <span
                           key={descriptorBadge}
@@ -326,10 +303,7 @@ export function TenantLanding({
               >
                 <span style={{ color: "var(--tt-fg-mute)" }}>{row.date}</span>
                 <span>{row.name}</span>
-                <span
-                  className="text-right"
-                  style={{ color: "var(--tt-fg-dim)" }}
-                >
+                <span className="text-right" style={{ color: "var(--tt-fg-dim)" }}>
                   {row.trailing ?? ""}
                 </span>
               </div>

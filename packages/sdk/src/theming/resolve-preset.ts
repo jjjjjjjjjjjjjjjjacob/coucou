@@ -1,17 +1,12 @@
-import {
-  PRESET_DEFINITIONS,
-  isPresetKey,
-  type PresetDefinition,
-  type PresetKey,
-} from "./presets";
+import type { CSSProperties } from "react";
 import {
   buildEventThemeStyle,
+  type EventThemeColorSource,
   getEventThemeColors,
   mixHexColors,
   normalizeHexColorInput,
-  type EventThemeColorSource,
 } from "./build-event-theme";
-import type { CSSProperties } from "react";
+import { isPresetKey, PRESET_DEFINITIONS, type PresetDefinition, type PresetKey } from "./presets";
 
 export interface ResolvePresetInput {
   /**
@@ -78,9 +73,7 @@ function deriveOverriddenPreset(
   base: PresetDefinition,
   event: EventThemeColorSource | null | undefined,
 ): PresetDefinition {
-  const overrideBackground = normalizeHexColorInput(
-    event?.themeBackgroundColor,
-  );
+  const overrideBackground = normalizeHexColorInput(event?.themeBackgroundColor);
   const overrideText = normalizeHexColorInput(event?.themeTextColor);
 
   if (!overrideBackground && !overrideText) {
@@ -166,9 +159,10 @@ export function resolvePreset(input: ResolvePresetInput): ResolvedPreset {
  * with full preset + event override resolution. Mirrors the signature of
  * the legacy getEventThemeColors() but accepts a preset hint.
  */
-export function resolveEventColors(
-  input: ResolvePresetInput,
-): { backgroundColor: string; textColor: string } {
+export function resolveEventColors(input: ResolvePresetInput): {
+  backgroundColor: string;
+  textColor: string;
+} {
   const resolved = resolvePreset(input);
   return getEventThemeColors(input.event, {
     backgroundColor: resolved.definition.bg,

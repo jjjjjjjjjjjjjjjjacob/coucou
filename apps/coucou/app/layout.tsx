@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono, Noto_Emoji } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { getClientSiteRedirectOrigins } from "@coucou/sdk";
+import type { Metadata } from "next";
+import { Geist, Geist_Mono, Noto_Emoji } from "next/font/google";
 import "./globals.css";
-import Providers from "./providers";
-import { AppChrome } from "./app-chrome";
 import { siteConfiguration } from "@/lib/site";
+import { AppChrome } from "./app-chrome";
+import Providers from "./providers";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -46,9 +46,7 @@ export const metadata: Metadata = {
       { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512x512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
     shortcut: "/favicon.png",
   },
   manifest: "/manifest.json",

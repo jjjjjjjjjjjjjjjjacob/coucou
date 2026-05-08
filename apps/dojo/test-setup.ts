@@ -1,7 +1,7 @@
-import React from "react";
-import { afterEach, beforeAll, afterAll, expect, mock } from "bun:test";
-import { cleanup } from "@testing-library/react";
+import { afterAll, afterEach, beforeAll, expect, mock } from "bun:test";
 import * as matchers from "@testing-library/jest-dom/matchers";
+import { cleanup } from "@testing-library/react";
+import React from "react";
 
 // Add missing jest-dom color utilities for Bun compatibility
 const mockUtils = {
@@ -11,21 +11,27 @@ const mockUtils = {
   printExpected: (str: string) => str,
   printReceived: (str: string) => str,
   printWithType: (str: string) => str,
-  stringify: (obj: any) => JSON.stringify(obj),
-  diff: (a: any, b: any) =>
+  stringify: (obj: unknown) => JSON.stringify(obj),
+  diff: (a: unknown, b: unknown) =>
     `Expected: ${JSON.stringify(a)}, Received: ${JSON.stringify(b)}`,
 };
+
+type JestDomMatcherContext = {
+  utils?: typeof mockUtils;
+};
+
+type JestDomMatcher = (this: JestDomMatcherContext, ...args: unknown[]) => unknown;
 
 // Patch the matchers to work with Bun's expect
 const patchedMatchers = Object.fromEntries(
   Object.entries(matchers).map(([name, matcher]) => [
     name,
-    function (this: any, ...args: any[]) {
+    function (this: JestDomMatcherContext, ...args: unknown[]) {
       // Provide missing utils if the matcher needs them
       if (!this.utils) {
         this.utils = mockUtils;
       }
-      return (matcher as any).call(this, ...args);
+      return (matcher as JestDomMatcher).call(this, ...args);
     },
   ]),
 );
@@ -84,9 +90,7 @@ const testUser = {
 interface ClerkTestGlobal {
   __setClerkTestState?: (nextState: Partial<ClerkTestState>) => void;
   __resetClerkTestState?: () => void;
-  __setConvexAuthTestState?: (
-    nextState: Partial<ConvexAuthTestState>,
-  ) => void;
+  __setConvexAuthTestState?: (nextState: Partial<ConvexAuthTestState>) => void;
   __resetConvexAuthTestState?: () => void;
   __getRouterReplaceCalls?: () => string[];
   __clearRouterReplaceCalls?: () => void;
@@ -189,42 +193,16 @@ mock.module("@clerk/nextjs", () => ({
   }),
   SignedIn: ({ children }: { children: React.ReactNode }) => children,
   SignedOut: ({ children }: { children: React.ReactNode }) => children,
-  UserProfile: () =>
-    React.createElement(
-      "div",
-      { "data-testid": "user-profile" },
-      "User Profile",
-    ),
-  SignIn: () =>
-    React.createElement(
-      "div",
-      { "data-testid": "clerk-sign-in" },
-      "Sign In Component",
-    ),
-  SignInButton: () =>
-    React.createElement(
-      "button",
-      { "data-testid": "sign-in-button" },
-      "Sign In",
-    ),
+  UserProfile: () => React.createElement("div", { "data-testid": "user-profile" }, "User Profile"),
+  SignIn: () => React.createElement("div", { "data-testid": "clerk-sign-in" }, "Sign In Component"),
+  SignInButton: () => React.createElement("button", { "data-testid": "sign-in-button" }, "Sign In"),
   SignOutButton: () =>
-    React.createElement(
-      "button",
-      { "data-testid": "sign-out-button" },
-      "Sign Out",
-    ),
+    React.createElement("button", { "data-testid": "sign-out-button" }, "Sign Out"),
   OrganizationSwitcher: () =>
-    React.createElement(
-      "div",
-      { "data-testid": "org-switcher" },
-      "Org Switcher",
-    ),
-  UserButton: () =>
-    React.createElement("button", { "data-testid": "user-button" }, "User"),
-  RedirectToSignIn: () =>
-    React.createElement("div", {}, "Redirecting to sign in..."),
-  RedirectToUserProfile: () =>
-    React.createElement("div", {}, "Redirecting to user profile..."),
+    React.createElement("div", { "data-testid": "org-switcher" }, "Org Switcher"),
+  UserButton: () => React.createElement("button", { "data-testid": "user-button" }, "User"),
+  RedirectToSignIn: () => React.createElement("div", {}, "Redirecting to sign in..."),
+  RedirectToUserProfile: () => React.createElement("div", {}, "Redirecting to user profile..."),
 }));
 
 // Mock Convex
@@ -278,13 +256,12 @@ mock.module("@tanstack/react-query", () => ({
     error: null,
   }),
   QueryClient: class MockQueryClient {},
-  QueryClientProvider: ({ children }: { children: React.ReactNode }) =>
-    children,
+  QueryClientProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 // Mock Convex React Query
 mock.module("@convex-dev/react-query", () => ({
-  convexQuery: (queryFn: any, args: any) => ({ queryFn, args }),
+  convexQuery: (queryFn: unknown, args: unknown) => ({ queryFn, args }),
   useConvexMutation: () => () => {},
 }));
 
@@ -333,7 +310,14 @@ mock.module("next/navigation", () => ({
 
 mock.module("next/link", () => ({
   __esModule: true,
-  default: function MockLink({ children, href, ...props }: any) {
+  default: function MockLink({
+    children,
+    href,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    children: React.ReactNode;
+    href: string;
+  }) {
     return React.createElement("a", { href, ...props }, children);
   },
 }));
@@ -349,7 +333,10 @@ mock.module("sonner", () => ({
 }));
 
 mock.module("react-qr-code", () => ({
-  default: function MockQRCode({ value, ...props }: any) {
+  default: function MockQRCode({
+    value,
+    ...props
+  }: React.HTMLAttributes<HTMLDivElement> & { value: string }) {
     return React.createElement(
       "div",
       {
@@ -391,40 +378,49 @@ if (typeof window !== "undefined") {
   });
 
   // Mock IntersectionObserver
-  (window as any).IntersectionObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
+  Object.defineProperty(window, "IntersectionObserver", {
+    writable: true,
+    value: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
 
   // Mock ResizeObserver
-  (window as any).ResizeObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
+  Object.defineProperty(window, "ResizeObserver", {
+    writable: true,
+    value: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
 }
 
 // Also set up global mocks
-(global as any).IntersectionObserver = class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-};
-(global as any).ResizeObserver = class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-};
+Object.defineProperty(globalThis, "IntersectionObserver", {
+  writable: true,
+  value: class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+});
+Object.defineProperty(globalThis, "ResizeObserver", {
+  writable: true,
+  value: class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+});
 
 // Suppress console warnings during tests
 const originalError = console.error;
 beforeAll(() => {
-  console.error = (...args: any[]) => {
-    if (
-      typeof args[0] === "string" &&
-      args[0].includes("Warning: ReactDOM.render is deprecated")
-    ) {
+  console.error = (...args: unknown[]) => {
+    if (typeof args[0] === "string" && args[0].includes("Warning: ReactDOM.render is deprecated")) {
       return;
     }
     originalError.call(console, ...args);

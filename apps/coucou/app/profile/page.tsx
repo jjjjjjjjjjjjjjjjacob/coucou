@@ -1,24 +1,16 @@
 "use client";
-import React from "react";
-import { useUser, UserButton } from "@clerk/nextjs";
-import { useConvexAuth, useQuery, useMutation } from "convex/react";
+import { UserButton, useUser } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Id } from "@convex/_generated/dataModel";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { Calendar, Mail, Pencil, Phone, Settings, Users } from "lucide-react";
+import Link from "next/link";
+import React from "react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import {
-  Mail,
-  Phone,
-  Calendar,
-  Users,
-  Settings,
-  Pencil,
-} from "lucide-react";
-import { Spinner } from "@/components/ui/spinner";
-import Link from "next/link";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -27,12 +19,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatEventDateTime } from "@/lib/utils";
-import { toast } from "sonner";
-import type { UserEventSharing } from "@/lib/types";
-import type { Id } from "@convex/_generated/dataModel";
-import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
+import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import type { UserEventSharing } from "@/lib/types";
+import { formatEventDateTime } from "@/lib/utils";
 
 export default function ProfilePage() {
   const { isLoaded, isSignedIn, user } = useUser();
@@ -40,9 +33,7 @@ export default function ProfilePage() {
   const sharedEvents = useQuery(
     api.rsvps.listForCurrentUser,
     !isSignedIn || !isConvexAuthenticated ? "skip" : {},
-  ) as
-    | UserEventSharing[]
-    | undefined;
+  ) as UserEventSharing[] | undefined;
   const profileFieldValues = useQuery(
     api.profileValues.listForCurrentUser,
     !isSignedIn || !isConvexAuthenticated ? "skip" : {},
@@ -57,28 +48,19 @@ export default function ProfilePage() {
   );
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
   const updateSharedFields = useMutation(api.rsvps.updateSharedFields);
-  const upsertSocialProfile = useMutation(
-    api.socialProfiles.upsertForCurrentUser,
-  );
-  const revokeWorkspaceGrant = useMutation(
-    api.profileValues.revokeWorkspaceGrantForCurrentUser,
-  );
-  const [editingSocialPlatformKey, setEditingSocialPlatformKey] =
-    React.useState<string | null>(null);
-  const [editingSocialHandle, setEditingSocialHandle] = React.useState("");
-  const [isSavingSocialProfile, setIsSavingSocialProfile] =
-    React.useState(false);
-  const [revokingGrantId, setRevokingGrantId] = React.useState<string | null>(
+  const upsertSocialProfile = useMutation(api.socialProfiles.upsertForCurrentUser);
+  const revokeWorkspaceGrant = useMutation(api.profileValues.revokeWorkspaceGrantForCurrentUser);
+  const [editingSocialPlatformKey, setEditingSocialPlatformKey] = React.useState<string | null>(
     null,
   );
+  const [editingSocialHandle, setEditingSocialHandle] = React.useState("");
+  const [isSavingSocialProfile, setIsSavingSocialProfile] = React.useState(false);
+  const [revokingGrantId, setRevokingGrantId] = React.useState<string | null>(null);
   const [editingRsvpId, setEditingRsvpId] = React.useState<string | null>(null);
-  const [pendingFieldValues, setPendingFieldValues] = React.useState<
-    Record<string, string>
-  >({});
-  const [isSavingSharedFields, setIsSavingSharedFields] =
-    React.useState<boolean>(false);
+  const [pendingFieldValues, setPendingFieldValues] = React.useState<Record<string, string>>({});
+  const [isSavingSharedFields, setIsSavingSharedFields] = React.useState<boolean>(false);
   const [smsUpdatingRsvpId, setSmsUpdatingRsvpId] = React.useState<string | null>(null);
-  const exampleHostName = React.useMemo(() => {
+  const _exampleHostName = React.useMemo(() => {
     if (!sharedEvents || sharedEvents.length === 0) {
       return "Neon District Events";
     }
@@ -141,9 +123,7 @@ export default function ProfilePage() {
         rsvpId: sharedEvent.rsvpId as Id<"rsvps">,
         smsConsent: !sharedEvent.smsConsent,
         smsConsentIpAddress:
-          !sharedEvent.smsConsent && consentIpAddress
-            ? consentIpAddress
-            : undefined,
+          !sharedEvent.smsConsent && consentIpAddress ? consentIpAddress : undefined,
       });
       toast.success(
         !sharedEvent.smsConsent
@@ -172,10 +152,7 @@ export default function ProfilePage() {
     }));
   };
 
-  const handleSocialEditStart = (
-    platformKey: string,
-    currentHandle: string,
-  ) => {
+  const handleSocialEditStart = (platformKey: string, currentHandle: string) => {
     setEditingSocialPlatformKey(platformKey);
     setEditingSocialHandle(currentHandle);
   };
@@ -252,9 +229,7 @@ export default function ProfilePage() {
         <Card>
           <CardContent className="text-center py-12">
             <h2 className="text-lg font-medium mb-2">Not signed in</h2>
-            <p className="text-muted-foreground mb-6">
-              Please sign in to view your profile.
-            </p>
+            <p className="text-muted-foreground mb-6">Please sign in to view your profile.</p>
             <Link href="/sign-in">
               <Button>Sign In</Button>
             </Link>
@@ -265,14 +240,9 @@ export default function ProfilePage() {
   }
 
   const organizationMemberships = user.organizationMemberships || [];
-  const primaryEmail = user.emailAddresses.find(
-    (email) => email.id === user.primaryEmailAddressId
-  );
-  const primaryPhone = user.phoneNumbers.find(
-    (phone) => phone.id === user.primaryPhoneNumberId
-  );
-  const isSharedEventsLoading =
-    !isConvexAuthenticated || sharedEvents === undefined;
+  const primaryEmail = user.emailAddresses.find((email) => email.id === user.primaryEmailAddressId);
+  const primaryPhone = user.phoneNumbers.find((phone) => phone.id === user.primaryPhoneNumberId);
+  const isSharedEventsLoading = !isConvexAuthenticated || sharedEvents === undefined;
   const sharedEventCount = sharedEvents?.length ?? 0;
 
   return (
@@ -287,13 +257,12 @@ export default function ProfilePage() {
               <Avatar className="h-12 w-12">
                 <AvatarImage src={user.imageUrl} alt={user.fullName || ""} />
                 <AvatarFallback>
-                  {user.firstName?.[0]}{user.lastName?.[0]}
+                  {user.firstName?.[0]}
+                  {user.lastName?.[0]}
                 </AvatarFallback>
               </Avatar>
               <div>
-                <h2 className="text-xl font-semibold">
-                  {user.fullName || "User"}
-                </h2>
+                <h2 className="text-xl font-semibold">{user.fullName || "User"}</h2>
                 <p className="text-sm text-muted-foreground">
                   Member since{" "}
                   {new Date(user.createdAt!).toLocaleDateString("en-US", {
@@ -331,9 +300,7 @@ export default function ProfilePage() {
 
             <div className="flex items-center gap-3">
               <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span>
-                Joined {new Date(user.createdAt!).toLocaleDateString()}
-              </span>
+              <span>Joined {new Date(user.createdAt!).toLocaleDateString()}</span>
             </div>
           </CardContent>
         </Card>
@@ -360,14 +327,10 @@ export default function ProfilePage() {
                           src={membership.organization.imageUrl}
                           alt={membership.organization.name}
                         />
-                        <AvatarFallback>
-                          {membership.organization.name[0]}
-                        </AvatarFallback>
+                        <AvatarFallback>{membership.organization.name[0]}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <h3 className="font-medium">
-                          {membership.organization.name}
-                        </h3>
+                        <h3 className="font-medium">{membership.organization.name}</h3>
                         <p className="text-sm text-muted-foreground">
                           {membership.organization.slug}
                         </p>
@@ -401,12 +364,14 @@ export default function ProfilePage() {
               </div>
             ) : sharedEventCount === 0 ? (
               <p className="text-sm text-muted-foreground">
-                You have not shared details with any events yet. Once you RSVP, your shared information will appear here.
+                You have not shared details with any events yet. Once you RSVP, your shared
+                information will appear here.
               </p>
             ) : (
               <div className="space-y-4">
                 <p className="text-[10px] text-muted-foreground leading-tight">
-                  RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of each event host using Coucou. Msg & data rates may apply. Reply STOP to cancel.
+                  RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of each
+                  event host using Coucou. Msg & data rates may apply. Reply STOP to cancel.
                 </p>
                 {sharedEvents?.map((sharedEvent) => {
                   const smsSenderDisplayName = resolveEventMessagingBrandName(
@@ -418,13 +383,11 @@ export default function ProfilePage() {
                     },
                     { fallback: sharedEvent.eventName ?? "Event Host" },
                   );
-                  const sharedFieldValues =
-                    sharedEvent.customFields.filter((field) => field.value && field.value.length > 0);
+                  const sharedFieldValues = sharedEvent.customFields.filter(
+                    (field) => field.value && field.value.length > 0,
+                  );
                   return (
-                    <div
-                      key={sharedEvent.rsvpId}
-                      className="border rounded-lg p-4 space-y-4"
-                    >
+                    <div key={sharedEvent.rsvpId} className="border rounded-lg p-4 space-y-4">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -519,8 +482,8 @@ export default function ProfilePage() {
               Saved profile information
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Information you have shared via RSVPs is saved here so it can be
-              reused. Sharing with workspaces can be revoked below.
+              Information you have shared via RSVPs is saved here so it can be reused. Sharing with
+              workspaces can be revoked below.
             </p>
           </CardHeader>
           <CardContent>
@@ -529,16 +492,11 @@ export default function ProfilePage() {
                 <Spinner />
               </div>
             ) : profileFieldValues.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No saved profile information yet.
-              </p>
+              <p className="text-sm text-muted-foreground">No saved profile information yet.</p>
             ) : (
               <div className="space-y-3">
                 {profileFieldValues.map((entry) => (
-                  <div
-                    key={entry._id}
-                    className="border rounded-lg p-3 space-y-1"
-                  >
+                  <div key={entry._id} className="border rounded-lg p-3 space-y-1">
                     <div className="flex items-center justify-between gap-3">
                       <div className="space-y-0.5">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -576,8 +534,7 @@ export default function ProfilePage() {
               </div>
             ) : profileWorkspaceGrants.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                You have not granted any workspaces access to your profile
-                information.
+                You have not granted any workspaces access to your profile information.
               </p>
             ) : (
               <div className="space-y-3">
@@ -588,15 +545,12 @@ export default function ProfilePage() {
                   >
                     <div className="space-y-1">
                       <p className="text-sm font-medium">
-                        {entry.workspace?.name ??
-                          entry.grant.workspaceSlug ??
-                          "Workspace"}
+                        {entry.workspace?.name ?? entry.grant.workspaceSlug ?? "Workspace"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Sharing{" "}
                         <span className="font-medium">
-                          {entry.profileFieldValue.label ||
-                            entry.profileFieldValue.fieldKey}
+                          {entry.profileFieldValue.label || entry.profileFieldValue.fieldKey}
                         </span>
                         : {entry.profileFieldValue.value}
                       </p>
@@ -627,8 +581,8 @@ export default function ProfilePage() {
               Social profiles
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Social handles linked to your account. These are reused when
-              RSVPing to events that ask for them.
+              Social handles linked to your account. These are reused when RSVPing to events that
+              ask for them.
             </p>
           </CardHeader>
           <CardContent>
@@ -637,14 +591,11 @@ export default function ProfilePage() {
                 <Spinner />
               </div>
             ) : userSocialProfiles.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No social profiles saved yet.
-              </p>
+              <p className="text-sm text-muted-foreground">No social profiles saved yet.</p>
             ) : (
               <div className="space-y-3">
                 {userSocialProfiles.map((profile) => {
-                  const isEditing =
-                    editingSocialPlatformKey === profile.platformKey;
+                  const isEditing = editingSocialPlatformKey === profile.platformKey;
                   return (
                     <div
                       key={profile._id}
@@ -657,16 +608,12 @@ export default function ProfilePage() {
                         {isEditing ? (
                           <Input
                             value={editingSocialHandle}
-                            onChange={(event) =>
-                              setEditingSocialHandle(event.target.value)
-                            }
+                            onChange={(event) => setEditingSocialHandle(event.target.value)}
                             placeholder="@handle"
                             className="w-64"
                           />
                         ) : (
-                          <p className="text-sm font-medium">
-                            {profile.handle}
-                          </p>
+                          <p className="text-sm font-medium">{profile.handle}</p>
                         )}
                       </div>
                       <div className="flex gap-2">
@@ -684,9 +631,7 @@ export default function ProfilePage() {
                             <Button
                               type="button"
                               size="sm"
-                              onClick={() =>
-                                handleSocialEditSave(profile.platformKey)
-                              }
+                              onClick={() => handleSocialEditSave(profile.platformKey)}
                               disabled={isSavingSocialProfile}
                             >
                               {isSavingSocialProfile ? (
@@ -701,10 +646,7 @@ export default function ProfilePage() {
                             size="sm"
                             variant="outline"
                             onClick={() =>
-                              handleSocialEditStart(
-                                profile.platformKey,
-                                profile.handle,
-                              )
+                              handleSocialEditStart(profile.platformKey, profile.handle)
                             }
                           >
                             <Pencil className="mr-2 h-3.5 w-3.5" />
@@ -737,8 +679,8 @@ export default function ProfilePage() {
               <UserButton
                 appearance={{
                   elements: {
-                    userButtonAvatarBox: "w-8 h-8"
-                  }
+                    userButtonAvatarBox: "w-8 h-8",
+                  },
                 }}
               />
               <span className="text-sm">Manage Account Settings</span>
@@ -759,7 +701,8 @@ export default function ProfilePage() {
           <DialogHeader>
             <DialogTitle>Update shared details</DialogTitle>
             <DialogDescription>
-              Adjust the information you are sharing with the host for this event. Clearing a field removes it from your shared details.
+              Adjust the information you are sharing with the host for this event. Clearing a field
+              removes it from your shared details.
             </DialogDescription>
           </DialogHeader>
           {editingEvent ? (
@@ -786,9 +729,7 @@ export default function ProfilePage() {
                           id={`shared-${field.key}`}
                           value={pendingFieldValues[field.key] ?? ""}
                           placeholder="Not shared"
-                          onChange={(event) =>
-                            handleFieldChange(field.key, event.target.value)
-                          }
+                          onChange={(event) => handleFieldChange(field.key, event.target.value)}
                         />
                         <Button
                           type="button"

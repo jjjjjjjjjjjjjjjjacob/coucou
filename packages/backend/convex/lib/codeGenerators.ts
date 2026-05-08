@@ -23,8 +23,7 @@ function generateRandomCode(length: number, alphabet: string): string {
  * @returns 22-character URL-safe approval code
  */
 export function generateApprovalCode(): string {
-  const alphabet =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   return generateRandomCode(22, alphabet);
 }
 

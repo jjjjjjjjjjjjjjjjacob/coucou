@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
-const coucouBaseUrl = (
-  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
-).replace(/\/+$/, "");
+const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
+  /\/+$/,
+  "",
+);
 const dojoPomodoroWorkspaceSlug = "dojo-pomodoro";
 
 const nextConfig: NextConfig = {
@@ -92,7 +93,7 @@ const nextConfig: NextConfig = {
           "**/__tests__/**",
           "**/test-setup.ts",
         ],
-      } as any;
+      } as NonNullable<typeof config.watchOptions>;
     }
     return config;
   },

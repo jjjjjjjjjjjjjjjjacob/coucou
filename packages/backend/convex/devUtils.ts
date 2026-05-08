@@ -1,5 +1,5 @@
-import { mutation } from "./functions";
 import { v } from "convex/values";
+import { mutation } from "./functions";
 
 /**
  * DEV UTILITY: Clear userName fields from all RSVPs
@@ -92,8 +92,8 @@ export const getRsvpUserNameStats = mutation({
       withUserName,
       withoutUserName,
       withEmptyUserName,
-      percentagePopulated: allRsvps.length > 0 ?
-        Math.round((withUserName / allRsvps.length) * 100) : 0,
+      percentagePopulated:
+        allRsvps.length > 0 ? Math.round((withUserName / allRsvps.length) * 100) : 0,
     };
   },
 });

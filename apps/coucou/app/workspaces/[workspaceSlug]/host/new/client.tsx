@@ -1,22 +1,23 @@
 "use client";
-import React from "react";
-import { useRouter } from "next/navigation";
-import { useAction } from "convex/react";
 import { api } from "@convex/_generated/api";
-import { useForm } from "react-hook-form";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { HostEventForm } from "@/components/host-event-form";
-import { EventActsEditor } from "@/components/event-acts-editor";
+import type { Id } from "@convex/_generated/dataModel";
 import {
-  CustomFieldsEditor,
-  type CustomFieldDef,
-} from "@/components/custom-fields-builder";
-import { createTimestamp } from "@/lib/date-utils";
+  getDefaultApprovalMessage,
+  sanitizeOptionalApprovalMessage,
+} from "@coucou/sdk/shared/approval-messages";
+import { useAction } from "convex/react";
+import { useRouter } from "next/navigation";
+import React from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { ApplicationError, EventAct, EventFormData } from "@/lib/types";
+import { type CustomFieldDef, CustomFieldsEditor } from "@/components/custom-fields-builder";
+import { EventActsEditor } from "@/components/event-acts-editor";
+import { HostEventForm } from "@/components/host-event-form";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { createTimestamp } from "@/lib/date-utils";
 import { sanitizeEventActsForSubmit } from "@/lib/event-metadata";
 import {
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
@@ -24,15 +25,8 @@ import {
   isValidHexColor,
   normalizeHexColorInput,
 } from "@/lib/event-theme";
-import { Id } from "@convex/_generated/dataModel";
-import {
-  getDefaultApprovalMessage,
-  sanitizeOptionalApprovalMessage,
-} from "@coucou/sdk/shared/approval-messages";
-import {
-  useWorkspaceOperationPath,
-  useWorkspaceScope,
-} from "@/lib/use-workspace-scope";
+import type { ApplicationError, EventAct, EventFormData } from "@/lib/types";
+import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 type ListRow = {
   listKey: string;
@@ -51,18 +45,11 @@ function validateCreate(values: EventFormData, lists: ListRow[]): string[] {
   if (filteredLists.length === 0) {
     validationErrors.push("Add at least one list");
   }
-  if (
-    values.themeBackgroundColor &&
-    !isValidHexColor(values.themeBackgroundColor)
-  ) {
-    validationErrors.push(
-      "Background color must be a valid hex color (e.g. #FFFFFF)",
-    );
+  if (values.themeBackgroundColor && !isValidHexColor(values.themeBackgroundColor)) {
+    validationErrors.push("Background color must be a valid hex color (e.g. #FFFFFF)");
   }
   if (values.themeTextColor && !isValidHexColor(values.themeTextColor)) {
-    validationErrors.push(
-      "Text color must be a valid hex color (e.g. #EF4444)",
-    );
+    validationErrors.push("Text color must be a valid hex color (e.g. #EF4444)");
   }
   return validationErrors;
 }
@@ -98,8 +85,7 @@ export default function NewEventClient() {
 
   const flyerStorageId = form.watch("flyerStorageId") ?? null;
   const eventIconStorageId = form.watch("customIconStorageId") ?? null;
-  const guestPortalImageStorageId =
-    form.watch("guestPortalImageStorageId") ?? null;
+  const guestPortalImageStorageId = form.watch("guestPortalImageStorageId") ?? null;
   const eventName = form.watch("name");
   const defaultApprovalMessage = getDefaultApprovalMessage(eventName);
   const [lists, setLists] = React.useState<ListRow[]>([
@@ -132,15 +118,9 @@ export default function NewEventClient() {
         approvalMessage: "",
       },
     ]);
-  const setList = <Key extends keyof ListRow>(
-    index: number,
-    key: Key,
-    value: ListRow[Key],
-  ) => {
+  const setList = <Key extends keyof ListRow>(index: number, key: Key, value: ListRow[Key]) => {
     setLists((current) =>
-      current.map((item, idx) =>
-        idx === index ? { ...item, [key]: value } : item,
-      ),
+      current.map((item, idx) => (idx === index ? { ...item, [key]: value } : item)),
     );
   };
   const removeList = (index: number) =>
@@ -152,16 +132,12 @@ export default function NewEventClient() {
       validationErrors.forEach((message) => toast.error(message));
       return;
     }
-    const trimmedGuestPortalLinkLabel =
-      values.guestPortalLinkLabel?.trim() ?? "";
-    const trimmedGuestPortalLinkUrl =
-      values.guestPortalLinkUrl?.trim() ?? "";
+    const trimmedGuestPortalLinkLabel = values.guestPortalLinkLabel?.trim() ?? "";
+    const trimmedGuestPortalLinkUrl = values.guestPortalLinkUrl?.trim() ?? "";
     const hasLabel = trimmedGuestPortalLinkLabel.length > 0;
     const hasUrl = trimmedGuestPortalLinkUrl.length > 0;
     if ((hasLabel && !hasUrl) || (hasUrl && !hasLabel)) {
-      toast.error(
-        "Provide both a guest link label and URL or leave both blank",
-      );
+      toast.error("Provide both a guest link label and URL or leave both blank");
       return;
     }
 
@@ -174,11 +150,7 @@ export default function NewEventClient() {
         .split(",")
         .map((name) => name.trim())
         .filter(Boolean);
-      const timestamp = createTimestamp(
-        values.eventDate,
-        values.eventTime,
-        values.eventTimezone,
-      );
+      const timestamp = createTimestamp(values.eventDate, values.eventTime, values.eventTimezone);
       const listsFiltered = lists
         .map((list) => ({
           listKey: list.listKey.trim(),
@@ -190,11 +162,9 @@ export default function NewEventClient() {
       const trimmedSecondaryTitle = values.secondaryTitle?.trim() ?? "";
       const trimmedProductionCompany = values.productionCompany?.trim() ?? "";
       const normalizedThemeBackgroundColor =
-        normalizeHexColorInput(values.themeBackgroundColor) ??
-        EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
+        normalizeHexColorInput(values.themeBackgroundColor) ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
       const normalizedThemeTextColor =
-        normalizeHexColorInput(values.themeTextColor) ??
-        EVENT_THEME_DEFAULT_TEXT_COLOR;
+        normalizeHexColorInput(values.themeTextColor) ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
       await create({
         name: values.name.trim(),
         secondaryTitle: trimmedSecondaryTitle || undefined,
@@ -203,7 +173,9 @@ export default function NewEventClient() {
         hosts: hostNames,
         productionCompany: trimmedProductionCompany || undefined,
         location: values.location.trim(),
-        flyerStorageId: values.flyerStorageId ? (values.flyerStorageId as unknown as Id<"_storage"> | undefined) : undefined,
+        flyerStorageId: values.flyerStorageId
+          ? (values.flyerStorageId as unknown as Id<"_storage"> | undefined)
+          : undefined,
         customIconStorageId: values.customIconStorageId
           ? (values.customIconStorageId as unknown as Id<"_storage"> | null)
           : null,
@@ -220,14 +192,10 @@ export default function NewEventClient() {
         customFields: customFields.map((field) => ({
           key: field.key.trim(),
           label: field.label.trim(),
-          placeholder: field.placeholder?.trim()
-            ? field.placeholder.trim()
-            : undefined,
+          placeholder: field.placeholder?.trim() ? field.placeholder.trim() : undefined,
           required: field.required ?? false,
           copyEnabled: field.copyEnabled ?? false,
-          prependUrl: field.prependUrl?.trim()
-            ? field.prependUrl.trim()
-            : undefined,
+          prependUrl: field.prependUrl?.trim() ? field.prependUrl.trim() : undefined,
           trimWhitespace: field.trimWhitespace !== false,
         })),
         themeBackgroundColor: normalizedThemeBackgroundColor,
@@ -259,38 +227,33 @@ export default function NewEventClient() {
           form={form}
           onSubmit={onSubmit}
           submitLabel="Create Event"
-        submittingLabel="Creating Event..."
-        isSubmitting={form.formState.isSubmitting}
-        flyerStorageId={flyerStorageId}
-        onFlyerChange={(value) =>
-          form.setValue("flyerStorageId", value, { shouldDirty: true })
-        }
-        eventIconStorageId={eventIconStorageId}
-        onEventIconChange={(value) =>
-          form.setValue("customIconStorageId", value, { shouldDirty: true })
-        }
-        guestPortalImageStorageId={guestPortalImageStorageId}
-        onGuestPortalImageChange={(value) =>
-          form.setValue("guestPortalImageStorageId", value, {
-            shouldDirty: true,
-          })
-        }
-        actsSection={<EventActsEditor acts={acts} onChange={setActs} />}
-        listsSection={
+          submittingLabel="Creating Event..."
+          isSubmitting={form.formState.isSubmitting}
+          flyerStorageId={flyerStorageId}
+          onFlyerChange={(value) => form.setValue("flyerStorageId", value, { shouldDirty: true })}
+          eventIconStorageId={eventIconStorageId}
+          onEventIconChange={(value) =>
+            form.setValue("customIconStorageId", value, { shouldDirty: true })
+          }
+          guestPortalImageStorageId={guestPortalImageStorageId}
+          onGuestPortalImageChange={(value) =>
+            form.setValue("guestPortalImageStorageId", value, {
+              shouldDirty: true,
+            })
+          }
+          actsSection={<EventActsEditor acts={acts} onChange={setActs} />}
+          listsSection={
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <h3 className="font-medium text-sm text-muted-foreground">
                 ACCESS LISTS & PASSWORDS
               </h3>
               <p className="text-xs text-muted-foreground">
-                Leave a password blank for an open list — the first list with
-                no password receives RSVPs that skip the password step.
+                Leave a password blank for an open list — the first list with no password receives
+                RSVPs that skip the password step.
               </p>
               <div className="space-y-3">
                 {lists.map((list, idx) => (
-                  <div
-                    key={idx}
-                    className="space-y-4 rounded-lg border bg-background p-4"
-                  >
+                  <div key={idx} className="space-y-4 rounded-lg border bg-background p-4">
                     <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
                       <div className="flex flex-col">
                         <label className="text-xs font-medium text-muted-foreground">
@@ -299,9 +262,7 @@ export default function NewEventClient() {
                         <Input
                           placeholder="e.g. vip, general, backstage"
                           value={list.listKey}
-                          onChange={(event) =>
-                            setList(idx, "listKey", event.target.value)
-                          }
+                          onChange={(event) => setList(idx, "listKey", event.target.value)}
                         />
                       </div>
                       <div className="flex flex-col gap-2">
@@ -313,11 +274,7 @@ export default function NewEventClient() {
                             id={`require-password-${idx}`}
                             checked={list.requirePassword}
                             onCheckedChange={(checked) =>
-                              setList(
-                                idx,
-                                "requirePassword",
-                                Boolean(checked),
-                              )
+                              setList(idx, "requirePassword", Boolean(checked))
                             }
                           />
                           <label
@@ -331,16 +288,10 @@ export default function NewEventClient() {
                           <Input
                             placeholder="Enter password"
                             value={list.password}
-                            onChange={(event) =>
-                              setList(idx, "password", event.target.value)
-                            }
+                            onChange={(event) => setList(idx, "password", event.target.value)}
                           />
                         ) : (
-                          <Input
-                            placeholder="Open list — no password"
-                            value=""
-                            disabled
-                          />
+                          <Input placeholder="Open list — no password" value="" disabled />
                         )}
                       </div>
                       <div className="flex flex-col gap-2">
@@ -355,11 +306,7 @@ export default function NewEventClient() {
                             id={`generate-qr-${idx}`}
                             checked={list.shouldGenerateQrCode}
                             onCheckedChange={(checked) =>
-                              setList(
-                                idx,
-                                "shouldGenerateQrCode",
-                                Boolean(checked),
-                              )
+                              setList(idx, "shouldGenerateQrCode", Boolean(checked))
                             }
                           />
                           <label
@@ -381,8 +328,7 @@ export default function NewEventClient() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-muted-foreground">
-                        Approval Message{" "}
-                        <span className="text-muted-foreground">(optional)</span>
+                        Approval Message <span className="text-muted-foreground">(optional)</span>
                       </label>
                       <p className="text-xs text-muted-foreground">
                         Sent when a guest on this list is approved.
@@ -390,9 +336,7 @@ export default function NewEventClient() {
                       <Textarea
                         placeholder={defaultApprovalMessage}
                         value={list.approvalMessage}
-                        onChange={(event) =>
-                          setList(idx, "approvalMessage", event.target.value)
-                        }
+                        onChange={(event) => setList(idx, "approvalMessage", event.target.value)}
                       />
                     </div>
                   </div>
@@ -409,9 +353,7 @@ export default function NewEventClient() {
               </div>
             </div>
           }
-          customFieldsSection={
-            <CustomFieldsEditor onChange={setCustomFields} />
-          }
+          customFieldsSection={<CustomFieldsEditor onChange={setCustomFields} />}
         />
       </div>
     </div>

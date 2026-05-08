@@ -1,10 +1,9 @@
-import React from "react";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { render, screen, waitFor } from "@testing-library/react";
+import type React from "react";
 import type { Event } from "../lib/types";
 
-const GENERIC_APPROVAL_PLACEHOLDER =
-  "You have been approved. We're looking forward to seeing you.";
+const GENERIC_APPROVAL_PLACEHOLDER = "You have been approved. We're looking forward to seeing you.";
 
 let credentialQueryResult:
   | Array<{
@@ -102,31 +101,19 @@ mock.module("@/components/ui/select", () => ({
       {children}
     </select>
   ),
-  SelectOption: ({
-    children,
-    value,
-  }: {
-    children: React.ReactNode;
-    value: string;
-  }) => <option value={value}>{children}</option>,
+  SelectOption: ({ children, value }: { children: React.ReactNode; value: string }) => (
+    <option value={value}>{children}</option>
+  ),
 }));
 
 mock.module("@/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogContent: ({
-    children,
-    className,
-  }: {
-    children: React.ReactNode;
-    className?: string;
-  }) => (
+  DialogContent: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div className={className} data-testid="dialog-content">
       {children}
     </div>
   ),
-  DialogDescription: ({ children }: { children: React.ReactNode }) => (
-    <p>{children}</p>
-  ),
+  DialogDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
   DialogFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
@@ -134,9 +121,7 @@ mock.module("@/components/ui/dialog", () => ({
 }));
 
 const { default: NewEventClient } = await import("../app/host/new/client");
-const { default: EditEventDialog } = await import(
-  "../app/host/events/edit-event-dialog"
-);
+const { default: EditEventDialog } = await import("../app/host/events/edit-event-dialog");
 
 describe("event config approval messages", () => {
   beforeEach(() => {
@@ -150,12 +135,8 @@ describe("event config approval messages", () => {
   it("renders one approval textarea per default list on the create-event page and removes the old standalone section", () => {
     render(<NewEventClient />);
 
-    expect(
-      screen.queryByText("SMS APPROVAL MESSAGES"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getAllByPlaceholderText(GENERIC_APPROVAL_PLACEHOLDER),
-    ).toHaveLength(2);
+    expect(screen.queryByText("SMS APPROVAL MESSAGES")).not.toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText(GENERIC_APPROVAL_PLACEHOLDER)).toHaveLength(2);
   });
 
   it("preloads per-list edit values from the deprecated event-level fallback and keeps the old standalone section removed", async () => {
@@ -178,26 +159,13 @@ describe("event config approval messages", () => {
       updatedAt: Date.now(),
     } as unknown as Event;
 
-    render(
-      <EditEventDialog
-        event={event}
-        open
-        onOpenChange={() => {}}
-        showTrigger={false}
-      />,
-    );
+    render(<EditEventDialog event={event} open onOpenChange={() => {}} showTrigger={false} />);
 
     await waitFor(() => {
-      expect(
-        screen.getByDisplayValue("Legacy event approval copy."),
-      ).toBeInTheDocument();
+      expect(screen.getByDisplayValue("Legacy event approval copy.")).toBeInTheDocument();
     });
 
-    expect(
-      screen.queryByText("SMS APPROVAL MESSAGES"),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId("dialog-content").className).toContain(
-      "sm:max-w-[1200px]",
-    );
+    expect(screen.queryByText("SMS APPROVAL MESSAGES")).not.toBeInTheDocument();
+    expect(screen.getByTestId("dialog-content").className).toContain("sm:max-w-[1200px]");
   });
 });

@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
+import { redirect } from "next/navigation";
 import { SignInClient } from "../../../sign-in/[[...sign-in]]/sign-in-client";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;

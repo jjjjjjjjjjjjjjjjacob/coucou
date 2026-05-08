@@ -52,7 +52,7 @@ export async function handleAsyncOperation<T>(
     errorMessage?: string;
     onSuccess?: (result: T) => void;
     onError?: (error: unknown) => void;
-  } = {}
+  } = {},
 ): Promise<T | null> {
   try {
     const result = await operation();
@@ -74,8 +74,8 @@ export async function handleAsyncOperation<T>(
  * Validates required fields and returns error messages
  */
 export function validateRequiredFields(
-  data: Record<string, any>,
-  requiredFields: Array<{ key: string; label: string }>
+  data: Record<string, unknown>,
+  requiredFields: Array<{ key: string; label: string }>,
 ): string[] {
   const errors: string[] = [];
 
@@ -96,7 +96,7 @@ export class AppError extends Error {
   constructor(
     message: string,
     public code?: string,
-    public statusCode?: number
+    public statusCode?: number,
   ) {
     super(message);
     this.name = "AppError";
@@ -113,12 +113,12 @@ export async function handleFormSubmission<T>(
   options: {
     successMessage?: string;
     onSuccess?: () => void;
-  } = {}
+  } = {},
 ): Promise<boolean> {
   // Validate form data
   const validationErrors = validator(formData);
   if (validationErrors.length > 0) {
-    validationErrors.forEach(error => toast.error(error));
+    validationErrors.forEach((error) => toast.error(error));
     return false;
   }
 

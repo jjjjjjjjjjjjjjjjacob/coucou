@@ -1,10 +1,6 @@
 "use client";
 
-import { useState } from "react";
 import { useOrganizationList } from "@clerk/nextjs";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import {
   AdminHeader,
@@ -14,11 +10,12 @@ import {
   Kpi,
   KpiRow,
 } from "@coucou/ui/admin";
-import {
-  buildWorkspaceOperationPath,
-  getCoucouOrganizationSlug,
-} from "@/lib/workspace-config";
+import { useQuery } from "convex/react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
+import { buildWorkspaceOperationPath, getCoucouOrganizationSlug } from "@/lib/workspace-config";
 
 function formatRelative(timestamp: number): string {
   const now = Date.now();
@@ -68,9 +65,7 @@ export default function CoucouAdminPage() {
   const flagCount = attentionFlags?.length ?? 0;
   const pendingCount = pendingApplications?.length ?? 0;
   const tenantMemberships = memberships.filter(
-    (membership) =>
-      membership.organization.slug?.toLowerCase() !==
-      getCoucouOrganizationSlug(),
+    (membership) => membership.organization.slug?.toLowerCase() !== getCoucouOrganizationSlug(),
   );
 
   const formatPlanCell = (row: TenancyRow): string => {
@@ -140,10 +135,7 @@ export default function CoucouAdminPage() {
       alignRight: true,
       render: (row) => row.plan?.billingStatus ?? "ok",
       cellStyle: (row) => ({
-        color:
-          row.plan?.billingStatus === "overdue"
-            ? "var(--tt-fg)"
-            : "var(--tt-fg-dim)",
+        color: row.plan?.billingStatus === "overdue" ? "var(--tt-fg)" : "var(--tt-fg-dim)",
       }),
     },
     {
@@ -185,10 +177,7 @@ export default function CoucouAdminPage() {
         <Kpi label="Breaches" value={0} last />
       </KpiRow>
 
-      <AdminSection
-        title="Attention"
-        meta={`${flagCount} ${flagCount === 1 ? "item" : "items"}`}
-      >
+      <AdminSection title="Attention" meta={`${flagCount} ${flagCount === 1 ? "item" : "items"}`}>
         {!attentionFlags ? (
           <AttentionEmptyRow>Loading…</AttentionEmptyRow>
         ) : attentionFlags.length === 0 ? (
@@ -200,10 +189,7 @@ export default function CoucouAdminPage() {
               kind={flag.kind}
               label={
                 <>
-                  {flag.label}{" "}
-                  <span style={{ color: "var(--tt-fg-dim)" }}>
-                    — {flag.detail}
-                  </span>
+                  {flag.label} <span style={{ color: "var(--tt-fg-dim)" }}>— {flag.detail}</span>
                 </>
               }
               timestamp={formatRelative(flag.observedAt)}
@@ -214,11 +200,7 @@ export default function CoucouAdminPage() {
 
       <AdminSection
         title="Houses"
-        meta={
-          tenancies?.totalCount
-            ? `${tenancies.totalCount} active`
-            : undefined
-        }
+        meta={tenancies?.totalCount ? `${tenancies.totalCount} active` : undefined}
       >
         <AdminDataTable<TenancyRow>
           columns={tenancyColumns}
@@ -242,9 +224,7 @@ export default function CoucouAdminPage() {
             totalCount: tenancies?.totalCount,
           }}
           emptyMessage="No workspaces yet."
-          onRowClick={(row) =>
-            router.push(buildWorkspaceOperationPath(row.slug, "host"))
-          }
+          onRowClick={(row) => router.push(buildWorkspaceOperationPath(row.slug, "host"))}
         />
       </AdminSection>
 
@@ -257,10 +237,7 @@ export default function CoucouAdminPage() {
               className="hover:underline"
               style={{ color: "var(--tt-fg)" }}
             >
-              {pendingCount === 1
-                ? "1 application"
-                : `${pendingCount} applications`}{" "}
-              ↗
+              {pendingCount === 1 ? "1 application" : `${pendingCount} applications`} ↗
             </Link>
           }
         >
@@ -288,16 +265,9 @@ export default function CoucouAdminPage() {
 
       <AdminSection title="Workspaces · Switch" meta="Operator memberships">
         {tenantMemberships.length === 0 ? (
-          <div
-            className="py-6 text-[13px]"
-            style={{ color: "var(--tt-fg-dim)" }}
-          >
+          <div className="py-6 text-[13px]" style={{ color: "var(--tt-fg-dim)" }}>
             No organizations attached to this account yet.{" "}
-            <Link
-              href="/orgs/select"
-              className="underline"
-              style={{ color: "var(--tt-fg)" }}
-            >
+            <Link href="/orgs/select" className="underline" style={{ color: "var(--tt-fg)" }}>
               Refresh memberships
             </Link>
           </div>
@@ -328,11 +298,7 @@ export default function CoucouAdminPage() {
           </div>
         )}
         <div className="mt-6 flex flex-wrap gap-3 text-[13px]">
-          <Link
-            href="/orgs/select"
-            className="underline"
-            style={{ color: "var(--tt-fg-dim)" }}
-          >
+          <Link href="/orgs/select" className="underline" style={{ color: "var(--tt-fg-dim)" }}>
             Switch workspace
           </Link>
         </div>

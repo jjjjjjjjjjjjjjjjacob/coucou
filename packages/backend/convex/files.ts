@@ -1,5 +1,5 @@
-import { mutation, query } from "./functions";
 import { v } from "convex/values";
+import { mutation, query } from "./functions";
 
 export const generateUploadUrl = mutation({
   args: { contentType: v.optional(v.string()) },
@@ -16,4 +16,3 @@ export const getUrl = query({
     return { url };
   },
 });
-

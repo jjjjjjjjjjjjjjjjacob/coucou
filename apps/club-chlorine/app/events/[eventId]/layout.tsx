@@ -1,11 +1,12 @@
-import React, { cache } from "react";
-import type { Metadata } from "next";
-import { fetchQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { fetchQuery } from "convex/nextjs";
+import type { Metadata } from "next";
+import type React from "react";
+import { cache } from "react";
 import { EventThemeProvider } from "@/components/event-theme-provider";
-import { clubChlorineIconPaths, siteConfiguration } from "@/lib/site";
 import { formatEventDisplayName } from "@/lib/event-display";
+import { clubChlorineIconPaths, siteConfiguration } from "@/lib/site";
 
 type LayoutParams = Promise<{ eventId: string }>;
 
@@ -35,11 +36,7 @@ const loadStorageUrl = cache(async (storageId: Id<"_storage">) => {
   }
 });
 
-export async function generateMetadata({
-  params,
-}: {
-  params: LayoutParams;
-}): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: LayoutParams }): Promise<Metadata> {
   const { eventId } = await params;
   const event = await loadEventForLayout(eventId);
 
@@ -63,20 +60,15 @@ export async function generateMetadata({
 
   const title = `Club Chlorine | ${event.location} ${formattedDate}`;
   const eventDisplayName = formatEventDisplayName(event);
-  const description = `Join us at ${eventDisplayName} on ${eventDate.toLocaleDateString(
-    "en-US",
-    {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      timeZone: eventTimezone,
-    },
-  )} at ${event.location}`;
+  const description = `Join us at ${eventDisplayName} on ${eventDate.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: eventTimezone,
+  })} at ${event.location}`;
 
-  const flyerImageUrl = event.flyerStorageId
-    ? await loadStorageUrl(event.flyerStorageId)
-    : null;
+  const flyerImageUrl = event.flyerStorageId ? await loadStorageUrl(event.flyerStorageId) : null;
   const eventIconUrl = event.customIconStorageId
     ? await loadStorageUrl(event.customIconStorageId)
     : null;

@@ -1,12 +1,12 @@
-import { httpAction, type ActionCtx } from "./_generated/server";
 import { httpRouter } from "convex/server";
 import { api, internal } from "./_generated/api";
+import { type ActionCtx, httpAction } from "./_generated/server";
 import {
+  type ClerkOrganizationWorkspacePayload,
   extractClerkOrganizationMembershipPayload,
   extractClerkOrganizationWorkspacePayload,
   extractClerkUserWebhookProfile,
   parseClerkWebhookEvent,
-  type ClerkOrganizationWorkspacePayload,
 } from "./lib/clerkWebhookPayloads";
 import { getCoucouOrganizationSlug } from "./lib/platformAuth";
 
@@ -14,35 +14,27 @@ async function upsertTenantWorkspaceFromOrganizationPayload(
   ctx: ActionCtx,
   organizationPayload: ClerkOrganizationWorkspacePayload,
 ) {
-  const slug =
-    organizationPayload.workspaceSlug ??
-    organizationPayload.clerkOrganizationSlug;
+  const slug = organizationPayload.workspaceSlug ?? organizationPayload.clerkOrganizationSlug;
   if (!slug) {
     return;
   }
   if (slug.trim().toLowerCase() === getCoucouOrganizationSlug()) {
-    await ctx.runMutation(
-      internal.workspaces.upsertCoucouAdminWorkspaceForClerkOrganization,
-      {
-        name: organizationPayload.name,
-        clerkOrganizationId: organizationPayload.clerkOrganizationId,
-        clerkOrganizationSlug: organizationPayload.clerkOrganizationSlug,
-        primaryDomain: organizationPayload.primaryDomain,
-      },
-    );
-    return;
-  }
-
-  await ctx.runMutation(
-    internal.workspaces.upsertTenantWorkspaceForClerkOrganization,
-    {
-      slug,
+    await ctx.runMutation(internal.workspaces.upsertCoucouAdminWorkspaceForClerkOrganization, {
       name: organizationPayload.name,
       clerkOrganizationId: organizationPayload.clerkOrganizationId,
       clerkOrganizationSlug: organizationPayload.clerkOrganizationSlug,
       primaryDomain: organizationPayload.primaryDomain,
-    },
-  );
+    });
+    return;
+  }
+
+  await ctx.runMutation(internal.workspaces.upsertTenantWorkspaceForClerkOrganization, {
+    slug,
+    name: organizationPayload.name,
+    clerkOrganizationId: organizationPayload.clerkOrganizationId,
+    clerkOrganizationSlug: organizationPayload.clerkOrganizationSlug,
+    primaryDomain: organizationPayload.primaryDomain,
+  });
 }
 
 // We verify Clerk webhooks using Svix. In local/dev without a secret, we 401.
@@ -97,24 +89,16 @@ export const clerkWebhook = httpAction(async (ctx, request) => {
         phone: userProfile.phone,
         imageUrl: userProfile.imageUrl,
       });
-    } else if (
-      type === "organization.created" ||
-      type === "organization.updated"
-    ) {
-      const organizationPayload =
-        extractClerkOrganizationWorkspacePayload(data);
+    } else if (type === "organization.created" || type === "organization.updated") {
+      const organizationPayload = extractClerkOrganizationWorkspacePayload(data);
       if (organizationPayload) {
-        await upsertTenantWorkspaceFromOrganizationPayload(
-          ctx,
-          organizationPayload,
-        );
+        await upsertTenantWorkspaceFromOrganizationPayload(ctx, organizationPayload);
       }
     } else if (
       type === "organizationMembership.created" ||
       type === "organizationMembership.updated"
     ) {
-      const membershipPayload =
-        extractClerkOrganizationMembershipPayload(data);
+      const membershipPayload = extractClerkOrganizationMembershipPayload(data);
       if (membershipPayload?.clerkUserId && membershipPayload.organizationId) {
         await ctx.runMutation(api.orgMemberships.upsertMembership, {
           clerkUserId: membershipPayload.clerkUserId,
@@ -124,14 +108,10 @@ export const clerkWebhook = httpAction(async (ctx, request) => {
       }
 
       if (membershipPayload?.organization) {
-        await upsertTenantWorkspaceFromOrganizationPayload(
-          ctx,
-          membershipPayload.organization,
-        );
+        await upsertTenantWorkspaceFromOrganizationPayload(ctx, membershipPayload.organization);
       }
     } else if (type === "organizationMembership.deleted") {
-      const membershipPayload =
-        extractClerkOrganizationMembershipPayload(data);
+      const membershipPayload = extractClerkOrganizationMembershipPayload(data);
       if (membershipPayload?.clerkUserId && membershipPayload.organizationId) {
         await ctx.runMutation(api.orgMemberships.removeMembership, {
           clerkUserId: membershipPayload.clerkUserId,

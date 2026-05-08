@@ -8,9 +8,7 @@ import {
 
 describe("event metadata helpers", () => {
   it("trims descriptions and removes empty descriptions", () => {
-    expect(sanitizeOptionalEventDescription("  Pool hours  ")).toBe(
-      "Pool hours",
-    );
+    expect(sanitizeOptionalEventDescription("  Pool hours  ")).toBe("Pool hours");
     expect(sanitizeOptionalEventDescription("   ")).toBeUndefined();
   });
 

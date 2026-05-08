@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { useMutation } from "convex/react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -12,10 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { toast } from "sonner";
 
 interface WorkspaceLike {
   _id: Id<"workspaces">;
@@ -81,8 +81,8 @@ export function SenderEditDialog({
             {isEditing ? "Edit sender" : "Add sender"} · {workspace.name}
           </DialogTitle>
           <DialogDescription>
-            Stored locally. No Twilio provisioning happens — values are display
-            metadata for this superadmin view.
+            Stored locally. No Twilio provisioning happens — values are display metadata for this
+            superadmin view.
           </DialogDescription>
         </DialogHeader>
 
@@ -143,9 +143,7 @@ export function SenderEditDialog({
                   toast.success("Sender removed");
                   onClose();
                 } catch (error) {
-                  toast.error(
-                    error instanceof Error ? error.message : "Failed",
-                  );
+                  toast.error(error instanceof Error ? error.message : "Failed");
                 } finally {
                   setSubmitting(false);
                 }
@@ -166,16 +164,12 @@ export function SenderEditDialog({
                   phoneNumber: phoneNumber.trim(),
                   brandLabel: brandLabel.trim() || undefined,
                   isDefault,
-                  verifiedAt: verified
-                    ? sender?.verifiedAt ?? Date.now()
-                    : undefined,
+                  verifiedAt: verified ? (sender?.verifiedAt ?? Date.now()) : undefined,
                 });
                 toast.success(isEditing ? "Sender updated" : "Sender added");
                 onClose();
               } catch (error) {
-                toast.error(
-                  error instanceof Error ? error.message : "Failed",
-                );
+                toast.error(error instanceof Error ? error.message : "Failed");
               } finally {
                 setSubmitting(false);
               }

@@ -1,10 +1,9 @@
 "use client";
 
-import { forwardRef, type CSSProperties } from "react";
+import { type CSSProperties, forwardRef } from "react";
 import { usePresetOptional } from "../use-preset";
 
-export interface HeaderMenuTriggerProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface HeaderMenuTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /**
    * Two-letter accent (e.g. "DP", "CC", "CO"). Typically passed from the
    * tenant's `siteConfiguration.accentMark`. Required.
@@ -34,51 +33,70 @@ export interface HeaderMenuTriggerProps
  * it up with Radix DropdownMenuTrigger or a Link `asChild` from the
  * surrounding HeaderClient.
  */
-export const HeaderMenuTrigger = forwardRef<
-  HTMLButtonElement,
-  HeaderMenuTriggerProps
->(function HeaderMenuTrigger(
-  { accentMark, size = 32, className, style, ...rest },
-  ref,
-) {
-  const { preset, presetKey } = usePresetOptional();
-  const baseStyle: CSSProperties = {
-    width: size,
-    height: size,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    transition: "opacity 150ms ease",
-    flexShrink: 0,
-    ...style,
-  };
+export const HeaderMenuTrigger = forwardRef<HTMLButtonElement, HeaderMenuTriggerProps>(
+  function HeaderMenuTrigger({ accentMark, size = 32, className, style, ...rest }, ref) {
+    const { presetKey } = usePresetOptional();
+    const baseStyle: CSSProperties = {
+      width: size,
+      height: size,
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+      transition: "opacity 150ms ease",
+      flexShrink: 0,
+      ...style,
+    };
 
-  if (presetKey === "dojo") {
-    return (
-      <button
-        ref={ref}
-        type="button"
-        {...rest}
-        className={className}
-        style={{
-          ...baseStyle,
-          background: "var(--tt-fg)",
-          color: "var(--tt-bg)",
-          borderRadius: "50%",
-          border: "none",
-          fontFamily: "var(--tt-display)",
-          fontWeight: 700,
-          fontSize: size * 0.36,
-          letterSpacing: "0.02em",
-        }}
-      >
-        {accentMark}
-      </button>
-    );
-  }
+    if (presetKey === "dojo") {
+      return (
+        <button
+          ref={ref}
+          type="button"
+          {...rest}
+          className={className}
+          style={{
+            ...baseStyle,
+            background: "var(--tt-fg)",
+            color: "var(--tt-bg)",
+            borderRadius: "50%",
+            border: "none",
+            fontFamily: "var(--tt-display)",
+            fontWeight: 700,
+            fontSize: size * 0.36,
+            letterSpacing: "0.02em",
+          }}
+        >
+          {accentMark}
+        </button>
+      );
+    }
 
-  if (presetKey === "maison" || presetKey === "atrium") {
+    if (presetKey === "maison" || presetKey === "atrium") {
+      return (
+        <button
+          ref={ref}
+          type="button"
+          {...rest}
+          className={className}
+          style={{
+            ...baseStyle,
+            background: "transparent",
+            color: "var(--tt-fg)",
+            border: "1px solid var(--tt-fg)",
+            borderRadius: 0,
+            fontFamily: "var(--tt-display)",
+            fontWeight: 400,
+            fontStyle: "italic",
+            fontSize: size * 0.4,
+          }}
+        >
+          {accentMark}
+        </button>
+      );
+    }
+
+    // coucou (and any preset we haven't enumerated): thin-ring circle.
     return (
       <button
         ref={ref}
@@ -90,37 +108,14 @@ export const HeaderMenuTrigger = forwardRef<
           background: "transparent",
           color: "var(--tt-fg)",
           border: "1px solid var(--tt-fg)",
-          borderRadius: 0,
-          fontFamily: "var(--tt-display)",
-          fontWeight: 400,
-          fontStyle: "italic",
-          fontSize: size * 0.4,
+          borderRadius: "50%",
+          fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+          fontSize: size * 0.32,
+          letterSpacing: "0.08em",
         }}
       >
         {accentMark}
       </button>
     );
-  }
-
-  // coucou (and any preset we haven't enumerated): thin-ring circle.
-  return (
-    <button
-      ref={ref}
-      type="button"
-      {...rest}
-      className={className}
-      style={{
-        ...baseStyle,
-        background: "transparent",
-        color: "var(--tt-fg)",
-        border: "1px solid var(--tt-fg)",
-        borderRadius: "50%",
-        fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-        fontSize: size * 0.32,
-        letterSpacing: "0.08em",
-      }}
-    >
-      {accentMark}
-    </button>
-  );
-});
+  },
+);

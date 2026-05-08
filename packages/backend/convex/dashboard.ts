@@ -1,8 +1,8 @@
-import { query } from "./_generated/server";
 import { v } from "convex/values";
+import { query } from "./_generated/server";
+import { requireCoucouPlatformMember } from "./lib/platformAuth";
 import { hasApprovedRsvpStatus } from "./lib/rsvpStatus";
 import { requireWorkspaceHost, requireWorkspaceRead } from "./lib/workspaceAuth";
-import { requireCoucouPlatformMember } from "./lib/platformAuth";
 
 function getScopedEventsAndEventIds(
   events: Array<{
@@ -18,10 +18,7 @@ function getScopedEventsAndEventIds(
     if (scope.siteKey && (event.siteKey ?? "dojo") !== scope.siteKey) {
       return false;
     }
-    if (
-      scope.workspaceSlug &&
-      (event.workspaceSlug ?? "dojo") !== scope.workspaceSlug
-    ) {
+    if (scope.workspaceSlug && (event.workspaceSlug ?? "dojo") !== scope.workspaceSlug) {
       return false;
     }
     return true;
@@ -43,10 +40,10 @@ export const getDashboardStats = query({
 
     // Get all events for the organization
     const events = await ctx.db.query("events").collect();
-    const { scopedEvents, scopedEventIds } = getScopedEventsAndEventIds(
-      events,
-      { siteKey, workspaceSlug },
-    );
+    const { scopedEvents, scopedEventIds } = getScopedEventsAndEventIds(events, {
+      siteKey,
+      workspaceSlug,
+    });
 
     // Get all RSVPs
     const rsvps = (await ctx.db.query("rsvps").collect()).filter((rsvp) =>
@@ -58,24 +55,15 @@ export const getDashboardStats = query({
     const totalRsvps = rsvps.length;
 
     // Approval rates (includes all positive statuses after approval)
-    const approvedRsvps = rsvps.filter((rsvp) =>
-      hasApprovedRsvpStatus(rsvp.status),
-    ).length;
-    const pendingRsvps = rsvps.filter(
-      (rsvp) => rsvp.status === "pending",
-    ).length;
+    const approvedRsvps = rsvps.filter((rsvp) => hasApprovedRsvpStatus(rsvp.status)).length;
+    const pendingRsvps = rsvps.filter((rsvp) => rsvp.status === "pending").length;
     const deniedRsvps = rsvps.filter((rsvp) => rsvp.status === "denied").length;
 
-    const approvalRate =
-      totalRsvps > 0 ? (approvedRsvps / totalRsvps) * 100 : 0;
+    const approvalRate = totalRsvps > 0 ? (approvedRsvps / totalRsvps) * 100 : 0;
 
     // Redemption rates
-    const redeemedTickets = rsvps.filter(
-      (rsvp) => rsvp.ticketStatus === "redeemed",
-    ).length;
-    const issuedTickets = rsvps.filter(
-      (rsvp) => rsvp.ticketStatus === "issued",
-    ).length;
+    const redeemedTickets = rsvps.filter((rsvp) => rsvp.ticketStatus === "redeemed").length;
+    const issuedTickets = rsvps.filter((rsvp) => rsvp.ticketStatus === "issued").length;
     const totalActiveTickets = redeemedTickets + issuedTickets;
     const redemptionRate =
       totalActiveTickets > 0 ? (redeemedTickets / totalActiveTickets) * 100 : 0;
@@ -85,13 +73,10 @@ export const getDashboardStats = query({
     const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
     const sixtyDaysAgo = now - 60 * 24 * 60 * 60 * 1000;
 
-    const recentRsvps = rsvps.filter(
-      (rsvp) => (rsvp._creationTime || 0) > thirtyDaysAgo,
-    ).length;
+    const recentRsvps = rsvps.filter((rsvp) => (rsvp._creationTime || 0) > thirtyDaysAgo).length;
     const previousMonthRsvps = rsvps.filter(
       (rsvp) =>
-        (rsvp._creationTime || 0) > sixtyDaysAgo &&
-        (rsvp._creationTime || 0) <= thirtyDaysAgo,
+        (rsvp._creationTime || 0) > sixtyDaysAgo && (rsvp._creationTime || 0) <= thirtyDaysAgo,
     ).length;
 
     const rsvpTrend =
@@ -183,10 +168,10 @@ export const getEventPerformance = query({
     await requireWorkspaceRead(ctx, { siteKey, workspaceSlug });
 
     const events = await ctx.db.query("events").collect();
-    const { scopedEvents, scopedEventIds } = getScopedEventsAndEventIds(
-      events,
-      { siteKey, workspaceSlug },
-    );
+    const { scopedEvents, scopedEventIds } = getScopedEventsAndEventIds(events, {
+      siteKey,
+      workspaceSlug,
+    });
 
     const rsvps = (await ctx.db.query("rsvps").collect()).filter((rsvp) =>
       scopedEventIds.has(rsvp.eventId),
@@ -196,12 +181,8 @@ export const getEventPerformance = query({
     const eventPerformance = scopedEvents
       .map((event) => {
         const eventRsvps = rsvps.filter((rsvp) => rsvp.eventId === event._id);
-        const approvedRsvps = eventRsvps.filter((rsvp) =>
-          hasApprovedRsvpStatus(rsvp.status),
-        );
-        const redeemedTickets = eventRsvps.filter(
-          (rsvp) => rsvp.ticketStatus === "redeemed",
-        );
+        const approvedRsvps = eventRsvps.filter((rsvp) => hasApprovedRsvpStatus(rsvp.status));
+        const redeemedTickets = eventRsvps.filter((rsvp) => rsvp.ticketStatus === "redeemed");
 
         return {
           eventId: event._id,
@@ -279,7 +260,7 @@ export const getRecentActivity = query({
       // Get guest name from firstName + lastName, fallback to name, then to "Unknown Guest"
       let guestName = "Unknown Guest";
       if (user) {
-        const displayName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+        const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
         guestName = displayName || user.name || "Unknown Guest";
       }
 
@@ -324,8 +305,7 @@ export const getSmsStats = query({
 
     // Calculate success rate
     const totalProcessed = sentSms + failedSms;
-    const successRate =
-      totalProcessed > 0 ? (sentSms / totalProcessed) * 100 : 0;
+    const successRate = totalProcessed > 0 ? (sentSms / totalProcessed) * 100 : 0;
 
     // Count by type
     const byType: Record<string, number> = {};
@@ -338,9 +318,7 @@ export const getSmsStats = query({
     const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
     const sixtyDaysAgo = now - 60 * 24 * 60 * 60 * 1000;
 
-    const recentSms = notifications.filter(
-      (n) => n.createdAt > thirtyDaysAgo,
-    ).length;
+    const recentSms = notifications.filter((n) => n.createdAt > thirtyDaysAgo).length;
     const previousMonthSms = notifications.filter(
       (n) => n.createdAt > sixtyDaysAgo && n.createdAt <= thirtyDaysAgo,
     ).length;
@@ -474,8 +452,7 @@ export const getDeliverySummaryByWorkspacePaginated = query({
         const eventIds = eventsBySlug.get(workspace.slug) ?? new Set<string>();
         const scopedNotifications = notifications.filter(
           (notification) =>
-            eventIds.has(notification.eventId) &&
-            notification.createdAt > thirtyDaysAgo,
+            eventIds.has(notification.eventId) && notification.createdAt > thirtyDaysAgo,
         );
         const sentCount = scopedNotifications.filter(
           (notification) => notification.status === "sent",
@@ -484,10 +461,8 @@ export const getDeliverySummaryByWorkspacePaginated = query({
           (notification) => notification.status === "failed",
         ).length;
         const total = scopedNotifications.length;
-        const deliveredRate =
-          total > 0 ? Math.round((sentCount / total) * 1000) / 10 : 0;
-        const failedRate =
-          total > 0 ? Math.round((failedCount / total) * 1000) / 10 : 0;
+        const deliveredRate = total > 0 ? Math.round((sentCount / total) * 1000) / 10 : 0;
+        const failedRate = total > 0 ? Math.round((failedCount / total) * 1000) / 10 : 0;
 
         return {
           workspaceId: workspace._id,
@@ -501,9 +476,7 @@ export const getDeliverySummaryByWorkspacePaginated = query({
           failedRate,
           optOutCount: optOuts.filter(
             (optOut) =>
-              optOut.optedOutAt > thirtyDaysAgo &&
-              optOut.clerkUserId &&
-              eventIds.size > 0,
+              optOut.optedOutAt > thirtyDaysAgo && optOut.clerkUserId && eventIds.size > 0,
           ).length,
         };
       });
@@ -515,10 +488,7 @@ export const getDeliverySummaryByWorkspacePaginated = query({
 
     return {
       page,
-      nextCursor:
-        cursorIndex + pageSize < summaries.length
-          ? String(cursorIndex + pageSize)
-          : null,
+      nextCursor: cursorIndex + pageSize < summaries.length ? String(cursorIndex + pageSize) : null,
       isDone: cursorIndex + pageSize >= summaries.length,
       totalCount: summaries.length,
     };

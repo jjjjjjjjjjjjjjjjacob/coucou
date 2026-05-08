@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "bunx convex dev",
     "deploy": "bunx convex deploy --cmd-url-env-var-name NEXT_PUBLIC_CONVEX_URL",
+    "lint": "biome lint .",
     "test": "bun test",
     "test:run": "bun test"
   },

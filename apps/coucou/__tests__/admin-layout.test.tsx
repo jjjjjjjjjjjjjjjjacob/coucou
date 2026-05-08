@@ -1,6 +1,5 @@
-import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "bun:test";
+import { render, screen, waitFor } from "@testing-library/react";
 import AdminLayout from "../app/admin/layout";
 
 interface AdminLayoutTestGlobal {
@@ -34,8 +33,7 @@ interface AdminLayoutTestGlobal {
   }>;
 }
 
-function getAdminLayoutTestGlobal(): typeof globalThis &
-  AdminLayoutTestGlobal {
+function getAdminLayoutTestGlobal(): typeof globalThis & AdminLayoutTestGlobal {
   return globalThis as typeof globalThis & AdminLayoutTestGlobal;
 }
 
@@ -78,9 +76,9 @@ describe("AdminLayout", () => {
     await waitFor(() => {
       expect(screen.getByText("Admin loaded")).toBeTruthy();
     });
-    expect(
-      getAdminLayoutTestGlobal().__getClerkSetActiveCalls?.(),
-    ).toEqual([{ organization: "org_coucou" }]);
+    expect(getAdminLayoutTestGlobal().__getClerkSetActiveCalls?.()).toEqual([
+      { organization: "org_coucou" },
+    ]);
     const coucouSwitchToast =
       getAdminLayoutTestGlobal()
         .__getToastTestCalls?.()

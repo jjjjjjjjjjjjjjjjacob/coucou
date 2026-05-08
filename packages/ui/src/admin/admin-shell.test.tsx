@@ -1,7 +1,6 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import React from "react";
-import { cleanup, render } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { cleanup, render } from "@testing-library/react";
 import { AdminShell } from "./admin-shell";
 
 describe("AdminShell", () => {

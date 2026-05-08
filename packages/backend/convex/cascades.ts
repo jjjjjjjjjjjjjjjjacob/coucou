@@ -1,19 +1,12 @@
-import { internalMutation } from "./functions";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
-import { updateRsvpInAggregate, deleteRsvpFromAggregate } from "./lib/rsvpAggregate";
+import { internalMutation } from "./functions";
+import { deleteRsvpFromAggregate, updateRsvpInAggregate } from "./lib/rsvpAggregate";
 
 /**
  * Scheduled cascade operations for handling large-scale deletions
  * These functions use pagination to handle large datasets without hitting size limits
  */
-
-interface BatchOperationArgs {
-  eventId: Id<"events">;
-  cursor?: string | null;
-  batchSize?: number;
-}
 
 /**
  * Batch delete all event-related data when an event is deleted
@@ -24,7 +17,7 @@ export const batchDeleteEventData = internalMutation({
     eventId: v.id("events"),
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
-    phase: v.optional(v.string()) // "rsvps", "approvals", "redemptions", "credentials"
+    phase: v.optional(v.string()), // "rsvps", "approvals", "redemptions", "credentials"
   },
   handler: async (ctx, args) => {
     const batchSize = args.batchSize ?? 500;
@@ -40,7 +33,7 @@ export const batchDeleteEventData = internalMutation({
         .order("asc")
         .paginate({
           cursor: args.cursor ?? null,
-          numItems: batchSize
+          numItems: batchSize,
         });
 
       let deletedCount = 0;
@@ -59,7 +52,7 @@ export const batchDeleteEventData = internalMutation({
           eventId: args.eventId,
           cursor: paginatedResult.continueCursor,
           batchSize,
-          phase: "rsvps"
+          phase: "rsvps",
         });
       } else {
         // Move to next phase: approvals
@@ -67,7 +60,7 @@ export const batchDeleteEventData = internalMutation({
           eventId: args.eventId,
           cursor: undefined,
           batchSize,
-          phase: "approvals"
+          phase: "approvals",
         });
       }
     } else if (phase === "approvals") {
@@ -88,7 +81,7 @@ export const batchDeleteEventData = internalMutation({
         eventId: args.eventId,
         cursor: undefined,
         batchSize,
-        phase: "redemptions"
+        phase: "redemptions",
       });
     } else if (phase === "redemptions") {
       // Delete redemptions in batches
@@ -108,7 +101,7 @@ export const batchDeleteEventData = internalMutation({
         eventId: args.eventId,
         cursor: undefined,
         batchSize,
-        phase: "credentials"
+        phase: "credentials",
       });
     } else if (phase === "credentials") {
       // Delete list credentials
@@ -126,7 +119,7 @@ export const batchDeleteEventData = internalMutation({
     }
 
     return { phase, processed: true };
-  }
+  },
 });
 
 /**
@@ -141,7 +134,7 @@ export const batchUpdateListKey = internalMutation({
     newListKey: v.string(),
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
-    phase: v.optional(v.string()) // "rsvps", "approvals", "redemptions"
+    phase: v.optional(v.string()), // "rsvps", "approvals", "redemptions"
   },
   handler: async (ctx, args) => {
     const batchSize = args.batchSize ?? 500;
@@ -162,7 +155,7 @@ export const batchUpdateListKey = internalMutation({
         const oldRsvp = { ...rsvp };
         await ctx.db.patch(rsvp._id, {
           listKey: args.newListKey,
-          updatedAt: Date.now()
+          updatedAt: Date.now(),
         });
 
         // Update aggregate
@@ -180,14 +173,14 @@ export const batchUpdateListKey = internalMutation({
         // Continue with next batch of RSVPs
         await ctx.scheduler.runAfter(0, internal.cascades.batchUpdateListKey, {
           ...args,
-          phase: "rsvps"
+          phase: "rsvps",
         });
       } else {
         // Move to next phase: approvals
         await ctx.scheduler.runAfter(0, internal.cascades.batchUpdateListKey, {
           ...args,
           cursor: undefined,
-          phase: "approvals"
+          phase: "approvals",
         });
       }
     } else if (phase === "approvals") {
@@ -208,7 +201,7 @@ export const batchUpdateListKey = internalMutation({
       await ctx.scheduler.runAfter(0, internal.cascades.batchUpdateListKey, {
         ...args,
         cursor: undefined,
-        phase: "redemptions"
+        phase: "redemptions",
       });
     } else if (phase === "redemptions") {
       // Update redemptions
@@ -223,11 +216,13 @@ export const batchUpdateListKey = internalMutation({
       }
 
       console.log(`[BATCH UPDATE] Updated ${redemptionsToUpdate.length} redemptions`);
-      console.log(`[BATCH UPDATE] ListKey update completed: ${args.oldListKey} → ${args.newListKey}`);
+      console.log(
+        `[BATCH UPDATE] ListKey update completed: ${args.oldListKey} → ${args.newListKey}`,
+      );
     }
 
     return { phase, processed: true };
-  }
+  },
 });
 
 /**
@@ -238,7 +233,7 @@ export const batchDisableRedemptions = internalMutation({
     eventId: v.id("events"),
     reason: v.optional(v.string()),
     cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number())
+    batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const batchSize = args.batchSize ?? 500;
@@ -253,7 +248,7 @@ export const batchDisableRedemptions = internalMutation({
       .order("asc")
       .paginate({
         cursor: args.cursor ?? null,
-        numItems: batchSize
+        numItems: batchSize,
       });
 
     let disabledCount = 0;
@@ -270,12 +265,12 @@ export const batchDisableRedemptions = internalMutation({
         eventId: args.eventId,
         reason: args.reason,
         cursor: paginatedResult.continueCursor,
-        batchSize
+        batchSize,
       });
     } else {
       console.log(`[BATCH DISABLE] Completed disabling redemptions for event ${args.eventId}`);
     }
 
     return { disabledCount, isDone: paginatedResult.isDone };
-  }
+  },
 });

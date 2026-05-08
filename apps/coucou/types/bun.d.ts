@@ -6,9 +6,19 @@ declare module "bun:test" {
   export function beforeAll(fn: () => void | Promise<void>): void;
   export function afterAll(fn: () => void | Promise<void>): void;
 
-  export interface ExpectStatic {
-    (actual: any): any;
-  }
+  export type ExpectMatcher = (...expected: unknown[]) => ExpectResult;
+
+  export type ExpectResult = Record<string, ExpectMatcher> & {
+    not: ExpectResult;
+    resolves: ExpectResult;
+    rejects: ExpectResult;
+  };
+
+  export type ExpectStatic = {
+    (actual: unknown): ExpectResult;
+    extend(matchers: Record<string, unknown>): void;
+    objectContaining(value: Record<string, unknown>): unknown;
+  };
 
   export const expect: ExpectStatic;
 }

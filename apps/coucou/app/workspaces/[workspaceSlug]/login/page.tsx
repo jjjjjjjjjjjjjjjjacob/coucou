@@ -1,21 +1,19 @@
 import { auth } from "@clerk/nextjs/server";
-import { notFound, redirect } from "next/navigation";
-import { fetchQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import type { SiteAuthConfiguration, SiteKey } from "@coucou/sdk/site-config";
 import { resolveSafeRedirectUrl } from "@coucou/sdk/routes";
-import { SignInClient } from "../../../sign-in/[[...sign-in]]/sign-in-client";
+import type { SiteAuthConfiguration, SiteKey } from "@coucou/sdk/site-config";
+import type { AuthBrandingOverrides } from "@coucou/ui/auth";
+import { fetchQuery } from "convex/nextjs";
+import { notFound, redirect } from "next/navigation";
 import { siteConfiguration as coucouSiteConfiguration } from "@/lib/site";
-import {
-  buildWorkspaceOperationPath,
-  isCoucouWorkspaceSlug,
-} from "@/lib/workspace-config";
+import { buildWorkspaceOperationPath, isCoucouWorkspaceSlug } from "@/lib/workspace-config";
 import {
   buildWorkspaceAllowedRedirectOrigins,
   extractEventIdFromRedirectUrl,
   resolvePrimaryClientSiteConfiguration,
 } from "@/lib/workspace-login-branding";
+import { SignInClient } from "../../../sign-in/[[...sign-in]]/sign-in-client";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 type ThemedEvent = {
@@ -97,29 +95,36 @@ export default async function TenantLoginPage({
 }) {
   const { workspaceSlug } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : {};
-  const fallbackRedirectPath = buildWorkspaceOperationPath(
-    workspaceSlug,
-    "host",
-  );
+  const fallbackRedirectPath = buildWorkspaceOperationPath(workspaceSlug, "host");
 
   const workspace = await fetchQuery(api.workspaces.getWorkspaceBySlug, {
     slug: workspaceSlug,
   });
 
-  if (
-    !workspace ||
-    workspace.kind === "admin" ||
-    isCoucouWorkspaceSlug(workspace.slug)
-  ) {
+  if (!workspace || workspace.kind === "admin" || isCoucouWorkspaceSlug(workspace.slug)) {
     notFound();
   }
 
-  const primaryClientSiteConfiguration = resolvePrimaryClientSiteConfiguration(
-    workspace.sites,
-  );
+  const primaryClientSiteConfiguration = resolvePrimaryClientSiteConfiguration(workspace.sites);
   const siteAuthConfiguration = primaryClientSiteConfiguration?.auth ?? null;
-  const workspaceAllowedRedirectOrigins =
-    buildWorkspaceAllowedRedirectOrigins(workspace);
+  const workspaceAllowedRedirectOrigins = buildWorkspaceAllowedRedirectOrigins(workspace);
+
+  // Legacy compatibility: clients (chlorine, dojo) used to share this
+  // route. They now have a dedicated `/clients/[siteKey]/sign-in` surface
+  // that doesn't drag along workspace/org coupling. Forward old links
+  // (preserving redirect_url) so any cached satellite redirects still
+  // resolve correctly.
+  if (primaryClientSiteConfiguration) {
+    const clientAuthUrl = new URL(
+      `/clients/${primaryClientSiteConfiguration.siteKey}/sign-in`,
+      "http://internal.placeholder",
+    );
+    const inboundRedirect = ensureString(resolvedSearchParams.redirect_url);
+    if (inboundRedirect) {
+      clientAuthUrl.searchParams.set("redirect_url", inboundRedirect);
+    }
+    redirect(`${clientAuthUrl.pathname}${clientAuthUrl.search}`);
+  }
 
   const redirectUrl = resolveSafeRedirectUrl(
     ensureString(resolvedSearchParams.redirect_url),
@@ -131,9 +136,11 @@ export default async function TenantLoginPage({
     redirect(redirectUrl);
   }
 
+  // After the early redirect above, this page only renders for admin /
+  // workspace-operator login (no client siteKey association).
   const themedEvent = await loadEventForTheme({
     eventId: extractEventIdFromRedirectUrl(redirectUrl),
-    siteKey: primaryClientSiteConfiguration?.siteKey,
+    siteKey: undefined,
   });
 
   const tenantAuthConfiguration: SiteAuthConfiguration = siteAuthConfiguration ?? {
@@ -141,36 +148,33 @@ export default async function TenantLoginPage({
     brandName: workspace.name,
     accentMark: buildAccentMark(workspace.name),
     heading: `Sign in to ${workspace.name}`,
-    description:
-      "Use your organization account to open tenant dashboard operations.",
+    description: "Use your organization account to open tenant dashboard operations.",
     allowedMethods: ["phone", "email"],
     defaultMethod: "phone",
     signInRedirectPath: buildWorkspaceOperationPath(workspace.slug, "host"),
-    verificationDescription:
-      "Enter the verification code we sent to continue.",
+    verificationDescription: "Enter the verification code we sent to continue.",
   };
-  const fallbackEyebrow = siteAuthConfiguration
-    ? "Event login"
-    : "Organization login";
+  const fallbackEyebrow = siteAuthConfiguration ? "Event login" : "Organization login";
+  const loginAuthBranding: AuthBrandingOverrides = {
+    heading: workspace.authBranding?.heading ?? tenantAuthConfiguration.heading,
+    sub: workspace.authBranding?.sub ?? tenantAuthConfiguration.description,
+    eyebrow: workspace.authBranding?.eyebrow ?? fallbackEyebrow,
+    brandMarkStyle: workspace.authBranding?.brandMarkStyle ?? "square-serif",
+    showCoucouAttribution: workspace.authBranding?.showCoucouAttribution ?? true,
+  };
 
+  // At this point primaryClientSiteConfiguration is null (the early
+  // legacy-redirect branch above caught client sites). Render the org-
+  // operator sign-in surface for admin/host/door auth.
   return (
     <SignInClient
       redirectUrl={redirectUrl}
-      preset={primaryClientSiteConfiguration?.preset ?? coucouSiteConfiguration.preset}
+      preset={coucouSiteConfiguration.preset}
       siteAuthConfiguration={tenantAuthConfiguration}
       eventThemeBackgroundColor={themedEvent?.themeBackgroundColor ?? null}
       eventThemeTextColor={themedEvent?.themeTextColor ?? null}
-      authBranding={{
-        heading:
-          workspace.authBranding?.heading ?? tenantAuthConfiguration.heading,
-        sub:
-          workspace.authBranding?.sub ?? tenantAuthConfiguration.description,
-        eyebrow: workspace.authBranding?.eyebrow ?? fallbackEyebrow,
-        brandMarkStyle:
-          workspace.authBranding?.brandMarkStyle ?? "square-serif",
-        showCoucouAttribution:
-          workspace.authBranding?.showCoucouAttribution ?? true,
-      }}
+      authBranding={loginAuthBranding}
+      allowedRedirectOrigins={workspaceAllowedRedirectOrigins}
     />
   );
 }

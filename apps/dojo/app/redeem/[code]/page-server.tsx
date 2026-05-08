@@ -1,15 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
-import { preloadQuery, fetchQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
+import { fetchQuery, preloadQuery } from "convex/nextjs";
+import { redirect } from "next/navigation";
 import { siteConfiguration } from "@/lib/site";
 import RedeemClientPage from "./redeem-client";
 
-export default async function RedeemServerPage({
-  params,
-}: {
-  params: Promise<{ code: string }>;
-}) {
+export default async function RedeemServerPage({ params }: { params: Promise<{ code: string }> }) {
   const resolvedParams = await Promise.resolve(params);
   const { code } = resolvedParams;
   const normalizedCode = code.toUpperCase();
@@ -43,7 +39,7 @@ export default async function RedeemServerPage({
     if (redemptionResult && "eventId" in redemptionResult && redemptionResult.eventId) {
       eventId = redemptionResult.eventId;
     }
-  } catch (error) {
+  } catch (_error) {
     // If query fails, continue without redirect (will show error in client)
   }
 

@@ -1,52 +1,51 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { Eye, MessageSquare, Save, Search, Send, Users, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
-import { Select, SelectOption } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { Event, TextBlast, TextBlastStatus, RSVP } from "@/lib/types";
+import { Select, SelectOption } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { formatEventTitleInline } from "@/lib/event-display";
 import type { RecipientFilterState } from "@/lib/text-blast-filters";
 import {
-  decodeRecipientFilter,
-  encodeRecipientFilter,
-  describeRecipientFilter,
-  isRecipientFilterConfigured,
   DEFAULT_STATUS_FILTER,
+  decodeRecipientFilter,
+  describeRecipientFilter,
+  encodeRecipientFilter,
+  isRecipientFilterConfigured,
   RECIPIENT_STATUS_LABELS,
 } from "@/lib/text-blast-filters";
-import {
-  AlertDialog,
-  AlertDialogTrigger,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from "@/components/ui/alert-dialog";
-import { Separator } from "@/components/ui/separator";
-import { Send, Save, Eye, Users, MessageSquare, Search, X } from "lucide-react";
-import { toast } from "sonner";
-import { formatEventTitleInline } from "@/lib/event-display";
-import { cn } from "@/lib/utils";
+import type { Event, RSVP, TextBlast } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 interface TextBlastDialogProps {
@@ -73,20 +72,14 @@ type SendBlastResult = {
   message?: string;
 };
 
-export default function TextBlastDialog({
-  isOpen,
-  onClose,
-  blastId,
-}: TextBlastDialogProps) {
+export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastDialogProps) {
   const workspaceScope = useWorkspaceScope();
   const events = useQuery(api.events.listAll, {
     ...(workspaceScope?.queryArgs ?? {}),
   }) as Event[] | undefined;
   const existingBlast = useQuery(
     api.textBlasts.getBlastById,
-    blastId && workspaceScope
-      ? { blastId, ...workspaceScope.queryArgs }
-      : "skip",
+    blastId && workspaceScope ? { blastId, ...workspaceScope.queryArgs } : "skip",
   ) as TextBlast | null | undefined;
   const createDraftMutation = useMutation(api.textBlasts.createDraft);
   const updateDraftMutation = useMutation(api.textBlasts.updateDraft);
@@ -110,7 +103,7 @@ export default function TextBlastDialog({
   const [isRecipientPopoverOpen, setIsRecipientPopoverOpen] = useState(false);
 
   const isEditMode = !!blastId;
-  const selectedEvent = events?.find(event => event._id === formData.eventId);
+  const selectedEvent = events?.find((event) => event._id === formData.eventId);
   const customFields = selectedEvent?.customFields ?? [];
   const recipientFilterIsConfigured = isRecipientFilterConfigured(formData.recipientFilter);
   const encodedRecipientFilter = useMemo(
@@ -149,13 +142,13 @@ export default function TextBlastDialog({
   // Get available lists for selected event from query result
   const availableLists = useMemo(() => {
     if (!availableListsWithCounts) return [];
-    return availableListsWithCounts.map(list => list.listKey);
+    return availableListsWithCounts.map((list) => list.listKey);
   }, [availableListsWithCounts]);
 
   // Create a map of listKey to recipient count for quick lookup
   const listCountMap = useMemo(() => {
     if (!availableListsWithCounts) return new Map<string, number>();
-    return new Map(availableListsWithCounts.map(list => [list.listKey, list.recipientCount]));
+    return new Map(availableListsWithCounts.map((list) => [list.listKey, list.recipientCount]));
   }, [availableListsWithCounts]);
 
   // Update recipient count when target lists, filter, or selected RSVPs change
@@ -186,7 +179,7 @@ export default function TextBlastDialog({
   }, [formData.targetLists, formData.selectedRsvpIds, listCountMap, recipientFilterIsConfigured]);
 
   useEffect(() => {
-    setFormData(prev => {
+    setFormData((prev) => {
       if (prev.selectedRsvpIds.length === 0) {
         return prev;
       }
@@ -203,7 +196,7 @@ export default function TextBlastDialog({
     const customFields = selectedEvent?.customFields ?? [];
     if (customFields.length === 0) {
       if (currentFilter.fieldKey !== "") {
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           recipientFilter: { type: "custom_field_missing", fieldKey: "" },
         }));
@@ -211,13 +204,14 @@ export default function TextBlastDialog({
       return;
     }
 
-    const hasCurrentField = customFields.some(
-      (field) => field.key === currentFilter.fieldKey,
-    );
+    const hasCurrentField = customFields.some((field) => field.key === currentFilter.fieldKey);
     if (!hasCurrentField) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        recipientFilter: { type: "custom_field_missing", fieldKey: customFields[0].key },
+        recipientFilter: {
+          type: "custom_field_missing",
+          fieldKey: customFields[0].key,
+        },
       }));
     }
   }, [formData.recipientFilter, selectedEvent]);
@@ -258,15 +252,21 @@ export default function TextBlastDialog({
 
   // Calculate character count and message type
   const messageLength = formData.message.length;
-  const messageType = messageLength <= SMS_CHAR_LIMIT ? "SMS" :
-                     messageLength <= SMS_CONCAT_LIMIT ? "Long SMS" : "Too Long";
+  const messageType =
+    messageLength <= SMS_CHAR_LIMIT
+      ? "SMS"
+      : messageLength <= SMS_CONCAT_LIMIT
+        ? "Long SMS"
+        : "Too Long";
   const isMessageTooLong = messageLength > SMS_CONCAT_LIMIT;
 
   // Template variables for message preview
   const sampleData = {
     firstName: "John",
     eventName: selectedEvent?.name || "Sample Event",
-    eventDate: selectedEvent ? new Date(selectedEvent.eventDate).toLocaleDateString() : "Dec 31, 2024",
+    eventDate: selectedEvent
+      ? new Date(selectedEvent.eventDate).toLocaleDateString()
+      : "Dec 31, 2024",
     eventLocation: selectedEvent?.location || "Sample Location",
   };
 
@@ -277,12 +277,13 @@ export default function TextBlastDialog({
     .replace(/\{\{eventLocation\}\}/g, sampleData.eventLocation);
 
   const handleEventChange = (eventId: Id<"events"> | "") => {
-    setFormData(prev => {
+    setFormData((prev) => {
       // Reset filter to "all" when event changes if it's event-specific (custom_field_missing)
-      const newRecipientFilter = prev.recipientFilter.type === "custom_field_missing"
-        ? { type: "all" as const }
-        : prev.recipientFilter;
-      
+      const newRecipientFilter =
+        prev.recipientFilter.type === "custom_field_missing"
+          ? { type: "all" as const }
+          : prev.recipientFilter;
+
       return {
         ...prev,
         eventId,
@@ -295,37 +296,52 @@ export default function TextBlastDialog({
   };
 
   const handleTargetListChange = (listKey: string, checked: boolean) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       targetLists: checked
         ? [...prev.targetLists, listKey]
-        : prev.targetLists.filter(key => key !== listKey),
+        : prev.targetLists.filter((key) => key !== listKey),
     }));
   };
 
   const handleRecipientFilterTypeChange = (value: RecipientFilterState["type"]) => {
-    setFormData(prev => {
+    setFormData((prev) => {
       switch (value) {
         case "all":
           return { ...prev, recipientFilter: { type: "all" } };
         case "approved_no_approval_sms":
-          return { ...prev, recipientFilter: { type: "approved_no_approval_sms" } };
+          return {
+            ...prev,
+            recipientFilter: { type: "approved_no_approval_sms" },
+          };
         case "status": {
-          const nextStatus = prev.recipientFilter.type === "status"
-            ? prev.recipientFilter.status
-            : DEFAULT_STATUS_FILTER;
-          return { ...prev, recipientFilter: { type: "status", status: nextStatus } };
+          const nextStatus =
+            prev.recipientFilter.type === "status"
+              ? prev.recipientFilter.status
+              : DEFAULT_STATUS_FILTER;
+          return {
+            ...prev,
+            recipientFilter: { type: "status", status: nextStatus },
+          };
         }
         case "custom_field_missing": {
           const customFields = selectedEvent?.customFields ?? [];
           const nextFieldKey = customFields.length > 0 ? customFields[0].key : "";
-          return { ...prev, recipientFilter: { type: "custom_field_missing", fieldKey: nextFieldKey } };
+          return {
+            ...prev,
+            recipientFilter: {
+              type: "custom_field_missing",
+              fieldKey: nextFieldKey,
+            },
+          };
         }
         case "rsvp_before": {
-          const nextValue = prev.recipientFilter.type === "rsvp_before"
-            ? prev.recipientFilter.isoDateTime
-            : "";
-          return { ...prev, recipientFilter: { type: "rsvp_before", isoDateTime: nextValue } };
+          const nextValue =
+            prev.recipientFilter.type === "rsvp_before" ? prev.recipientFilter.isoDateTime : "";
+          return {
+            ...prev,
+            recipientFilter: { type: "rsvp_before", isoDateTime: nextValue },
+          };
         }
         default:
           return prev;
@@ -372,14 +388,17 @@ export default function TextBlastDialog({
       }
       onClose();
     } catch (error: unknown) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to save text blast",
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to save text blast");
     }
   };
 
   const handleSendBlast = async () => {
-    if (!formData.eventId || !formData.name || !formData.message || formData.targetLists.length === 0) {
+    if (
+      !formData.eventId ||
+      !formData.name ||
+      !formData.message ||
+      formData.targetLists.length === 0
+    ) {
       toast.error("Please complete all fields before sending");
       return;
     }
@@ -412,30 +431,28 @@ export default function TextBlastDialog({
           targetLists: formData.targetLists,
           recipientFilter: encodedRecipientFilter,
           includeQrCodes: formData.includeQrCodes,
-          selectedRsvpIds: formData.selectedRsvpIds.length > 0 ? formData.selectedRsvpIds : undefined,
+          selectedRsvpIds:
+            formData.selectedRsvpIds.length > 0 ? formData.selectedRsvpIds : undefined,
           ...workspaceScope.queryArgs,
         });
       }
-      
+
       if (result.success) {
-        toast.success(
-          `Text blast sent successfully! ${result.sentCount ?? 0} messages delivered.`,
-        );
+        toast.success(`Text blast sent successfully! ${result.sentCount ?? 0} messages delivered.`);
       } else {
         toast.error(result.message || "Failed to send text blast");
       }
       onClose();
     } catch (error: unknown) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to send text blast",
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to send text blast");
     } finally {
       setIsSending(false);
     }
   };
 
   const canProceedToStep2 = formData.eventId && formData.name && formData.message;
-  const canProceedToStep3 = canProceedToStep2 && formData.targetLists.length > 0 && recipientFilterIsConfigured;
+  const canProceedToStep3 =
+    canProceedToStep2 && formData.targetLists.length > 0 && recipientFilterIsConfigured;
   const canSave = canProceedToStep3 && !isMessageTooLong;
 
   const renderStepContent = () => {
@@ -447,15 +464,13 @@ export default function TextBlastDialog({
               <Label htmlFor="eventId">Event</Label>
               <Select
                 value={formData.eventId || ""}
-                onValueChange={(value) =>
-                  handleEventChange(value ? (value as Id<"events">) : "")
-                }
+                onValueChange={(value) => handleEventChange(value ? (value as Id<"events">) : "")}
               >
                 <SelectOption value="">Select an event</SelectOption>
                 {events?.map((event) => {
                   const inlineTitle = formatEventTitleInline(event);
                   return (
-                <SelectOption key={event._id} value={event._id}>
+                    <SelectOption key={event._id} value={event._id}>
                       {inlineTitle}
                     </SelectOption>
                   );
@@ -469,9 +484,7 @@ export default function TextBlastDialog({
                 id="name"
                 placeholder="e.g. Event Reminder, Last Call, etc."
                 value={formData.name}
-                onChange={(e) =>
-                  setFormData(prev => ({ ...prev, name: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               />
             </div>
 
@@ -484,8 +497,8 @@ export default function TextBlastDialog({
                       isMessageTooLong
                         ? "destructive"
                         : messageLength > SMS_CHAR_LIMIT
-                        ? "secondary"
-                        : "outline"
+                          ? "secondary"
+                          : "outline"
                     }
                   >
                     {messageLength}/{SMS_CONCAT_LIMIT}
@@ -497,14 +510,14 @@ export default function TextBlastDialog({
                 id="message"
                 placeholder="Your message here... Use {{firstName}}, {{eventName}}, {{eventDate}}, {{eventLocation}}, {{qrCodeUrl}} for personalization"
                 value={formData.message}
-                onChange={(e) =>
-                  setFormData(prev => ({ ...prev, message: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, message: e.target.value }))}
                 rows={6}
                 className={isMessageTooLong ? "border-destructive" : ""}
               />
               <div className="text-xs text-muted-foreground">
-                Available variables: &#123;&#123;firstName&#125;&#125;, &#123;&#123;eventName&#125;&#125;, &#123;&#123;eventDate&#125;&#125;, &#123;&#123;eventLocation&#125;&#125;, &#123;&#123;qrCodeUrl&#125;&#125;
+                Available variables: &#123;&#123;firstName&#125;&#125;,
+                &#123;&#123;eventName&#125;&#125;, &#123;&#123;eventDate&#125;&#125;,
+                &#123;&#123;eventLocation&#125;&#125;, &#123;&#123;qrCodeUrl&#125;&#125;
               </div>
               {isMessageTooLong && (
                 <div className="text-xs text-destructive">
@@ -517,11 +530,7 @@ export default function TextBlastDialog({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Preview</Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPreviewMode(!previewMode)}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setPreviewMode(!previewMode)}>
                     <Eye className="h-4 w-4 mr-1" />
                     {previewMode ? "Hide" : "Show"} Preview
                   </Button>
@@ -529,9 +538,7 @@ export default function TextBlastDialog({
                 {previewMode && (
                   <Card>
                     <CardContent className="p-3">
-                      <div className="text-sm whitespace-pre-wrap">
-                        {previewMessage}
-                      </div>
+                      <div className="text-sm whitespace-pre-wrap">{previewMessage}</div>
                     </CardContent>
                   </Card>
                 )}
@@ -556,10 +563,7 @@ export default function TextBlastDialog({
                   Approved but No Approval SMS Sent
                 </SelectOption>
                 <SelectOption value="status">Filter by RSVP Status</SelectOption>
-                <SelectOption
-                  value="custom_field_missing"
-                  disabled={customFields.length === 0}
-                >
+                <SelectOption value="custom_field_missing" disabled={customFields.length === 0}>
                   Missing Custom Field
                 </SelectOption>
                 <SelectOption value="rsvp_before">RSVP Before Date/Time</SelectOption>
@@ -583,9 +587,12 @@ export default function TextBlastDialog({
                 <Select
                   value={formData.recipientFilter.status}
                   onValueChange={(value) =>
-                    setFormData(prev => ({
+                    setFormData((prev) => ({
                       ...prev,
-                      recipientFilter: { type: "status", status: value as RSVP["status"] },
+                      recipientFilter: {
+                        type: "status",
+                        status: value as RSVP["status"],
+                      },
                     }))
                   }
                 >
@@ -605,9 +612,12 @@ export default function TextBlastDialog({
                   <Select
                     value={formData.recipientFilter.fieldKey}
                     onValueChange={(value) =>
-                      setFormData(prev => ({
+                      setFormData((prev) => ({
                         ...prev,
-                        recipientFilter: { type: "custom_field_missing", fieldKey: value },
+                        recipientFilter: {
+                          type: "custom_field_missing",
+                          fieldKey: value,
+                        },
                       }))
                     }
                   >
@@ -619,7 +629,8 @@ export default function TextBlastDialog({
                   </Select>
                 ) : (
                   <div className="text-xs text-muted-foreground">
-                    This event does not have custom fields configured. Add custom fields in the event settings first.
+                    This event does not have custom fields configured. Add custom fields in the
+                    event settings first.
                   </div>
                 )}
               </div>
@@ -633,14 +644,18 @@ export default function TextBlastDialog({
                   type="datetime-local"
                   value={formData.recipientFilter.isoDateTime}
                   onChange={(event) =>
-                    setFormData(prev => ({
+                    setFormData((prev) => ({
                       ...prev,
-                      recipientFilter: { type: "rsvp_before", isoDateTime: event.target.value },
+                      recipientFilter: {
+                        type: "rsvp_before",
+                        isoDateTime: event.target.value,
+                      },
                     }))
                   }
                 />
                 <div className="text-xs text-muted-foreground">
-                  Only guests who submitted their RSVP before this timestamp will receive the message.
+                  Only guests who submitted their RSVP before this timestamp will receive the
+                  message.
                 </div>
               </div>
             )}
@@ -651,7 +666,10 @@ export default function TextBlastDialog({
                   id="includeQrCodes"
                   checked={formData.includeQrCodes}
                   onCheckedChange={(checked) =>
-                    setFormData(prev => ({ ...prev, includeQrCodes: checked === true }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      includeQrCodes: checked === true,
+                    }))
                   }
                 />
                 <Label htmlFor="includeQrCodes" className="cursor-pointer">
@@ -659,8 +677,9 @@ export default function TextBlastDialog({
                 </Label>
               </div>
               <div className="text-xs text-muted-foreground">
-                When enabled, QR code images will be generated and sent as MMS attachments for recipients with redemption codes. 
-                Use &#123;&#123;qrCodeUrl&#125;&#125; in your message to include the QR code URL in the text.
+                When enabled, QR code images will be generated and sent as MMS attachments for
+                recipients with redemption codes. Use &#123;&#123;qrCodeUrl&#125;&#125; in your
+                message to include the QR code URL in the text.
               </div>
             </div>
 
@@ -668,14 +687,14 @@ export default function TextBlastDialog({
               <Label>Select Recipient Lists</Label>
               {availableLists.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
-                  {formData.eventId 
+                  {formData.eventId
                     ? "No recipient lists available for this event. Make sure there are approved RSVPs for this event."
                     : "Select an event to see available recipient lists."}
                 </div>
               ) : (
                 <div className="grid gap-3">
-                  {availableLists.map(listKey => {
-                    const listData = availableListsWithCounts?.find(l => l.listKey === listKey);
+                  {availableLists.map((listKey) => {
+                    const listData = availableListsWithCounts?.find((l) => l.listKey === listKey);
                     const count = listData?.recipientCount ?? 0;
                     const totalRsvps = listData?.totalRsvps ?? 0;
                     return (
@@ -692,18 +711,19 @@ export default function TextBlastDialog({
                             <span className="font-medium capitalize">{listKey}</span>
                             <Badge variant="outline">
                               <Users className="h-3 w-3 mr-1" />
-                              {recipientFilterIsConfigured
-                                ? (
-                                  <>
-                                    {count} {count === 1 ? "recipient" : "recipients"}
-                                    {totalRsvps > 0 && count === 0 && (
-                                      <span className="ml-1 text-xs text-muted-foreground">
-                                        ({totalRsvps} RSVP{totalRsvps !== 1 ? "s" : ""} without SMS consent/phone)
-                                      </span>
-                                    )}
-                                  </>
-                                )
-                                : "Recipients pending"}
+                              {recipientFilterIsConfigured ? (
+                                <>
+                                  {count} {count === 1 ? "recipient" : "recipients"}
+                                  {totalRsvps > 0 && count === 0 && (
+                                    <span className="ml-1 text-xs text-muted-foreground">
+                                      ({totalRsvps} RSVP
+                                      {totalRsvps !== 1 ? "s" : ""} without SMS consent/phone)
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                "Recipients pending"
+                              )}
                             </Badge>
                           </div>
                         </Label>
@@ -736,7 +756,8 @@ export default function TextBlastDialog({
             <div className="space-y-2">
               <Label>Test Recipients (Optional)</Label>
               <p className="text-xs text-muted-foreground">
-                Select specific recipients to safely test your text blast. If none are selected, all recipients matching the lists above will be used.
+                Select specific recipients to safely test your text blast. If none are selected, all
+                recipients matching the lists above will be used.
               </p>
               {formData.targetLists.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
@@ -750,11 +771,7 @@ export default function TextBlastDialog({
                 <>
                   <Popover open={isRecipientPopoverOpen} onOpenChange={setIsRecipientPopoverOpen}>
                     <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-between"
-                        type="button"
-                      >
+                      <Button variant="outline" className="w-full justify-between" type="button">
                         <span className="truncate">
                           {formData.selectedRsvpIds.length === 0
                             ? "Select recipients to test..."
@@ -763,7 +780,10 @@ export default function TextBlastDialog({
                         <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <PopoverContent
+                      className="w-[var(--radix-popover-trigger-width)] p-0"
+                      align="start"
+                    >
                       <div className="p-2">
                         <div className="relative">
                           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -777,9 +797,10 @@ export default function TextBlastDialog({
                       </div>
                       <div className="max-h-60 overflow-y-auto">
                         {(() => {
-                          const filteredRecipients = recipientsForSelection.filter(
-                            (recipient) =>
-                              recipient.name.toLowerCase().includes(recipientSearchQuery.toLowerCase())
+                          const filteredRecipients = recipientsForSelection.filter((recipient) =>
+                            recipient.name
+                              .toLowerCase()
+                              .includes(recipientSearchQuery.toLowerCase()),
                           );
                           return filteredRecipients.length === 0 ? (
                             <div className="p-4 text-center text-sm text-muted-foreground">
@@ -787,7 +808,9 @@ export default function TextBlastDialog({
                             </div>
                           ) : (
                             filteredRecipients.map((recipient) => {
-                              const isSelected = formData.selectedRsvpIds.includes(recipient.rsvpId);
+                              const isSelected = formData.selectedRsvpIds.includes(
+                                recipient.rsvpId,
+                              );
                               return (
                                 <div
                                   key={recipient.rsvpId}
@@ -796,7 +819,9 @@ export default function TextBlastDialog({
                                     setFormData((prev) => ({
                                       ...prev,
                                       selectedRsvpIds: isSelected
-                                        ? prev.selectedRsvpIds.filter((id) => id !== recipient.rsvpId)
+                                        ? prev.selectedRsvpIds.filter(
+                                            (id) => id !== recipient.rsvpId,
+                                          )
                                         : [...prev.selectedRsvpIds, recipient.rsvpId],
                                     }));
                                   }}
@@ -821,7 +846,10 @@ export default function TextBlastDialog({
                             size="sm"
                             className="w-full"
                             onClick={() => {
-                              setFormData((prev) => ({ ...prev, selectedRsvpIds: [] }));
+                              setFormData((prev) => ({
+                                ...prev,
+                                selectedRsvpIds: [],
+                              }));
                             }}
                           >
                             Clear Selection
@@ -847,7 +875,9 @@ export default function TextBlastDialog({
                               onClick={() => {
                                 setFormData((prev) => ({
                                   ...prev,
-                                  selectedRsvpIds: prev.selectedRsvpIds.filter((id) => id !== rsvpId),
+                                  selectedRsvpIds: prev.selectedRsvpIds.filter(
+                                    (id) => id !== rsvpId,
+                                  ),
                                 }));
                               }}
                               className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
@@ -882,9 +912,7 @@ export default function TextBlastDialog({
               <CardContent className="space-y-4">
                 <div>
                   <Label className="text-sm font-medium">Event</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedEvent?.name}
-                  </p>
+                  <p className="text-sm text-muted-foreground">{selectedEvent?.name}</p>
                 </div>
 
                 <div>
@@ -896,9 +924,7 @@ export default function TextBlastDialog({
                   <Label className="text-sm font-medium">Message</Label>
                   <Card>
                     <CardContent className="p-3">
-                      <div className="text-sm whitespace-pre-wrap">
-                        {previewMessage}
-                      </div>
+                      <div className="text-sm whitespace-pre-wrap">{previewMessage}</div>
                     </CardContent>
                   </Card>
                 </div>
@@ -906,7 +932,7 @@ export default function TextBlastDialog({
                 <div>
                   <Label className="text-sm font-medium">Recipients</Label>
                   <div className="flex gap-2 mt-1">
-                    {formData.targetLists.map(listKey => (
+                    {formData.targetLists.map((listKey) => (
                       <Badge key={listKey} variant="outline">
                         {listKey.toUpperCase()}
                       </Badge>
@@ -916,19 +942,19 @@ export default function TextBlastDialog({
                     {recipientCount} total recipients
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Filter: {describeRecipientFilter(formData.recipientFilter, {
+                    Filter:{" "}
+                    {describeRecipientFilter(formData.recipientFilter, {
                       resolveCustomFieldLabel: (key) =>
                         customFields.find((field) => field.key === key)?.label,
                     })}
                   </p>
                   {formData.includeQrCodes && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      QR Code Images: Enabled
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">QR Code Images: Enabled</p>
                   )}
                   {formData.selectedRsvpIds.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Test Mode: {formData.selectedRsvpIds.length} specific recipient{formData.selectedRsvpIds.length !== 1 ? "s" : ""} selected
+                      Test Mode: {formData.selectedRsvpIds.length} specific recipient
+                      {formData.selectedRsvpIds.length !== 1 ? "s" : ""} selected
                     </p>
                   )}
                 </div>
@@ -946,9 +972,7 @@ export default function TextBlastDialog({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {isEditMode ? "Edit Text Blast" : "Create Text Blast"}
-          </DialogTitle>
+          <DialogTitle>{isEditMode ? "Edit Text Blast" : "Create Text Blast"}</DialogTitle>
           <DialogDescription>
             Send bulk SMS messages to event attendees. Step {currentStep} of 3.
           </DialogDescription>
@@ -963,17 +987,15 @@ export default function TextBlastDialog({
                   step === currentStep
                     ? "bg-primary text-primary-foreground"
                     : step < currentStep
-                    ? "bg-green-500 text-white"
-                    : "bg-muted text-muted-foreground"
+                      ? "bg-green-500 text-white"
+                      : "bg-muted text-muted-foreground"
                 }`}
               >
                 {step}
               </div>
               {step < 3 && (
                 <div
-                  className={`w-12 h-0.5 mx-2 ${
-                    step < currentStep ? "bg-green-500" : "bg-muted"
-                  }`}
+                  className={`w-12 h-0.5 mx-2 ${step < currentStep ? "bg-green-500" : "bg-muted"}`}
                 />
               )}
             </div>
@@ -988,10 +1010,7 @@ export default function TextBlastDialog({
         <DialogFooter className="flex justify-between">
           <div className="flex gap-2">
             {currentStep > 1 && (
-              <Button
-                variant="outline"
-                onClick={() => setCurrentStep(currentStep - 1)}
-              >
+              <Button variant="outline" onClick={() => setCurrentStep(currentStep - 1)}>
                 Back
               </Button>
             )}
@@ -1010,11 +1029,7 @@ export default function TextBlastDialog({
               </Button>
             ) : (
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleSaveDraft}
-                  disabled={!canSave}
-                >
+                <Button variant="outline" onClick={handleSaveDraft} disabled={!canSave}>
                   <Save className="h-4 w-4 mr-2" />
                   Save Draft
                 </Button>
@@ -1030,14 +1045,15 @@ export default function TextBlastDialog({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Send Text Blast</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Are you sure you want to send this text blast to {recipientCount} recipient{recipientCount !== 1 ? "s" : ""}?
-                        This action cannot be undone.
+                        Are you sure you want to send this text blast to {recipientCount} recipient
+                        {recipientCount !== 1 ? "s" : ""}? This action cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction onClick={handleSendBlast}>
-                        Send {recipientCount} Message{recipientCount !== 1 ? "s" : ""}
+                        Send {recipientCount} Message
+                        {recipientCount !== 1 ? "s" : ""}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
