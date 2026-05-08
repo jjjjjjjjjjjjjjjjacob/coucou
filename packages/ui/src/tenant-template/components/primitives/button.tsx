@@ -1,8 +1,8 @@
 "use client";
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { usePresetOptional } from "../../use-preset";
 import { combineClassNames } from "../../internal-utils";
+import { usePresetOptional } from "../../use-preset";
 
 export interface TenantButtonProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {

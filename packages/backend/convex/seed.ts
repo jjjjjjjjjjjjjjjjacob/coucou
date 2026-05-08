@@ -1,44 +1,164 @@
 "use node";
-import { action } from "./_generated/server";
-import { api } from "./_generated/api";
 import { v } from "convex/values";
+import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { action } from "./_generated/server";
 
 // Sample data for realistic test users
 const FIRST_NAMES = [
-  "Alex", "Jamie", "Casey", "Taylor", "Jordan", "Riley", "Morgan", "Avery",
-  "Quinn", "Sage", "Blake", "Drew", "Emery", "Finley", "Hayden", "Parker",
-  "Reese", "Rowan", "Skylar", "Cameron", "Devon", "Ellis", "Harley", "Kendall",
-  "Lane", "London", "Marley", "Phoenix", "River", "Sam", "Seven", "Tatum",
-  "Charlie", "Dakota", "Denver", "Justice", "Kai", "Lake", "Ocean", "Rain",
-  "Sage", "Scout", "Story", "True", "Winter", "Aspen", "August", "Bay",
-  "Blue", "Brooks", "Cedar", "Cruz", "Gray", "Hunter", "Indigo", "Jules",
+  "Alex",
+  "Jamie",
+  "Casey",
+  "Taylor",
+  "Jordan",
+  "Riley",
+  "Morgan",
+  "Avery",
+  "Quinn",
+  "Sage",
+  "Blake",
+  "Drew",
+  "Emery",
+  "Finley",
+  "Hayden",
+  "Parker",
+  "Reese",
+  "Rowan",
+  "Skylar",
+  "Cameron",
+  "Devon",
+  "Ellis",
+  "Harley",
+  "Kendall",
+  "Lane",
+  "London",
+  "Marley",
+  "Phoenix",
+  "River",
+  "Sam",
+  "Seven",
+  "Tatum",
+  "Charlie",
+  "Dakota",
+  "Denver",
+  "Justice",
+  "Kai",
+  "Lake",
+  "Ocean",
+  "Rain",
+  "Sage",
+  "Scout",
+  "Story",
+  "True",
+  "Winter",
+  "Aspen",
+  "August",
+  "Bay",
+  "Blue",
+  "Brooks",
+  "Cedar",
+  "Cruz",
+  "Gray",
+  "Hunter",
+  "Indigo",
+  "Jules",
 ];
 
 const LAST_NAMES = [
-  "Anderson", "Brown", "Chen", "Davis", "Evans", "Fisher", "Garcia", "Harris",
-  "Jackson", "Kim", "Lee", "Martinez", "Nelson", "O'Connor", "Patel", "Quinn",
-  "Rodriguez", "Smith", "Taylor", "Valdez", "Wilson", "Yang", "Zhang", "Adams",
-  "Baker", "Clark", "Cooper", "Foster", "Green", "Hall", "Hill", "Jones",
-  "Lewis", "Miller", "Moore", "Parker", "Roberts", "Turner", "Walker", "White",
-  "Wright", "Young", "Allen", "Bell", "Carter", "Collins", "Cook", "Edwards",
-  "Flores", "Gray", "Howard", "Hughes", "James", "Johnson", "King", "Lopez",
+  "Anderson",
+  "Brown",
+  "Chen",
+  "Davis",
+  "Evans",
+  "Fisher",
+  "Garcia",
+  "Harris",
+  "Jackson",
+  "Kim",
+  "Lee",
+  "Martinez",
+  "Nelson",
+  "O'Connor",
+  "Patel",
+  "Quinn",
+  "Rodriguez",
+  "Smith",
+  "Taylor",
+  "Valdez",
+  "Wilson",
+  "Yang",
+  "Zhang",
+  "Adams",
+  "Baker",
+  "Clark",
+  "Cooper",
+  "Foster",
+  "Green",
+  "Hall",
+  "Hill",
+  "Jones",
+  "Lewis",
+  "Miller",
+  "Moore",
+  "Parker",
+  "Roberts",
+  "Turner",
+  "Walker",
+  "White",
+  "Wright",
+  "Young",
+  "Allen",
+  "Bell",
+  "Carter",
+  "Collins",
+  "Cook",
+  "Edwards",
+  "Flores",
+  "Gray",
+  "Howard",
+  "Hughes",
+  "James",
+  "Johnson",
+  "King",
+  "Lopez",
 ];
 
 const DIETARY_RESTRICTIONS = [
-  "Vegetarian", "Vegan", "Gluten-free", "Dairy-free", "Nut allergy",
-  "Shellfish allergy", "Kosher", "Halal", "Keto", "Paleo"
+  "Vegetarian",
+  "Vegan",
+  "Gluten-free",
+  "Dairy-free",
+  "Nut allergy",
+  "Shellfish allergy",
+  "Kosher",
+  "Halal",
+  "Keto",
+  "Paleo",
 ];
 
 const SPECIAL_REQUESTS = [
-  "Wheelchair accessible seating", "Table near stage", "Quiet area preferred",
-  "Close to restrooms", "Group seating for 6", "Photography allowed",
-  "Plus one requested", "VIP meet & greet", "Early entry preferred"
+  "Wheelchair accessible seating",
+  "Table near stage",
+  "Quiet area preferred",
+  "Close to restrooms",
+  "Group seating for 6",
+  "Photography allowed",
+  "Plus one requested",
+  "VIP meet & greet",
+  "Early entry preferred",
 ];
 
 const COMPANIES = [
-  "TechCorp", "StartupX", "Innovation Labs", "Digital Solutions", "Creative Agency",
-  "Data Analytics Co", "Cloud Systems", "Mobile First", "AI Ventures", "Blockchain Inc"
+  "TechCorp",
+  "StartupX",
+  "Innovation Labs",
+  "Digital Solutions",
+  "Creative Agency",
+  "Data Analytics Co",
+  "Cloud Systems",
+  "Mobile First",
+  "AI Ventures",
+  "Blockchain Inc",
 ];
 
 function generateRandomName(): string {
@@ -48,8 +168,8 @@ function generateRandomName(): string {
 }
 
 function generateRandomEmail(name: string): string {
-  const cleanName = name.toLowerCase().replace(/[^a-z]/g, '');
-  const providers = ['gmail.com', 'yahoo.com', 'outlook.com', 'company.com', 'example.org'];
+  const cleanName = name.toLowerCase().replace(/[^a-z]/g, "");
+  const providers = ["gmail.com", "yahoo.com", "outlook.com", "company.com", "example.org"];
   const provider = providers[Math.floor(Math.random() * providers.length)];
   const suffix = Math.floor(Math.random() * 1000);
   return `${cleanName}${suffix}@${provider}`;
@@ -68,25 +188,25 @@ function generateMetadata(): Record<string, string> {
   // 60% chance of dietary restriction
   if (Math.random() < 0.6) {
     const dietary = DIETARY_RESTRICTIONS[Math.floor(Math.random() * DIETARY_RESTRICTIONS.length)];
-    metadata['dietary_restrictions'] = dietary;
+    metadata["dietary_restrictions"] = dietary;
   }
 
   // 40% chance of special request
   if (Math.random() < 0.4) {
     const request = SPECIAL_REQUESTS[Math.floor(Math.random() * SPECIAL_REQUESTS.length)];
-    metadata['special_request'] = request;
+    metadata["special_request"] = request;
   }
 
   // 30% chance of company
   if (Math.random() < 0.3) {
     const company = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
-    metadata['company'] = company;
+    metadata["company"] = company;
   }
 
   // 20% chance of plus one count
   if (Math.random() < 0.2) {
     const plusOnes = Math.floor(Math.random() * 3) + 1;
-    metadata['plus_ones'] = plusOnes.toString();
+    metadata["plus_ones"] = plusOnes.toString();
   }
 
   return metadata;
@@ -97,7 +217,10 @@ export const seedTestRSVPs = action({
     eventId: v.optional(v.id("events")),
     count: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<{ success: boolean; message: string; eventId?: Id<"events"> }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ success: boolean; message: string; eventId?: Id<"events"> }> => {
     // Only allow in development
     if (process.env.NODE_ENV === "production") {
       throw new Error("Seed script only available in development");
@@ -112,7 +235,7 @@ export const seedTestRSVPs = action({
         name: "Test Event - RSVP Stress Test",
         hosts: ["test@example.com"],
         location: "Virtual Event Center",
-        eventDate: Date.now() + (7 * 24 * 60 * 60 * 1000), // 1 week from now
+        eventDate: Date.now() + 7 * 24 * 60 * 60 * 1000, // 1 week from now
         lists: [
           { listKey: "vip", password: "vip123", generateQR: true },
           { listKey: "ga", password: "general456", generateQR: true },
@@ -120,17 +243,33 @@ export const seedTestRSVPs = action({
           { listKey: "media", password: "press999", generateQR: true },
         ],
         customFields: [
-          { key: "dietary_restrictions", label: "Dietary Restrictions", placeholder: "Any dietary needs?" },
-          { key: "company", label: "Company", placeholder: "Your company name" },
-          { key: "special_request", label: "Special Requests", placeholder: "Any special accommodations?" },
-          { key: "plus_ones", label: "Plus Ones", placeholder: "Number of guests" },
+          {
+            key: "dietary_restrictions",
+            label: "Dietary Restrictions",
+            placeholder: "Any dietary needs?",
+          },
+          {
+            key: "company",
+            label: "Company",
+            placeholder: "Your company name",
+          },
+          {
+            key: "special_request",
+            label: "Special Requests",
+            placeholder: "Any special accommodations?",
+          },
+          {
+            key: "plus_ones",
+            label: "Plus Ones",
+            placeholder: "Number of guests",
+          },
         ],
       });
       eventId = testEventResult.eventId;
     }
 
     const listKeys = ["vip", "ga", "staff", "media"];
-    const statuses = ["pending", "approved", "denied"];
+    const _statuses = ["pending", "approved", "denied"];
 
     // Status distribution: 40% approved, 30% pending, 30% denied
     const statusWeights = [0.3, 0.4, 0.3]; // pending, approved, denied
@@ -145,7 +284,7 @@ export const seedTestRSVPs = action({
     for (let i = 0; i < count; i++) {
       try {
         const name = generateRandomName();
-        const email = generateRandomEmail(name);
+        const _email = generateRandomEmail(name);
         const phone = generateRandomPhone();
         const listKey = listKeys[Math.floor(Math.random() * listKeys.length)];
 
@@ -160,7 +299,7 @@ export const seedTestRSVPs = action({
           status = "denied";
         }
 
-        const metadata = generateMetadata();
+        const _metadata = generateMetadata();
 
         // Create a fake Clerk user ID
         const clerkUserId = `seed_user_${Date.now()}_${i}`;
@@ -200,7 +339,6 @@ export const seedTestRSVPs = action({
         if (i % 100 === 0) {
           console.log(`Seeded ${i}/${count} RSVPs...`);
         }
-
       } catch (error) {
         console.error(`Error creating RSVP ${i}:`, error);
         results.errors++;
@@ -228,20 +366,26 @@ export const clearTestData = action({
     }
 
     // Delete all RSVPs for the event
-    const rsvps = await ctx.runQuery(api.rsvps.listForEvent, { eventId: args.eventId });
+    const rsvps = await ctx.runQuery(api.rsvps.listForEvent, {
+      eventId: args.eventId,
+    });
 
     let deletedCount = 0;
     for (const rsvp of rsvps) {
       try {
         // Delete related redemptions
-        await ctx.runMutation(api.redemptions.deleteForRSVP, { rsvpId: rsvp.id });
+        await ctx.runMutation(api.redemptions.deleteForRSVP, {
+          rsvpId: rsvp.id,
+        });
 
         // Delete the RSVP
         await ctx.runMutation(api.rsvps.deleteRSVP, { rsvpId: rsvp.id });
 
         // Delete the user if it's a seed user
         if (rsvp.clerkUserId.startsWith("seed_user_")) {
-          await ctx.runMutation(api.users.deleteUser, { clerkUserId: rsvp.clerkUserId });
+          await ctx.runMutation(api.users.deleteUser, {
+            clerkUserId: rsvp.clerkUserId,
+          });
         }
 
         deletedCount++;

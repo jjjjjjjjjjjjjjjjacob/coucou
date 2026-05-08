@@ -1,60 +1,52 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
-import CreatedToastOnce from "./toast-client";
-import EventCardClient from "./event-card-client";
-import EditEventDialog from "./edit-event-dialog";
-import { Event } from "@/lib/types";
 import { resolveEventEndTimestamp } from "@convex/lib/eventTiming";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Select, SelectOption } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useMutation, useQuery } from "convex/react";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  CheckCircle,
+  Edit,
+  ExternalLink,
+  Grid,
+  List,
+  MoreHorizontal,
+  Search,
+  Trash2,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { ShareEventPopover } from "@/components/share-event-popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogTrigger,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from "@/components/ui/alert-dialog";
-import {
-  Grid,
-  List,
-  Search,
-  Filter,
-  MoreHorizontal,
-  ExternalLink,
-  Edit,
-  Trash2,
-  CheckCircle,
-} from "lucide-react";
-import { formatEventDateTime } from "@/lib/utils";
-import { toast } from "sonner";
-import { ShareEventPopover } from "@/components/share-event-popover";
+import { Input } from "@/components/ui/input";
+import { Select, SelectOption } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatEventTitleInline } from "@/lib/event-display";
-import {
-  useWorkspaceOperationPath,
-  useWorkspaceScope,
-} from "@/lib/use-workspace-scope";
+import type { Event } from "@/lib/types";
+import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { formatEventDateTime } from "@/lib/utils";
+import EditEventDialog from "./edit-event-dialog";
+import EventCardClient from "./event-card-client";
+import CreatedToastOnce from "./toast-client";
 
 type ViewMode = "card" | "list";
 type SortOption = "date" | "name" | "rsvps";
@@ -77,7 +69,7 @@ export default function EventsPage() {
   const filteredAndSortedEntries = useMemo(() => {
     if (!eventEntries) return [];
 
-    let filtered = eventEntries.filter(({ event }) => {
+    const filtered = eventEntries.filter(({ event }) => {
       // Search filter
       const normalizedQuery = searchQuery.toLowerCase();
       const matchesSearch =
@@ -133,9 +125,7 @@ export default function EventsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Events</h2>
-          <p className="text-muted-foreground">
-            Manage and view all your events
-          </p>
+          <p className="text-muted-foreground">Manage and view all your events</p>
         </div>
         <Button onClick={() => router.push(newEventPath)}>+ New Event</Button>
       </div>
@@ -155,10 +145,7 @@ export default function EventsPage() {
           </div>
 
           {/* Filters */}
-          <Select
-            value={filterBy}
-            onValueChange={(value) => setFilterBy(value as FilterOption)}
-          >
+          <Select value={filterBy} onValueChange={(value) => setFilterBy(value as FilterOption)}>
             <SelectOption value="all">All Events</SelectOption>
             <SelectOption value="draft">Drafts</SelectOption>
             <SelectOption value="upcoming">Upcoming</SelectOption>
@@ -166,10 +153,7 @@ export default function EventsPage() {
           </Select>
 
           {/* Sort */}
-          <Select
-            value={sortBy}
-            onValueChange={(value) => setSortBy(value as SortOption)}
-          >
+          <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortOption)}>
             <SelectOption value="date">Sort by Date</SelectOption>
             <SelectOption value="name">Sort by Name</SelectOption>
             <SelectOption value="rsvps">Sort by RSVPs</SelectOption>
@@ -208,9 +192,7 @@ export default function EventsPage() {
       {(!eventEntries || eventEntries.length === 0) && (
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
           <p className="text-lg text-muted-foreground mb-2">No events yet</p>
-          <p className="text-sm text-muted-foreground">
-            Create your first event to get started
-          </p>
+          <p className="text-sm text-muted-foreground">Create your first event to get started</p>
         </div>
       )}
 
@@ -218,9 +200,7 @@ export default function EventsPage() {
       {eventEntries && eventEntries.length > 0 && filteredAndSortedEntries.length === 0 && (
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
           <p className="text-lg text-muted-foreground mb-2">No events found</p>
-          <p className="text-sm text-muted-foreground">
-            Try adjusting your search or filters
-          </p>
+          <p className="text-sm text-muted-foreground">Try adjusting your search or filters</p>
         </div>
       )}
 
@@ -249,14 +229,8 @@ function EventCard({ event, flyerUrl }: { event: Event; flyerUrl: string | null 
 function EventListItem({ event }: { event: Event }) {
   const router = useRouter();
   const workspaceScope = useWorkspaceScope();
-  const rsvpsPath = useWorkspaceOperationPath(
-    "host",
-    `rsvps?eventId=${event._id}`,
-  );
-  const editDraftPath = useWorkspaceOperationPath(
-    "host",
-    `new?draftId=${event._id}`,
-  );
+  const rsvpsPath = useWorkspaceOperationPath("host", `rsvps?eventId=${event._id}`);
+  const editDraftPath = useWorkspaceOperationPath("host", `new?draftId=${event._id}`);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const removeEvent = useMutation(api.events.remove);
   const setFeaturedEvent = useMutation(api.events.setFeaturedEvent);
@@ -307,18 +281,13 @@ function EventListItem({ event }: { event: Event }) {
         <div className="flex items-center gap-4">
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="font-medium truncate max-w-[18rem]">
-                {inlineTitle}
-              </h3>
+              <h3 className="font-medium truncate max-w-[18rem]">{inlineTitle}</h3>
               {event.isFeatured && (
                 <Badge variant="secondary" className="text-xs">
                   Featured
                 </Badge>
               )}
-              <Badge
-                variant={badgeVariant}
-                className="text-xs capitalize"
-              >
+              <Badge variant={badgeVariant} className="text-xs capitalize">
                 {badgeLabel}
               </Badge>
             </div>
@@ -329,27 +298,15 @@ function EventListItem({ event }: { event: Event }) {
         </div>
         <div className="flex items-center gap-2">
           {isDraft ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(editDraftPath)}
-            >
+            <Button variant="outline" size="sm" onClick={() => router.push(editDraftPath)}>
               Continue editing
             </Button>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/events/${event._id}`)}
-            >
+            <Button variant="outline" size="sm" onClick={() => router.push(`/events/${event._id}`)}>
               View
             </Button>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(rsvpsPath)}
-          >
+          <Button variant="outline" size="sm" onClick={() => router.push(rsvpsPath)}>
             RSVPs
           </Button>
           <Button variant="outline" size="sm" onClick={togglePublish}>
@@ -358,10 +315,7 @@ function EventListItem({ event }: { event: Event }) {
           <ShareEventPopover eventId={event._id}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                >
+                <Button variant="outline" size="sm">
                   <ExternalLink className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
@@ -392,9 +346,7 @@ function EventListItem({ event }: { event: Event }) {
                     toast.success(`"${inlineTitle}" is now the featured event`);
                     router.refresh();
                   } catch (error) {
-                    toast.error(
-                      "Failed to set featured event: " + (error as Error).message,
-                    );
+                    toast.error("Failed to set featured event: " + (error as Error).message);
                   }
                 }}
               >
@@ -416,8 +368,7 @@ function EventListItem({ event }: { event: Event }) {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete this event?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently remove the event and its list
-                      credentials.
+                      This will permanently remove the event and its list credentials.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

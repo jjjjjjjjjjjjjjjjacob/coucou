@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { usePreset } from "../use-preset";
 import { useMobile } from "../use-mobile";
-import { TenantShell } from "./tenant-shell";
+import { usePreset } from "../use-preset";
 import { Eyebrow } from "./primitives/eyebrow";
+import { TenantShell } from "./tenant-shell";
 
 export interface RsvpDeniedProps {
   /**
@@ -36,28 +36,20 @@ const DEFAULT_HEADING: Record<string, string> = {
 
 const DEFAULT_DESCRIPTION: Record<string, string> = {
   dojo: "We could not place you on this list. Reach out to your host if you think this is a mistake.",
-  atrium:
-    "We could not place you on this list. Reach out to your host if this is a mistake.",
-  maison:
-    "We could not place you on this list. Write to the host if this is in error.",
+  atrium: "We could not place you on this list. Reach out to your host if this is a mistake.",
+  maison: "We could not place you on this list. Write to the host if this is in error.",
   chlorine:
     "We could not place you on this list. Reach out to your host if you think this is a mistake.",
   coucou:
     "We could not place you on this list. Reach out to your host if you think this is a mistake.",
 };
 
-export function RsvpDenied({
-  description,
-  heading,
-  secondaryAction,
-  footerContact,
-}: RsvpDeniedProps) {
+export function RsvpDenied({ description, heading, secondaryAction }: RsvpDeniedProps) {
   const { preset, presetKey } = usePreset();
   const isMobile = useMobile();
 
   const resolvedHeading = heading ?? DEFAULT_HEADING[presetKey];
-  const resolvedDescription =
-    description ?? DEFAULT_DESCRIPTION[presetKey];
+  const resolvedDescription = description ?? DEFAULT_DESCRIPTION[presetKey];
 
   return (
     <TenantShell>
@@ -89,9 +81,7 @@ export function RsvpDenied({
         </p>
 
         {secondaryAction ? (
-          <div className="mt-10 flex flex-wrap items-center gap-4">
-            {secondaryAction}
-          </div>
+          <div className="mt-10 flex flex-wrap items-center gap-4">{secondaryAction}</div>
         ) : null}
       </section>
     </TenantShell>

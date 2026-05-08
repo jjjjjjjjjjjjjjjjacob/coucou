@@ -14,10 +14,8 @@ type Props = {
 // for server actions. Uses native inputs for reliability.
 export function DateTimeField({
   nameDate = "eventDateOnly",
-  nameTime = "eventTimeOnly",
   nameCombined = "eventDate",
   label = "Date & Time",
-  required,
 }: Props) {
   const [date, setDate] = React.useState<string>("");
   const [time, setTime] = React.useState("");

@@ -1,8 +1,4 @@
-import {
-  getSiteOrigin,
-  siteConfigurations,
-  type SiteConfiguration,
-} from "@coucou/sdk";
+import { getSiteOrigin, type SiteConfiguration, siteConfigurations } from "@coucou/sdk";
 import type { SiteKey } from "@coucou/sdk/site-config";
 
 interface WorkspaceSiteLike {
@@ -16,14 +12,10 @@ interface WorkspaceLike {
 }
 
 export function isSiteKey(value: string | null | undefined): value is SiteKey {
-  return (
-    value === "dojo" || value === "club-chlorine" || value === "coucou"
-  );
+  return value === "dojo" || value === "club-chlorine" || value === "coucou";
 }
 
-export function normalizeDomainOrigin(
-  domain: string | null | undefined,
-): string | null {
+export function normalizeDomainOrigin(domain: string | null | undefined): string | null {
   const trimmedDomain = domain?.trim();
   if (!trimmedDomain) {
     return null;
@@ -31,9 +23,7 @@ export function normalizeDomainOrigin(
 
   try {
     const domainUrl = new URL(
-      trimmedDomain.match(/^https?:\/\//)
-        ? trimmedDomain
-        : `https://${trimmedDomain}`,
+      trimmedDomain.match(/^https?:\/\//) ? trimmedDomain : `https://${trimmedDomain}`,
     );
     return domainUrl.origin;
   } catch {
@@ -58,9 +48,7 @@ export function resolvePrimaryClientSiteConfiguration(
   return null;
 }
 
-export function buildWorkspaceAllowedRedirectOrigins(
-  workspace: WorkspaceLike,
-): string[] {
+export function buildWorkspaceAllowedRedirectOrigins(workspace: WorkspaceLike): string[] {
   const allowedRedirectOrigins = new Set<string>();
   const workspacePrimaryOrigin = normalizeDomainOrigin(workspace.primaryDomain);
   if (workspacePrimaryOrigin) {
@@ -74,18 +62,28 @@ export function buildWorkspaceAllowedRedirectOrigins(
     }
 
     if (isSiteKey(workspaceSite.siteKey)) {
-      allowedRedirectOrigins.add(
-        getSiteOrigin(siteConfigurations[workspaceSite.siteKey]),
-      );
+      allowedRedirectOrigins.add(getSiteOrigin(siteConfigurations[workspaceSite.siteKey]));
+    }
+  }
+
+  // Local dev / preview escape hatch: comma-separated origins from
+  // `COUCOU_DEV_ALLOWED_SATELLITE_ORIGINS` (e.g.
+  // "http://localhost:5679,http://localhost:5678") get added so cross-
+  // domain auth completes when the satellite is running on a non-prod
+  // host. The prod Vercel deployment shouldn't set this; the redirect
+  // targets there are the real workspace.sites domains.
+  const devAllowedRaw = process.env.COUCOU_DEV_ALLOWED_SATELLITE_ORIGINS ?? "";
+  for (const candidate of devAllowedRaw.split(",")) {
+    const normalized = normalizeDomainOrigin(candidate);
+    if (normalized) {
+      allowedRedirectOrigins.add(normalized);
     }
   }
 
   return [...allowedRedirectOrigins];
 }
 
-export function extractEventIdFromRedirectUrl(
-  redirectUrl: string | undefined,
-): string | null {
+export function extractEventIdFromRedirectUrl(redirectUrl: string | undefined): string | null {
   if (!redirectUrl) {
     return null;
   }

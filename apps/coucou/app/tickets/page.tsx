@@ -1,14 +1,14 @@
 "use client";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import { Button } from "@/components/ui/button";
+import { useQuery } from "convex/react";
+import { AlertCircle, Calendar, Clock, MapPin, QrCode } from "lucide-react";
 import Link from "next/link";
-import { Calendar, MapPin, Clock, QrCode, AlertCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { formatEventTitleInline } from "@/lib/event-display";
-import type { UserTicket, RSVP } from "@/lib/types";
+import type { RSVP, UserTicket } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 function formatDate(eventDate: number, timezone?: string) {
   return new Date(eventDate).toLocaleDateString("en-US", {
@@ -44,9 +44,7 @@ function getStatusBadgeColor(status: RSVP["status"]) {
 }
 
 export default function TicketsPage() {
-  const userTickets = useQuery(api.rsvps.listUserTickets) as
-    | UserTicket[]
-    | undefined;
+  const userTickets = useQuery(api.rsvps.listUserTickets) as UserTicket[] | undefined;
 
   if (userTickets === undefined) {
     return (
@@ -78,11 +76,9 @@ export default function TicketsPage() {
 
   const now = Date.now();
   const upcomingTickets = userTickets.filter(
-    (ticket) => ticket.event && ticket.event.eventDate > now
+    (ticket) => ticket.event && ticket.event.eventDate > now,
   );
-  const pastTickets = userTickets.filter(
-    (ticket) => ticket.event && ticket.event.eventDate <= now
-  );
+  const pastTickets = userTickets.filter((ticket) => ticket.event && ticket.event.eventDate <= now);
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
@@ -119,8 +115,7 @@ function TicketCard({ ticket }: { ticket: UserTicket }) {
   if (!event) return null;
 
   const isRedeemed = redemption?.redeemedAt;
-  const hasValidTicket =
-    (rsvp.status === "approved" || rsvp.status === "attending") && redemption;
+  const hasValidTicket = (rsvp.status === "approved" || rsvp.status === "attending") && redemption;
   const inlineTitle = formatEventTitleInline(event);
 
   return (
@@ -146,12 +141,7 @@ function TicketCard({ ticket }: { ticket: UserTicket }) {
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <Badge
-            className={cn(
-              "capitalize",
-              getStatusBadgeColor(rsvp.status)
-            )}
-          >
+          <Badge className={cn("capitalize", getStatusBadgeColor(rsvp.status))}>
             {rsvp.status}
           </Badge>
           {rsvp.listKey && (

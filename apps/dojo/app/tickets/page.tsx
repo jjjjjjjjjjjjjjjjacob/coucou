@@ -1,16 +1,16 @@
 "use client";
-import { useConvexAuth, useQuery } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
-import { Button } from "@/components/ui/button";
+import { useConvexAuth, useQuery } from "convex/react";
+import { AlertCircle, Calendar, Clock, MapPin, QrCode } from "lucide-react";
 import Link from "next/link";
-import { Calendar, MapPin, Clock, QrCode, AlertCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { formatEventTitleInline } from "@/lib/event-display";
-import type { UserTicket, RSVP } from "@/lib/types";
 import { siteConfiguration } from "@/lib/site";
+import type { RSVP, UserTicket } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 function formatDate(eventDate: number, timezone?: string) {
   return new Date(eventDate).toLocaleDateString("en-US", {
@@ -47,12 +47,9 @@ function getStatusBadgeColor(status: RSVP["status"]) {
 
 export default function TicketsPage() {
   const { isLoaded: isClerkLoaded, isSignedIn } = useAuth();
-  const {
-    isAuthenticated: isConvexAuthenticated,
-    isLoading: isConvexAuthLoading,
-  } = useConvexAuth();
-  const canLoadUserTickets =
-    isClerkLoaded && isSignedIn && isConvexAuthenticated;
+  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
+    useConvexAuth();
+  const canLoadUserTickets = isClerkLoaded && isSignedIn && isConvexAuthenticated;
   const userTickets = useQuery(
     api.rsvps.listUserTicketsInWorkspace,
     canLoadUserTickets
@@ -63,10 +60,7 @@ export default function TicketsPage() {
       : "skip",
   ) as UserTicket[] | undefined;
 
-  if (
-    !isClerkLoaded ||
-    (isSignedIn && (isConvexAuthLoading || !isConvexAuthenticated))
-  ) {
+  if (!isClerkLoaded || (isSignedIn && (isConvexAuthLoading || !isConvexAuthenticated))) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center min-h-screen">
@@ -83,9 +77,7 @@ export default function TicketsPage() {
         <div className="text-center py-12">
           <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-2">Sign in required</h3>
-          <p className="text-muted-foreground mb-6">
-            Sign in to view your RSVPs and tickets.
-          </p>
+          <p className="text-muted-foreground mb-6">Sign in to view your RSVPs and tickets.</p>
           <Link href="/">
             <Button>Browse Events</Button>
           </Link>
@@ -124,11 +116,9 @@ export default function TicketsPage() {
 
   const now = Date.now();
   const upcomingTickets = userTickets.filter(
-    (ticket) => ticket.event && ticket.event.eventDate > now
+    (ticket) => ticket.event && ticket.event.eventDate > now,
   );
-  const pastTickets = userTickets.filter(
-    (ticket) => ticket.event && ticket.event.eventDate <= now
-  );
+  const pastTickets = userTickets.filter((ticket) => ticket.event && ticket.event.eventDate <= now);
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
@@ -165,8 +155,7 @@ function TicketCard({ ticket }: { ticket: UserTicket }) {
   if (!event) return null;
 
   const isRedeemed = redemption?.redeemedAt;
-  const hasValidTicket =
-    (rsvp.status === "approved" || rsvp.status === "attending") && redemption;
+  const hasValidTicket = (rsvp.status === "approved" || rsvp.status === "attending") && redemption;
   const inlineTitle = formatEventTitleInline(event);
 
   return (
@@ -192,12 +181,7 @@ function TicketCard({ ticket }: { ticket: UserTicket }) {
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <Badge
-            className={cn(
-              "capitalize",
-              getStatusBadgeColor(rsvp.status)
-            )}
-          >
+          <Badge className={cn("capitalize", getStatusBadgeColor(rsvp.status))}>
             {rsvp.status}
           </Badge>
           {rsvp.listKey && (

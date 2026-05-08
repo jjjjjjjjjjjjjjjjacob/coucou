@@ -15,15 +15,11 @@ export default function NotFound() {
 
         <div className="space-y-3">
           <Button asChild className="w-full">
-            <Link href="/">
-              Go Home
-            </Link>
+            <Link href="/">Go Home</Link>
           </Button>
 
           <Button variant="outline" asChild className="w-full">
-            <Link href="javascript:history.back()">
-              Go Back
-            </Link>
+            <Link href="javascript:history.back()">Go Back</Link>
           </Button>
         </div>
       </div>

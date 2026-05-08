@@ -1,11 +1,11 @@
-import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { mutation, query } from "./functions";
 import {
   normalizePrimaryFieldLookupText,
   normalizeSocialHandleInput,
 } from "@coucou/sdk/shared/primary-fields";
+import { v } from "convex/values";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { mutation, query } from "./functions";
 import {
   grantWorkspaceProfileValue,
   isSocialProfileFieldKey,
@@ -15,10 +15,7 @@ import {
   upsertProfileFieldValue,
 } from "./lib/profileValueRecords";
 import { requireWorkspaceRead } from "./lib/workspaceAuth";
-import {
-  eventMatchesTenantScope,
-  resolveTenantWorkspaceScope,
-} from "./lib/workspaceScope";
+import { eventMatchesTenantScope, resolveTenantWorkspaceScope } from "./lib/workspaceScope";
 
 interface ResolvedWorkspaceProfileScope {
   workspaceId?: Id<"workspaces">;
@@ -31,9 +28,7 @@ interface GrantedProfileFieldValue {
   profileFieldValue: Doc<"profileFieldValues">;
 }
 
-function normalizeProfileFieldKeySet(
-  fieldKeys: string[] | undefined,
-): Set<string> | null {
+function normalizeProfileFieldKeySet(fieldKeys: string[] | undefined): Set<string> | null {
   if (!fieldKeys) return null;
 
   const normalizedFieldKeys = fieldKeys
@@ -89,18 +84,14 @@ async function resolveWorkspaceProfileScope(
   if (workspaceSlug) {
     workspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", workspaceSlug),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", workspaceSlug))
       .unique();
   }
 
   if (!workspace && siteKey) {
     const workspaceSite = await ctx.db
       .query("workspaceSites")
-      .withIndex("by_siteKey", (queryBuilder) =>
-        queryBuilder.eq("siteKey", siteKey),
-      )
+      .withIndex("by_siteKey", (queryBuilder) => queryBuilder.eq("siteKey", siteKey))
       .unique();
 
     if (workspaceSite) {
@@ -111,9 +102,7 @@ async function resolveWorkspaceProfileScope(
   if (!workspace && siteKey) {
     workspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", siteKey),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", siteKey))
       .unique();
   }
 
@@ -138,9 +127,7 @@ async function resolveGrantedProfileFieldValues(
   );
 
   return grantedProfileFieldValues.filter(
-    (
-      entry,
-    ): entry is GrantedProfileFieldValue => entry !== null,
+    (entry): entry is GrantedProfileFieldValue => entry !== null,
   );
 }
 
@@ -155,16 +142,13 @@ export const listForCurrentUser = query({
     const normalizedFieldKeys = normalizeProfileFieldKeySet(fieldKeys);
     const profileFieldValues = await ctx.db
       .query("profileFieldValues")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
       .collect();
 
     return profileFieldValues
       .filter(
         (profileFieldValue) =>
-          !normalizedFieldKeys ||
-          normalizedFieldKeys.has(profileFieldValue.fieldKey),
+          !normalizedFieldKeys || normalizedFieldKeys.has(profileFieldValue.fieldKey),
       )
       .sort(
         (firstProfileFieldValue, secondProfileFieldValue) =>
@@ -193,9 +177,7 @@ export const listForCurrentUserInWorkspace = query({
     const normalizedFieldKeys = normalizeProfileFieldKeySet(fieldKeys);
     const profileFieldValues = await ctx.db
       .query("profileFieldValues")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
       .collect();
 
     if (profileFieldValues.length === 0) return [];
@@ -204,10 +186,7 @@ export const listForCurrentUserInWorkspace = query({
       new Set(
         profileFieldValues
           .map((profileFieldValue) => profileFieldValue.sourceEventId)
-          .filter(
-            (sourceEventId): sourceEventId is Id<"events"> =>
-              sourceEventId !== undefined,
-          ),
+          .filter((sourceEventId): sourceEventId is Id<"events"> => sourceEventId !== undefined),
       ),
     );
     const sourceEventEntries = await Promise.all(
@@ -238,8 +217,7 @@ export const listForCurrentUserInWorkspace = query({
     return profileFieldValues
       .filter(
         (profileFieldValue) =>
-          !normalizedFieldKeys ||
-          normalizedFieldKeys.has(profileFieldValue.fieldKey),
+          !normalizedFieldKeys || normalizedFieldKeys.has(profileFieldValue.fieldKey),
       )
       .filter((profileFieldValue) => {
         if (
@@ -277,10 +255,7 @@ export const createForCurrentUser = mutation({
       )
       .unique();
     const normalizedFieldKey = normalizeProfileFieldKey(fieldKey);
-    const profileFieldValueInput = normalizeProfileFieldValueInput(
-      normalizedFieldKey,
-      value,
-    );
+    const profileFieldValueInput = normalizeProfileFieldValueInput(normalizedFieldKey, value);
 
     return await upsertProfileFieldValue(ctx, {
       clerkUserId: identity.subject,
@@ -384,19 +359,12 @@ export const listAllGrantsForCurrentUser = query({
 
     const grants = await ctx.db
       .query("workspaceProfileValueGrants")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
       .collect();
 
-    const activeGrants = grants.filter(
-      (grant) => grant.revokedAt === undefined,
-    );
+    const activeGrants = grants.filter((grant) => grant.revokedAt === undefined);
 
-    const workspaceCache = new Map<
-      Id<"workspaces">,
-      Doc<"workspaces"> | null
-    >();
+    const workspaceCache = new Map<Id<"workspaces">, Doc<"workspaces"> | null>();
     async function loadWorkspace(
       workspaceId: Id<"workspaces"> | undefined,
     ): Promise<Doc<"workspaces"> | null> {

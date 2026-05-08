@@ -1,20 +1,16 @@
 "use client";
-import React, { use, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { Input } from "@/components/ui/input";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { use, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { siteConfiguration } from "@/lib/site";
 
-export default function DeniedPage({
-  params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
+export default function DeniedPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = use(params);
   const router = useRouter();
   const [newPassword, setNewPassword] = useState("");
@@ -61,17 +57,13 @@ export default function DeniedPage({
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold text-primary">Access Denied</h1>
           <div className="space-y-1 text-primary">
-            <p className="text-3xl font-semibold leading-tight">
-              {event.name}
-            </p>
+            <p className="text-3xl font-semibold leading-tight">{event.name}</p>
             {event.secondaryTitle?.trim() && (
               <p className="text-2xl leading-tight text-primary/85 font-medium">
                 {event.secondaryTitle}
               </p>
             )}
-            {event.location && (
-              <p className="text-sm text-primary/70">{event.location}</p>
-            )}
+            {event.location && <p className="text-sm text-primary/70">{event.location}</p>}
           </div>
         </header>
 
@@ -80,8 +72,8 @@ export default function DeniedPage({
             <div className="text-sm text-red-800">
               <p className="font-medium mb-2">Your request was denied</p>
               <p>
-                Unfortunately, your RSVP for{" "}
-                <span className="font-medium">{status?.listKey}</span> was not approved.
+                Unfortunately, your RSVP for <span className="font-medium">{status?.listKey}</span>{" "}
+                was not approved.
               </p>
             </div>
           </div>
@@ -104,10 +96,7 @@ export default function DeniedPage({
                 }}
                 className="flex-1 border border-primary/20 placeholder:text-primary/30"
               />
-              <Button
-                onClick={handleTryNewPassword}
-                disabled={!newPassword.trim() || isLoading}
-              >
+              <Button onClick={handleTryNewPassword} disabled={!newPassword.trim() || isLoading}>
                 {isLoading ? "Trying..." : "Try Again"}
               </Button>
             </div>

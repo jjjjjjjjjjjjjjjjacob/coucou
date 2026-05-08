@@ -1,10 +1,10 @@
-import { internalQuery, mutation, query, action } from "./functions";
-import { v } from "convex/values";
-import type { Doc } from "./_generated/dataModel";
-import { api } from "./_generated/api";
 import { createClerkClient } from "@clerk/backend";
-import { requireWorkspaceAdmin } from "./lib/workspaceAuth";
+import { v } from "convex/values";
+import { api } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import { writeAuditEntry } from "./audit";
+import { action, internalQuery, mutation, query } from "./functions";
+import { requireWorkspaceAdmin } from "./lib/workspaceAuth";
 
 export const getAll = query({
   args: {
@@ -39,10 +39,9 @@ export const getAll = query({
 
     // Apply search
     const search = args.search?.trim().toLowerCase();
-    let filtered = all.filter((u) => {
+    const filtered = all.filter((u) => {
       // Basic filter criteria
-      if (args.filter?.clerkUserId && u.clerkUserId !== args.filter.clerkUserId)
-        return false;
+      if (args.filter?.clerkUserId && u.clerkUserId !== args.filter.clerkUserId) return false;
       // Email filtering not supported as email field doesn't exist in schema
       if (args.filter?.hasEmail === true) return false;
       if (args.filter?.hasEmail === false) return true;
@@ -50,17 +49,20 @@ export const getAll = query({
       if (args.filter?.hasPhone === false && !!u.phone) return false;
       if (args.filter?.hasImage === true && !u.imageUrl) return false;
       if (args.filter?.hasImage === false && !!u.imageUrl) return false;
-      if (args.filter?.createdAfter && u.createdAt < args.filter.createdAfter)
-        return false;
-      if (args.filter?.createdBefore && u.createdAt > args.filter.createdBefore)
-        return false;
+      if (args.filter?.createdAfter && u.createdAt < args.filter.createdAfter) return false;
+      if (args.filter?.createdBefore && u.createdAt > args.filter.createdBefore) return false;
 
       if (!search) return true;
       const firstName = (u.firstName ?? "").toLowerCase();
       const lastName = (u.lastName ?? "").toLowerCase();
       const fullName = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim().toLowerCase();
       const phone = (u.phone ?? "").toLowerCase();
-      return firstName.includes(search) || lastName.includes(search) || fullName.includes(search) || phone.includes(search);
+      return (
+        firstName.includes(search) ||
+        lastName.includes(search) ||
+        fullName.includes(search) ||
+        phone.includes(search)
+      );
     });
 
     // Sorting
@@ -273,16 +275,12 @@ export const listOrganizationUsers = query({
     const users = await ctx.db.query("users").collect();
     const orgMemberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_org", (q) =>
-        q.eq("organizationId", workspaceScope.clerkOrganizationId),
-      )
+      .withIndex("by_org", (q) => q.eq("organizationId", workspaceScope.clerkOrganizationId))
       .collect();
 
     // Include ALL users, with role as "guest" if no membership
     const usersWithRoles = users.map((user) => {
-      const membership = orgMemberships.find(
-        (m) => m.clerkUserId === user.clerkUserId,
-      );
+      const membership = orgMemberships.find((m) => m.clerkUserId === user.clerkUserId);
 
       return {
         _id: user._id,
@@ -314,10 +312,7 @@ export const promoteUserToOrganization = mutation({
       siteKey,
       workspaceSlug,
     });
-    if (
-      organizationId &&
-      organizationId !== workspaceScope.clerkOrganizationId
-    ) {
+    if (organizationId && organizationId !== workspaceScope.clerkOrganizationId) {
       throw new Error("Organization does not match workspace");
     }
     const clerkRole = toClerkOrganizationRole(role);
@@ -332,9 +327,7 @@ export const promoteUserToOrganization = mutation({
     const existingMembership = await ctx.db
       .query("orgMemberships")
       .filter((q) => q.eq(q.field("clerkUserId"), targetUser.clerkUserId))
-      .filter((q) =>
-        q.eq(q.field("organizationId"), workspaceScope.clerkOrganizationId),
-      )
+      .filter((q) => q.eq(q.field("organizationId"), workspaceScope.clerkOrganizationId))
       .first();
 
     if (existingMembership) {
@@ -367,18 +360,12 @@ export const updateUserRole = mutation({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    { userId, newRole, organizationId, siteKey, workspaceSlug },
-  ) => {
+  handler: async (ctx, { userId, newRole, organizationId, siteKey, workspaceSlug }) => {
     const workspaceScope = await requireWorkspaceAdmin(ctx, {
       siteKey,
       workspaceSlug,
     });
-    if (
-      organizationId &&
-      organizationId !== workspaceScope.clerkOrganizationId
-    ) {
+    if (organizationId && organizationId !== workspaceScope.clerkOrganizationId) {
       throw new Error("Organization does not match workspace");
     }
     const clerkRole = toClerkOrganizationRole(newRole);
@@ -393,9 +380,7 @@ export const updateUserRole = mutation({
     const targetMembership = await ctx.db
       .query("orgMemberships")
       .filter((q) => q.eq(q.field("clerkUserId"), targetUser.clerkUserId))
-      .filter((q) =>
-        q.eq(q.field("organizationId"), workspaceScope.clerkOrganizationId),
-      )
+      .filter((q) => q.eq(q.field("organizationId"), workspaceScope.clerkOrganizationId))
       .first();
 
     if (!targetMembership) {
@@ -507,8 +492,7 @@ const sortOrganizationUsers = (
         comparison = firstUser.createdAt - secondUser.createdAt;
       }
     } else if (sortBy === "role") {
-      comparison =
-        resolveRolePriority(firstUser.role) - resolveRolePriority(secondUser.role);
+      comparison = resolveRolePriority(firstUser.role) - resolveRolePriority(secondUser.role);
       if (comparison === 0) {
         comparison = resolveDisplayNameForSort(firstUser).localeCompare(
           resolveDisplayNameForSort(secondUser),
@@ -537,9 +521,7 @@ export const listOrganizationUsersPaginated = query({
     roleFilter: v.optional(v.string()),
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
-    sortBy: v.optional(
-      v.union(v.literal("createdAt"), v.literal("name"), v.literal("role")),
-    ),
+    sortBy: v.optional(v.union(v.literal("createdAt"), v.literal("name"), v.literal("role"))),
     sortDirection: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   handler: async (ctx, args) => {
@@ -552,16 +534,12 @@ export const listOrganizationUsersPaginated = query({
     const users = await ctx.db.query("users").collect();
     const orgMemberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_org", (q) =>
-        q.eq("organizationId", workspaceScope.clerkOrganizationId),
-      )
+      .withIndex("by_org", (q) => q.eq("organizationId", workspaceScope.clerkOrganizationId))
       .collect();
 
     // Include ALL users, with role as "guest" if no membership
     let usersWithRoles = users.map((user) => {
-      const membership = orgMemberships.find(
-        (m) => m.clerkUserId === user.clerkUserId,
-      );
+      const membership = orgMemberships.find((m) => m.clerkUserId === user.clerkUserId);
 
       return {
         _id: user._id,
@@ -610,11 +588,7 @@ export const listOrganizationUsersPaginated = query({
     const sortDirection: OrganizationUserSortDirection =
       args.sortDirection ?? (sortBy === "createdAt" ? "desc" : "asc");
 
-    const sortedUsers = sortOrganizationUsers(
-      usersWithRoles,
-      sortBy,
-      sortDirection,
-    );
+    const sortedUsers = sortOrganizationUsers(usersWithRoles, sortBy, sortDirection);
 
     // Calculate pagination
     const totalCount = sortedUsers.length;
@@ -666,28 +640,23 @@ export const getUserStats = query({
 
     const organizationMembers = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_org", (q) =>
-        q.eq("organizationId", workspaceScope.clerkOrganizationId),
-      )
+      .withIndex("by_org", (q) => q.eq("organizationId", workspaceScope.clerkOrganizationId))
       .collect();
 
     return {
       total: organizationMembers.length,
-      admin: organizationMembers.filter(
-        (member) => normalizeRoleValue(member.role) === "admin",
-      ).length,
-      host: organizationMembers.filter(
-        (member) => normalizeRoleValue(member.role) === "host",
-      ).length,
+      admin: organizationMembers.filter((member) => normalizeRoleValue(member.role) === "admin")
+        .length,
+      host: organizationMembers.filter((member) => normalizeRoleValue(member.role) === "host")
+        .length,
       door: organizationMembers.filter((member) =>
         ["door", "member"].includes(normalizeRoleValue(member.role)),
       ).length,
       member: organizationMembers.filter((member) =>
         ["door", "member"].includes(normalizeRoleValue(member.role)),
       ).length,
-      guest: organizationMembers.filter(
-        (member) => normalizeRoleValue(member.role) === "guest",
-      ).length,
+      guest: organizationMembers.filter((member) => normalizeRoleValue(member.role) === "guest")
+        .length,
       organizationMembers: organizationMembers.length,
       totalRsvps: totalRsvps.length,
       approvedRsvps: totalRsvps.filter((rsvp) => rsvp.status === "approved").length,
@@ -705,18 +674,12 @@ export const promoteUserToOrganizationWithClerk = action({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    { userId, role, organizationId, siteKey, workspaceSlug },
-  ) => {
+  handler: async (ctx, { userId, role, organizationId, siteKey, workspaceSlug }) => {
     const workspaceScope = await requireWorkspaceAdmin(ctx, {
       siteKey,
       workspaceSlug,
     });
-    if (
-      organizationId &&
-      organizationId !== workspaceScope.clerkOrganizationId
-    ) {
+    if (organizationId && organizationId !== workspaceScope.clerkOrganizationId) {
       throw new Error("Organization does not match workspace");
     }
 

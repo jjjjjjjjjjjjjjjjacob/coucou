@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { siteConfiguration } from "@/lib/site";
 
 const workspaceSlug = siteConfiguration.workspaceSlug;
-const workspaceOrganizationId =
-  process.env.NEXT_PUBLIC_DOJO_CLERK_ORGANIZATION_ID ?? "";
-const coucouBaseUrl = (
-  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
-).replace(/\/+$/, "");
+const workspaceOrganizationId = process.env.NEXT_PUBLIC_DOJO_CLERK_ORGANIZATION_ID ?? "";
+const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
+  /\/+$/,
+  "",
+);
 
 const REDIRECT_PATHS = new Set(["/", ""]);
 
@@ -37,9 +37,7 @@ export function RedirectAdminsToCoucou() {
           : null;
     if (!dashboardPath) return;
 
-    window.location.replace(
-      `${coucouBaseUrl}/workspaces/${workspaceSlug}/${dashboardPath}`,
-    );
+    window.location.replace(`${coucouBaseUrl}/workspaces/${workspaceSlug}/${dashboardPath}`);
   }, [isLoaded, isSignedIn, user, pathname]);
 
   return null;

@@ -55,79 +55,83 @@
  * tenant-template components stay in lock-step. */
 :root {
   --radius: 0rem;
-  --background: #FFFFFF;
-  --foreground: #1E3CFF;
-  --card: #F0F1FF;
-  --card-foreground: #1E3CFF;
-  --popover: #F0F1FF;
-  --popover-foreground: #1E3CFF;
-  --primary: #1E3CFF;
-  --primary-foreground: #FFFFFF;
-  --secondary: #F0F1FF;
-  --secondary-foreground: #1E3CFF;
-  --muted: #F0F1FF;
+  --background: #ffffff;
+  --foreground: #1e3cff;
+  --card: #ffffff;
+  --card-foreground: #1e3cff;
+  --popover: #ffffff;
+  --popover-foreground: #1e3cff;
+  --primary: #1e3cff;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f1ff;
+  --secondary-foreground: #1e3cff;
+  --muted: #f0f1ff;
   --muted-foreground: rgba(30, 60, 255, 0.65);
-  --accent: #F0F1FF;
-  --accent-foreground: #1E3CFF;
-  --destructive: #EF4444;
-  --border: rgba(30, 60, 255, 0.20);
-  --input: rgba(30, 60, 255, 0.20);
-  --ring: rgba(30, 60, 255, 0.40);
+  --accent: #f0f1ff;
+  --accent-foreground: #1e3cff;
+  --destructive: #ef4444;
+  --border: rgba(30, 60, 255, 0.2);
+  --input: rgba(30, 60, 255, 0.2);
+  --ring: rgba(30, 60, 255, 0.4);
   --chart-1: oklch(0.55 0.27 264);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: #F0F1FF;
-  --sidebar-foreground: #1E3CFF;
-  --sidebar-primary: #1E3CFF;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F0F1FF;
-  --sidebar-accent-foreground: #1E3CFF;
-  --sidebar-border: rgba(30, 60, 255, 0.20);
-  --sidebar-ring: rgba(30, 60, 255, 0.40);
+  --sidebar: #f0f1ff;
+  --sidebar-foreground: #1e3cff;
+  --sidebar-primary: #1e3cff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0f1ff;
+  --sidebar-accent-foreground: #1e3cff;
+  --sidebar-border: rgba(30, 60, 255, 0.2);
+  --sidebar-ring: rgba(30, 60, 255, 0.4);
 }
 
 /* Keep the .dark variant pinned to the same light surface so any
  * component that toggles it doesn't suddenly drop into a dark scheme. */
 .dark {
-  --background: #FFFFFF;
-  --foreground: #1E3CFF;
-  --card: #F0F1FF;
-  --card-foreground: #1E3CFF;
-  --popover: #F0F1FF;
-  --popover-foreground: #1E3CFF;
-  --primary: #1E3CFF;
-  --primary-foreground: #FFFFFF;
-  --secondary: #F0F1FF;
-  --secondary-foreground: #1E3CFF;
-  --muted: #F0F1FF;
+  --background: #ffffff;
+  --foreground: #1e3cff;
+  --card: #ffffff;
+  --card-foreground: #1e3cff;
+  --popover: #ffffff;
+  --popover-foreground: #1e3cff;
+  --primary: #1e3cff;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f1ff;
+  --secondary-foreground: #1e3cff;
+  --muted: #f0f1ff;
   --muted-foreground: rgba(30, 60, 255, 0.65);
-  --accent: #F0F1FF;
-  --accent-foreground: #1E3CFF;
-  --destructive: #EF4444;
-  --border: rgba(30, 60, 255, 0.20);
-  --input: rgba(30, 60, 255, 0.20);
-  --ring: rgba(30, 60, 255, 0.40);
+  --accent: #f0f1ff;
+  --accent-foreground: #1e3cff;
+  --destructive: #ef4444;
+  --border: rgba(30, 60, 255, 0.2);
+  --input: rgba(30, 60, 255, 0.2);
+  --ring: rgba(30, 60, 255, 0.4);
   --chart-1: oklch(0.55 0.27 264);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: #F0F1FF;
-  --sidebar-foreground: #1E3CFF;
-  --sidebar-primary: #1E3CFF;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F0F1FF;
-  --sidebar-accent-foreground: #1E3CFF;
-  --sidebar-border: rgba(30, 60, 255, 0.20);
-  --sidebar-ring: rgba(30, 60, 255, 0.40);
+  --sidebar: #f0f1ff;
+  --sidebar-foreground: #1e3cff;
+  --sidebar-primary: #1e3cff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0f1ff;
+  --sidebar-accent-foreground: #1e3cff;
+  --sidebar-border: rgba(30, 60, 255, 0.2);
+  --sidebar-ring: rgba(30, 60, 255, 0.4);
 }
 
 /* Animation keyframes used by ChlorineLanding's wordmark fade-in. */
 @keyframes chlFadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @layer base {
@@ -145,4 +149,3 @@
 [data-description] {
   color: var(--text-primary) !important;
 }
-

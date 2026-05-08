@@ -1,11 +1,11 @@
-import { action, internalMutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
+import { action, internalMutation, query } from "./_generated/server";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
-import { requireWorkspaceHost } from "./lib/workspaceAuth";
 import { ensureEventInSiteScope } from "./lib/siteScope";
+import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 type QrBatchResult = {
   sent: number;
@@ -62,9 +62,7 @@ export const listPendingDeferredRecipients = query({
     for (const redemption of eligibleRedemptions) {
       const userRecord = await ctx.db
         .query("users")
-        .withIndex("by_clerkUserId", (q) =>
-          q.eq("clerkUserId", redemption.clerkUserId),
-        )
+        .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", redemption.clerkUserId))
         .unique();
       if (!userRecord?.phone) continue;
       recipients.push({
@@ -157,15 +155,12 @@ export const sendDeferredQrBatch = action({
       throw new Error("Missing public base URL for event site");
     }
 
-    const recipients = (await ctx.runQuery(
-      api.qrDelivery.listPendingDeferredRecipients,
-      {
-        eventId: args.eventId,
-        siteKey: args.siteKey,
-        workspaceSlug: args.workspaceSlug,
-        listKey: args.listKey,
-      },
-    )) as Array<{
+    const recipients = (await ctx.runQuery(api.qrDelivery.listPendingDeferredRecipients, {
+      eventId: args.eventId,
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+      listKey: args.listKey,
+    })) as Array<{
       clerkUserId: string;
       listKey: string;
       code: string;
@@ -187,10 +182,9 @@ export const sendDeferredQrBatch = action({
             backgroundColor: event.themeBackgroundColor,
           },
         );
-        const qrCodeUrl = await ctx.runAction(
-          internal.lib.qrCodeGenerator.getQrCodeUrl,
-          { storageId: qrCodeStorageId },
-        );
+        const qrCodeUrl = await ctx.runAction(internal.lib.qrCodeGenerator.getQrCodeUrl, {
+          storageId: qrCodeStorageId,
+        });
         if (!qrCodeUrl) {
           skipped += 1;
           continue;
@@ -200,16 +194,13 @@ export const sendDeferredQrBatch = action({
 
 View your ticket here: ${ticketUrl}`;
 
-        const notificationId = await ctx.runMutation(
-          internal.sms.createNotification,
-          {
-            eventId: args.eventId,
-            recipientClerkUserId: recipient.clerkUserId,
-            recipientPhoneObfuscated: obfuscatePhoneNumber(recipient.phone),
-            type: "approval",
-            message,
-          },
-        );
+        const notificationId = await ctx.runMutation(internal.sms.createNotification, {
+          eventId: args.eventId,
+          recipientClerkUserId: recipient.clerkUserId,
+          recipientPhoneObfuscated: obfuscatePhoneNumber(recipient.phone),
+          type: "approval",
+          message,
+        });
 
         await ctx.runAction(internal.smsActions.sendSmsInternal, {
           phoneNumber: recipient.phone,
@@ -226,10 +217,7 @@ View your ticket here: ${ticketUrl}`;
 
         sent += 1;
       } catch (error) {
-        console.error(
-          `[qrDelivery] Failed to send QR to ${recipient.clerkUserId}:`,
-          error,
-        );
+        console.error(`[qrDelivery] Failed to send QR to ${recipient.clerkUserId}:`, error);
         failed += 1;
       }
     }

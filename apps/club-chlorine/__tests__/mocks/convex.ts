@@ -1,7 +1,11 @@
 import { mock } from "bun:test";
 
+type MockQueryReference = {
+  name?: string;
+};
+
 // Mock Convex hooks
-export const mockUseQuery = (queryFn: any, args: any) => {
+export const mockUseQuery = (queryFn: MockQueryReference | null | undefined, _args: unknown) => {
   // Return mock data based on the query
   if (queryFn?.name?.includes("events.get")) {
     return {
@@ -71,4 +75,3 @@ export const mockConvexQuery = mock((queryFn, args) => ({
 }));
 
 export const mockUseConvexMutation = mock(() => mock());
-

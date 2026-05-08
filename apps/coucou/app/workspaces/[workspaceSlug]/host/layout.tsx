@@ -10,9 +10,5 @@ export default async function WorkspaceHostLayout({
 }) {
   const { workspaceSlug } = await params;
 
-  return (
-    <WorkspaceHostShell workspaceSlug={workspaceSlug}>
-      {children}
-    </WorkspaceHostShell>
-  );
+  return <WorkspaceHostShell workspaceSlug={workspaceSlug}>{children}</WorkspaceHostShell>;
 }

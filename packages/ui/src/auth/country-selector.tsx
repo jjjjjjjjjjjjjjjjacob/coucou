@@ -3,10 +3,10 @@
 import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { combineClassNames } from "./internal-utils";
+import { usePresetOptional } from "../tenant-template/use-preset";
 import { countries, findCountryByCode } from "./config/countries";
 import type { CountryOption } from "./config/types";
-import { usePresetOptional } from "../tenant-template/use-preset";
+import { combineClassNames } from "./internal-utils";
 
 interface CountrySelectorProps {
   value: string;
@@ -20,11 +20,7 @@ interface CountrySelectorProps {
  * tenant-template-themed via the same `var(--tt-*)` tokens the rest of
  * the auth shell uses.
  */
-export function CountrySelector({
-  value,
-  onChange,
-  disabled,
-}: CountrySelectorProps) {
+export function CountrySelector({ value, onChange, disabled }: CountrySelectorProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   // Radix Popover renders into a Portal at document.body, which escapes
@@ -76,13 +72,8 @@ export function CountrySelector({
           }}
         >
           <span className="text-base">{selectedCountry.flag}</span>
-          <span className="text-sm font-medium tabular-nums">
-            {selectedCountry.code}
-          </span>
-          <ChevronDown
-            className="h-3.5 w-3.5"
-            style={{ color: "var(--tt-fg-dim)" }}
-          />
+          <span className="text-sm font-medium tabular-nums">{selectedCountry.code}</span>
+          <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--tt-fg-dim)" }} />
         </button>
       </Popover.Trigger>
 
@@ -125,16 +116,12 @@ export function CountrySelector({
 
           <div className="max-h-64 overflow-y-auto">
             {filteredCountries.length === 0 ? (
-              <p
-                className="px-3 py-4 text-center text-sm"
-                style={{ color: preset.fgDim }}
-              >
+              <p className="px-3 py-4 text-center text-sm" style={{ color: preset.fgDim }}>
                 No countries found
               </p>
             ) : (
               filteredCountries.map((country) => {
-                const isSelected =
-                  country.code === value && country.iso === selectedCountry.iso;
+                const isSelected = country.code === value && country.iso === selectedCountry.iso;
                 return (
                   <button
                     key={`${country.iso}-${country.code}`}
@@ -151,21 +138,13 @@ export function CountrySelector({
                   >
                     <span className="text-lg">{country.flag}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {country.country}
-                      </p>
+                      <p className="truncate text-sm font-medium">{country.country}</p>
                     </div>
-                    <span
-                      className="text-sm tabular-nums"
-                      style={{ color: preset.fgDim }}
-                    >
+                    <span className="text-sm tabular-nums" style={{ color: preset.fgDim }}>
                       {country.code}
                     </span>
                     {isSelected ? (
-                      <Check
-                        className="h-4 w-4 flex-shrink-0"
-                        style={{ color: preset.fg }}
-                      />
+                      <Check className="h-4 w-4 flex-shrink-0" style={{ color: preset.fg }} />
                     ) : null}
                   </button>
                 );

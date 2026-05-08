@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "lint": "biome lint ."
+  },
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",

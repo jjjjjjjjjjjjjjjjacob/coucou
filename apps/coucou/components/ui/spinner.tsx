@@ -1,16 +1,10 @@
-import React from "react";
-
 type SpinnerProps = {
   size?: number;
   className?: string;
   title?: string;
 };
 
-export function Spinner({
-  size = 24,
-  className = "",
-  title = "Loading",
-}: SpinnerProps) {
+export function Spinner({ size = 24, className = "", title = "Loading" }: SpinnerProps) {
   return (
     <svg
       width={size}

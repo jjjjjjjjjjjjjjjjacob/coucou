@@ -24,10 +24,7 @@ export function Kpi({ label, value, last }: KpiProps) {
       >
         {label}
       </div>
-      <div
-        className="text-[24px] tracking-[-0.01em]"
-        style={{ color: "var(--tt-fg)" }}
-      >
+      <div className="text-[24px] tracking-[-0.01em]" style={{ color: "var(--tt-fg)" }}>
         {value}
       </div>
     </div>

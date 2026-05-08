@@ -4,8 +4,8 @@
  * is handled at the application level
  */
 
-import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { httpAction } from "./_generated/server";
 
 /**
  * Handle SMS delivery status webhooks from Twilio
@@ -17,7 +17,7 @@ export const handleDeliveryStatus = httpAction(async (ctx, request) => {
   const params = new URLSearchParams(body);
   const messageSid = params.get("MessageSid");
   const messageStatus = params.get("MessageStatus");
-  const errorCode = params.get("ErrorCode");
+  const _errorCode = params.get("ErrorCode");
   const errorMessage = params.get("ErrorMessage");
 
   if (!messageSid || !messageStatus) {
@@ -41,7 +41,7 @@ export const handleDeliveryStatus = httpAction(async (ctx, request) => {
     }
 
     return new Response("OK", { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to process delivery status webhook:", error);
     return new Response("Internal Server Error", { status: 500 });
   }
@@ -57,7 +57,7 @@ export const handleOptOut = httpAction(async (ctx, request) => {
 
   const from = params.get("From"); // User's phone number
   const bodyText = params.get("Body")?.toLowerCase().trim();
-  const messageSid = params.get("MessageSid");
+  const _messageSid = params.get("MessageSid");
 
   if (!from) {
     return new Response("Missing phone number", { status: 400 });
@@ -86,7 +86,7 @@ export const handleOptOut = httpAction(async (ctx, request) => {
     }
 
     return new Response("OK", { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to process opt-out webhook:", error);
     return new Response("Internal Server Error", { status: 500 });
   }
@@ -121,14 +121,12 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
 
       // Send automatic confirmation (Twilio handles this automatically)
       console.log(`Opt-out processed for ${from}`);
-
     } else if (optInKeywords.includes(messageBody)) {
       await ctx.runAction(internal.smsMonitoringActions.removeOptOutAction, {
         phoneNumber: from,
       });
 
       console.log(`Opt-in processed for ${from}`);
-
     } else if (helpKeywords.includes(messageBody)) {
       // Send help response via Twilio action
       // The action will handle dev/production logic internally
@@ -147,7 +145,7 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
     }
 
     return new Response("OK", { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to process incoming SMS:", error);
     return new Response("Internal Server Error", { status: 500 });
   }

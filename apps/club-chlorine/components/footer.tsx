@@ -1,6 +1,6 @@
+import { TenantLegalFooter } from "@coucou/ui/tenant-template";
 import Image from "next/image";
 import { siteConfiguration } from "@/lib/site";
-import { TenantLegalFooter } from "@coucou/ui/tenant-template";
 
 /**
  * Club Chlorine's footer is the shared editorial scaffolding. The legal

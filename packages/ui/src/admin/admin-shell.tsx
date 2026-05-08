@@ -34,10 +34,7 @@ export function AdminShell({
   children,
 }: AdminShellProps) {
   return (
-    <TenantTemplateProvider
-      siteConfigurationPreset="maison"
-      className="maison-app-surface"
-    >
+    <TenantTemplateProvider siteConfigurationPreset="maison" className="maison-app-surface">
       <div
         className="grid min-h-screen"
         style={{

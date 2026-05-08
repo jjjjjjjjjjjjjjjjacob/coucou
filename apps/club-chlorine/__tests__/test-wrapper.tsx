@@ -1,50 +1,56 @@
-import React from 'react'
-import { mock } from 'bun:test'
-import { EventBrandingProvider } from '@/contexts/event-branding-context'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { mock } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React from "react";
+import { EventBrandingProvider } from "@/contexts/event-branding-context";
 
 // Mock providers that provide the necessary context
-const MockClerkProvider = ({ children }: { children: React.ReactNode }) => children
-const MockConvexProvider = ({ children }: { children: React.ReactNode }) => children
-const queryClient = new QueryClient()
+const MockClerkProvider = ({ children }: { children: React.ReactNode }) => children;
+const MockConvexProvider = ({ children }: { children: React.ReactNode }) => children;
+const queryClient = new QueryClient();
 
 const MockQueryClientProvider = ({ children }: { children: React.ReactNode }) => (
   <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-)
+);
+
+type MockHapticContextValue = {
+  settings: {
+    enabled: boolean;
+    intensity: string;
+  };
+  updateSettings: ReturnType<typeof mock>;
+  trigger: ReturnType<typeof mock>;
+  isSupported: boolean;
+};
 
 // Create a proper mock haptic context that actually works
-const HapticContext = React.createContext<any>(undefined)
+const HapticContext = React.createContext<MockHapticContextValue | undefined>(undefined);
 
 // Export useHapticContext so it can be mocked
 export const useHapticContext = () => {
-  const context = React.useContext(HapticContext)
+  const context = React.useContext(HapticContext);
   if (context === undefined) {
     // Fallback to a default mock if context is not provided
     return {
-      settings: { enabled: true, intensity: 'medium' },
+      settings: { enabled: true, intensity: "medium" },
       updateSettings: mock(),
       trigger: mock(() => true),
       isSupported: true,
-    }
+    };
   }
-  return context
-}
+  return context;
+};
 
 // Mock HapticProvider that provides actual context
 const MockHapticProvider = ({ children }: { children: React.ReactNode }) => {
   const mockValue = {
-    settings: { enabled: true, intensity: 'medium' },
+    settings: { enabled: true, intensity: "medium" },
     updateSettings: mock(),
     trigger: mock(() => true),
     isSupported: true,
-  }
+  };
 
-  return (
-    <HapticContext.Provider value={mockValue}>
-      {children}
-    </HapticContext.Provider>
-  )
-}
+  return <HapticContext.Provider value={mockValue}>{children}</HapticContext.Provider>;
+};
 
 export function TestWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -52,34 +58,30 @@ export function TestWrapper({ children }: { children: React.ReactNode }) {
       <MockConvexProvider>
         <MockQueryClientProvider>
           <MockHapticProvider>
-            <EventBrandingProvider>
-              {children}
-            </EventBrandingProvider>
+            <EventBrandingProvider>{children}</EventBrandingProvider>
           </MockHapticProvider>
         </MockQueryClientProvider>
       </MockConvexProvider>
     </MockClerkProvider>
-  )
+  );
 }
 
 // Custom render function that includes providers
-export * from '@testing-library/react'
-import { render as rtlRender, RenderOptions } from '@testing-library/react'
+export * from "@testing-library/react";
 
-interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
-  wrapper?: React.ComponentType<any>
+import { type RenderOptions, render as rtlRender } from "@testing-library/react";
+
+interface CustomRenderOptions extends Omit<RenderOptions, "wrapper"> {
+  wrapper?: React.ComponentType<{ children?: React.ReactNode }>;
 }
 
-export function renderWithProviders(
-  ui: React.ReactElement,
-  options: CustomRenderOptions = {}
-) {
-  const { wrapper, ...renderOptions } = options
+export function renderWithProviders(ui: React.ReactElement, options: CustomRenderOptions = {}) {
+  const { wrapper, ...renderOptions } = options;
 
-  const Wrapper = wrapper || TestWrapper
+  const Wrapper = wrapper || TestWrapper;
 
   return rtlRender(ui, {
     wrapper: Wrapper,
     ...renderOptions,
-  })
+  });
 }

@@ -1,21 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import {
-  AdminEmptyState,
-  AdminHeader,
-  AdminSection,
-  Kpi,
-  KpiRow,
-} from "@coucou/ui/admin";
-import {
-  AdminDataTable,
-  type AdminDataTableColumn,
-} from "@/components/admin/admin-data-table";
-import { Button } from "@/components/ui/button";
+import { AdminEmptyState, AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
+import { useQuery } from "convex/react";
+import { useState } from "react";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
 import { PlanEditDialog } from "@/components/admin/plan-edit-dialog";
+import { Button } from "@/components/ui/button";
 
 interface WorkspaceRow {
   _id: string;
@@ -61,7 +52,12 @@ export default function AdminBillingPage() {
   ).length;
 
   const columns: AdminDataTableColumn<WorkspaceRow>[] = [
-    { key: "name", label: "Workspace", width: "22%", render: (row) => row.name },
+    {
+      key: "name",
+      label: "Workspace",
+      width: "22%",
+      render: (row) => row.name,
+    },
     {
       key: "tier",
       label: "Tier",
@@ -74,9 +70,7 @@ export default function AdminBillingPage() {
       label: "MRR",
       width: "12%",
       render: (row) =>
-        row.plan?.priceCents
-          ? `$${(row.plan.priceCents / 100).toLocaleString()}`
-          : "—",
+        row.plan?.priceCents ? `$${(row.plan.priceCents / 100).toLocaleString()}` : "—",
       cellStyle: () => ({ color: "var(--tt-fg-dim)" }),
     },
     {
@@ -99,10 +93,7 @@ export default function AdminBillingPage() {
       width: "10%",
       render: (row) => row.plan?.billingStatus ?? "—",
       cellStyle: (row) => ({
-        color:
-          row.plan?.billingStatus === "overdue"
-            ? "var(--tt-fg)"
-            : "var(--tt-fg-dim)",
+        color: row.plan?.billingStatus === "overdue" ? "var(--tt-fg)" : "var(--tt-fg-dim)",
       }),
     },
     {
@@ -138,11 +129,7 @@ export default function AdminBillingPage() {
       <KpiRow columns={3}>
         <Kpi label="Tenancies" value={tenancies?.totalCount ?? 0} />
         <Kpi label="Billed" value={billedCount} />
-        <Kpi
-          label="Page MRR"
-          value={`$${(totalMrr / 100).toLocaleString()}`}
-          last
-        />
+        <Kpi label="Page MRR" value={`$${(totalMrr / 100).toLocaleString()}`} last />
       </KpiRow>
 
       <AdminSection

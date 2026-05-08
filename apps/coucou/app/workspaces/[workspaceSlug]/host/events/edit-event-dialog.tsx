@@ -1,5 +1,29 @@
 "use client";
+import { api } from "@convex/_generated/api";
+import type { Id } from "@convex/_generated/dataModel";
+import {
+  getDefaultApprovalMessage,
+  sanitizeOptionalApprovalMessage,
+} from "@coucou/sdk/shared/approval-messages";
+import { useAction, useQuery } from "convex/react";
 import React, { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { type CustomFieldDef, CustomFieldsEditor } from "@/components/custom-fields-builder";
+import { EventActsEditor } from "@/components/event-acts-editor";
+import { EventDetailsSection } from "@/components/event-form-sections/event-details-section";
+import { EventGuestPageSection } from "@/components/event-form-sections/event-guest-page-section";
+import { EventLookSection } from "@/components/event-form-sections/event-look-section";
+import { EventScheduleSection } from "@/components/event-form-sections/event-schedule-section";
+import {
+  draftToPrimaryFieldConfig,
+  EMPTY_PRIMARY_FIELD_CONFIG,
+  type PrimaryFieldConfigDraft,
+  PrimaryFieldConfigOverrideEditor,
+  primaryFieldConfigToDraft,
+} from "@/components/primary-field-config-editor";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -9,61 +33,29 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { useQuery, useAction } from "convex/react";
-import { api } from "@convex/_generated/api";
-import type { Id } from "@convex/_generated/dataModel";
-import { toast } from "sonner";
-import {
-  CustomFieldsEditor,
-  type CustomFieldDef,
-} from "@/components/custom-fields-builder";
-import { EventActsEditor } from "@/components/event-acts-editor";
-import {
-  EMPTY_PRIMARY_FIELD_CONFIG,
-  PrimaryFieldConfigOverrideEditor,
-  draftToPrimaryFieldConfig,
-  primaryFieldConfigToDraft,
-  type PrimaryFieldConfigDraft,
-} from "@/components/primary-field-config-editor";
-import { useForm } from "react-hook-form";
 import { Form } from "@/components/ui/form";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import { EventDetailsSection } from "@/components/event-form-sections/event-details-section";
-import { EventScheduleSection } from "@/components/event-form-sections/event-schedule-section";
-import { EventLookSection } from "@/components/event-form-sections/event-look-section";
-import { EventGuestPageSection } from "@/components/event-form-sections/event-guest-page-section";
-import {
-  Event,
-  EventAct,
-  EditEventFormData,
-  ListCredentialEdit,
-  CredentialResponse,
-  ApplicationError,
-} from "@/lib/types";
-import { sanitizeEventActsForSubmit } from "@/lib/event-metadata";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import {
   createTimestamp,
   extractDateFromTimestamp,
   extractTimeFromTimestamp,
 } from "@/lib/date-utils";
+import { sanitizeEventActsForSubmit } from "@/lib/event-metadata";
 import {
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
   normalizeHexColorInput,
 } from "@/lib/event-theme";
-import {
-  getDefaultApprovalMessage,
-  sanitizeOptionalApprovalMessage,
-} from "@coucou/sdk/shared/approval-messages";
+import type {
+  ApplicationError,
+  CredentialResponse,
+  EditEventFormData,
+  Event,
+  EventAct,
+  ListCredentialEdit,
+} from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 type EventUpdatePatch = {
@@ -94,7 +86,6 @@ type EventUpdatePatch = {
 };
 
 export default function EditEventDialog({
-  steve,
   showTrigger = true,
   event,
   open: externalOpen,
@@ -129,11 +120,9 @@ export default function EditEventDialog({
     }
   }, [event.eventDate, defaultTimezone]);
   const normalizedEventBackgroundColor =
-    normalizeHexColorInput(event.themeBackgroundColor) ??
-    EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
+    normalizeHexColorInput(event.themeBackgroundColor) ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
   const normalizedEventTextColor =
-    normalizeHexColorInput(event.themeTextColor) ??
-    EVENT_THEME_DEFAULT_TEXT_COLOR;
+    normalizeHexColorInput(event.themeTextColor) ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
   const form = useForm<EditEventFormData>({
     defaultValues: {
       name: event.name || "",
@@ -192,18 +181,14 @@ export default function EditEventDialog({
     api.workspaces.getWorkspaceBySlug,
     open && workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
   );
-  const workspacePrimaryFieldDefaultsDraft: PrimaryFieldConfigDraft =
-    React.useMemo(
-      () =>
-        primaryFieldConfigToDraft({
-          socialPlatforms: workspace?.eventDefaults?.socialPlatforms,
-          invitedBy: workspace?.eventDefaults?.invitedBy,
-        }),
-      [
-        workspace?.eventDefaults?.socialPlatforms,
-        workspace?.eventDefaults?.invitedBy,
-      ],
-    );
+  const workspacePrimaryFieldDefaultsDraft: PrimaryFieldConfigDraft = React.useMemo(
+    () =>
+      primaryFieldConfigToDraft({
+        socialPlatforms: workspace?.eventDefaults?.socialPlatforms,
+        invitedBy: workspace?.eventDefaults?.invitedBy,
+      }),
+    [workspace?.eventDefaults?.socialPlatforms, workspace?.eventDefaults?.invitedBy],
+  );
   const [usePrimaryFieldDefaults, setUsePrimaryFieldDefaults] = React.useState(
     !event.primaryFieldConfig,
   );
@@ -220,9 +205,7 @@ export default function EditEventDialog({
     }
   }, [usePrimaryFieldDefaults, workspacePrimaryFieldDefaultsDraft]);
   const getStoredPasswords = useAction(api.credentialsNode.getPasswordsForEvent);
-  const [storedPasswords, setStoredPasswords] = React.useState<
-    Map<string, string>
-  >(new Map());
+  const [storedPasswords, setStoredPasswords] = React.useState<Map<string, string>>(new Map());
   const currentEventName = form.watch("name");
   const defaultApprovalMessage = getDefaultApprovalMessage(currentEventName);
 
@@ -245,8 +228,7 @@ export default function EditEventDialog({
               : typeof credential.defersQrDelivery === "boolean"
                 ? !credential.defersQrDelivery
                 : undefined,
-          approvalMessage:
-            credential.approvalMessage ?? event.approvalMessage ?? "",
+          approvalMessage: credential.approvalMessage ?? event.approvalMessage ?? "",
         })),
       );
       // Fetch stored passwords for display.
@@ -268,14 +250,7 @@ export default function EditEventDialog({
           setStoredPasswords(new Map());
         });
     }
-  }, [
-    open,
-    creds,
-    event._id,
-    event.approvalMessage,
-    getStoredPasswords,
-    workspaceScope,
-  ]);
+  }, [open, creds, event._id, event.approvalMessage, getStoredPasswords, workspaceScope]);
 
   const addList = () =>
     setLists((array) => [
@@ -296,16 +271,12 @@ export default function EditEventDialog({
     value: ListCredentialEdit[Key],
   ) =>
     setLists((array) =>
-      array.map((item, position) =>
-        position === index ? { ...item, [key]: value } : item,
-      ),
+      array.map((item, position) => (position === index ? { ...item, [key]: value } : item)),
     );
   const setListPassword = (index: number, value: string) =>
     setLists((array) =>
       array.map((item, position) =>
-        position === index
-          ? { ...item, password: value, passwordEdited: true }
-          : item,
+        position === index ? { ...item, password: value, passwordEdited: true } : item,
       ),
     );
   const removeList = (index: number) =>
@@ -333,10 +304,7 @@ export default function EditEventDialog({
       }
       const sanitizedActs = sanitizeEventActsForSubmit(acts);
       const existingSanitizedActs = sanitizeEventActsForSubmit(event.acts ?? []);
-      if (
-        JSON.stringify(sanitizedActs ?? []) !==
-        JSON.stringify(existingSanitizedActs ?? [])
-      ) {
+      if (JSON.stringify(sanitizedActs ?? []) !== JSON.stringify(existingSanitizedActs ?? [])) {
         patch.acts = sanitizedActs ?? [];
       }
       const hostArray = values.hosts
@@ -360,31 +328,23 @@ export default function EditEventDialog({
       if ((eventIconStorageId ?? null) !== (event.customIconStorageId ?? null)) {
         patch.customIconStorageId = (eventIconStorageId as Id<"_storage">) ?? null;
       }
-      if (
-        (guestPortalImageStorageId ?? null) !==
-        (event.guestPortalImageStorageId ?? null)
-      ) {
+      if ((guestPortalImageStorageId ?? null) !== (event.guestPortalImageStorageId ?? null)) {
         patch.guestPortalImageStorageId =
           (guestPortalImageStorageId as Id<"_storage">) ?? undefined;
       }
-      if (
-        values.maxAttendees !== undefined &&
-        values.maxAttendees !== (event.maxAttendees ?? 1)
-      ) {
+      if (values.maxAttendees !== undefined && values.maxAttendees !== (event.maxAttendees ?? 1)) {
         patch.maxAttendees = values.maxAttendees;
       }
       if ((values.status ?? "inactive") !== (event.status ?? "inactive")) {
         patch.status = values.status ?? "inactive";
       }
       const nextThemeBackgroundColor =
-        normalizeHexColorInput(values.themeBackgroundColor) ??
-        EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
+        normalizeHexColorInput(values.themeBackgroundColor) ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
       if (nextThemeBackgroundColor !== normalizedEventBackgroundColor) {
         patch.themeBackgroundColor = nextThemeBackgroundColor;
       }
       const nextThemeTextColor =
-        normalizeHexColorInput(values.themeTextColor) ??
-        EVENT_THEME_DEFAULT_TEXT_COLOR;
+        normalizeHexColorInput(values.themeTextColor) ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
       if (nextThemeTextColor !== normalizedEventTextColor) {
         patch.themeTextColor = nextThemeTextColor;
       }
@@ -393,16 +353,12 @@ export default function EditEventDialog({
       if (nextQrCodeColor !== normalizedEventQrCodeColor) {
         patch.qrCodeColor = nextQrCodeColor;
       }
-      const trimmedGuestPortalLinkLabel =
-        values.guestPortalLinkLabel?.trim() ?? "";
-      const trimmedGuestPortalLinkUrl =
-        values.guestPortalLinkUrl?.trim() ?? "";
+      const trimmedGuestPortalLinkLabel = values.guestPortalLinkLabel?.trim() ?? "";
+      const trimmedGuestPortalLinkUrl = values.guestPortalLinkUrl?.trim() ?? "";
       const hasLabel = trimmedGuestPortalLinkLabel.length > 0;
       const hasUrl = trimmedGuestPortalLinkUrl.length > 0;
       if ((hasLabel && !hasUrl) || (hasUrl && !hasLabel)) {
-        toast.error(
-          "Provide both a guest link label and URL or leave both blank",
-        );
+        toast.error("Provide both a guest link label and URL or leave both blank");
         setSaving(false);
         return;
       }
@@ -410,14 +366,10 @@ export default function EditEventDialog({
         const previousLabel = event.guestPortalLinkLabel ?? "";
         const previousUrl = event.guestPortalLinkUrl ?? "";
         if (trimmedGuestPortalLinkLabel !== previousLabel) {
-          patch.guestPortalLinkLabel = hasLabel
-            ? trimmedGuestPortalLinkLabel
-            : undefined;
+          patch.guestPortalLinkLabel = hasLabel ? trimmedGuestPortalLinkLabel : undefined;
         }
         if (trimmedGuestPortalLinkUrl !== previousUrl) {
-          patch.guestPortalLinkUrl = hasUrl
-            ? trimmedGuestPortalLinkUrl
-            : undefined;
+          patch.guestPortalLinkUrl = hasUrl ? trimmedGuestPortalLinkUrl : undefined;
         }
       }
       const timezoneValue = values.eventTimezone || defaultTimezone;
@@ -476,25 +428,17 @@ export default function EditEventDialog({
       patch.customFields = customFields.map((field) => ({
         key: field.key.trim(),
         label: field.label.trim(),
-        placeholder: field.placeholder?.trim()
-          ? field.placeholder.trim()
-          : undefined,
+        placeholder: field.placeholder?.trim() ? field.placeholder.trim() : undefined,
         required: field.required ?? false,
         copyEnabled: field.copyEnabled ?? false,
-        prependUrl: field.prependUrl?.trim()
-          ? field.prependUrl.trim()
-          : undefined,
+        prependUrl: field.prependUrl?.trim() ? field.prependUrl.trim() : undefined,
         trimWhitespace: field.trimWhitespace !== false,
       }));
       const nextPrimaryFieldConfig = usePrimaryFieldDefaults
         ? undefined
         : draftToPrimaryFieldConfig(primaryFieldConfigDraft);
-      const previousPrimaryFieldConfigKey = JSON.stringify(
-        event.primaryFieldConfig ?? null,
-      );
-      const nextPrimaryFieldConfigKey = JSON.stringify(
-        nextPrimaryFieldConfig ?? null,
-      );
+      const previousPrimaryFieldConfigKey = JSON.stringify(event.primaryFieldConfig ?? null);
+      const nextPrimaryFieldConfigKey = JSON.stringify(nextPrimaryFieldConfig ?? null);
       if (previousPrimaryFieldConfigKey !== nextPrimaryFieldConfigKey) {
         patch.primaryFieldConfig = nextPrimaryFieldConfig;
       }
@@ -530,10 +474,7 @@ export default function EditEventDialog({
         </DialogHeader>
         <div className="mx-auto w-full max-w-[1200px] px-5 pb-5 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8">
           <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleSubmit)}
-              className="space-y-6"
-            >
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
               <Tabs defaultValue="details">
                 <TabsList className="bg-foreground/5 dark:bg-foreground/10">
                   <TabsTrigger value="details">Details</TabsTrigger>
@@ -593,29 +534,22 @@ export default function EditEventDialog({
 
                 <TabsContent value="rsvp" className="space-y-6">
                   <div className="space-y-3 rounded-lg border bg-card p-4">
-                    <h4 className="font-medium text-sm text-muted-foreground">
-                      NOTIFICATIONS
-                    </h4>
+                    <h4 className="font-medium text-sm text-muted-foreground">NOTIFICATIONS</h4>
                     <label className="flex items-start gap-3 rounded border border-border/60 p-3">
                       <Checkbox
                         checked={form.watch("sendQrOnApproval") ?? false}
                         onCheckedChange={(checked) =>
-                          form.setValue(
-                            "sendQrOnApproval",
-                            Boolean(checked),
-                            { shouldDirty: true },
-                          )
+                          form.setValue("sendQrOnApproval", Boolean(checked), {
+                            shouldDirty: true,
+                          })
                         }
                         className="mt-0.5"
                       />
                       <span className="space-y-1">
-                        <span className="block text-sm font-medium">
-                          Send QR on approval
-                        </span>
+                        <span className="block text-sm font-medium">Send QR on approval</span>
                         <span className="block text-xs text-muted-foreground">
-                          When on, approval texts include the QR code
-                          immediately. Default off — most hosts send a manual
-                          blast closer to the event from the &quot;Send QR
+                          When on, approval texts include the QR code immediately. Default off —
+                          most hosts send a manual blast closer to the event from the &quot;Send QR
                           Codes&quot; button on the event card.
                         </span>
                       </span>
@@ -626,9 +560,8 @@ export default function EditEventDialog({
                       ACCESS LISTS & PASSWORDS
                     </h4>
                     <p className="text-xs text-muted-foreground">
-                      Leave a password blank for an open list — the first list
-                      with no password receives RSVPs that skip the password
-                      step.
+                      Leave a password blank for an open list — the first list with no password
+                      receives RSVPs that skip the password step.
                     </p>
                     <div className="space-y-3">
                       {lists.map((listPassword, index) => (
@@ -644,9 +577,7 @@ export default function EditEventDialog({
                               <Input
                                 placeholder="e.g. vip, general, backstage"
                                 value={listPassword.listKey}
-                                onChange={(event) =>
-                                  setList(index, "listKey", event.target.value)
-                                }
+                                onChange={(event) => setList(index, "listKey", event.target.value)}
                               />
                             </div>
                             <div className="flex flex-col gap-2">
@@ -658,11 +589,7 @@ export default function EditEventDialog({
                                   id={`edit-require-password-${index}`}
                                   checked={listPassword.requirePassword}
                                   onCheckedChange={(checked) =>
-                                    setList(
-                                      index,
-                                      "requirePassword",
-                                      Boolean(checked),
-                                    )
+                                    setList(index, "requirePassword", Boolean(checked))
                                   }
                                 />
                                 <label
@@ -685,10 +612,7 @@ export default function EditEventDialog({
                                     />
                                   );
                                 }
-                                if (
-                                  storedPassword &&
-                                  !listPassword.passwordEdited
-                                ) {
+                                if (storedPassword && !listPassword.passwordEdited) {
                                   return (
                                     <div className="flex items-center gap-2">
                                       <Input
@@ -701,9 +625,7 @@ export default function EditEventDialog({
                                         variant="outline"
                                         size="sm"
                                         className="shrink-0 text-xs"
-                                        onClick={() =>
-                                          setListPassword(index, "")
-                                        }
+                                        onClick={() => setListPassword(index, "")}
                                       >
                                         Change
                                       </Button>
@@ -714,12 +636,7 @@ export default function EditEventDialog({
                                   <Input
                                     placeholder="Enter password"
                                     value={listPassword.password}
-                                    onChange={(event) =>
-                                      setListPassword(
-                                        index,
-                                        event.target.value,
-                                      )
-                                    }
+                                    onChange={(event) => setListPassword(index, event.target.value)}
                                   />
                                 );
                               })()}
@@ -736,11 +653,7 @@ export default function EditEventDialog({
                                   id={`edit-generate-qr-${index}`}
                                   checked={listPassword.generateQR ?? false}
                                   onCheckedChange={(checked) =>
-                                    setList(
-                                      index,
-                                      "generateQR",
-                                      Boolean(checked),
-                                    )
+                                    setList(index, "generateQR", Boolean(checked))
                                   }
                                 />
                                 <label
@@ -774,8 +687,7 @@ export default function EditEventDialog({
                                 value={
                                   listPassword.sendQrOnApprovalOverride === true
                                     ? "on"
-                                    : listPassword.sendQrOnApprovalOverride ===
-                                        false
+                                    : listPassword.sendQrOnApprovalOverride === false
                                       ? "off"
                                       : "inherit"
                                 }
@@ -784,11 +696,7 @@ export default function EditEventDialog({
                                   setList(
                                     index,
                                     "sendQrOnApprovalOverride",
-                                    next === "on"
-                                      ? true
-                                      : next === "off"
-                                        ? false
-                                        : undefined,
+                                    next === "on" ? true : next === "off" ? false : undefined,
                                   );
                                 }}
                               >
@@ -804,9 +712,7 @@ export default function EditEventDialog({
                           <div className="space-y-2">
                             <label className="text-xs font-medium text-muted-foreground">
                               Approval Message{" "}
-                              <span className="text-muted-foreground">
-                                (optional)
-                              </span>
+                              <span className="text-muted-foreground">(optional)</span>
                             </label>
                             <p className="text-xs text-muted-foreground">
                               Sent when a guest on this list is approved.
@@ -815,11 +721,7 @@ export default function EditEventDialog({
                               placeholder={defaultApprovalMessage}
                               value={listPassword.approvalMessage}
                               onChange={(event) =>
-                                setList(
-                                  index,
-                                  "approvalMessage",
-                                  event.target.value,
-                                )
+                                setList(index, "approvalMessage", event.target.value)
                               }
                             />
                           </div>
@@ -838,13 +740,10 @@ export default function EditEventDialog({
                   </div>
 
                   <div className="rounded-lg border bg-card p-4 space-y-4">
-                    <h3 className="font-medium text-sm text-muted-foreground">
-                      PRIMARY FIELDS
-                    </h3>
+                    <h3 className="font-medium text-sm text-muted-foreground">PRIMARY FIELDS</h3>
                     <p className="text-sm text-muted-foreground">
-                      Social fields and the &ldquo;invited by&rdquo; question
-                      for this event. Defaults come from workspace settings;
-                      override here if needed.
+                      Social fields and the &ldquo;invited by&rdquo; question for this event.
+                      Defaults come from workspace settings; override here if needed.
                     </p>
                     <PrimaryFieldConfigOverrideEditor
                       value={primaryFieldConfigDraft}
@@ -865,11 +764,7 @@ export default function EditEventDialog({
               </Tabs>
 
               <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setOpen(false)}
-                >
+                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={saving}>

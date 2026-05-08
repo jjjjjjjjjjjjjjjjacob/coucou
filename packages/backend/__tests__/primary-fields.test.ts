@@ -70,17 +70,14 @@ describe("primary field migration helpers", () => {
   });
 
   it("normalizes social handles and extracts invited-by instagram references", () => {
+    expect(normalizeSocialHandleInput("https://instagram.com/coucou.nyc", "instagram")).toBe(
+      "coucou.nyc",
+    );
+    expect(normalizeSocialHandleInput("https://twitter.com/coucou_nyc", "twitter")).toBe(
+      "coucou_nyc",
+    );
     expect(
-      normalizeSocialHandleInput("https://instagram.com/coucou.nyc", "instagram"),
-    ).toBe("coucou.nyc");
-    expect(
-      normalizeSocialHandleInput("https://twitter.com/coucou_nyc", "twitter"),
-    ).toBe("coucou_nyc");
-    expect(
-      normalizeSocialHandleInput(
-        "https://www.linkedin.com/in/coucou-events/",
-        "linkedin",
-      ),
+      normalizeSocialHandleInput("https://www.linkedin.com/in/coucou-events/", "linkedin"),
     ).toBe("coucou-events");
     expect(parseInvitedBySocialReference("invited by @coucou.nyc")).toEqual({
       platformKey: "instagram",

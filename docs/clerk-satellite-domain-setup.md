@@ -103,6 +103,11 @@ For local development, set `NEXT_PUBLIC_CLERK_DOMAIN` in the tenant app's own
 Dojo or `localhost:5679` for Club Chlorine. Production can use the canonical
 domain from `siteConfigurations` unless the deployment needs an override.
 
+Club Chlorine keeps its old satellite-local OTP page behind
+`CLUB_CHLORINE_ENABLE_SATELLITE_LOCAL_LOGIN=true` for development experiments.
+Leave that flag unset or `false` in production so Clerk phone auth runs on the
+primary `coucou.events` domain.
+
 ## Production Smoke Test
 
 For each tenant domain:

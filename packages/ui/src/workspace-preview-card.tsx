@@ -20,9 +20,7 @@ export function WorkspacePreviewCard({
           {eyebrow}
         </div>
         <div className="text-lg font-semibold text-foreground">{title}</div>
-        <p className="text-sm leading-6 text-muted-foreground">
-          {description}
-        </p>
+        <p className="text-sm leading-6 text-muted-foreground">{description}</p>
       </div>
       {actions ? <div className="mt-4 flex flex-wrap gap-3">{actions}</div> : null}
     </section>

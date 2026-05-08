@@ -1,11 +1,5 @@
 export * from "./auth-shell";
 export * from "./brand-mark";
-export * from "./phone-auth-flow";
-export * from "./phone-auth-page";
-export * from "./phone-input";
-export * from "./otp-input";
-export * from "./country-selector";
-export { usePhoneAuthFlow } from "./hooks/use-phone-auth-flow";
 export {
   countries,
   findCountryByCode,
@@ -17,3 +11,9 @@ export type {
   PhoneAuthState,
   PhoneAuthStep,
 } from "./config/types";
+export * from "./country-selector";
+export { usePhoneAuthFlow } from "./hooks/use-phone-auth-flow";
+export * from "./otp-input";
+export * from "./phone-auth-flow";
+export * from "./phone-auth-page";
+export * from "./phone-input";

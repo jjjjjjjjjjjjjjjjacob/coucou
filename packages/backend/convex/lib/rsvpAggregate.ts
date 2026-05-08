@@ -4,8 +4,8 @@ import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import {
   ALL_RAW_RSVP_STATUSES,
-  getRawStatusesForApprovalFilter,
   type ApprovalFilter,
+  getRawStatusesForApprovalFilter,
   type RawRsvpStatus,
 } from "./rsvpStatus";
 
@@ -25,10 +25,7 @@ export const rsvpAggregate = new TableAggregate<{
 
 // Helper functions to keep aggregate in sync with RSVP table changes
 
-export async function insertRsvpIntoAggregate(
-  ctx: MutationCtx,
-  rsvp: Doc<"rsvps">,
-) {
+export async function insertRsvpIntoAggregate(ctx: MutationCtx, rsvp: Doc<"rsvps">) {
   console.log(`[AGGREGATE] Inserting RSVP into aggregate:`, {
     eventId: rsvp.eventId,
     status: rsvp.status,
@@ -60,10 +57,7 @@ export async function updateRsvpInAggregate(
   await rsvpAggregate.replace(ctx, oldRsvp, newRsvp);
 }
 
-export async function deleteRsvpFromAggregate(
-  ctx: MutationCtx,
-  rsvp: Doc<"rsvps">,
-) {
+export async function deleteRsvpFromAggregate(ctx: MutationCtx, rsvp: Doc<"rsvps">) {
   console.log(`[AGGREGATE] Deleting RSVP from aggregate:`, {
     eventId: rsvp.eventId,
     status: rsvp.status,
@@ -74,10 +68,7 @@ export async function deleteRsvpFromAggregate(
 }
 
 // Test function to check if aggregate is working
-export async function testAggregateHealth(
-  ctx: QueryCtx,
-  eventId: Id<"events">,
-) {
+export async function testAggregateHealth(ctx: QueryCtx, eventId: Id<"events">) {
   try {
     // Try to get total count for the event
     const totalCount = await rsvpAggregate.count(ctx, {
@@ -120,13 +111,18 @@ export async function countRsvpsWithAggregate(
     if (approvalFilter === "all" && listFilter === "all") {
       // Count all RSVPs for this event
       const bounds = {
-        lower: { key: [eventId, "", ""] as [string, string, string], inclusive: true },
-        upper: { key: [eventId, "\uFFFF", "\uFFFF"] as [string, string, string], inclusive: true },
+        lower: {
+          key: [eventId, "", ""] as [string, string, string],
+          inclusive: true,
+        },
+        upper: {
+          key: [eventId, "\uFFFF", "\uFFFF"] as [string, string, string],
+          inclusive: true,
+        },
       };
       result = await rsvpAggregate.count(ctx, { namespace: undefined, bounds });
     } else {
-      const statusesToCount =
-        approvalFilter === "all" ? ALL_RAW_RSVP_STATUSES : rawStatuses;
+      const statusesToCount = approvalFilter === "all" ? ALL_RAW_RSVP_STATUSES : rawStatuses;
 
       result = 0;
       for (const rawStatus of statusesToCount) {
@@ -144,32 +140,28 @@ export async function countRsvpsWithAggregate(
               }
             : {
                 lower: {
-                  key: [eventId, rawStatus, listFilter] as [
-                    string,
-                    string,
-                    string,
-                  ],
+                  key: [eventId, rawStatus, listFilter] as [string, string, string],
                   inclusive: true,
                 },
                 upper: {
-                  key: [eventId, rawStatus, listFilter] as [
-                    string,
-                    string,
-                    string,
-                  ],
+                  key: [eventId, rawStatus, listFilter] as [string, string, string],
                   inclusive: true,
                 },
               };
-        result += await rsvpAggregate.count(ctx, { namespace: undefined, bounds });
+        result += await rsvpAggregate.count(ctx, {
+          namespace: undefined,
+          bounds,
+        });
       }
     }
 
     // If we expect RSVPs but get 0, fallback to direct DB count
     if (result === 0) {
-      console.warn(
-        `[AGGREGATE] Count returned 0. Falling back to direct DB count.`,
-        { eventId, approvalFilter, listFilter },
-      );
+      console.warn(`[AGGREGATE] Count returned 0. Falling back to direct DB count.`, {
+        eventId,
+        approvalFilter,
+        listFilter,
+      });
 
       // Fallback to direct database count
       let fallbackQuery = ctx.db

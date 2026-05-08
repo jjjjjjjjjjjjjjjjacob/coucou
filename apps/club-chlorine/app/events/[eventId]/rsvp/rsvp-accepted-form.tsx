@@ -1,20 +1,17 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { UserProfile, useClerk, useUser } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { useUser, useClerk, UserProfile } from "@clerk/nextjs";
-import { useForm, type Path } from "react-hook-form";
-import { toast } from "sonner";
+import { TenantButton } from "@coucou/ui/tenant-template";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { CheckCircle2 } from "lucide-react";
-import { Form } from "@/components/ui/form";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Spinner } from "@/components/ui/spinner";
-import { useDebounce } from "@/lib/hooks/use-debounce";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { type Path, useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { GuestInfoFields, NoteForHostsField } from "@/components/guest-info-form";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,26 +22,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  GuestInfoFields,
-  NoteForHostsField,
-} from "@/components/guest-info-form";
-import {
-  validateRequiredPrimaryFields,
-  validateRequiredWithFirstName,
-} from "@/lib/mini-zod";
-import {
-  Event,
-  User,
-  ClerkUser,
-  RSVPFormData,
-  CustomField,
-  ApplicationError,
-} from "@/lib/types";
-import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import { Badge } from "@/components/ui/badge";
+import { Form } from "@/components/ui/form";
+import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
+import { useDebounce } from "@/lib/hooks/use-debounce";
+import { validateRequiredPrimaryFields, validateRequiredWithFirstName } from "@/lib/mini-zod";
 import { siteConfiguration } from "@/lib/site";
-import { TenantButton } from "@coucou/ui/tenant-template";
+import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import type {
+  ApplicationError,
+  ClerkUser,
+  CustomField,
+  Event,
+  RSVPFormData,
+  User,
+} from "@/lib/types";
 
 // Buttons in the RSVP / post-RSVP flow render transparent with just a
 // border so they never paint a solid block on top of the chlorine wordmark
@@ -128,9 +121,7 @@ export function RsvpAcceptedForm({
   const [firstName, setFirstName] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
   const [custom, setCustom] = useState<Record<string, string>>({});
-  const [socialProfiles, setSocialProfiles] = useState<Record<string, string>>(
-    {},
-  );
+  const [socialProfiles, setSocialProfiles] = useState<Record<string, string>>({});
   const [invitedByName, setInvitedByName] = useState<string>("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
@@ -144,18 +135,14 @@ export function RsvpAcceptedForm({
   >("idle");
   const searchRequestIdRef = useRef(0);
   const [smsConsentEnabled, setSmsConsentEnabled] = useState<boolean>(false);
-  const [hasInitializedSmsConsent, setHasInitializedSmsConsent] =
-    useState<boolean>(false);
-  const [smsConsentIpAddress, setSmsConsentIpAddress] = useState<
-    string | undefined
-  >(undefined);
-  const [hasConfirmedSmsOptIn, setHasConfirmedSmsOptIn] =
-    useState<boolean>(false);
+  const [hasInitializedSmsConsent, setHasInitializedSmsConsent] = useState<boolean>(false);
+  const [smsConsentIpAddress, setSmsConsentIpAddress] = useState<string | undefined>(undefined);
+  const [hasConfirmedSmsOptIn, setHasConfirmedSmsOptIn] = useState<boolean>(false);
   const [hasAcknowledgedSmsOptOutPrompt, setHasAcknowledgedSmsOptOutPrompt] =
     useState<boolean>(false);
-  const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<
-    "confirm" | "encourage" | null
-  >(null);
+  const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<"confirm" | "encourage" | null>(
+    null,
+  );
 
   const smsSenderDisplayName = useMemo(
     () =>
@@ -168,20 +155,13 @@ export function RsvpAcceptedForm({
         },
         { fallback: event?.name?.trim() ?? "Event Host" },
       ),
-    [
-      event?.hosts,
-      event?.name,
-      event?.secondaryTitle,
-      event?.productionCompany,
-    ],
+    [event?.hosts, event?.name, event?.secondaryTitle, event?.productionCompany],
   );
 
   const upsertContact = useMutation(api.users.upsertContactPhone);
   const submitRsvp = useMutation(api.rsvps.submitRequest);
   const updateProfileMeta = useMutation(api.users.updateProfileMeta);
-  const resolveListByPassword = useAction(
-    api.credentialsNode.resolveListByPassword,
-  );
+  const resolveListByPassword = useAction(api.credentialsNode.resolveListByPassword);
 
   useEffect(() => {
     const trimmed = debouncedAccessPassword.trim();
@@ -292,8 +272,7 @@ export function RsvpAcceptedForm({
         return next;
       });
     }
-    const configuredSocialPlatforms =
-      event.primaryFieldConfig?.socialPlatforms ?? [];
+    const configuredSocialPlatforms = event.primaryFieldConfig?.socialPlatforms ?? [];
     if (configuredSocialPlatforms.length > 0) {
       setSocialProfiles((previousSocialProfiles) => {
         const nextSocialProfiles = { ...previousSocialProfiles };
@@ -366,19 +345,14 @@ export function RsvpAcceptedForm({
   const phone = useMemo(() => {
     const clerkUser = user as ClerkUser | undefined;
     return (
-      (clerkUser?.primaryPhoneNumber?.phoneNumber ||
-        clerkUser?.phoneNumbers?.[0]?.phoneNumber) ??
+      (clerkUser?.primaryPhoneNumber?.phoneNumber || clerkUser?.phoneNumbers?.[0]?.phoneNumber) ??
       ""
     );
   }, [user]);
 
   const deniedForThisList = useMemo(() => {
     const effectiveListKey = listKey ?? resolvedListKey;
-    return (
-      status?.status === "denied" &&
-      !!effectiveListKey &&
-      status.listKey === effectiveListKey
-    );
+    return status?.status === "denied" && !!effectiveListKey && status.listKey === effectiveListKey;
   }, [status?.status, status?.listKey, listKey, resolvedListKey]);
 
   const handleSmsConsentChange = React.useCallback(
@@ -406,8 +380,7 @@ export function RsvpAcceptedForm({
     try {
       setMessage("");
       const eventCustomFields: CustomField[] = event?.customFields ?? [];
-      const eventSocialPlatforms =
-        event.primaryFieldConfig?.socialPlatforms ?? [];
+      const eventSocialPlatforms = event.primaryFieldConfig?.socialPlatforms ?? [];
       const invitedByConfig = event.primaryFieldConfig?.invitedBy;
       const errs = [
         ...validateRequiredWithFirstName(
@@ -456,8 +429,7 @@ export function RsvpAcceptedForm({
         for (const platform of eventSocialPlatforms) {
           const errorMessage = `${platform.label} is required`;
           if (errs.includes(errorMessage)) {
-            const fieldPath =
-              `socialProfiles.${platform.platformKey}` as Path<RSVPFormData>;
+            const fieldPath = `socialProfiles.${platform.platformKey}` as Path<RSVPFormData>;
             form.setError(fieldPath, {
               type: "required",
               message: errorMessage,
@@ -503,15 +475,16 @@ export function RsvpAcceptedForm({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
       });
-      const filteredCustomFields = eventCustomFields.reduce<
-        Record<string, string>
-      >((accumulator, customField) => {
-        const value = custom[customField.key];
-        if (value) {
-          accumulator[customField.key] = value;
-        }
-        return accumulator;
-      }, {});
+      const filteredCustomFields = eventCustomFields.reduce<Record<string, string>>(
+        (accumulator, customField) => {
+          const value = custom[customField.key];
+          if (value) {
+            accumulator[customField.key] = value;
+          }
+          return accumulator;
+        },
+        {},
+      );
       await upsertContact({ phone: phone || undefined });
 
       let consentIpAddress = smsConsentIpAddress;
@@ -527,8 +500,7 @@ export function RsvpAcceptedForm({
         shareContact: true,
         attendees: form.getValues("attendees") || 1,
         smsConsent: smsConsentEnabled,
-        smsConsentIpAddress:
-          smsConsentEnabled && consentIpAddress ? consentIpAddress : undefined,
+        smsConsentIpAddress: smsConsentEnabled && consentIpAddress ? consentIpAddress : undefined,
         customFields: filteredCustomFields,
         socialProfiles: (event.primaryFieldConfig?.socialPlatforms ?? [])
           .map((platform) => ({
@@ -537,9 +509,7 @@ export function RsvpAcceptedForm({
           }))
           .filter((profile) => profile.handle.length > 0),
         invitedByName:
-          event.primaryFieldConfig?.invitedBy?.enabled === true
-            ? invitedByName.trim()
-            : undefined,
+          event.primaryFieldConfig?.invitedBy?.enabled === true ? invitedByName.trim() : undefined,
         resolvedListKey,
       };
 
@@ -613,8 +583,7 @@ export function RsvpAcceptedForm({
     }
     if (step === 2) {
       const eventCustomFields: CustomField[] = event?.customFields ?? [];
-      const eventSocialPlatforms =
-        event.primaryFieldConfig?.socialPlatforms ?? [];
+      const eventSocialPlatforms = event.primaryFieldConfig?.socialPlatforms ?? [];
       const invitedByConfig = event.primaryFieldConfig?.invitedBy;
       const errs = [
         ...validateRequiredWithFirstName(
@@ -662,8 +631,7 @@ export function RsvpAcceptedForm({
         for (const platform of eventSocialPlatforms) {
           const errorMessage = `${platform.label} is required`;
           if (stepErrs.includes(errorMessage)) {
-            const fieldPath =
-              `socialProfiles.${platform.platformKey}` as Path<RSVPFormData>;
+            const fieldPath = `socialProfiles.${platform.platformKey}` as Path<RSVPFormData>;
             form.setError(fieldPath, {
               type: "required",
               message: errorMessage,
@@ -719,10 +687,7 @@ export function RsvpAcceptedForm({
       setHasAcknowledgedSmsOptOutPrompt(true);
       setHasConfirmedSmsOptIn(false);
     }
-    if (
-      typeof status.smsConsentIpAddress === "string" &&
-      status.smsConsentIpAddress.length > 0
-    ) {
+    if (typeof status.smsConsentIpAddress === "string" && status.smsConsentIpAddress.length > 0) {
       setSmsConsentIpAddress(status.smsConsentIpAddress);
     }
   }, [status, hasInitializedSmsConsent]);
@@ -793,9 +758,7 @@ export function RsvpAcceptedForm({
                       autoCapitalize="none"
                       spellCheck={false}
                       value={accessPassword}
-                      onChange={(event) =>
-                        setAccessPassword(event.target.value)
-                      }
+                      onChange={(event) => setAccessPassword(event.target.value)}
                       placeholder="•••••••"
                       className="w-full border border-primary/20 bg-transparent px-3 py-2 pr-28 text-primary outline-none placeholder:text-primary/50"
                       style={{
@@ -815,12 +778,8 @@ export function RsvpAcceptedForm({
                           <CheckCircle2 className="h-3 w-3" />
                           {resolvedListKey.toUpperCase()}
                         </Badge>
-                      ) : searchStatus === "miss-with-fallback" &&
-                        resolvedListKey ? (
-                        <Badge
-                          variant="outline"
-                          style={{ letterSpacing: "0.05em" }}
-                        >
+                      ) : searchStatus === "miss-with-fallback" && resolvedListKey ? (
+                        <Badge variant="outline" style={{ letterSpacing: "0.05em" }}>
                           {resolvedListKey.toUpperCase()}
                         </Badge>
                       ) : null}
@@ -832,9 +791,7 @@ export function RsvpAcceptedForm({
                       {resolvedListKey.toUpperCase()}.
                     </p>
                   ) : searchStatus === "miss-no-fallback" ? (
-                    <p className="text-[11px] text-destructive">
-                      Password not recognized.
-                    </p>
+                    <p className="text-[11px] text-destructive">Password not recognized.</p>
                   ) : (
                     <p className="text-[11px] text-primary/60">
                       {hasNoPasswordList
@@ -867,14 +824,12 @@ export function RsvpAcceptedForm({
                   */}
                   <span className="flex flex-col gap-0.5 text-left">
                     <span className="text-sm font-medium text-foreground">
-                      I consent to receive SMS messages from{" "}
-                      {smsSenderDisplayName}.
+                      I consent to receive SMS messages from {smsSenderDisplayName}.
                     </span>
                     <span className="text-[10px] leading-tight text-muted-foreground">
-                      RSVP updates, reminders, and offers via SMS. Sent by
-                      Coucou on behalf of {smsSenderDisplayName} using Club
-                      Chlorine. Msg &amp; data rates may apply. Reply STOP to
-                      cancel. Consent not required for purchase.{" "}
+                      RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+                      {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply.
+                      Reply STOP to cancel. Consent not required for purchase.{" "}
                       <a href="/terms" className="underline">
                         Terms
                       </a>{" "}
@@ -940,10 +895,7 @@ export function RsvpAcceptedForm({
         </div>
       ) : null}
       {message ? (
-        <div
-          className="mt-4 whitespace-pre-line text-sm"
-          style={{ color: "var(--tt-fg)" }}
-        >
+        <div className="mt-4 whitespace-pre-line text-sm" style={{ color: "var(--tt-fg)" }}>
           {message}
         </div>
       ) : null}
@@ -956,14 +908,11 @@ export function RsvpAcceptedForm({
       >
         <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-lg">
-              Confirm SMS Updates
-            </AlertDialogTitle>
+            <AlertDialogTitle className="text-lg">Confirm SMS Updates</AlertDialogTitle>
             <AlertDialogDescription className="text-[11px] leading-tight break-words">
-              RSVP updates, reminders, and offers via SMS. Sent by Coucou on
-              behalf of {smsSenderDisplayName} using Club Chlorine. Msg &amp;
-              data rates may apply. Reply STOP to cancel. Consent not required
-              for purchase.{" "}
+              RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+              {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply STOP
+              to cancel. Consent not required for purchase.{" "}
               <a href="/terms" className="break-words underline">
                 Terms
               </a>{" "}
@@ -998,15 +947,13 @@ export function RsvpAcceptedForm({
               Get Event Updates by SMS
             </AlertDialogTitle>
             <p className="text-sm text-foreground break-words">
-              Turn on SMS updates and we will text you the moment your RSVP
-              status changes, so you never have to refresh this page to see if
-              you are approved.
+              Turn on SMS updates and we will text you the moment your RSVP status changes, so you
+              never have to refresh this page to see if you are approved.
             </p>
             <AlertDialogDescription className="text-[10px] leading-tight text-muted-foreground break-words">
-              RSVP updates, reminders, and offers via SMS. Sent by Coucou on
-              behalf of {smsSenderDisplayName} using Club Chlorine. Msg &amp;
-              data rates may apply. Reply STOP to cancel. Consent not required
-              for purchase.{" "}
+              RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+              {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply STOP
+              to cancel. Consent not required for purchase.{" "}
               <a href="/terms" className="break-words underline">
                 Terms
               </a>{" "}

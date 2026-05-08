@@ -48,10 +48,7 @@ function getRecordArray(record: RecordValue, key: string): RecordValue[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
-function getMetadataValue(
-  metadata: RecordValue | undefined,
-  keys: string[],
-): string | undefined {
+function getMetadataValue(metadata: RecordValue | undefined, keys: string[]): string | undefined {
   if (!metadata) return undefined;
   for (const key of keys) {
     const value = getString(metadata, key);
@@ -61,15 +58,10 @@ function getMetadataValue(
 }
 
 function getPublicMetadata(record: RecordValue): RecordValue | undefined {
-  return (
-    getRecord(record, "public_metadata") ??
-    getRecord(record, "publicMetadata")
-  );
+  return getRecord(record, "public_metadata") ?? getRecord(record, "publicMetadata");
 }
 
-export function parseClerkWebhookEvent(
-  value: unknown,
-): ClerkWebhookEvent | null {
+export function parseClerkWebhookEvent(value: unknown): ClerkWebhookEvent | null {
   if (!isRecord(value)) return null;
   const type = getString(value, "type");
   if (!type) return null;
@@ -79,9 +71,7 @@ export function parseClerkWebhookEvent(
   };
 }
 
-export function extractClerkUserWebhookProfile(
-  value: unknown,
-): ClerkUserWebhookProfile | null {
+export function extractClerkUserWebhookProfile(value: unknown): ClerkUserWebhookProfile | null {
   if (!isRecord(value)) return null;
 
   const clerkUserId = getString(value, "id");
@@ -94,12 +84,8 @@ export function extractClerkUserWebhookProfile(
   );
   const fallbackEmailAddress = emailAddresses[0];
   const email =
-    (primaryEmailAddress
-      ? getString(primaryEmailAddress, "email_address")
-      : undefined) ??
-    (fallbackEmailAddress
-      ? getString(fallbackEmailAddress, "email_address")
-      : undefined);
+    (primaryEmailAddress ? getString(primaryEmailAddress, "email_address") : undefined) ??
+    (fallbackEmailAddress ? getString(fallbackEmailAddress, "email_address") : undefined);
 
   const primaryPhoneNumberId = getString(value, "primary_phone_number_id");
   const phoneNumbers = getRecordArray(value, "phone_numbers");
@@ -108,12 +94,8 @@ export function extractClerkUserWebhookProfile(
   );
   const fallbackPhoneNumber = phoneNumbers[0];
   const phone =
-    (primaryPhoneNumber
-      ? getString(primaryPhoneNumber, "phone_number")
-      : undefined) ??
-    (fallbackPhoneNumber
-      ? getString(fallbackPhoneNumber, "phone_number")
-      : undefined);
+    (primaryPhoneNumber ? getString(primaryPhoneNumber, "phone_number") : undefined) ??
+    (fallbackPhoneNumber ? getString(fallbackPhoneNumber, "phone_number") : undefined);
 
   return {
     clerkUserId,
@@ -134,23 +116,16 @@ export function extractClerkOrganizationWorkspacePayload(
   const metadata = getPublicMetadata(value);
   const clerkOrganizationSlug = getString(value, "slug");
   const workspaceSlug =
-    getMetadataValue(metadata, ["workspaceSlug", "workspace_slug"]) ??
-    clerkOrganizationSlug;
+    getMetadataValue(metadata, ["workspaceSlug", "workspace_slug"]) ?? clerkOrganizationSlug;
   const name =
-    getString(value, "name") ??
-    workspaceSlug ??
-    clerkOrganizationSlug ??
-    clerkOrganizationId;
+    getString(value, "name") ?? workspaceSlug ?? clerkOrganizationSlug ?? clerkOrganizationId;
 
   return {
     clerkOrganizationId,
     name,
     clerkOrganizationSlug,
     workspaceSlug,
-    primaryDomain: getMetadataValue(metadata, [
-      "primaryDomain",
-      "primary_domain",
-    ]),
+    primaryDomain: getMetadataValue(metadata, ["primaryDomain", "primary_domain"]),
   };
 }
 
@@ -161,16 +136,13 @@ export function extractClerkOrganizationMembershipPayload(
 
   const publicUserData = getRecord(value, "public_user_data");
   const organizationRecord = getRecord(value, "organization");
-  const organization = extractClerkOrganizationWorkspacePayload(
-    organizationRecord,
-  );
+  const organization = extractClerkOrganizationWorkspacePayload(organizationRecord);
 
   const clerkUserId =
     (publicUserData ? getString(publicUserData, "user_id") : undefined) ??
     getString(value, "user_id") ??
     getString(value, "id");
-  const organizationId =
-    organization?.clerkOrganizationId ?? getString(value, "organization_id");
+  const organizationId = organization?.clerkOrganizationId ?? getString(value, "organization_id");
 
   return {
     clerkUserId,

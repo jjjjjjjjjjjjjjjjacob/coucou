@@ -4,24 +4,41 @@
  */
 
 "use node";
-import { action } from "./_generated/server";
-import { internal } from "./_generated/api";
-import { v } from "convex/values";
 import type { UserIdentity } from "convex/server";
+import { v } from "convex/values";
 import twilio from "twilio";
-
-type ActionResult<T> = T extends (...args: any[]) => Promise<infer R>
-  ? R
-  : never;
-
-type TestTwilioSmsArgs = {
-  testPhoneNumber: string;
-  testMessage?: string;
-};
+import { internal } from "./_generated/api";
+import { action } from "./_generated/server";
 
 type SendSmsResult = unknown;
 
 type IdentityWithRole = UserIdentity & { role?: string };
+type ErrorWithStatus = {
+  code?: unknown;
+  status?: unknown;
+  moreInfo?: unknown;
+};
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function getErrorStatus(error: unknown): unknown {
+  if (error && typeof error === "object") {
+    const errorWithStatus = error as ErrorWithStatus;
+    return errorWithStatus.code || errorWithStatus.status;
+  }
+
+  return undefined;
+}
+
+function getErrorMoreInfo(error: unknown): unknown {
+  if (error && typeof error === "object") {
+    return (error as ErrorWithStatus).moreInfo;
+  }
+
+  return undefined;
+}
 
 const identityHasHostRole = (identity: IdentityWithRole): boolean => {
   return identity.role === "org:admin";
@@ -70,7 +87,8 @@ export const testTwilioSms = action({
     if (!devTwilioEnabled) {
       return {
         success: false,
-        error: "Twilio SMS disabled in development (DEV_TWILIO_ENABLED=false). Set DEV_TWILIO_ENABLED=true to enable.",
+        error:
+          "Twilio SMS disabled in development (DEV_TWILIO_ENABLED=false). Set DEV_TWILIO_ENABLED=true to enable.",
         timestamp: new Date().toISOString(),
       };
     }
@@ -88,10 +106,10 @@ export const testTwilioSms = action({
         result,
         timestamp: new Date().toISOString(),
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: getErrorMessage(error),
         timestamp: new Date().toISOString(),
       };
     }
@@ -190,7 +208,8 @@ export const testTwilioAccount = action({
     if (!devTwilioEnabled) {
       return {
         success: false,
-        error: "Twilio SMS disabled in development (DEV_TWILIO_ENABLED=false). Set DEV_TWILIO_ENABLED=true to enable."
+        error:
+          "Twilio SMS disabled in development (DEV_TWILIO_ENABLED=false). Set DEV_TWILIO_ENABLED=true to enable.",
       };
     }
 
@@ -200,7 +219,7 @@ export const testTwilioAccount = action({
     if (!accountSid || !authToken) {
       return {
         success: false,
-        error: "Twilio credentials not configured"
+        error: "Twilio credentials not configured",
       };
     }
 
@@ -225,11 +244,11 @@ export const testTwilioAccount = action({
         fromNumber: process.env.TWILIO_PHONE_NUMBER,
         timestamp: new Date().toISOString(),
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         success: false,
-        error: error.message,
-        code: error.code || error.status,
+        error: getErrorMessage(error),
+        code: getErrorStatus(error),
         timestamp: new Date().toISOString(),
       };
     }
@@ -265,9 +284,10 @@ export const checkTwilioStatus = action({
     // Check if Twilio is enabled in development
     const devTwilioEnabled = process.env.DEV_TWILIO_ENABLED === "true";
     if (!devTwilioEnabled) {
-      return { 
+      return {
         success: false,
-        error: "Twilio SMS disabled in development (DEV_TWILIO_ENABLED=false). Set DEV_TWILIO_ENABLED=true to enable." 
+        error:
+          "Twilio SMS disabled in development (DEV_TWILIO_ENABLED=false). Set DEV_TWILIO_ENABLED=true to enable.",
       };
     }
 
@@ -313,12 +333,12 @@ export const checkTwilioStatus = action({
         accountStatus: account.status,
         timestamp: new Date().toISOString(),
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         success: false,
-        error: error.message,
-        code: error.code || error.status,
-        moreInfo: error.moreInfo,
+        error: getErrorMessage(error),
+        code: getErrorStatus(error),
+        moreInfo: getErrorMoreInfo(error),
       };
     }
   },

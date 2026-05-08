@@ -1,30 +1,26 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import type { ClerkMiddlewareOptions } from "@clerk/nextjs/server";
-import { AuthObject } from "@/lib/types";
-import { buildRedirectPathWithSearch } from "@/lib/auth-redirects";
-import { fetchQuery } from "convex/nextjs";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { siteConfiguration } from "@/lib/site";
+import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
-import {
-  buildSatelliteReturnUrl,
-  buildTenantPrimarySignInUrl,
-} from "@coucou/sdk";
+import { fetchQuery } from "convex/nextjs";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { buildRedirectPathWithSearch } from "@/lib/auth-redirects";
+import { siteConfiguration } from "@/lib/site";
+import type { AuthObject } from "@/lib/types";
 
-const coucouBaseUrl = (
-  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
-).replace(/\/+$/, "");
+const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
+  /\/+$/,
+  "",
+);
 const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
   primaryBaseUrl: coucouBaseUrl,
   siteConfiguration,
 });
 
-function buildClerkSatelliteOptions(
-  req: NextRequest,
-): ClerkMiddlewareOptions {
+function buildClerkSatelliteOptions(req: NextRequest): ClerkMiddlewareOptions {
   return {
     isSatellite: true,
     domain: req.nextUrl.host,
@@ -54,7 +50,7 @@ function parseEventRoute(pathname: string): {
   eventId?: string;
   subpath?: string;
 } {
-  const match = pathname.match(/^\/events\/([^\/]+)(.*)$/);
+  const match = pathname.match(/^\/events\/([^/]+)(.*)$/);
   if (!match) return { isEvent: false };
 
   const [, eventId, subpath = ""] = match;
@@ -62,14 +58,8 @@ function parseEventRoute(pathname: string): {
 }
 
 function redirectToSignIn(req: NextRequest): NextResponse {
-  const redirectPath = buildRedirectPathWithSearch(
-    req.nextUrl.pathname,
-    req.nextUrl.search,
-  );
-  const satelliteReturnUrl = buildSatelliteReturnUrl(
-    req.nextUrl.origin,
-    redirectPath,
-  );
+  const redirectPath = buildRedirectPathWithSearch(req.nextUrl.pathname, req.nextUrl.search);
+  const satelliteReturnUrl = buildSatelliteReturnUrl(req.nextUrl.origin, redirectPath);
   const signInUrl = buildTenantPrimarySignInUrl({
     primaryBaseUrl: coucouBaseUrl,
     siteConfiguration,
@@ -84,10 +74,7 @@ function redirectToPrimarySignIn(req: NextRequest): NextResponse {
     redirectParam,
     siteConfiguration.auth.signInRedirectPath,
   );
-  const satelliteReturnUrl = buildSatelliteReturnUrl(
-    req.nextUrl.origin,
-    redirectPath,
-  );
+  const satelliteReturnUrl = buildSatelliteReturnUrl(req.nextUrl.origin, redirectPath);
   const signInUrl = buildTenantPrimarySignInUrl({
     primaryBaseUrl: coucouBaseUrl,
     siteConfiguration,

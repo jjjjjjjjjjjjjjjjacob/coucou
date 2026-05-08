@@ -1,8 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMobile } from "../use-mobile";
 import { combineClassNames } from "../internal-utils";
+import { useMobile } from "../use-mobile";
 
 export interface TenantShellProps {
   children: ReactNode;
@@ -26,11 +26,7 @@ export interface TenantShellProps {
  * would double up with the chrome and the result was the redundant bars
  * you saw in club-chlorine + coucou.
  */
-export function TenantShell({
-  children,
-  contentColumn = true,
-  className,
-}: TenantShellProps) {
+export function TenantShell({ children, contentColumn = true, className }: TenantShellProps) {
   const isMobile = useMobile();
 
   return (

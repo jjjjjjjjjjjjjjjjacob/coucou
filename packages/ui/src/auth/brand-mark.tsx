@@ -1,8 +1,8 @@
 "use client";
 
-import type { CSSProperties } from "react";
 import type { PresetBrandMarkStyle, PresetKey } from "@coucou/sdk";
 import { PRESET_DEFINITIONS } from "@coucou/sdk";
+import type { CSSProperties } from "react";
 
 export interface BrandMarkProps {
   /**
@@ -42,20 +42,12 @@ function deriveInitials(value: string | undefined): string {
     .toUpperCase();
 }
 
-export function BrandMark({
-  accentMark,
-  initials,
-  size = 72,
-  style,
-  preset,
-}: BrandMarkProps) {
+export function BrandMark({ accentMark, initials, size = 72, style, preset }: BrandMarkProps) {
   const presetDefinition = PRESET_DEFINITIONS[preset];
   const resolvedStyle = style ?? presetDefinition.brandMarkStyle;
   const fallbackInitials = deriveInitials(presetDefinition.name);
   const resolvedInitials =
-    (initials && initials.trim()) ||
-    (accentMark && accentMark.trim()) ||
-    fallbackInitials;
+    (initials && initials.trim()) || (accentMark && accentMark.trim()) || fallbackInitials;
 
   const baseStyle: CSSProperties = {
     width: size,

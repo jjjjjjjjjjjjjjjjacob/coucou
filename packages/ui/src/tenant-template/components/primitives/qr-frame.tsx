@@ -32,23 +32,14 @@ export interface QrFrameProps {
  * Uses react-qr-code under the hood; foreground and background colors
  * pull from the resolved preset's QR tokens unless overridden.
  */
-export function QrFrame({
-  value,
-  size = 240,
-  fgColor,
-  bgColor,
-  id,
-}: QrFrameProps) {
+export function QrFrame({ value, size = 240, fgColor, bgColor, id }: QrFrameProps) {
   const { preset } = usePresetOptional();
   const resolvedFg = fgColor ?? preset.qrFg;
   const resolvedBg = bgColor ?? preset.qrBg;
   const padding = Math.round(size / 12);
 
   return (
-    <div
-      className="inline-block"
-      style={{ background: resolvedBg, padding }}
-    >
+    <div className="inline-block" style={{ background: resolvedBg, padding }}>
       <QRCode
         id={id}
         value={value}

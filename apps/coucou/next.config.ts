@@ -102,7 +102,7 @@ const nextConfig: NextConfig = {
           "**/__tests__/**",
           "**/test-setup.ts",
         ],
-      } as any;
+      } as NonNullable<typeof config.watchOptions>;
     }
     return config;
   },

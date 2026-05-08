@@ -34,9 +34,7 @@ export function resolveEventRsvpCutoffFromStart(
  * runs for callers that haven't migrated, but its output now matches the
  * new helper: it ignores `eventEndDate` and returns `eventDate + 24h`.
  */
-export function resolveEventRsvpCutoff(
-  event: EventAvailabilityInput,
-): number {
+export function resolveEventRsvpCutoff(event: EventAvailabilityInput): number {
   return resolveEventRsvpCutoffFromStart(event);
 }
 

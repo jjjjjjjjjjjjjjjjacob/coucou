@@ -1,67 +1,49 @@
 "use client";
 
-import React, { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { convexQuery, useConvexAction } from "@convex-dev/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  type ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  type OnChangeFn,
+  type PaginationState,
+  type SortingState,
+  useReactTable,
+} from "@tanstack/react-table";
+import { Crown, DoorOpen, Filter, Search, Shield, User, Users, X } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React, { useState } from "react";
+import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
-  DropdownMenuItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectOption } from "@/components/ui/select";
-import {
-  Search,
-  Users,
-  Crown,
-  Shield,
-  User,
-  Filter,
-  X,
-  DoorOpen,
-} from "lucide-react";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { useDebounce } from "@/lib/hooks/use-debounce";
-import { useAuth } from "@clerk/nextjs";
-import { convexQuery, useConvexMutation, useConvexAction } from "@convex-dev/react-query";
-import {
-  ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  getPaginationRowModel,
-  SortingState,
-  OnChangeFn,
-  PaginationState,
-  useReactTable,
-} from "@tanstack/react-table";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
+import { useDebounce } from "@/lib/hooks/use-debounce";
 import type {
-  OrganizationUsersResponse,
-  OrganizationUserSortOption,
-  OrganizationUserSortDirection,
   OrganizationUserListItem,
+  OrganizationUserSortDirection,
+  OrganizationUserSortOption,
+  OrganizationUsersResponse,
 } from "@/lib/types";
-import {
-  useWorkspaceOperationPath,
-  useWorkspaceScope,
-} from "@/lib/use-workspace-scope";
+import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { cn } from "@/lib/utils";
 
 export default function UsersPage() {
   const router = useRouter();
@@ -74,9 +56,7 @@ export default function UsersPage() {
   const pageIndex = parseInt(searchParams.get("page") || "0");
   const pageSize = parseInt(searchParams.get("pageSize") || "10");
 
-  const determineSortByFromParam = (
-    value: string | null,
-  ): OrganizationUserSortOption => {
+  const determineSortByFromParam = (value: string | null): OrganizationUserSortOption => {
     if (value === "name" || value === "role" || value === "createdAt") {
       return value;
     }
@@ -99,9 +79,7 @@ export default function UsersPage() {
     initialSortBy,
   );
 
-  const [sortBy, setSortBy] = React.useState<OrganizationUserSortOption>(
-    initialSortBy,
-  );
+  const [sortBy, setSortBy] = React.useState<OrganizationUserSortOption>(initialSortBy);
   const [sortDirection, setSortDirection] =
     React.useState<OrganizationUserSortDirection>(initialSortDirection);
   const tableSorting = React.useMemo<SortingState>(
@@ -114,10 +92,7 @@ export default function UsersPage() {
     [sortBy, sortDirection],
   );
   const updateSortQueryParams = React.useCallback(
-    (
-      nextSortBy: OrganizationUserSortOption,
-      nextSortDirection: OrganizationUserSortDirection,
-    ) => {
+    (nextSortBy: OrganizationUserSortOption, nextSortDirection: OrganizationUserSortDirection) => {
       const params = new URLSearchParams(searchParams.toString());
       params.set("page", "0");
       if (nextSortBy === "createdAt" && nextSortDirection === "desc") {
@@ -133,10 +108,7 @@ export default function UsersPage() {
   );
 
   const applySortingSelection = React.useCallback(
-    (
-      nextSortBy: OrganizationUserSortOption,
-      nextSortDirection: OrganizationUserSortDirection,
-    ) => {
+    (nextSortBy: OrganizationUserSortOption, nextSortDirection: OrganizationUserSortDirection) => {
       setSortBy(nextSortBy);
       setSortDirection(nextSortDirection);
       updateSortQueryParams(nextSortBy, nextSortDirection);
@@ -144,38 +116,28 @@ export default function UsersPage() {
     [updateSortQueryParams],
   );
 
-  const resolveSortLabel = React.useCallback(
-    (sortOption: OrganizationUserSortOption) => {
-      switch (sortOption) {
-        case "name":
-          return "Name";
-        case "role":
-          return "Role";
-        default:
-          return "Date Joined";
-      }
-    },
-    [],
-  );
+  const resolveSortLabel = React.useCallback((sortOption: OrganizationUserSortOption) => {
+    switch (sortOption) {
+      case "name":
+        return "Name";
+      case "role":
+        return "Role";
+      default:
+        return "Date Joined";
+    }
+  }, []);
   const handleSortingChange: OnChangeFn<SortingState> = React.useCallback(
     (updater) => {
       const baseState = tableSorting;
-      const nextState =
-        typeof updater === "function" ? updater(baseState) : updater;
+      const nextState = typeof updater === "function" ? updater(baseState) : updater;
       if (!nextState || nextState.length === 0) {
         applySortingSelection("createdAt", "desc");
         return;
       }
       const primary = nextState[0];
       const nextSortOption: OrganizationUserSortOption =
-        primary.id === "user"
-          ? "name"
-          : primary.id === "role"
-            ? "role"
-            : "createdAt";
-      const nextSortDirection: OrganizationUserSortDirection = primary.desc
-        ? "desc"
-        : "asc";
+        primary.id === "user" ? "name" : primary.id === "role" ? "role" : "createdAt";
+      const nextSortDirection: OrganizationUserSortDirection = primary.desc ? "desc" : "asc";
       applySortingSelection(nextSortOption, nextSortDirection);
     },
     [applySortingSelection, tableSorting],
@@ -184,15 +146,9 @@ export default function UsersPage() {
     (value: string) => {
       const [option, direction] = value.split(":");
       const nextSortOption: OrganizationUserSortOption =
-        option === "name" || option === "role" || option === "createdAt"
-          ? option
-          : "createdAt";
-      const nextSortDirection: OrganizationUserSortDirection =
-        direction === "asc" ? "asc" : "desc";
-      if (
-        nextSortOption === sortBy &&
-        nextSortDirection === sortDirection
-      ) {
+        option === "name" || option === "role" || option === "createdAt" ? option : "createdAt";
+      const nextSortDirection: OrganizationUserSortDirection = direction === "asc" ? "asc" : "desc";
+      if (nextSortOption === sortBy && nextSortDirection === sortDirection) {
         return;
       }
       applySortingSelection(nextSortOption, nextSortDirection);
@@ -221,7 +177,7 @@ export default function UsersPage() {
 
   const userStatsQuery = useQuery({
     ...convexQuery(api.users.getUserStats, {
-      clerkUserId: isSignedIn ? userId ?? "" : "",
+      clerkUserId: isSignedIn ? (userId ?? "") : "",
       ...(workspaceScope?.queryArgs ?? {}),
     }),
     enabled: !!isSignedIn && !!workspaceScope,
@@ -234,15 +190,10 @@ export default function UsersPage() {
   const promoteUserToOrganization = useMutation({
     mutationFn: useConvexAction(api.users.promoteUserToOrganizationWithClerk),
   });
-  const [pendingChanges, setPendingChanges] = useState<Record<string, string>>(
-    {},
-  );
+  const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({});
 
   // Normalize role by stripping org: prefix
-  const normalizeRole = React.useCallback(
-    (role: string) => role?.replace(/^org:/, "") || role,
-    [],
-  );
+  const normalizeRole = React.useCallback((role: string) => role?.replace(/^org:/, "") || role, []);
 
   // Clear all filters function
   const clearAllFilters = () => {
@@ -266,68 +217,66 @@ export default function UsersPage() {
 
   const getRoleIcon = React.useCallback(
     (role: string) => {
-    const normalized = normalizeRole(role);
-    switch (normalized) {
-      case "admin":
-        return <Crown className="h-4 w-4" />;
-      case "host":
-        return <Shield className="h-4 w-4" />;
-      case "door":
-      case "member":
-        return <DoorOpen className="h-4 w-4" />;
-      case "guest":
-        return <User className="h-4 w-4" />;
-      default:
-        return <User className="h-4 w-4" />;
-    }
+      const normalized = normalizeRole(role);
+      switch (normalized) {
+        case "admin":
+          return <Crown className="h-4 w-4" />;
+        case "host":
+          return <Shield className="h-4 w-4" />;
+        case "door":
+        case "member":
+          return <DoorOpen className="h-4 w-4" />;
+        case "guest":
+          return <User className="h-4 w-4" />;
+        default:
+          return <User className="h-4 w-4" />;
+      }
     },
     [normalizeRole],
   );
 
   const getRoleColor = React.useCallback(
     (role: string) => {
-    const normalized = normalizeRole(role);
-    switch (normalized) {
-      case "admin":
-        return "text-yellow-700 border-yellow-200 bg-yellow-50";
-      case "host":
-        return "text-blue-700 border-blue-200 bg-blue-50";
-      case "door":
-      case "member":
-        return "text-teal-700 border-teal-200 bg-teal-50";
-      case "guest":
-        return "text-gray-700 border-gray-200 bg-gray-50";
-      default:
-        return "text-gray-700 border-gray-200 bg-gray-50";
-    }
+      const normalized = normalizeRole(role);
+      switch (normalized) {
+        case "admin":
+          return "text-yellow-700 border-yellow-200 bg-yellow-50";
+        case "host":
+          return "text-blue-700 border-blue-200 bg-blue-50";
+        case "door":
+        case "member":
+          return "text-teal-700 border-teal-200 bg-teal-50";
+        case "guest":
+          return "text-gray-700 border-gray-200 bg-gray-50";
+        default:
+          return "text-gray-700 border-gray-200 bg-gray-50";
+      }
     },
     [normalizeRole],
   );
 
   const getRoleLabel = React.useCallback(
     (role: string) => {
-    const normalized = normalizeRole(role);
-    switch (normalized) {
-      case "admin":
-        return "Admin";
-      case "host":
-        return "Host";
-      case "door":
-      case "member":
-        return "Door";
-      case "guest":
-        return "Guest";
-      default:
-        return "Unknown";
-    }
+      const normalized = normalizeRole(role);
+      switch (normalized) {
+        case "admin":
+          return "Admin";
+        case "host":
+          return "Host";
+        case "door":
+        case "member":
+          return "Door";
+        case "guest":
+          return "Guest";
+        default:
+          return "Unknown";
+      }
     },
     [normalizeRole],
   );
 
   // Pagination change handler that updates URL
-  const handlePaginationChange: OnChangeFn<PaginationState> = (
-    updaterOrValue,
-  ) => {
+  const handlePaginationChange: OnChangeFn<PaginationState> = (updaterOrValue) => {
     const newPagination =
       typeof updaterOrValue === "function"
         ? updaterOrValue({ pageIndex, pageSize })
@@ -341,11 +290,7 @@ export default function UsersPage() {
 
   // Define table columns
   const columns = React.useMemo<ColumnDef<OrganizationUserListItem>[]>(() => {
-    const handleRoleChange = async (
-      userId: Id<"users">,
-      newRole: string,
-      isGuest = false,
-    ) => {
+    const handleRoleChange = async (userId: Id<"users">, newRole: string, isGuest = false) => {
       try {
         if (isGuest) {
           if (!workspaceScope) {
@@ -376,11 +321,7 @@ export default function UsersPage() {
           return updated;
         });
 
-        toast.success(
-          isGuest
-            ? "User promoted successfully"
-            : "User role updated successfully",
-        );
+        toast.success(isGuest ? "User promoted successfully" : "User role updated successfully");
       } catch (error) {
         toast.error("Failed to update user role: " + (error as Error).message);
       }
@@ -390,26 +331,20 @@ export default function UsersPage() {
         id: "user",
         header: "User",
         accessorFn: (row) => {
-          const displayName =
-            `${row.firstName || ""} ${row.lastName || ""}`.trim();
+          const displayName = `${row.firstName || ""} ${row.lastName || ""}`.trim();
           return displayName || "Unknown User";
         },
         cell: ({ row }) => {
           const user = row.original;
-          const displayName =
-            `${user.firstName || ""} ${user.lastName || ""}`.trim();
+          const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
           return (
             <div className="flex items-center gap-3">
               <Avatar className="h-8 w-8">
                 <AvatarImage src={user.imageUrl || undefined} />
-                <AvatarFallback>
-                  {(user.firstName || "U").charAt(0).toUpperCase()}
-                </AvatarFallback>
+                <AvatarFallback>{(user.firstName || "U").charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
               <div>
-                <div className="font-medium">
-                  {displayName || "Unknown User"}
-                </div>
+                <div className="font-medium">{displayName || "Unknown User"}</div>
                 <div className="text-xs text-muted-foreground">
                   ID: {user.clerkUserId?.slice(-8) || "Unknown"}
                 </div>
@@ -425,15 +360,12 @@ export default function UsersPage() {
         cell: ({ row }) => {
           const user = row.original;
           const currentRole = pendingChanges[user._id] || user.role;
-          const hasChanges = currentRole !== user.role;
+          const _hasChanges = currentRole !== user.role;
           const normalizedCurrentRole = normalizeRole(currentRole);
 
           if (normalizedCurrentRole === "guest") {
             return (
-              <Badge
-                variant="outline"
-                className={cn(getRoleColor(currentRole))}
-              >
+              <Badge variant="outline" className={cn(getRoleColor(currentRole))}>
                 <div className="flex items-center gap-1">
                   {getRoleIcon(currentRole)}
                   {getRoleLabel(currentRole)}
@@ -497,11 +429,7 @@ export default function UsersPage() {
         cell: ({ getValue }) => {
           const timestamp = getValue() as number;
           const date = new Date(timestamp);
-          return (
-            <span className="text-muted-foreground">
-              {date.toLocaleDateString()}
-            </span>
-          );
+          return <span className="text-muted-foreground">{date.toLocaleDateString()}</span>;
         },
       },
       {
@@ -522,21 +450,15 @@ export default function UsersPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem
-                    onClick={() => handleRoleChange(user._id, "host", true)}
-                  >
+                  <DropdownMenuItem onClick={() => handleRoleChange(user._id, "host", true)}>
                     <Shield className="mr-2 h-4 w-4" />
                     Promote to Host
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleRoleChange(user._id, "door", true)}
-                  >
+                  <DropdownMenuItem onClick={() => handleRoleChange(user._id, "door", true)}>
                     <DoorOpen className="mr-2 h-4 w-4" />
                     Promote to Door
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleRoleChange(user._id, "admin", true)}
-                  >
+                  <DropdownMenuItem onClick={() => handleRoleChange(user._id, "admin", true)}>
                     <Crown className="mr-2 h-4 w-4" />
                     Promote to Admin
                   </DropdownMenuItem>
@@ -593,9 +515,7 @@ export default function UsersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Users</h2>
-          <p className="text-muted-foreground">
-            Manage organization member roles and permissions
-          </p>
+          <p className="text-muted-foreground">Manage organization member roles and permissions</p>
         </div>
       </div>
 
@@ -624,9 +544,7 @@ export default function UsersPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{userStats.total}</div>
-              <p className="text-xs text-muted-foreground">
-                All organization members
-              </p>
+              <p className="text-xs text-muted-foreground">All organization members</p>
             </CardContent>
           </Card>
 
@@ -669,9 +587,7 @@ export default function UsersPage() {
               <User className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {userStats.organizationMembers}
-              </div>
+              <div className="text-2xl font-bold">{userStats.organizationMembers}</div>
               <p className="text-xs text-muted-foreground">Total staff</p>
             </CardContent>
           </Card>
@@ -692,8 +608,7 @@ export default function UsersPage() {
         <div className="text-sm text-muted-foreground">
           {usersData?.pagination ? (
             <>
-              Showing {usersData.pagination.startIndex}-
-              {usersData.pagination.endIndex} of{" "}
+              Showing {usersData.pagination.startIndex}-{usersData.pagination.endIndex} of{" "}
               {usersData.pagination.totalCount} users
             </>
           ) : (
@@ -705,11 +620,7 @@ export default function UsersPage() {
       {/* Filters */}
       <div className="flex gap-2 items-center flex-wrap">
         <Filter className="h-4 w-4 text-muted-foreground" />
-        <Select
-          value={roleFilter}
-          onValueChange={setRoleFilter}
-          className="w-32"
-        >
+        <Select value={roleFilter} onValueChange={setRoleFilter} className="w-32">
           <SelectOption value="all">All Roles</SelectOption>
           <SelectOption value="admin">Admin</SelectOption>
           <SelectOption value="host">Host</SelectOption>
@@ -721,24 +632,15 @@ export default function UsersPage() {
           onValueChange={handleSortDropdownChange}
           className="w-56"
         >
-          <SelectOption value="createdAt:desc">
-            Date Joined (Newest)
-          </SelectOption>
-          <SelectOption value="createdAt:asc">
-            Date Joined (Oldest)
-          </SelectOption>
+          <SelectOption value="createdAt:desc">Date Joined (Newest)</SelectOption>
+          <SelectOption value="createdAt:asc">Date Joined (Oldest)</SelectOption>
           <SelectOption value="name:asc">Name (A–Z)</SelectOption>
           <SelectOption value="name:desc">Name (Z–A)</SelectOption>
           <SelectOption value="role:asc">Role (Admin → Guest)</SelectOption>
           <SelectOption value="role:desc">Role (Guest → Admin)</SelectOption>
         </Select>
         {hasActiveFilters && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={clearAllFilters}
-            className="text-xs"
-          >
+          <Button size="sm" variant="outline" onClick={clearAllFilters} className="text-xs">
             Clear All
           </Button>
         )}
@@ -772,8 +674,7 @@ export default function UsersPage() {
           )}
           {(sortBy !== "createdAt" || sortDirection !== "desc") && (
             <Badge variant="secondary" className="gap-1">
-              Sort:{" "}
-              {resolveSortLabel(sortBy)}
+              Sort: {resolveSortLabel(sortBy)}
               {sortDirection === "desc" ? " (desc)" : " (asc)"}
               <button
                 onClick={() => applySortingSelection("createdAt", "desc")}
@@ -786,8 +687,7 @@ export default function UsersPage() {
           <span className="text-xs text-foreground/60">
             {usersData?.pagination ? (
               <>
-                ({usersData.pagination.startIndex}-
-                {usersData.pagination.endIndex} of{" "}
+                ({usersData.pagination.startIndex}-{usersData.pagination.endIndex} of{" "}
                 {usersData.pagination.totalCount} total users)
               </>
             ) : (
@@ -802,8 +702,7 @@ export default function UsersPage() {
         <CardHeader>
           <CardTitle>All Users</CardTitle>
           <CardDescription>
-            Manage roles for organization members and promote event guests to
-            staff.
+            Manage roles for organization members and promote event guests to staff.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -815,23 +714,16 @@ export default function UsersPage() {
                 <table className="min-w-full text-sm">
                   <thead>
                     {table.getHeaderGroups().map((headerGroup) => (
-                      <tr
-                        key={headerGroup.id}
-                        className="text-left text-foreground/70 border-b"
-                      >
+                      <tr key={headerGroup.id} className="text-left text-foreground/70 border-b">
                         {headerGroup.headers.map((header) => (
                           <th
                             key={header.id}
                             className="px-2 py-3 cursor-pointer"
                             onClick={header.column.getToggleSortingHandler()}
                           >
-                            {flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                            {{ asc: " ▲", desc: " ▼" }[
-                              header.column.getIsSorted() as string
-                            ] ?? null}
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                            {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ??
+                              null}
                           </th>
                         ))}
                       </tr>
@@ -853,10 +745,7 @@ export default function UsersPage() {
                         >
                           {row.getVisibleCells().map((cell) => (
                             <td key={cell.id} className="px-2 py-3">
-                              {flexRender(
-                                cell.column.columnDef.cell,
-                                cell.getContext(),
-                              )}
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </td>
                           ))}
                         </tr>
@@ -868,9 +757,7 @@ export default function UsersPage() {
 
               {table.getRowModel().rows.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <p className="text-lg text-muted-foreground mb-2">
-                    No users found
-                  </p>
+                  <p className="text-lg text-muted-foreground mb-2">No users found</p>
                   <p className="text-sm text-muted-foreground">
                     {searchQuery
                       ? "Try adjusting your search query"

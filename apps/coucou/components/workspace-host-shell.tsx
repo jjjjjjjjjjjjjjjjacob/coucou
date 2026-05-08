@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
-import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
 import { resolvePreset } from "@coucou/sdk";
+import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
+import { type ReactNode, useEffect } from "react";
+import { AppSidebar } from "@/components/app-sidebar";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,12 +11,7 @@ import {
   BreadcrumbList,
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { WorkspaceAccessGate } from "@/components/workspace-access-gate";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { buildWorkspaceOperationPath } from "@/lib/workspace-config";
@@ -39,10 +35,7 @@ interface WorkspaceHostShellProps {
   children: ReactNode;
 }
 
-export function WorkspaceHostShell({
-  workspaceSlug,
-  children,
-}: WorkspaceHostShellProps) {
+export function WorkspaceHostShell({ workspaceSlug, children }: WorkspaceHostShellProps) {
   const workspaceScope = useWorkspaceScope();
   useMaisonBodyClass();
 
@@ -52,10 +45,7 @@ export function WorkspaceHostShell({
         siteConfigurationPreset="maison"
         className="maison-app-surface min-h-dvh"
       >
-        <SidebarProvider
-          className="maison-app-surface"
-          style={MAISON_STYLE_VARS}
-        >
+        <SidebarProvider className="maison-app-surface" style={MAISON_STYLE_VARS}>
           <AppSidebar />
           <SidebarInset className="bg-background">
             <div className="flex flex-1 flex-col p-4">
@@ -65,12 +55,7 @@ export function WorkspaceHostShell({
                 <Breadcrumb>
                   <BreadcrumbList>
                     <BreadcrumbItem className="hidden md:block">
-                      <BreadcrumbLink
-                        href={buildWorkspaceOperationPath(
-                          workspaceSlug,
-                          "host",
-                        )}
-                      >
+                      <BreadcrumbLink href={buildWorkspaceOperationPath(workspaceSlug, "host")}>
                         {workspaceScope?.brandName ?? "Workspace"} Dashboard
                       </BreadcrumbLink>
                     </BreadcrumbItem>

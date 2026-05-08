@@ -1,7 +1,7 @@
-import { query } from "./functions";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { query } from "./functions";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
 
 export type AuditWriteEntry = {
@@ -46,22 +46,9 @@ export const listPaginated = query({
     actorSearch: v.optional(v.string()),
     workspaceId: v.optional(v.id("workspaces")),
   },
-  handler: async (
-    ctx,
-    {
-      cursor,
-      pageSize = 25,
-      actionFilter,
-      actorSearch,
-      workspaceId,
-    },
-  ) => {
+  handler: async (ctx, { cursor, pageSize = 25, actionFilter, actorSearch, workspaceId }) => {
     await requireCoucouPlatformMember(ctx);
-    const all = await ctx.db
-      .query("auditLog")
-      .withIndex("by_at")
-      .order("desc")
-      .collect();
+    const all = await ctx.db.query("auditLog").withIndex("by_at").order("desc").collect();
 
     const trimmedActorSearch = actorSearch?.trim().toLowerCase() ?? "";
 
@@ -84,9 +71,7 @@ export const listPaginated = query({
     const cursorIndex = cursor ? parseInt(cursor, 10) : 0;
     const page = filtered.slice(cursorIndex, cursorIndex + pageSize);
     const nextCursor =
-      cursorIndex + pageSize < filtered.length
-        ? String(cursorIndex + pageSize)
-        : null;
+      cursorIndex + pageSize < filtered.length ? String(cursorIndex + pageSize) : null;
     const isDone = cursorIndex + pageSize >= filtered.length;
 
     const workspaceIdsSet = new Set<Id<"workspaces">>();
@@ -107,9 +92,7 @@ export const listPaginated = query({
     return {
       page: page.map((entry) => ({
         ...entry,
-        workspace: entry.workspaceId
-          ? workspacesById.get(entry.workspaceId) ?? null
-          : null,
+        workspace: entry.workspaceId ? (workspacesById.get(entry.workspaceId) ?? null) : null,
       })),
       nextCursor,
       isDone,

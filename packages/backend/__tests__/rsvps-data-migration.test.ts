@@ -1,4 +1,41 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
+
+type TestUser = {
+  firstName?: string | null;
+  lastName?: string | null;
+  name?: string | null;
+  clerkUserId?: string;
+};
+
+type TestRsvp = {
+  _id?: string;
+  userName?: string | null;
+  userEmail?: string | null;
+  userPhone?: string | null;
+  clerkUserId?: string;
+  credentialId?: string | null;
+  eventId?: string;
+  listKey?: string;
+  status?: string;
+};
+
+type TestCredential = {
+  _id: string;
+  eventId?: string;
+  listKey?: string;
+};
+
+type SearchQueryParams = {
+  guestSearch: unknown;
+  eventId?: string;
+  statusFilter?: string;
+};
+
+type ValidSearchQueryParams = {
+  guestSearch: string;
+  eventId: string;
+  statusFilter: string;
+};
 
 describe("RSVP Data Migration & Search Tests", () => {
   describe("Enrichment Priority Logic", () => {
@@ -17,7 +54,7 @@ describe("RSVP Data Migration & Search Tests", () => {
       };
 
       // Test the enrichment logic priority
-      const enrichName = (user: any, rsvp: any) => {
+      const enrichName = (user: TestUser | null | undefined, rsvp: TestRsvp) => {
         return (
           [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
           user?.name ||
@@ -44,7 +81,7 @@ describe("RSVP Data Migration & Search Tests", () => {
         clerkUserId: "user123",
       };
 
-      const enrichName = (user: any, rsvp: any) => {
+      const enrichName = (user: TestUser | null | undefined, rsvp: TestRsvp) => {
         return (
           [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
           user?.name ||
@@ -65,7 +102,7 @@ describe("RSVP Data Migration & Search Tests", () => {
         clerkUserId: "user123",
       };
 
-      const enrichName = (user: any, rsvp: any) => {
+      const enrichName = (user: TestUser | null | undefined, rsvp: TestRsvp) => {
         return (
           [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
           user?.name ||
@@ -91,7 +128,7 @@ describe("RSVP Data Migration & Search Tests", () => {
         clerkUserId: "user123",
       };
 
-      const enrichName = (user: any, rsvp: any) => {
+      const enrichName = (user: TestUser | null | undefined, rsvp: TestRsvp) => {
         return (
           [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
           user?.name ||
@@ -124,7 +161,7 @@ describe("RSVP Data Migration & Search Tests", () => {
         },
       ];
 
-      const enrichName = (user: any, rsvp: any) => {
+      const enrichName = (user: TestUser | null | undefined, rsvp: TestRsvp) => {
         return (
           [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
           user?.name ||
@@ -147,7 +184,7 @@ describe("RSVP Data Migration & Search Tests", () => {
         clerkUserId: "user123",
       };
 
-      const shouldMigrate = (rsvp: any) => {
+      const shouldMigrate = (rsvp: TestRsvp) => {
         return !(rsvp.userName && typeof rsvp.userName === "string" && rsvp.userName.trim() !== "");
       };
 
@@ -162,7 +199,7 @@ describe("RSVP Data Migration & Search Tests", () => {
         { userName: "   " },
       ];
 
-      const shouldMigrate = (rsvp: any) => {
+      const shouldMigrate = (rsvp: TestRsvp) => {
         return !(rsvp.userName && typeof rsvp.userName === "string" && rsvp.userName.trim() !== "");
       };
 
@@ -178,9 +215,14 @@ describe("RSVP Data Migration & Search Tests", () => {
         name: "Jane Smith Old",
       };
 
-      const constructUserName = (user: any) => {
+      const constructUserName = (user: TestUser) => {
         let displayName = "";
-        if (user.firstName && user.lastName && typeof user.firstName === "string" && typeof user.lastName === "string") {
+        if (
+          user.firstName &&
+          user.lastName &&
+          typeof user.firstName === "string" &&
+          typeof user.lastName === "string"
+        ) {
           displayName = `${user.firstName} ${user.lastName}`;
         } else if (user.firstName && typeof user.firstName === "string") {
           displayName = user.firstName;
@@ -201,9 +243,14 @@ describe("RSVP Data Migration & Search Tests", () => {
         name: "Legacy Name",
       };
 
-      const constructUserName = (user: any) => {
+      const constructUserName = (user: TestUser) => {
         let displayName = "";
-        if (user.firstName && user.lastName && typeof user.firstName === "string" && typeof user.lastName === "string") {
+        if (
+          user.firstName &&
+          user.lastName &&
+          typeof user.firstName === "string" &&
+          typeof user.lastName === "string"
+        ) {
           displayName = `${user.firstName} ${user.lastName}`;
         } else if (user.firstName && typeof user.firstName === "string") {
           displayName = user.firstName;
@@ -224,9 +271,14 @@ describe("RSVP Data Migration & Search Tests", () => {
         name: undefined,
       };
 
-      const constructUserName = (user: any) => {
+      const constructUserName = (user: TestUser) => {
         let displayName = "";
-        if (user.firstName && user.lastName && typeof user.firstName === "string" && typeof user.lastName === "string") {
+        if (
+          user.firstName &&
+          user.lastName &&
+          typeof user.firstName === "string" &&
+          typeof user.lastName === "string"
+        ) {
           displayName = `${user.firstName} ${user.lastName}`;
         } else if (user.firstName && typeof user.firstName === "string") {
           displayName = user.firstName;
@@ -260,9 +312,14 @@ describe("RSVP Data Migration & Search Tests", () => {
         },
       ];
 
-      const constructUserName = (user: any) => {
+      const constructUserName = (user: TestUser) => {
         let displayName = "";
-        if (user.firstName && user.lastName && typeof user.firstName === "string" && typeof user.lastName === "string") {
+        if (
+          user.firstName &&
+          user.lastName &&
+          typeof user.firstName === "string" &&
+          typeof user.lastName === "string"
+        ) {
           displayName = `${user.firstName} ${user.lastName}`;
         } else if (user.firstName && typeof user.firstName === "string") {
           displayName = user.firstName;
@@ -302,7 +359,11 @@ describe("RSVP Data Migration & Search Tests", () => {
         },
       ];
 
-      const filterByList = (rsvps: any[], listFilter: string, credential: any) => {
+      const filterByList = (
+        rsvps: TestRsvp[],
+        listFilter: string,
+        credential: TestCredential | null | undefined,
+      ) => {
         if (!credential) {
           // Fallback to listKey filtering
           return rsvps.filter((rsvp) => rsvp.listKey === listFilter);
@@ -337,7 +398,11 @@ describe("RSVP Data Migration & Search Tests", () => {
         },
       ];
 
-      const filterByList = (rsvps: any[], listFilter: string, credential: any) => {
+      const filterByList = (
+        rsvps: TestRsvp[],
+        listFilter: string,
+        credential: TestCredential | null | undefined,
+      ) => {
         if (!credential) {
           return rsvps.filter((rsvp) => rsvp.listKey === listFilter);
         }
@@ -381,7 +446,11 @@ describe("RSVP Data Migration & Search Tests", () => {
         },
       ];
 
-      const filterByList = (rsvps: any[], listFilter: string, credential: any) => {
+      const filterByList = (
+        rsvps: TestRsvp[],
+        listFilter: string,
+        credential: TestCredential | null | undefined,
+      ) => {
         if (!credential) {
           return rsvps.filter((rsvp) => rsvp.listKey === listFilter);
         }
@@ -405,7 +474,7 @@ describe("RSVP Data Migration & Search Tests", () => {
 
   describe("Search Query Structure", () => {
     it("should validate search query parameters", () => {
-      const validateSearchQuery = (params: any) => {
+      const validateSearchQuery = (params: SearchQueryParams) => {
         const { guestSearch, eventId, statusFilter } = params;
 
         // Validate required parameters
@@ -427,7 +496,7 @@ describe("RSVP Data Migration & Search Tests", () => {
           guestSearch: "John",
           eventId: "event_123",
           statusFilter: "approved",
-        })
+        }),
       ).not.toThrow();
 
       expect(() =>
@@ -435,7 +504,7 @@ describe("RSVP Data Migration & Search Tests", () => {
           guestSearch: "",
           eventId: "event_123",
           statusFilter: "all",
-        })
+        }),
       ).not.toThrow();
 
       // Invalid queries
@@ -444,7 +513,7 @@ describe("RSVP Data Migration & Search Tests", () => {
           guestSearch: "John",
           eventId: undefined,
           statusFilter: "approved",
-        })
+        }),
       ).toThrow("eventId is required");
 
       expect(() =>
@@ -452,7 +521,7 @@ describe("RSVP Data Migration & Search Tests", () => {
           guestSearch: 123,
           eventId: "event_123",
           statusFilter: "approved",
-        })
+        }),
       ).toThrow("guestSearch must be string");
 
       expect(() =>
@@ -460,12 +529,12 @@ describe("RSVP Data Migration & Search Tests", () => {
           guestSearch: "John",
           eventId: "event_123",
           statusFilter: "invalid",
-        })
+        }),
       ).toThrow("Invalid status filter");
     });
 
     it("should construct search index query correctly", () => {
-      const buildSearchQuery = (params: any) => {
+      const buildSearchQuery = (params: ValidSearchQueryParams) => {
         const { guestSearch, eventId, statusFilter } = params;
 
         // Mock search query builder
@@ -507,7 +576,7 @@ describe("RSVP Data Migration & Search Tests", () => {
 
   describe("Data Consistency Validation", () => {
     it("should validate RSVP has either credentialId or listKey", () => {
-      const validateRsvpConsistency = (rsvp: any) => {
+      const validateRsvpConsistency = (rsvp: TestRsvp) => {
         const hasCredentialId = !!rsvp.credentialId;
         const hasListKey = !!rsvp.listKey;
 
@@ -516,22 +585,30 @@ describe("RSVP Data Migration & Search Tests", () => {
       };
 
       // Valid states
-      expect(validateRsvpConsistency({ credentialId: "cred_123", listKey: undefined })).toBe(true);
+      expect(
+        validateRsvpConsistency({
+          credentialId: "cred_123",
+          listKey: undefined,
+        }),
+      ).toBe(true);
       expect(validateRsvpConsistency({ credentialId: undefined, listKey: "vip" })).toBe(true);
       expect(validateRsvpConsistency({ credentialId: "cred_123", listKey: "vip" })).toBe(true);
 
       // Invalid state
-      expect(validateRsvpConsistency({ credentialId: undefined, listKey: undefined })).toBe(false);
+      expect(
+        validateRsvpConsistency({
+          credentialId: undefined,
+          listKey: undefined,
+        }),
+      ).toBe(false);
     });
 
     it("should validate userName matches users table when present", () => {
-      const validateUserNameConsistency = (rsvp: any, user: any) => {
+      const validateUserNameConsistency = (rsvp: TestRsvp, user: TestUser | null | undefined) => {
         if (!rsvp.userName || !user) return true; // Skip validation if either missing
 
         const expectedName =
-          [user.firstName, user.lastName].filter(Boolean).join(" ") ||
-          user.name ||
-          "";
+          [user.firstName, user.lastName].filter(Boolean).join(" ") || user.name || "";
 
         return rsvp.userName === expectedName;
       };
@@ -552,10 +629,9 @@ describe("RSVP Data Migration & Search Tests", () => {
     });
 
     it("should validate new RSVPs don't have denormalized fields", () => {
-      const validateNewRsvpStructure = (rsvp: any) => {
+      const validateNewRsvpStructure = (rsvp: TestRsvp) => {
         // New RSVPs should not have denormalized fields
-        const hasDenormalizedFields =
-          rsvp.userName || rsvp.userEmail || rsvp.userPhone;
+        const hasDenormalizedFields = rsvp.userName || rsvp.userEmail || rsvp.userPhone;
 
         return !hasDenormalizedFields;
       };
@@ -581,7 +657,7 @@ describe("RSVP Data Migration & Search Tests", () => {
 
   describe("Error Handling", () => {
     it("should handle missing user data gracefully", () => {
-      const safeEnrichment = (rsvp: any, user: any) => {
+      const safeEnrichment = (rsvp: TestRsvp, user: TestUser | null | undefined) => {
         try {
           return {
             name:
@@ -592,7 +668,7 @@ describe("RSVP Data Migration & Search Tests", () => {
             firstName: user?.firstName || "",
             lastName: user?.lastName || "",
           };
-        } catch (error) {
+        } catch (_error) {
           return {
             name: rsvp?.userName || "",
             firstName: "",
@@ -610,7 +686,7 @@ describe("RSVP Data Migration & Search Tests", () => {
     });
 
     it("should handle corrupted userName data", () => {
-      const sanitizeUserName = (userName: any) => {
+      const sanitizeUserName = (userName: unknown) => {
         if (typeof userName !== "string") return "";
         return userName.trim();
       };

@@ -10,27 +10,16 @@ interface UpsertUserSocialProfileArgs {
   normalizedHandle: string;
 }
 
-export async function listUserSocialProfilesForClerkUser(
-  ctx: QueryCtx,
-  clerkUserId: string,
-) {
+export async function listUserSocialProfilesForClerkUser(ctx: QueryCtx, clerkUserId: string) {
   return await ctx.db
     .query("userSocialProfiles")
-    .withIndex("by_user", (queryBuilder) =>
-      queryBuilder.eq("clerkUserId", clerkUserId),
-    )
+    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
     .collect();
 }
 
 export async function upsertUserSocialProfile(
   ctx: MutationCtx,
-  {
-    clerkUserId,
-    userId,
-    platformKey,
-    handle,
-    normalizedHandle,
-  }: UpsertUserSocialProfileArgs,
+  { clerkUserId, userId, platformKey, handle, normalizedHandle }: UpsertUserSocialProfileArgs,
 ): Promise<Id<"userSocialProfiles">> {
   const now = Date.now();
   const existingProfile = await ctx.db
@@ -79,9 +68,7 @@ export async function replaceRsvpSocialProfileSnapshots(
     submittedProfiles: SanitizedSubmittedSocialProfile[];
   },
 ): Promise<void> {
-  const submittedPlatformKeys = new Set(
-    submittedProfiles.map((profile) => profile.platformKey),
-  );
+  const submittedPlatformKeys = new Set(submittedProfiles.map((profile) => profile.platformKey));
   const existingSnapshots = await ctx.db
     .query("rsvpSocialProfiles")
     .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvpId))

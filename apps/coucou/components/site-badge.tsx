@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import { CoucouLogoMark } from "@/components/coucou-logo";
+import { cn } from "@/lib/utils";
 
 interface SiteBadgeProps {
   className?: string;
@@ -12,10 +12,7 @@ const sizeClasses = {
   lg: "size-12 text-sm",
 } as const;
 
-export function SiteBadge({
-  className,
-  size = "md",
-}: SiteBadgeProps) {
+export function SiteBadge({ className, size = "md" }: SiteBadgeProps) {
   return (
     <div
       className={cn(
@@ -24,11 +21,7 @@ export function SiteBadge({
         className,
       )}
     >
-      <CoucouLogoMark
-        decorative={false}
-        label="Coucou"
-        size={size === "lg" ? 28 : 18}
-      />
+      <CoucouLogoMark decorative={false} label="Coucou" size={size === "lg" ? 28 : 18} />
     </div>
   );
 }

@@ -48,7 +48,7 @@ function unquoteDotenvValue(value) {
   const firstCharacter = value[0];
   const lastCharacter = value[value.length - 1];
   if (
-    (firstCharacter === "\"" && lastCharacter === "\"") ||
+    (firstCharacter === '"' && lastCharacter === '"') ||
     (firstCharacter === "'" && lastCharacter === "'")
   ) {
     return value.slice(1, -1);
@@ -106,11 +106,7 @@ function runGitHubSecretSet(variableName, value) {
         return;
       }
 
-      reject(
-        new Error(
-          `gh secret set ${variableName} exited with code ${exitCode ?? "unknown"}`,
-        ),
-      );
+      reject(new Error(`gh secret set ${variableName} exited with code ${exitCode ?? "unknown"}`));
     });
   });
 }
@@ -129,9 +125,7 @@ if (missingSecretNames.length > 0) {
   process.exit(1);
 }
 
-const productionValidationMessages = validateProductionEnvironmentValues(
-  localEnvironmentValues,
-);
+const productionValidationMessages = validateProductionEnvironmentValues(localEnvironmentValues);
 if (productionValidationMessages.length > 0) {
   console.error("Invalid GitHub production secret values:");
   for (const validationMessage of productionValidationMessages) {
@@ -148,9 +142,7 @@ const secretNamesToSync = [
   ),
 ];
 
-console.log(
-  `Syncing ${secretNamesToSync.length} GitHub production environment secrets.`,
-);
+console.log(`Syncing ${secretNamesToSync.length} GitHub production environment secrets.`);
 
 for (const secretName of secretNamesToSync) {
   await runGitHubSecretSet(secretName, localEnvironmentValues.get(secretName));

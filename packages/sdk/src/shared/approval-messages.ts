@@ -17,9 +17,7 @@ export function sanitizeOptionalApprovalMessage(
   return trimmedApprovalMessage.length > 0 ? trimmedApprovalMessage : undefined;
 }
 
-export function getDefaultApprovalMessage(
-  eventName: string | null | undefined,
-): string {
+export function getDefaultApprovalMessage(eventName: string | null | undefined): string {
   const trimmedEventName = eventName?.trim();
   if (trimmedEventName) {
     return `You have been approved for ${trimmedEventName.toUpperCase()}. We're looking forward to seeing you.`;
@@ -47,9 +45,7 @@ export function buildApprovalMessageBackfillPatch({
     return undefined;
   }
 
-  const backfilledApprovalMessage = sanitizeOptionalApprovalMessage(
-    eventApprovalMessage,
-  );
+  const backfilledApprovalMessage = sanitizeOptionalApprovalMessage(eventApprovalMessage);
   if (!backfilledApprovalMessage) {
     return undefined;
   }

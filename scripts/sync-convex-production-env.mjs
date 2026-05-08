@@ -32,11 +32,7 @@ function runCommandWithSecretInput(command, args, input, options = {}) {
         return;
       }
 
-      reject(
-        new Error(
-          `${command} ${args.join(" ")} exited with code ${exitCode ?? "unknown"}`,
-        ),
-      );
+      reject(new Error(`${command} ${args.join(" ")} exited with code ${exitCode ?? "unknown"}`));
     });
   });
 }
@@ -49,10 +45,7 @@ const missingDeploymentVariables = findMissingEnvironmentVariables(process.env, 
   "CONVEX_DEPLOY_KEY",
 ]);
 
-if (
-  missingDeploymentVariables.length > 0 ||
-  missingEnvironmentVariables.length > 0
-) {
+if (missingDeploymentVariables.length > 0 || missingEnvironmentVariables.length > 0) {
   if (missingDeploymentVariables.length > 0) {
     console.error("Missing required deployment environment variables:");
     for (const variableName of missingDeploymentVariables) {
@@ -69,8 +62,7 @@ if (
   process.exit(1);
 }
 
-const productionValidationMessages =
-  validateProductionEnvironmentValues(process.env);
+const productionValidationMessages = validateProductionEnvironmentValues(process.env);
 if (productionValidationMessages.length > 0) {
   console.error("Invalid Convex production environment values:");
   for (const validationMessage of productionValidationMessages) {
@@ -84,9 +76,7 @@ const variablesToSync = allBackendEnvironmentVariables.filter((variableName) =>
   hasNonEmptyValue(process.env[variableName]),
 );
 
-console.log(
-  `Syncing ${variablesToSync.length} Convex production environment variables.`,
-);
+console.log(`Syncing ${variablesToSync.length} Convex production environment variables.`);
 
 for (const variableName of variablesToSync) {
   await runCommandWithSecretInput(

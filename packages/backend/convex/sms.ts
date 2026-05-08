@@ -3,9 +3,9 @@
  * Actions that require Node.js are in smsActions.ts
  */
 
-import { internalMutation, internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import { ensureEventInSiteScope, eventMatchesSiteScope } from "./lib/siteScope";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
@@ -61,7 +61,6 @@ export const updateNotificationStatus = internalMutation({
   },
 });
 
-
 /**
  * Query to get SMS notifications for an event
  * Used for analytics and debugging
@@ -81,10 +80,8 @@ export const getNotificationsByEvent = internalQuery({
       ? baseQuery.filter((q) => q.eq(q.field("type"), args.type))
       : baseQuery;
 
-    return filtered
-      .order("desc")
-      .take(args.limit ?? 50);
-    }
+    return filtered.order("desc").take(args.limit ?? 50);
+  },
 });
 
 /**
@@ -188,15 +185,14 @@ export const listForEventPaginated = query({
       await ensureEventInSiteScope(ctx, eventId, { siteKey, workspaceSlug });
     }
 
-    const scopedEventIds = siteKey || workspaceSlug
-      ? new Set(
-          (await ctx.db.query("events").collect())
-            .filter((event) =>
-              eventMatchesSiteScope(event, { siteKey, workspaceSlug }),
-            )
-            .map((event) => event._id),
-        )
-      : null;
+    const scopedEventIds =
+      siteKey || workspaceSlug
+        ? new Set(
+            (await ctx.db.query("events").collect())
+              .filter((event) => eventMatchesSiteScope(event, { siteKey, workspaceSlug }))
+              .map((event) => event._id),
+          )
+        : null;
 
     if (!eventId && scopedEventIds && scopedEventIds.size === 0) {
       return {
@@ -219,9 +215,7 @@ export const listForEventPaginated = query({
         return allNotifications;
       }
 
-      return allNotifications.filter((notification) =>
-        scopedEventIds.has(notification.eventId),
-      );
+      return allNotifications.filter((notification) => scopedEventIds.has(notification.eventId));
     };
 
     let filteredNotifications = await loadNotifications();
@@ -241,8 +235,7 @@ export const listForEventPaginated = query({
     if (phoneSearch.trim()) {
       const trimmedPhoneSearch = phoneSearch.trim();
       filteredNotifications = filteredNotifications.filter(
-        (notification) =>
-          notification.recipientPhoneObfuscated === trimmedPhoneSearch,
+        (notification) => notification.recipientPhoneObfuscated === trimmedPhoneSearch,
       );
     }
 
@@ -252,14 +245,9 @@ export const listForEventPaginated = query({
     );
 
     const cursorIndex = cursor ? parseInt(cursor, 10) : 0;
-    const paginatedPage = filteredNotifications.slice(
-      cursorIndex,
-      cursorIndex + pageSize,
-    );
+    const paginatedPage = filteredNotifications.slice(cursorIndex, cursorIndex + pageSize);
     const nextCursor =
-      cursorIndex + pageSize < filteredNotifications.length
-        ? String(cursorIndex + pageSize)
-        : null;
+      cursorIndex + pageSize < filteredNotifications.length ? String(cursorIndex + pageSize) : null;
     const isDone = cursorIndex + pageSize >= filteredNotifications.length;
 
     // Batch fetch related data
@@ -347,18 +335,19 @@ export const countForEventFiltered = query({
       });
     }
 
-    const scopedEventIds = args.siteKey || args.workspaceSlug
-      ? new Set(
-          (await ctx.db.query("events").collect())
-            .filter((event) =>
-              eventMatchesSiteScope(event, {
-                siteKey: args.siteKey,
-                workspaceSlug: args.workspaceSlug,
-              }),
-            )
-            .map((event) => event._id),
-        )
-      : null;
+    const scopedEventIds =
+      args.siteKey || args.workspaceSlug
+        ? new Set(
+            (await ctx.db.query("events").collect())
+              .filter((event) =>
+                eventMatchesSiteScope(event, {
+                  siteKey: args.siteKey,
+                  workspaceSlug: args.workspaceSlug,
+                }),
+              )
+              .map((event) => event._id),
+          )
+        : null;
 
     const scopedEventId = args.eventId;
 
@@ -382,16 +371,13 @@ export const countForEventFiltered = query({
     }
 
     if (args.typeFilter && args.typeFilter !== "all") {
-      notifications = notifications.filter(
-        (notification) => notification.type === args.typeFilter,
-      );
+      notifications = notifications.filter((notification) => notification.type === args.typeFilter);
     }
 
     if (args.phoneSearch && args.phoneSearch.trim()) {
       const trimmedPhoneSearch = args.phoneSearch.trim();
       notifications = notifications.filter(
-        (notification) =>
-          notification.recipientPhoneObfuscated === trimmedPhoneSearch,
+        (notification) => notification.recipientPhoneObfuscated === trimmedPhoneSearch,
       );
     }
 

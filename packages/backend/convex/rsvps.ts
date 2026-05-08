@@ -1,48 +1,13 @@
-import {
-  internalQuery,
-  type MutationCtx,
-  type QueryCtx,
-} from "./_generated/server";
-import { internalMutation, mutation, query } from "./functions";
-import { api, components } from "./_generated/api";
-import { v } from "convex/values";
-import { Id, Doc } from "./_generated/dataModel";
+import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import {
   normalizePrimaryFieldLookupText,
   normalizeSocialPlatformKey,
 } from "@coucou/sdk/shared/primary-fields";
-import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
-import {
-  insertRsvpIntoAggregate,
-  updateRsvpInAggregate,
-  deleteRsvpFromAggregate,
-  countRsvpsWithAggregate,
-} from "./lib/rsvpAggregate";
-import {
-  eventMatchesTenantScope,
-  resolveTenantWorkspaceScope,
-} from "./lib/workspaceScope";
-import {
-  collectRsvpsMatchingFilters,
-  filtersRequireDirectRsvpCount,
-  normalizeTicketStatusFilter,
-  validRsvpStatuses,
-  type ValidRsvpStatus,
-} from "./lib/rsvpFilters";
-import {
-  deriveApprovalStatus,
-  type ApprovalStatus,
-} from "./lib/rsvpStatus";
-import { NotFoundError } from "./lib/types";
-import {
-  ensureEventInSiteScope,
-  getEventInSiteScope,
-} from "./lib/siteScope";
-import {
-  requireWorkspaceDoor,
-  requireWorkspaceHost,
-  requireWorkspaceRead,
-} from "./lib/workspaceAuth";
+import { v } from "convex/values";
+import { api, components } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalMutation, mutation, query } from "./functions";
 import {
   assertRequiredPrimaryFieldValues,
   buildInvitedByPatch,
@@ -50,7 +15,29 @@ import {
   submittedSocialProfileValidator,
 } from "./lib/primaryFields";
 import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./lib/profileValueRecords";
+import {
+  countRsvpsWithAggregate,
+  deleteRsvpFromAggregate,
+  insertRsvpIntoAggregate,
+  updateRsvpInAggregate,
+} from "./lib/rsvpAggregate";
+import {
+  collectRsvpsMatchingFilters,
+  filtersRequireDirectRsvpCount,
+  normalizeTicketStatusFilter,
+  type ValidRsvpStatus,
+  validRsvpStatuses,
+} from "./lib/rsvpFilters";
+import { type ApprovalStatus, deriveApprovalStatus } from "./lib/rsvpStatus";
+import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
+import { NotFoundError } from "./lib/types";
+import {
+  requireWorkspaceDoor,
+  requireWorkspaceHost,
+  requireWorkspaceRead,
+} from "./lib/workspaceAuth";
+import { eventMatchesTenantScope, resolveTenantWorkspaceScope } from "./lib/workspaceScope";
 
 export const submitRequest = mutation({
   args: {
@@ -81,20 +68,15 @@ export const submitRequest = mutation({
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
       .unique();
 
-    const userName = user
-      ? [user.firstName, user.lastName].filter(Boolean).join(" ") || ""
-      : "";
+    const userName = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") || "" : "";
 
     // Ensure event exists and is active
     const event = await getEventInSiteScope(ctx, args.eventId, {
       siteKey: args.siteKey,
     });
     const now = Date.now();
-    if (!event || !isEventOpenForRsvp(event, now))
-      throw new Error("Event not available");
-    const eventFieldMap = new Map(
-      (event.customFields ?? []).map((field) => [field.key, field]),
-    );
+    if (!event || !isEventOpenForRsvp(event, now)) throw new Error("Event not available");
+    const eventFieldMap = new Map((event.customFields ?? []).map((field) => [field.key, field]));
     const primaryFieldConfig = event.primaryFieldConfig;
     const sanitizedSocialProfiles = sanitizeSubmittedSocialProfiles(
       args.socialProfiles,
@@ -106,9 +88,7 @@ export const submitRequest = mutation({
       invitedByName: args.invitedByName,
     });
     const configuredSocialPlatformKeys = new Set(
-      (primaryFieldConfig?.socialPlatforms ?? []).map(
-        (platform) => platform.platformKey,
-      ),
+      (primaryFieldConfig?.socialPlatforms ?? []).map((platform) => platform.platformKey),
     );
     const invitedByPatch =
       primaryFieldConfig?.invitedBy?.enabled === true
@@ -121,20 +101,13 @@ export const submitRequest = mutation({
             .map(([fieldKey, rawValue]) => {
               const fieldConfig = eventFieldMap.get(fieldKey);
               if (!fieldConfig) return null;
-              const stringValue =
-                typeof rawValue === "string" ? rawValue : `${rawValue ?? ""}`;
+              const stringValue = typeof rawValue === "string" ? rawValue : `${rawValue ?? ""}`;
               const finalValue =
-                fieldConfig.trimWhitespace === false
-                  ? stringValue
-                  : stringValue.trim();
+                fieldConfig.trimWhitespace === false ? stringValue : stringValue.trim();
               if (!finalValue) return null;
               return [fieldKey, finalValue];
             })
-            .filter(
-              (
-                entry,
-              ): entry is [string, string] => entry !== null,
-            ),
+            .filter((entry): entry is [string, string] => entry !== null),
         )
       : undefined;
 
@@ -142,9 +115,7 @@ export const submitRequest = mutation({
     const maxAttendeesAllowed = event.maxAttendees ?? 1;
     const requestedAttendees = args.attendees ?? 1;
     if (requestedAttendees > maxAttendeesAllowed) {
-      throw new Error(
-        `Maximum ${maxAttendeesAllowed} attendees allowed for this event`,
-      );
+      throw new Error(`Maximum ${maxAttendeesAllowed} attendees allowed for this event`);
     }
     if (requestedAttendees < 1) {
       throw new Error("At least 1 attendee required");
@@ -187,11 +158,9 @@ export const submitRequest = mutation({
         attendees: requestedAttendees,
         smsConsent: args.smsConsent,
         smsConsentTimestamp: args.smsConsent !== undefined ? now : undefined,
-        smsConsentIpAddress:
-          args.smsConsent === true ? sanitizedSmsConsentIpAddress : undefined,
+        smsConsentIpAddress: args.smsConsent === true ? sanitizedSmsConsentIpAddress : undefined,
         customFieldValues:
-          sanitizedCustomFieldValues &&
-          Object.keys(sanitizedCustomFieldValues).length > 0
+          sanitizedCustomFieldValues && Object.keys(sanitizedCustomFieldValues).length > 0
             ? sanitizedCustomFieldValues
             : undefined,
         ...invitedByPatch,
@@ -238,11 +207,10 @@ export const submitRequest = mutation({
         shareContact: args.shareContact,
         attendees: requestedAttendees,
         smsConsent: args.smsConsent,
-        smsConsentTimestamp:
-          args.smsConsent !== undefined ? now : existing.smsConsentTimestamp,
+        smsConsentTimestamp: args.smsConsent !== undefined ? now : existing.smsConsentTimestamp,
         smsConsentIpAddress:
           args.smsConsent === true
-            ? sanitizedSmsConsentIpAddress ?? existing.smsConsentIpAddress
+            ? (sanitizedSmsConsentIpAddress ?? existing.smsConsentIpAddress)
             : existing.smsConsentIpAddress,
         customFieldValues:
           sanitizedCustomFieldValues !== undefined
@@ -306,9 +274,7 @@ export const checkSmsConsentForUserEvent = internalQuery({
   handler: async (ctx, { eventId, clerkUserId }) => {
     const rsvp = await ctx.db
       .query("rsvps")
-      .withIndex("by_event_user", (q) =>
-        q.eq("eventId", eventId).eq("clerkUserId", clerkUserId),
-      )
+      .withIndex("by_event_user", (q) => q.eq("eventId", eventId).eq("clerkUserId", clerkUserId))
       .unique();
 
     const hasConsented = rsvp?.smsConsent === true;
@@ -329,9 +295,7 @@ export const getApprovedRsvpWithRedemption = internalQuery({
   handler: async (ctx, { eventId, clerkUserId }) => {
     const rsvp = await ctx.db
       .query("rsvps")
-      .withIndex("by_event_user", (q) =>
-        q.eq("eventId", eventId).eq("clerkUserId", clerkUserId),
-      )
+      .withIndex("by_event_user", (q) => q.eq("eventId", eventId).eq("clerkUserId", clerkUserId))
       .unique();
 
     if (!rsvp || (rsvp.status !== "approved" && rsvp.status !== "attending")) {
@@ -340,9 +304,7 @@ export const getApprovedRsvpWithRedemption = internalQuery({
 
     const redemption = await ctx.db
       .query("redemptions")
-      .withIndex("by_event_user", (q) =>
-        q.eq("eventId", eventId).eq("clerkUserId", clerkUserId),
-      )
+      .withIndex("by_event_user", (q) => q.eq("eventId", eventId).eq("clerkUserId", clerkUserId))
       .unique();
 
     if (!redemption) {
@@ -396,9 +358,7 @@ async function collectUserSharedEvents(
 
   if (rsvps.length === 0) return [];
 
-  const uniqueEventIds = Array.from(
-    new Set(rsvps.map((rsvp) => rsvp.eventId)),
-  );
+  const uniqueEventIds = Array.from(new Set(rsvps.map((rsvp) => rsvp.eventId)));
   const eventEntries = await Promise.all(
     uniqueEventIds.map(async (eventId) => ({
       eventId,
@@ -406,9 +366,7 @@ async function collectUserSharedEvents(
     })),
   );
   const eventMap = new Map(
-    eventEntries
-      .filter((entry) => entry.event)
-      .map((entry) => [entry.eventId, entry.event!]),
+    eventEntries.filter((entry) => entry.event).map((entry) => [entry.eventId, entry.event!]),
   );
 
   const filteredRsvps = scope
@@ -419,7 +377,8 @@ async function collectUserSharedEvents(
       })
     : rsvps;
 
-  return await Promise.all(filteredRsvps.map(async (rsvp) => {
+  return await Promise.all(
+    filteredRsvps.map(async (rsvp) => {
       const event = eventMap.get(rsvp.eventId);
       const customFieldDefinitions = event?.customFields ?? [];
       const customFields = customFieldDefinitions.map((definition) => ({
@@ -433,9 +392,7 @@ async function collectUserSharedEvents(
       }));
       const socialProfiles = await ctx.db
         .query("rsvpSocialProfiles")
-        .withIndex("by_rsvp", (queryBuilder) =>
-          queryBuilder.eq("rsvpId", rsvp._id),
-        )
+        .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
         .collect();
 
       return {
@@ -458,7 +415,8 @@ async function collectUserSharedEvents(
         })),
         invitedByName: rsvp.invitedByName,
       };
-    }));
+    }),
+  );
 }
 
 export const updateSmsPreference = mutation({
@@ -468,10 +426,7 @@ export const updateSmsPreference = mutation({
     applyToAll: v.optional(v.boolean()),
     smsConsentIpAddress: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    { rsvpId, smsConsent, applyToAll, smsConsentIpAddress },
-  ) => {
+  handler: async (ctx, { rsvpId, smsConsent, applyToAll, smsConsentIpAddress }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     const clerkUserId = identity.subject;
@@ -495,7 +450,7 @@ export const updateSmsPreference = mutation({
             smsConsent,
             smsConsentTimestamp: now,
             smsConsentIpAddress: smsConsent
-              ? sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress
+              ? (sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress)
               : rsvp.smsConsentIpAddress,
             updatedAt: now,
           }),
@@ -517,7 +472,7 @@ export const updateSmsPreference = mutation({
         smsConsent,
         smsConsentTimestamp: now,
         smsConsentIpAddress: smsConsent
-          ? sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress
+          ? (sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress)
           : rsvp.smsConsentIpAddress,
         updatedAt: now,
       });
@@ -527,13 +482,12 @@ export const updateSmsPreference = mutation({
 
     if (notificationsByEvent.size > 0) {
       await Promise.all(
-        Array.from(notificationsByEvent.entries()).map(
-          ([eventId, consentEnabled]) =>
-            ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
-              eventId,
-              clerkUserId,
-              consentEnabled,
-            }),
+        Array.from(notificationsByEvent.entries()).map(([eventId, consentEnabled]) =>
+          ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
+            eventId,
+            clerkUserId,
+            consentEnabled,
+          }),
         ),
       );
     }
@@ -570,12 +524,8 @@ export const updateSharedFields = mutation({
     for (const [fieldKey, rawValue] of Object.entries(fields)) {
       const definition = fieldDefinitions.get(fieldKey);
       if (!definition) continue;
-      const stringValue =
-        typeof rawValue === "string" ? rawValue : `${rawValue ?? ""}`;
-      const finalValue =
-        definition.trimWhitespace === false
-          ? stringValue
-          : stringValue.trim();
+      const stringValue = typeof rawValue === "string" ? rawValue : `${rawValue ?? ""}`;
+      const finalValue = definition.trimWhitespace === false ? stringValue : stringValue.trim();
       if (finalValue) {
         nextValues[fieldKey] = finalValue;
       } else {
@@ -584,8 +534,7 @@ export const updateSharedFields = mutation({
     }
 
     await ctx.db.patch(rsvpId, {
-      customFieldValues:
-        Object.keys(nextValues).length > 0 ? nextValues : undefined,
+      customFieldValues: Object.keys(nextValues).length > 0 ? nextValues : undefined,
       updatedAt: Date.now(),
     });
 
@@ -616,9 +565,7 @@ export const updateSharedPrimaryFields = mutation({
 
     const primaryFieldConfig = event.primaryFieldConfig;
     const configuredSocialPlatformKeys = new Set(
-      (primaryFieldConfig?.socialPlatforms ?? []).map(
-        (platform) => platform.platformKey,
-      ),
+      (primaryFieldConfig?.socialPlatforms ?? []).map((platform) => platform.platformKey),
     );
     const sanitizedSocialProfiles =
       socialProfiles === undefined
@@ -642,9 +589,7 @@ export const updateSharedPrimaryFields = mutation({
     }
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerkUserId", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", clerkUserId),
-      )
+      .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
       .unique();
 
     if (socialProfiles !== undefined && configuredSocialPlatformKeys.size > 0) {
@@ -665,10 +610,7 @@ export const updateSharedPrimaryFields = mutation({
       });
     }
 
-    if (
-      primaryFieldConfig?.invitedBy?.enabled === true &&
-      invitedByName !== undefined
-    ) {
+    if (primaryFieldConfig?.invitedBy?.enabled === true && invitedByName !== undefined) {
       await ctx.db.patch(rsvpId, {
         ...buildInvitedByPatch(invitedByName),
         updatedAt: Date.now(),
@@ -754,15 +696,12 @@ export const listForEvent = query({
           // Look up user's display name
           const user = await ctx.db
             .query("users")
-            .withIndex("by_clerkUserId", (q) =>
-              q.eq("clerkUserId", r.clerkUserId),
-            )
+            .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", r.clerkUserId))
             .unique();
           // User name constructed from firstName/lastName in display logic
           const firstName = user?.firstName;
           const lastName = user?.lastName;
-          const name =
-            [firstName, lastName].filter(Boolean).join(" ") || undefined;
+          const name = [firstName, lastName].filter(Boolean).join(" ") || undefined;
           // Redemption info for this user+event
           const redemption = await ctx.db
             .query("redemptions")
@@ -770,8 +709,7 @@ export const listForEvent = query({
               q.eq("eventId", eventId).eq("clerkUserId", r.clerkUserId),
             )
             .unique();
-          let redemptionStatus: "none" | "issued" | "redeemed" | "disabled" =
-            "none";
+          let redemptionStatus: "none" | "issued" | "redeemed" | "disabled" = "none";
           if (redemption) {
             if (redemption.disabledAt) redemptionStatus = "disabled";
             else if (redemption.redeemedAt) redemptionStatus = "redeemed";
@@ -796,9 +734,7 @@ export const listForEvent = query({
           }
           const socialProfiles = await ctx.db
             .query("rsvpSocialProfiles")
-            .withIndex("by_rsvp", (queryBuilder) =>
-              queryBuilder.eq("rsvpId", r._id),
-            )
+            .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", r._id))
             .collect();
           return {
             id: r._id,
@@ -840,12 +776,7 @@ export const countForEventFiltered = query({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
     approvalFilter: v.optional(
-      v.union(
-        v.literal("all"),
-        v.literal("pending"),
-        v.literal("approved"),
-        v.literal("denied"),
-      ),
+      v.union(v.literal("all"), v.literal("pending"), v.literal("approved"), v.literal("denied")),
     ),
     listFilter: v.optional(v.string()),
     guestSearch: v.optional(v.string()),
@@ -900,12 +831,7 @@ export const countForEventFiltered = query({
     }
 
     // Use aggregate for efficient counting
-    return countRsvpsWithAggregate(
-      ctx,
-      eventId,
-      approvalFilter,
-      listFilter,
-    );
+    return countRsvpsWithAggregate(ctx, eventId, approvalFilter, listFilter);
   },
 });
 
@@ -923,13 +849,9 @@ async function filterRsvpsByPrimaryFields(
   },
 ): Promise<Array<Doc<"rsvps">>> {
   const normalizedSocialPlatformFilter =
-    socialPlatformFilter === "all"
-      ? "all"
-      : normalizeSocialPlatformKey(socialPlatformFilter);
-  const normalizedSocialSearch =
-    normalizePrimaryFieldLookupText(socialSearch);
-  const normalizedInvitedBySearch =
-    normalizePrimaryFieldLookupText(invitedBySearch);
+    socialPlatformFilter === "all" ? "all" : normalizeSocialPlatformKey(socialPlatformFilter);
+  const normalizedSocialSearch = normalizePrimaryFieldLookupText(socialSearch);
+  const normalizedInvitedBySearch = normalizePrimaryFieldLookupText(invitedBySearch);
 
   if (
     normalizedSocialPlatformFilter === "all" &&
@@ -948,15 +870,10 @@ async function filterRsvpsByPrimaryFields(
       }
     }
 
-    if (
-      normalizedSocialPlatformFilter !== "all" ||
-      normalizedSocialSearch
-    ) {
+    if (normalizedSocialPlatformFilter !== "all" || normalizedSocialSearch) {
       const socialProfiles = await ctx.db
         .query("rsvpSocialProfiles")
-        .withIndex("by_rsvp", (queryBuilder) =>
-          queryBuilder.eq("rsvpId", rsvp._id),
-        )
+        .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
         .collect();
       const matchingSocialProfiles = socialProfiles.filter((profile) => {
         if (
@@ -965,10 +882,7 @@ async function filterRsvpsByPrimaryFields(
         ) {
           return false;
         }
-        if (
-          normalizedSocialSearch &&
-          !profile.normalizedHandle.includes(normalizedSocialSearch)
-        ) {
+        if (normalizedSocialSearch && !profile.normalizedHandle.includes(normalizedSocialSearch)) {
           return false;
         }
         return true;
@@ -1033,12 +947,7 @@ export const listForEventPaginated = query({
     pageSize: v.optional(v.number()),
     guestSearch: v.optional(v.string()),
     approvalFilter: v.optional(
-      v.union(
-        v.literal("all"),
-        v.literal("pending"),
-        v.literal("approved"),
-        v.literal("denied"),
-      ),
+      v.union(v.literal("all"), v.literal("pending"), v.literal("approved"), v.literal("denied")),
     ),
     listFilter: v.optional(v.string()), // Filter by list key
     redemptionFilter: v.optional(v.string()),
@@ -1068,7 +977,9 @@ export const listForEventPaginated = query({
     },
   ): Promise<PaginatedRsvpResult> => {
     // Debug logging for sorting
-    console.log(`[RSVP_PAGINATED] Sort params: sortBy=${sortBy}, sortOrder=${sortOrder}, search="${guestSearch}", filters: approval=${approvalFilter}, list=${listFilter}, redemption=${redemptionFilter}`);
+    console.log(
+      `[RSVP_PAGINATED] Sort params: sortBy=${sortBy}, sortOrder=${sortOrder}, search="${guestSearch}", filters: approval=${approvalFilter}, list=${listFilter}, redemption=${redemptionFilter}`,
+    );
 
     const ticketStatusFilter = normalizeTicketStatusFilter(redemptionFilter);
 
@@ -1092,9 +1003,7 @@ export const listForEventPaginated = query({
       invitedBySearch,
     });
 
-    console.log(
-      `[RSVP_PAGINATED] Fetched ${allMatchingRsvps.length} matching RSVPs for sorting`,
-    );
+    console.log(`[RSVP_PAGINATED] Fetched ${allMatchingRsvps.length} matching RSVPs for sorting`);
 
     // Sort all matching RSVPs before pagination
     // For fields that require enrichment (name, firstName, lastName), we'll sort after enrichment
@@ -1105,7 +1014,7 @@ export const listForEventPaginated = query({
       sortBy === "lastName" ||
       sortBy === "invitedByName" ||
       sortBy.startsWith("social:");
-    
+
     if (!needsEnrichmentForSort) {
       // Sort before enrichment for better performance
       allMatchingRsvps.sort((a: Doc<"rsvps">, b: Doc<"rsvps">) => {
@@ -1125,11 +1034,12 @@ export const listForEventPaginated = query({
               deriveApprovalStatus(b.status),
             );
             break;
-          case "ticketStatus":
+          case "ticketStatus": {
             const aTicketStatus = (a.ticketStatus as string | undefined) ?? "not-issued";
             const bTicketStatus = (b.ticketStatus as string | undefined) ?? "not-issued";
             comparison = aTicketStatus.localeCompare(bTicketStatus);
             break;
+          }
           case "listKey":
             comparison = (a.listKey || "").localeCompare(b.listKey || "");
             break;
@@ -1137,9 +1047,7 @@ export const listForEventPaginated = query({
             comparison = (a.attendees ?? 0) - (b.attendees ?? 0);
             break;
           case "invitedByName":
-            comparison = (a.invitedByName ?? "").localeCompare(
-              b.invitedByName ?? "",
-            );
+            comparison = (a.invitedByName ?? "").localeCompare(b.invitedByName ?? "");
             break;
           default:
             // Fallback to createdAt
@@ -1154,23 +1062,27 @@ export const listForEventPaginated = query({
 
         return directionMultiplier * comparison;
       });
-      
-      console.log(`[RSVP_PAGINATED] Pre-sorted ${allMatchingRsvps.length} RSVPs by ${sortBy} ${sortOrder}`);
+
+      console.log(
+        `[RSVP_PAGINATED] Pre-sorted ${allMatchingRsvps.length} RSVPs by ${sortBy} ${sortOrder}`,
+      );
     }
 
     // Manual pagination - we'll sort after enrichment if needed
     const cursorIndex = cursor ? parseInt(cursor, 10) : 0;
     const startIndex = cursorIndex;
     const endIndex = startIndex + pageSize;
-    const paginatedRsvps = needsEnrichmentForSort 
+    const paginatedRsvps = needsEnrichmentForSort
       ? allMatchingRsvps // Will sort after enrichment
       : allMatchingRsvps.slice(startIndex, endIndex); // Pre-sorted, can paginate now
-    const nextCursor = needsEnrichmentForSort 
+    const nextCursor = needsEnrichmentForSort
       ? null // Will be set after enrichment and sorting
-      : (endIndex < allMatchingRsvps.length ? String(endIndex) : null);
+      : endIndex < allMatchingRsvps.length
+        ? String(endIndex)
+        : null;
     const isDone = needsEnrichmentForSort
       ? false // Will be set after enrichment and sorting
-      : (endIndex >= allMatchingRsvps.length);
+      : endIndex >= allMatchingRsvps.length;
 
     // Batch fetch related data to avoid N+1 queries
     // Note: credentialId field has been removed from schema
@@ -1186,21 +1098,16 @@ export const listForEventPaginated = query({
       userClerkIds.map(async (clerkUserId: string) =>
         ctx.db
           .query("users")
-          .withIndex("by_clerkUserId", (q: any) =>
-            q.eq("clerkUserId", clerkUserId),
-          )
+          .withIndex("by_clerkUserId", (query) => query.eq("clerkUserId", clerkUserId))
           .unique(),
       ),
     );
-    const userMap = Object.fromEntries(
-      users.filter((u) => u).map((u) => [u!.clerkUserId, u]),
-    );
+    const userMap = Object.fromEntries(users.filter((u) => u).map((u) => [u!.clerkUserId, u]));
 
     // Batch fetch redemption data only for RSVPs with active codes
     const rsvpsNeedingRedemption = rsvpsToEnrich.filter(
       (rsvp: Doc<"rsvps">) =>
-        ((rsvp.ticketStatus as string | undefined) ?? "not-issued") !==
-        "not-issued",
+        ((rsvp.ticketStatus as string | undefined) ?? "not-issued") !== "not-issued",
     );
     const redemptions = await Promise.all(
       rsvpsNeedingRedemption.map(async (rsvp: Doc<"rsvps">) =>
@@ -1221,9 +1128,7 @@ export const listForEventPaginated = query({
         rsvpId: rsvp._id,
         profiles: await ctx.db
           .query("rsvpSocialProfiles")
-          .withIndex("by_rsvp", (queryBuilder) =>
-            queryBuilder.eq("rsvpId", rsvp._id),
-          )
+          .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
           .collect(),
       })),
     );
@@ -1235,11 +1140,7 @@ export const listForEventPaginated = query({
     let enrichedPage = rsvpsToEnrich.map((rsvp: Doc<"rsvps">) => {
       const redemption = redemptionMap[rsvp.clerkUserId];
       const ticketStatus =
-        (rsvp.ticketStatus as
-          | "not-issued"
-          | "issued"
-          | "disabled"
-          | "redeemed") ?? "not-issued";
+        (rsvp.ticketStatus as "not-issued" | "issued" | "disabled" | "redeemed") ?? "not-issued";
       let redemptionStatus: "none" | "issued" | "redeemed" | "disabled";
       switch (ticketStatus) {
         case "issued":
@@ -1275,11 +1176,9 @@ export const listForEventPaginated = query({
           user?.name ||
           rsvp.userName ||
           "", // PRIORITY: users table (fresh data) → rsvp.userName (fallback)
-        firstName:
-          user?.firstName || (rsvp.userName ? rsvp.userName.split(" ")[0] : ""),
+        firstName: user?.firstName || (rsvp.userName ? rsvp.userName.split(" ")[0] : ""),
         lastName:
-          user?.lastName ||
-          (rsvp.userName ? rsvp.userName.split(" ").slice(1).join(" ") : ""),
+          user?.lastName || (rsvp.userName ? rsvp.userName.split(" ").slice(1).join(" ") : ""),
         listKey: rsvp.listKey || "",
         note: rsvp.note,
         status: sanitizeStatus(rsvp.status),
@@ -1328,23 +1227,17 @@ export const listForEventPaginated = query({
             comparison = (a.lastName || "").localeCompare(b.lastName || "");
             break;
           case "invitedByName":
-            comparison = (a.invitedByName || "").localeCompare(
-              b.invitedByName || "",
-            );
+            comparison = (a.invitedByName || "").localeCompare(b.invitedByName || "");
             break;
           default:
             if (sortBy.startsWith("social:")) {
-              const platformKey = normalizeSocialPlatformKey(
-                sortBy.slice("social:".length),
-              );
+              const platformKey = normalizeSocialPlatformKey(sortBy.slice("social:".length));
               const leftHandle =
-                a.socialProfiles.find(
-                  (profile) => profile.platformKey === platformKey,
-                )?.handle ?? "";
+                a.socialProfiles.find((profile) => profile.platformKey === platformKey)?.handle ??
+                "";
               const rightHandle =
-                b.socialProfiles.find(
-                  (profile) => profile.platformKey === platformKey,
-                )?.handle ?? "";
+                b.socialProfiles.find((profile) => profile.platformKey === platformKey)?.handle ??
+                "";
               comparison = leftHandle.localeCompare(rightHandle);
             } else {
               comparison = a.createdAt - b.createdAt;
@@ -1359,9 +1252,11 @@ export const listForEventPaginated = query({
 
         return directionMultiplier * comparison;
       });
-      
-      console.log(`[RSVP_PAGINATED] Post-enrichment sorted ${enrichedPage.length} RSVPs by ${sortBy} ${sortOrder}`);
-      
+
+      console.log(
+        `[RSVP_PAGINATED] Post-enrichment sorted ${enrichedPage.length} RSVPs by ${sortBy} ${sortOrder}`,
+      );
+
       // Now paginate after sorting
       const cursorIndex = cursor ? parseInt(cursor, 10) : 0;
       const startIndex = cursorIndex;
@@ -1369,7 +1264,7 @@ export const listForEventPaginated = query({
       enrichedPage = enrichedPage.slice(startIndex, endIndex);
       const finalNextCursor = endIndex < allMatchingRsvps.length ? String(endIndex) : null;
       const finalIsDone = endIndex >= allMatchingRsvps.length;
-      
+
       return {
         page: enrichedPage,
         nextCursor: finalNextCursor,
@@ -1406,9 +1301,7 @@ export const statusForUserEvent = query({
     const listCredential = await resolveListCredential(ctx, eventId, chosen);
     const socialProfiles = await ctx.db
       .query("rsvpSocialProfiles")
-      .withIndex("by_rsvp", (queryBuilder) =>
-        queryBuilder.eq("rsvpId", chosen._id),
-      )
+      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", chosen._id))
       .collect();
 
     return {
@@ -1450,9 +1343,7 @@ export const statusForUserEventServer = query({
     const redemptionInfo = await resolveRedemption(ctx, eventId, clerkUserId, chosen);
     const socialProfiles = await ctx.db
       .query("rsvpSocialProfiles")
-      .withIndex("by_rsvp", (queryBuilder) =>
-        queryBuilder.eq("rsvpId", chosen._id),
-      )
+      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", chosen._id))
       .collect();
 
     return {
@@ -1474,12 +1365,7 @@ export const statusForUserEventServer = query({
 
 type RawRsvp = Doc<"rsvps">;
 
-const statusPriority: readonly ValidRsvpStatus[] = [
-  "approved",
-  "attending",
-  "pending",
-  "denied",
-];
+const statusPriority: readonly ValidRsvpStatus[] = ["approved", "attending", "pending", "denied"];
 
 function selectPrimaryRsvp(rsvps: RawRsvp[]): RawRsvp {
   const prioritized = [...rsvps].sort((a, b) => {
@@ -1497,20 +1383,12 @@ function sanitizeStatus(status: string): ValidRsvpStatus {
   return validRsvpStatuses.includes(typedStatus) ? typedStatus : "pending";
 }
 
-async function resolveListCredential(
-  ctx: QueryCtx,
-  eventId: Id<"events">,
-  rsvp: RawRsvp,
-) {
+async function resolveListCredential(ctx: QueryCtx, eventId: Id<"events">, rsvp: RawRsvp) {
   if (!rsvp.listKey) return null;
   return ctx.db
     .query("listCredentials")
-    .withIndex("by_event", (queryBuilder) =>
-      queryBuilder.eq("eventId", eventId),
-    )
-    .filter((queryBuilder) =>
-      queryBuilder.eq(queryBuilder.field("listKey"), rsvp.listKey),
-    )
+    .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
+    .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("listKey"), rsvp.listKey))
     .unique();
 }
 
@@ -1724,12 +1602,7 @@ export const deleteRSVP = mutation({
   },
 });
 
-type MutableTicketStatus = "issued" | "not-issued" | "disabled";
-
-async function getRedemptionForRsvp(
-  ctx: MutationCtx,
-  rsvp: Doc<"rsvps">,
-) {
+async function getRedemptionForRsvp(ctx: MutationCtx, rsvp: Doc<"rsvps">) {
   return ctx.db
     .query("redemptions")
     .withIndex("by_event_user", (query) =>
@@ -1864,11 +1737,7 @@ export const updateRsvpComplete = mutation({
       v.union(v.literal("pending"), v.literal("approved"), v.literal("denied")),
     ),
     ticketStatus: v.optional(
-      v.union(
-        v.literal("issued"),
-        v.literal("not-issued"),
-        v.literal("disabled"),
-      ),
+      v.union(v.literal("issued"), v.literal("not-issued"), v.literal("disabled")),
     ),
   },
   handler: async (ctx, args) => {
@@ -2199,13 +2068,12 @@ export const backfillTicketStatus = migrations.define({
 
     const redemption = await ctx.db
       .query("redemptions")
-      .withIndex("by_event_user", (q: any) =>
-        q.eq("eventId", rsvpDoc.eventId).eq("clerkUserId", rsvpDoc.clerkUserId),
+      .withIndex("by_event_user", (query) =>
+        query.eq("eventId", rsvpDoc.eventId).eq("clerkUserId", rsvpDoc.clerkUserId),
       )
       .unique();
 
-    let ticketStatus: "not-issued" | "issued" | "disabled" | "redeemed" =
-      "not-issued";
+    let ticketStatus: "not-issued" | "issued" | "disabled" | "redeemed" = "not-issued";
     if (redemption) {
       if (redemption.disabledAt) {
         ticketStatus = "disabled";
@@ -2230,11 +2098,7 @@ export const bulkUpdateApproval = mutation({
     updates: v.array(
       v.object({
         rsvpId: v.id("rsvps"),
-        approvalStatus: v.union(
-          v.literal("pending"),
-          v.literal("approved"),
-          v.literal("denied"),
-        ),
+        approvalStatus: v.union(v.literal("pending"), v.literal("approved"), v.literal("denied")),
       }),
     ),
   },
@@ -2292,11 +2156,7 @@ export const bulkUpdateTicketStatus = mutation({
     updates: v.array(
       v.object({
         rsvpId: v.id("rsvps"),
-        ticketStatus: v.union(
-          v.literal("issued"),
-          v.literal("not-issued"),
-          v.literal("disabled"),
-        ),
+        ticketStatus: v.union(v.literal("issued"), v.literal("not-issued"), v.literal("disabled")),
       }),
     ),
   },

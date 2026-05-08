@@ -1,7 +1,7 @@
 export {
+  buildEventThemeStyle,
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
-  buildEventThemeStyle,
   getAccessibleTextColor,
   getColorContrastRatio,
   getEventThemeColors,

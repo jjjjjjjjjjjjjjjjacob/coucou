@@ -63,9 +63,7 @@ describe("Clerk webhook payload helpers", () => {
         { id: "email_primary", email_address: "new@example.com" },
       ],
       primary_phone_number_id: "phone_primary",
-      phone_numbers: [
-        { id: "phone_primary", phone_number: "+15555555555" },
-      ],
+      phone_numbers: [{ id: "phone_primary", phone_number: "+15555555555" }],
       image_url: "https://img.example/avatar.png",
     });
 

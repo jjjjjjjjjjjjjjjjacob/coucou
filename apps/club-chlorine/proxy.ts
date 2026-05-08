@@ -1,26 +1,22 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import type { ClerkMiddlewareOptions } from "@clerk/nextjs/server";
-import { AuthObject } from "@/lib/types";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { siteConfiguration } from "@/lib/site";
-import {
-  buildSatelliteReturnUrl,
-  buildTenantPrimarySignInUrl,
-} from "@coucou/sdk";
+import type { AuthObject } from "@/lib/types";
 
-const coucouBaseUrl = (
-  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
-).replace(/\/+$/, "");
+const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
+  /\/+$/,
+  "",
+);
 const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
   primaryBaseUrl: coucouBaseUrl,
   siteConfiguration,
 });
 
-function buildClerkSatelliteOptions(
-  req: NextRequest,
-): ClerkMiddlewareOptions {
+function buildClerkSatelliteOptions(req: NextRequest): ClerkMiddlewareOptions {
   return {
     isSatellite: true,
     domain: req.nextUrl.host,
@@ -60,35 +56,26 @@ function isPublicEventDetailPath(pathname: string): boolean {
 // The RSVP entry route is intentionally accessible to unauthenticated
 // visitors so social link previews can read the event-specific OpenGraph
 // metadata. The page itself runs a client-side auth gate that bounces
-// real users to /sign-in before they can interact, while crawlers and
-// shared-link previewers see the event poster + title cards.
+// real users to the coucou.events sign-in surface before they can
+// interact, while crawlers and shared-link previewers see the event
+// poster + title cards.
 function isPublicRsvpEntryPath(pathname: string): boolean {
   return /^\/events\/[^/]+\/rsvp(?:\/.*)?$/.test(pathname);
 }
 
 function isProtectedEventPath(pathname: string): boolean {
-  return /^\/events\/[^/]+\/(?:status|ticket|denied)(?:\/.*)?$/.test(
-    pathname,
-  );
+  return /^\/events\/[^/]+\/(?:status|ticket|denied)(?:\/.*)?$/.test(pathname);
 }
 
 function buildRedirectPathWithSearch(pathname: string, search: string): string {
-  const normalizedSearch = search
-    ? search.startsWith("?")
-      ? search
-      : `?${search}`
-    : "";
+  const normalizedSearch = search ? (search.startsWith("?") ? search : `?${search}`) : "";
   return `${pathname}${normalizedSearch}`;
 }
 
 function buildPrimarySignInUrl(req: NextRequest, redirectPath?: string): string {
   const resolvedRedirectPath =
-    redirectPath ??
-    buildRedirectPathWithSearch(req.nextUrl.pathname, req.nextUrl.search);
-  const satelliteReturnUrl = buildSatelliteReturnUrl(
-    req.nextUrl.origin,
-    resolvedRedirectPath,
-  );
+    redirectPath ?? buildRedirectPathWithSearch(req.nextUrl.pathname, req.nextUrl.search);
+  const satelliteReturnUrl = buildSatelliteReturnUrl(req.nextUrl.origin, resolvedRedirectPath);
   return buildTenantPrimarySignInUrl({
     primaryBaseUrl: coucouBaseUrl,
     siteConfiguration,
@@ -96,25 +83,8 @@ function buildPrimarySignInUrl(req: NextRequest, redirectPath?: string): string 
   });
 }
 
-function redirectToPrimarySignIn(
-  req: NextRequest,
-  redirectPath?: string,
-): NextResponse {
+function redirectToPrimarySignIn(req: NextRequest, redirectPath?: string): NextResponse {
   return NextResponse.redirect(buildPrimarySignInUrl(req, redirectPath));
-}
-
-function redirectToLocalSignIn(
-  req: NextRequest,
-  redirectPath?: string,
-): NextResponse {
-  const target = new URL("/sign-in", req.url);
-  const intendedRedirect =
-    redirectPath ??
-    buildRedirectPathWithSearch(req.nextUrl.pathname, req.nextUrl.search);
-  if (intendedRedirect) {
-    target.searchParams.set("redirect_url", intendedRedirect);
-  }
-  return NextResponse.redirect(target);
 }
 
 export default clerkMiddleware(async (auth, req) => {
@@ -133,25 +103,24 @@ export default clerkMiddleware(async (auth, req) => {
       );
       return NextResponse.redirect(authenticatedRedirectUrl);
     }
-    // Render the local /sign-in page (Phone OTP) inside the Club Chlorine
-    // chrome instead of bouncing to the primary Coucou tenant. Clerk's
-    // satellite handshake still ferries the session cookie via the primary
-    // domain when needed.
-    return NextResponse.next();
+    // Satellite never serves its own sign-in surface. Always bounce to
+    // coucou.events/workspaces/{slug}/login so the user sees the chlorine-
+    // branded phone-auth page hosted on the primary domain.
+    const redirectPath = resolveSafeRedirectPath(
+      searchParams.get("redirect_url"),
+      siteConfiguration.auth.signInRedirectPath,
+    );
+    return redirectToPrimarySignIn(req, redirectPath);
   }
 
-  if (
-    isPublicRoute(req) ||
-    isPublicEventDetailPath(pathname) ||
-    isPublicRsvpEntryPath(pathname)
-  ) {
+  if (isPublicRoute(req) || isPublicEventDetailPath(pathname) || isPublicRsvpEntryPath(pathname)) {
     return NextResponse.next();
   }
 
   if (isProtectedEventPath(pathname)) {
     const authObj = (await auth()) as AuthObject;
     if (!authObj.userId) {
-      return redirectToLocalSignIn(req);
+      return redirectToPrimarySignIn(req);
     }
     return NextResponse.next();
   }

@@ -12,10 +12,7 @@ export interface AdminSectionProps {
  */
 export function AdminSection({ title, meta, children }: AdminSectionProps) {
   return (
-    <section
-      className="py-12"
-      style={{ borderBottom: "1px solid var(--tt-rule)" }}
-    >
+    <section className="py-12" style={{ borderBottom: "1px solid var(--tt-rule)" }}>
       <div
         className="flex items-center justify-between pb-6 text-[13px]"
         style={{ borderBottom: "1px solid var(--tt-rule)" }}

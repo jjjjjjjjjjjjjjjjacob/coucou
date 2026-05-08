@@ -1,15 +1,11 @@
-import { Id } from "@convex/_generated/dataModel";
+import type { Id } from "@convex/_generated/dataModel";
 import type {
   PrimaryFieldConfig,
   PrimarySocialPlatformConfig,
   WorkspaceEventDefaults,
 } from "@coucou/sdk/shared/primary-fields";
 
-export type {
-  PrimaryFieldConfig,
-  PrimarySocialPlatformConfig,
-  WorkspaceEventDefaults,
-};
+export type { PrimaryFieldConfig, PrimarySocialPlatformConfig, WorkspaceEventDefaults };
 
 // Core domain interfaces based on Convex schema
 export interface User {
@@ -289,7 +285,8 @@ export interface UserTicket {
 }
 
 // React Hook Form types
-export type UseFormReturn<FormValues extends Record<string, unknown>> = import("react-hook-form").UseFormReturn<FormValues>;
+export type UseFormReturn<FormValues extends Record<string, unknown>> =
+  import("react-hook-form").UseFormReturn<FormValues>;
 
 // Component prop interfaces
 export interface EventCardProps {
@@ -303,9 +300,7 @@ export interface GuestInfoFieldsProps {
   name: string;
   setName: (value: string) => void;
   custom: Record<string, string>;
-  setCustom: (
-    updater: (current: Record<string, string>) => Record<string, string>,
-  ) => void;
+  setCustom: (updater: (current: Record<string, string>) => Record<string, string>) => void;
   phone: string;
   openUserProfile?: () => void;
 }

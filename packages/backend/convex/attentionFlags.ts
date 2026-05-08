@@ -1,14 +1,10 @@
-import { mutation, query } from "./functions";
 import { v } from "convex/values";
 import { writeAuditEntry } from "./audit";
+import { mutation, query } from "./functions";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
 
 const kindValidator = v.union(v.literal("flag"), v.literal("watch"));
-const statusValidator = v.union(
-  v.literal("open"),
-  v.literal("ack"),
-  v.literal("resolved"),
-);
+const statusValidator = v.union(v.literal("open"), v.literal("ack"), v.literal("resolved"));
 
 export const create = mutation({
   args: {
@@ -43,9 +39,7 @@ export const listOpen = query({
     await requireCoucouPlatformMember(ctx);
     const open = await ctx.db
       .query("attentionFlags")
-      .withIndex("by_status", (queryBuilder) =>
-        queryBuilder.eq("status", "open"),
-      )
+      .withIndex("by_status", (queryBuilder) => queryBuilder.eq("status", "open"))
       .collect();
 
     open.sort((a, b) => b.observedAt - a.observedAt);
@@ -63,9 +57,7 @@ export const listPaginated = query({
   args: {
     cursor: v.optional(v.string()),
     pageSize: v.optional(v.number()),
-    statusFilter: v.optional(
-      v.union(statusValidator, v.literal("all")),
-    ),
+    statusFilter: v.optional(v.union(statusValidator, v.literal("all"))),
     search: v.optional(v.string()),
   },
   handler: async (ctx, { cursor, pageSize = 25, statusFilter, search }) => {
@@ -109,14 +101,9 @@ export const listPaginated = query({
     return {
       page: page.map((flag) => ({
         ...flag,
-        workspace: flag.workspaceId
-          ? workspacesById.get(flag.workspaceId) ?? null
-          : null,
+        workspace: flag.workspaceId ? (workspacesById.get(flag.workspaceId) ?? null) : null,
       })),
-      nextCursor:
-        cursorIndex + pageSize < filtered.length
-          ? String(cursorIndex + pageSize)
-          : null,
+      nextCursor: cursorIndex + pageSize < filtered.length ? String(cursorIndex + pageSize) : null,
       isDone: cursorIndex + pageSize >= filtered.length,
       totalCount: filtered.length,
       openCount: all.filter((flag) => flag.status === "open").length,

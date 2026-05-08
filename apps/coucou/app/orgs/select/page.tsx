@@ -1,6 +1,6 @@
 "use client";
-import { useRouter } from "next/navigation";
 import { useOrganizationList } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { siteConfiguration } from "@/lib/site";
 import { getCoucouOrganizationSlug } from "@/lib/workspace-config";
@@ -17,8 +17,8 @@ export default function SelectOrgPage() {
     <main className="max-w-xl mx-auto p-6 space-y-4">
       <h1 className="text-xl font-semibold">Select Workspace</h1>
       <p className="text-sm text-foreground/70">
-        Pick the active organization for {siteConfiguration.brandName}, or use
-        the dashboard for a full view of your tenant access.
+        Pick the active organization for {siteConfiguration.brandName}, or use the dashboard for a
+        full view of your tenant access.
       </p>
       <Button asChild variant="outline" size="sm">
         <a href="/dashboard">Open dashboard</a>
@@ -40,14 +40,11 @@ export default function SelectOrgPage() {
                 onClick={() => {
                   const organizationSlug = m.organization.slug ?? "";
                   const destination =
-                    organizationSlug &&
-                      organizationSlug !== getCoucouOrganizationSlug()
+                    organizationSlug && organizationSlug !== getCoucouOrganizationSlug()
                       ? buildRoleAwareDashboardPath(organizationSlug, m.role)
                       : "/dashboard";
                   router.replace(destination);
-                  void setActive?.({ organization: m.organization.id }).catch(
-                    () => undefined,
-                  );
+                  void setActive?.({ organization: m.organization.id }).catch(() => undefined);
                 }}
               >
                 Activate

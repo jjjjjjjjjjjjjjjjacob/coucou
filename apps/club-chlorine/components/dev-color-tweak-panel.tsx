@@ -1,18 +1,7 @@
 "use client";
 
-import {
-  ChangeEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import {
-  PRESET_DEFINITIONS,
-  resolvePreset,
-  type PresetKey,
-} from "@coucou/sdk";
+import { PRESET_DEFINITIONS, type PresetKey, resolvePreset } from "@coucou/sdk";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const STORAGE_KEY = "dojo:club-chlorine:dev-color-tweak";
 const STYLE_ELEMENT_ID = "dev-color-tweak-overrides";
@@ -58,9 +47,7 @@ function expandShortHex(hex: string): string {
 function normalizeHex(value: string): string | null {
   const trimmedValue = value.trim();
   if (!HEX_PATTERN.test(trimmedValue)) return null;
-  return expandShortHex(
-    trimmedValue.startsWith("#") ? trimmedValue : `#${trimmedValue}`,
-  );
+  return expandShortHex(trimmedValue.startsWith("#") ? trimmedValue : `#${trimmedValue}`);
 }
 
 function readPersistedState(): ColorTweakState | null {
@@ -100,10 +87,18 @@ function clearPersistedState(): void {
   }
 }
 
-function buildOverrideStylesheet(
-  background: string,
-  foreground: string,
-): string {
+// Card / popover tokens stay on the app's white-default surface even while
+// the rest of the takeover goes dark — this matches the app-level rule in
+// `lib/event-theme.ts` so dropdowns and cards never inherit a tinted
+// background from a tweak preview.
+const NEUTRAL_SURFACE_VARIABLES = new Set([
+  "--card",
+  "--card-foreground",
+  "--popover",
+  "--popover-foreground",
+]);
+
+function buildOverrideStylesheet(background: string, foreground: string): string {
   const resolved = resolvePreset({
     siteConfigurationPreset: "chlorine",
     event: {
@@ -112,7 +107,7 @@ function buildOverrideStylesheet(
     },
   });
   const variableEntries = Object.entries(resolved.styleVars).filter(
-    ([key]) => key.startsWith("--"),
+    ([key]) => key.startsWith("--") && !NEUTRAL_SURFACE_VARIABLES.has(key),
   ) as Array<[string, string]>;
   const variableLines = variableEntries
     .map(([key, value]) => `  ${key}: ${value} !important;`)
@@ -127,9 +122,7 @@ function buildOverrideStylesheet(
 
 function applyStylesheet(content: string): void {
   if (typeof document === "undefined") return;
-  let styleElement = document.getElementById(
-    STYLE_ELEMENT_ID,
-  ) as HTMLStyleElement | null;
+  let styleElement = document.getElementById(STYLE_ELEMENT_ID) as HTMLStyleElement | null;
   if (!styleElement) {
     styleElement = document.createElement("style");
     styleElement.id = STYLE_ELEMENT_ID;
@@ -181,12 +174,8 @@ export function DevColorTweakPanel() {
     enabled: false,
   }));
   const [isExpanded, setIsExpanded] = useState(true);
-  const [backgroundHexInput, setBackgroundHexInput] = useState(
-    CHLORINE_DEFAULT.bg,
-  );
-  const [foregroundHexInput, setForegroundHexInput] = useState(
-    CHLORINE_DEFAULT.fg,
-  );
+  const [backgroundHexInput, setBackgroundHexInput] = useState(CHLORINE_DEFAULT.bg);
+  const [foregroundHexInput, setForegroundHexInput] = useState(CHLORINE_DEFAULT.fg);
   const initialPersistLoadedRef = useRef(false);
 
   // Hydrate from localStorage once on mount.
@@ -208,20 +197,12 @@ export function DevColorTweakPanel() {
       removeStylesheet();
       return;
     }
-    const stylesheet = buildOverrideStylesheet(
-      colorState.background,
-      colorState.foreground,
-    );
+    const stylesheet = buildOverrideStylesheet(colorState.background, colorState.foreground);
     applyStylesheet(stylesheet);
     return () => {
       // Don't remove on every render — only on unmount or when disabled.
     };
-  }, [
-    colorState.enabled,
-    colorState.background,
-    colorState.foreground,
-    shouldRender,
-  ]);
+  }, [colorState.enabled, colorState.background, colorState.foreground, shouldRender]);
 
   // Persist on change.
   useEffect(() => {
@@ -247,63 +228,51 @@ export function DevColorTweakPanel() {
     return resolved.effective;
   }, [colorState.background, colorState.foreground]);
 
-  const handleBackgroundColorChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const nextValue = event.target.value.toUpperCase();
-      setBackgroundHexInput(nextValue);
+  const handleBackgroundColorChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.value.toUpperCase();
+    setBackgroundHexInput(nextValue);
+    setColorState((previous) => ({
+      ...previous,
+      background: nextValue,
+      enabled: true,
+    }));
+  }, []);
+
+  const handleForegroundColorChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.value.toUpperCase();
+    setForegroundHexInput(nextValue);
+    setColorState((previous) => ({
+      ...previous,
+      foreground: nextValue,
+      enabled: true,
+    }));
+  }, []);
+
+  const handleBackgroundHexInput = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const rawValue = event.target.value;
+    setBackgroundHexInput(rawValue);
+    const normalized = normalizeHex(rawValue);
+    if (normalized) {
       setColorState((previous) => ({
         ...previous,
-        background: nextValue,
+        background: normalized,
         enabled: true,
       }));
-    },
-    [],
-  );
+    }
+  }, []);
 
-  const handleForegroundColorChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const nextValue = event.target.value.toUpperCase();
-      setForegroundHexInput(nextValue);
+  const handleForegroundHexInput = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const rawValue = event.target.value;
+    setForegroundHexInput(rawValue);
+    const normalized = normalizeHex(rawValue);
+    if (normalized) {
       setColorState((previous) => ({
         ...previous,
-        foreground: nextValue,
+        foreground: normalized,
         enabled: true,
       }));
-    },
-    [],
-  );
-
-  const handleBackgroundHexInput = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const rawValue = event.target.value;
-      setBackgroundHexInput(rawValue);
-      const normalized = normalizeHex(rawValue);
-      if (normalized) {
-        setColorState((previous) => ({
-          ...previous,
-          background: normalized,
-          enabled: true,
-        }));
-      }
-    },
-    [],
-  );
-
-  const handleForegroundHexInput = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const rawValue = event.target.value;
-      setForegroundHexInput(rawValue);
-      const normalized = normalizeHex(rawValue);
-      if (normalized) {
-        setColorState((previous) => ({
-          ...previous,
-          foreground: normalized,
-          enabled: true,
-        }));
-      }
-    },
-    [],
-  );
+    }
+  }, []);
 
   const handleSwap = useCallback(() => {
     setColorState((previous) => {
@@ -381,12 +350,8 @@ export function DevColorTweakPanel() {
     const backgroundParameter = queryParameters.get("bg");
     const foregroundParameter = queryParameters.get("fg");
     if (!backgroundParameter && !foregroundParameter) return;
-    const nextBackground = backgroundParameter
-      ? normalizeHex(backgroundParameter)
-      : null;
-    const nextForeground = foregroundParameter
-      ? normalizeHex(foregroundParameter)
-      : null;
+    const nextBackground = backgroundParameter ? normalizeHex(backgroundParameter) : null;
+    const nextForeground = foregroundParameter ? normalizeHex(foregroundParameter) : null;
     if (!nextBackground && !nextForeground) return;
     setColorState((previous) => {
       const next = {
@@ -417,12 +382,10 @@ export function DevColorTweakPanel() {
             borderRadius: 999,
             background: colorState.foreground,
             border: `1px solid ${colorState.background}`,
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.25)",
+            boxShadow: "0 0 0 1px color-mix(in srgb, currentColor 25%, transparent)",
           }}
         />
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}>
-          tweak
-        </span>
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}>tweak</span>
       </button>
     );
   }
@@ -488,10 +451,7 @@ export function DevColorTweakPanel() {
           <DerivedSwatch label="dim" value={derivedPreview.fgDim} />
           <DerivedSwatch label="mute" value={derivedPreview.fgMute} />
           <DerivedSwatch label="rule" value={derivedPreview.rule} />
-          <DerivedSwatch
-            label="rule+"
-            value={derivedPreview.ruleStrong}
-          />
+          <DerivedSwatch label="rule+" value={derivedPreview.ruleStrong} />
         </div>
       </section>
 
@@ -500,10 +460,8 @@ export function DevColorTweakPanel() {
         <div style={presetGridStyle}>
           {QUICK_PRESETS.map((preset) => {
             const isActive =
-              colorState.background.toLowerCase() ===
-                preset.background.toLowerCase() &&
-              colorState.foreground.toLowerCase() ===
-                preset.foreground.toLowerCase();
+              colorState.background.toLowerCase() === preset.background.toLowerCase() &&
+              colorState.foreground.toLowerCase() === preset.foreground.toLowerCase();
             return (
               <button
                 key={preset.label}
@@ -512,8 +470,8 @@ export function DevColorTweakPanel() {
                 style={{
                   ...presetButtonStyle,
                   outline: isActive
-                    ? "1px solid rgba(255,255,255,0.85)"
-                    : "1px solid rgba(255,255,255,0.15)",
+                    ? "1px solid color-mix(in srgb, currentColor 85%, transparent)"
+                    : "1px solid color-mix(in srgb, currentColor 15%, transparent)",
                 }}
                 title={preset.label}
               >
@@ -660,7 +618,7 @@ function DerivedSwatch({ label, value }: DerivedSwatchProps) {
           height: 18,
           background: value,
           borderRadius: 2,
-          border: "1px solid rgba(255,255,255,0.1)",
+          border: "1px solid var(--border)",
         }}
         title={value}
       />
@@ -669,6 +627,13 @@ function DerivedSwatch({ label, value }: DerivedSwatchProps) {
   );
 }
 
+// The dev panel is intentionally themable so the user can preview takeover
+// colors against a surface that responds to them. Backgrounds, text, and
+// border tokens flow from the page theme variables; subtle inner accents
+// are derived from `currentColor` so they read on whichever foreground is
+// active. There is no hardcoded black anywhere — the only fixed values are
+// the depth shadow (always semi-opaque black for hierarchy) and color
+// swatches (which need to render the user's chosen hex as-is).
 const panelStyle = {
   position: "fixed",
   right: 16,
@@ -677,15 +642,13 @@ const panelStyle = {
   width: 280,
   padding: 12,
   borderRadius: 10,
-  background: "rgba(8, 8, 12, 0.92)",
+  background: "var(--background)",
   backdropFilter: "blur(12px)",
   WebkitBackdropFilter: "blur(12px)",
-  border: "1px solid rgba(255, 255, 255, 0.12)",
-  boxShadow:
-    "0 18px 48px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.04) inset",
-  color: "#F5F5F5",
-  fontFamily:
-    '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+  border: "1px solid var(--border)",
+  boxShadow: "0 18px 48px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.04) inset",
+  color: "var(--foreground)",
+  fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
   fontSize: 12,
   lineHeight: 1.4,
   display: "flex",
@@ -703,11 +666,11 @@ const collapsedTriggerStyle = {
   gap: 6,
   padding: "6px 10px",
   borderRadius: 999,
-  background: "rgba(8, 8, 12, 0.92)",
+  background: "var(--background)",
   backdropFilter: "blur(12px)",
   WebkitBackdropFilter: "blur(12px)",
-  border: "1px solid rgba(255, 255, 255, 0.18)",
-  color: "#F5F5F5",
+  border: "1px solid var(--border)",
+  color: "var(--foreground)",
   cursor: "pointer",
   letterSpacing: "0.06em",
   textTransform: "uppercase",
@@ -724,14 +687,14 @@ const titleStyle = {
   textTransform: "uppercase",
   letterSpacing: "0.14em",
   fontSize: 11,
-  color: "rgba(245, 245, 245, 0.85)",
+  color: "color-mix(in srgb, currentColor 85%, transparent)",
 } as const;
 
 const iconButtonStyle = {
   appearance: "none",
   background: "transparent",
-  color: "#F5F5F5",
-  border: "1px solid rgba(255,255,255,0.15)",
+  color: "currentColor",
+  border: "1px solid var(--border)",
   borderRadius: 4,
   fontSize: 11,
   padding: "2px 8px",
@@ -751,7 +714,7 @@ const subLabelStyle = {
   textTransform: "uppercase",
   letterSpacing: "0.12em",
   fontSize: 10,
-  color: "rgba(245, 245, 245, 0.55)",
+  color: "color-mix(in srgb, currentColor 55%, transparent)",
 } as const;
 
 const colorRowStyle = {
@@ -784,16 +747,16 @@ const swatchOverlayStyle = {
   width: 32,
   height: 22,
   borderRadius: 4,
-  border: "1px solid rgba(255,255,255,0.18)",
+  border: "1px solid var(--border)",
   pointerEvents: "none",
 } as const;
 
 const hexInputStyle = {
   flex: 1,
   appearance: "none",
-  background: "rgba(255,255,255,0.04)",
-  color: "#F5F5F5",
-  border: "1px solid rgba(255,255,255,0.12)",
+  background: "color-mix(in srgb, currentColor 4%, transparent)",
+  color: "currentColor",
+  border: "1px solid var(--border)",
   borderRadius: 4,
   fontFamily: "inherit",
   fontSize: 12,
@@ -807,8 +770,8 @@ const swapButtonStyle = {
   appearance: "none",
   alignSelf: "flex-end",
   background: "transparent",
-  color: "rgba(245, 245, 245, 0.7)",
-  border: "1px dashed rgba(255,255,255,0.18)",
+  color: "color-mix(in srgb, currentColor 70%, transparent)",
+  border: "1px dashed var(--border)",
   borderRadius: 4,
   fontFamily: "inherit",
   fontSize: 10,
@@ -834,7 +797,7 @@ const derivedSwatchStyle = {
 const derivedSwatchLabelStyle = {
   fontSize: 9,
   letterSpacing: "0.06em",
-  color: "rgba(245, 245, 245, 0.55)",
+  color: "color-mix(in srgb, currentColor 55%, transparent)",
   textAlign: "center",
   textTransform: "uppercase",
 } as const;
@@ -866,8 +829,8 @@ const presetKeyRowStyle = {
 
 const presetKeyButtonStyle = {
   ...presetButtonStyle,
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.1)",
+  background: "color-mix(in srgb, currentColor 4%, transparent)",
+  border: "1px solid var(--border)",
   padding: "3px 6px",
 } as const;
 
@@ -877,10 +840,14 @@ const presetSwatchStyle = {
   width: 18,
   height: 18,
   borderRadius: 3,
-  border: "1px solid rgba(255,255,255,0.18)",
+  border: "1px solid var(--border)",
   flexShrink: 0,
 } as const;
 
+// Outline ring on the inner swatch dot stays a fixed mid-opacity black so
+// it reads against any background color the user picks (light, dark, or
+// saturated). The dot shows a literal hex preview, so its outline must be
+// theme-independent.
 const presetForegroundDotStyle = {
   position: "absolute",
   bottom: 2,
@@ -894,7 +861,7 @@ const presetForegroundDotStyle = {
 const presetLabelStyle = {
   fontSize: 10,
   letterSpacing: "0.05em",
-  color: "rgba(245, 245, 245, 0.85)",
+  color: "color-mix(in srgb, currentColor 85%, transparent)",
   textTransform: "lowercase",
 } as const;
 
@@ -902,15 +869,15 @@ const footerStyle = {
   display: "flex",
   gap: 6,
   paddingTop: 4,
-  borderTop: "1px solid rgba(255,255,255,0.08)",
+  borderTop: "1px solid var(--border)",
 } as const;
 
 const ghostButtonStyle = {
   flex: 1,
   appearance: "none",
   background: "transparent",
-  color: "rgba(245,245,245,0.85)",
-  border: "1px solid rgba(255,255,255,0.14)",
+  color: "color-mix(in srgb, currentColor 85%, transparent)",
+  border: "1px solid var(--border)",
   borderRadius: 4,
   fontFamily: "inherit",
   fontSize: 10,

@@ -12,7 +12,7 @@ export function validateRequired(
   const errors: string[] = [];
   if (!name?.trim()) errors.push("Name is required");
   for (const r of rules) {
-    if (r.required && !((custom?.[r.key] || "").trim())) {
+    if (r.required && !(custom?.[r.key] || "").trim()) {
       errors.push(`${r.label} is required`);
     }
   }
@@ -27,7 +27,7 @@ export function validateRequiredWithFirstName(
   const errors: string[] = [];
   if (!firstName?.trim()) errors.push("First name is required");
   for (const r of rules) {
-    if (r.required && !((custom?.[r.key] || "").trim())) {
+    if (r.required && !(custom?.[r.key] || "").trim()) {
       errors.push(`${r.label} is required`);
     }
   }
@@ -40,7 +40,7 @@ export function validateRequiredFieldValues(
 ) {
   const errors: string[] = [];
   for (const rule of rules) {
-    if (rule.required && !((values?.[rule.key] || "").trim())) {
+    if (rule.required && !(values?.[rule.key] || "").trim()) {
       errors.push(`${rule.label} is required`);
     }
   }
@@ -54,10 +54,7 @@ export function validateRequiredPrimaryFields(
   invitedByRule?: FieldRule,
 ) {
   const errors = validateRequiredFieldValues(socialProfiles, socialRules);
-  if (
-    invitedByRule?.required &&
-    !(invitedByName || "").trim()
-  ) {
+  if (invitedByRule?.required && !(invitedByName || "").trim()) {
     errors.push(`${invitedByRule.label} is required`);
   }
   return errors;

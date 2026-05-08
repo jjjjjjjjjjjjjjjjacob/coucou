@@ -1,4 +1,14 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
+
+type TestRedemption = {
+  createdAt?: number;
+  disabledAt?: number;
+  redeemedAt?: number;
+};
+
+type TestIdentity = {
+  role?: string;
+};
 
 describe("Approval and Ticket Integration", () => {
   describe("Approval Status Business Logic", () => {
@@ -60,8 +70,7 @@ describe("Approval and Ticket Integration", () => {
     it("should allow ticket toggle for approved RSVP", () => {
       const rsvpStatus: string = "approved";
       const redemptionStatus: string = "disabled";
-      const canToggleTicket =
-        rsvpStatus !== "denied" && redemptionStatus !== "redeemed";
+      const canToggleTicket = rsvpStatus !== "denied" && redemptionStatus !== "redeemed";
 
       expect(canToggleTicket).toBe(true);
     });
@@ -69,15 +78,14 @@ describe("Approval and Ticket Integration", () => {
     it("should prevent ticket toggle for redeemed codes", () => {
       const rsvpStatus: string = "approved";
       const redemptionStatus: string = "redeemed";
-      const canToggleTicket =
-        rsvpStatus !== "denied" && redemptionStatus !== "redeemed";
+      const canToggleTicket = rsvpStatus !== "denied" && redemptionStatus !== "redeemed";
 
       expect(canToggleTicket).toBe(false);
     });
 
     it("should validate redemption status hierarchy", () => {
       // Test the priority: redeemed > disabled > issued > none
-      const getEffectiveStatus = (redemption: any) => {
+      const getEffectiveStatus = (redemption: TestRedemption | null) => {
         if (!redemption) return "none";
         if (redemption.redeemedAt) return "redeemed";
         if (redemption.disabledAt) return "disabled";
@@ -101,8 +109,7 @@ describe("Approval and Ticket Integration", () => {
     });
 
     it("should validate door/host role for redemption actions", () => {
-      const hasDoorOrHostRole = (role: string) =>
-        role === "org:member" || role === "org:admin";
+      const hasDoorOrHostRole = (role: string) => role === "org:member" || role === "org:admin";
 
       expect(hasDoorOrHostRole("org:admin")).toBe(true);
       expect(hasDoorOrHostRole("org:member")).toBe(true);
@@ -165,22 +172,19 @@ describe("Approval and Ticket Integration", () => {
     });
 
     it("should handle redemption toggle for non-existent redemption", () => {
-      const handleToggle = (redemption: any) => {
+      const handleToggle = (redemption: TestRedemption | null) => {
         if (!redemption) throw new Error("Redemption not found");
-        if (redemption.redeemedAt)
-          throw new Error("Cannot toggle redeemed code");
+        if (redemption.redeemedAt) throw new Error("Cannot toggle redeemed code");
         return { status: "toggled" };
       };
 
       expect(() => handleToggle(null)).toThrow("Redemption not found");
-      expect(() => handleToggle({ redeemedAt: Date.now() })).toThrow(
-        "Cannot toggle redeemed code",
-      );
+      expect(() => handleToggle({ redeemedAt: Date.now() })).toThrow("Cannot toggle redeemed code");
       expect(() => handleToggle({ createdAt: Date.now() })).not.toThrow();
     });
 
     it("should handle authorization failures", () => {
-      const checkAuthorization = (identity: any) => {
+      const checkAuthorization = (identity: TestIdentity | null) => {
         if (!identity) throw new Error("Unauthorized");
         if (!identity.role) throw new Error("Role not found");
         if (identity.role !== "org:admin") throw new Error("Forbidden");
@@ -189,11 +193,8 @@ describe("Approval and Ticket Integration", () => {
 
       expect(() => checkAuthorization(null)).toThrow("Unauthorized");
       expect(() => checkAuthorization({})).toThrow("Role not found");
-      expect(() => checkAuthorization({ role: "org:user" })).toThrow(
-        "Forbidden",
-      );
+      expect(() => checkAuthorization({ role: "org:user" })).toThrow("Forbidden");
       expect(() => checkAuthorization({ role: "org:admin" })).not.toThrow();
     });
   });
 });
-

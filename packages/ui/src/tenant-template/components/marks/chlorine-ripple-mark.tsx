@@ -5,13 +5,10 @@ import {
   CHLORINE_MARK_SOURCE_HEIGHT,
   CHLORINE_MARK_SOURCE_WIDTH,
   CHLORINE_WORDMARK_SOURCE,
-  ChlWordmarkSvg,
   type ChlorineMarkProps,
+  ChlWordmarkSvg,
 } from "./chlorine-mark";
-import {
-  ChlorineRippleSurface,
-  type ChlorineRippleSurfacePiece,
-} from "./chlorine-ripple-surface";
+import { ChlorineRippleSurface, type ChlorineRippleSurfacePiece } from "./chlorine-ripple-surface";
 
 export interface ChlorineRippleMarkProps extends ChlorineMarkProps {
   disabled?: boolean;
@@ -36,8 +33,7 @@ export function ChlorineRippleMark({
 }: ChlorineRippleMarkProps) {
   const [isRippleReady, setIsRippleReady] = useState(false);
   const width = size;
-  const height =
-    (size * CHLORINE_MARK_SOURCE_HEIGHT) / CHLORINE_MARK_SOURCE_WIDTH;
+  const height = (size * CHLORINE_MARK_SOURCE_HEIGHT) / CHLORINE_MARK_SOURCE_WIDTH;
   const resolvedForegroundColor = foregroundColor ?? fg ?? "currentColor";
 
   const ripplePieces = useMemo<readonly ChlorineRippleSurfacePiece[]>(

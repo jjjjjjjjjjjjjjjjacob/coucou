@@ -1,13 +1,23 @@
-import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { TestWrapper } from "./test-wrapper";
 
+type MockMutationArgs = Record<string, unknown>;
+type PendingChangesTestRsvp = {
+  name?: string;
+  approvalStatus?: string;
+  ticketStatus?: string;
+};
+type PendingChangesState = {
+  originalApprovalStatus?: string;
+  currentApprovalStatus?: string;
+  originalTicketStatus?: string;
+  currentTicketStatus?: string;
+};
+
 // Mock the new mutations we added
-const mockUpdateRsvpComplete = mock((args: any) =>
-  Promise.resolve({ status: "ok" }),
-);
-const mockDeleteRsvpComplete = mock((args: any) =>
+const mockUpdateRsvpComplete = mock((_args: MockMutationArgs) => Promise.resolve({ status: "ok" }));
+const mockDeleteRsvpComplete = mock((_args: MockMutationArgs) =>
   Promise.resolve({ deleted: true }),
 );
 
@@ -79,10 +89,7 @@ describe("RSVP Status Management Unit Tests", () => {
 
       return (
         <div data-testid="ticket-dropdown">
-          <button
-            data-testid="ticket-trigger"
-            className={getStatusClasses(status)}
-          >
+          <button data-testid="ticket-trigger" className={getStatusClasses(status)}>
             {getStatusDisplay(status)}
           </button>
           <div data-testid="ticket-menu">
@@ -92,21 +99,13 @@ describe("RSVP Status Management Unit Tests", () => {
             >
               Not issued
             </button>
-            <button
-              data-testid="ticket-option-issued"
-              onClick={() => onStatusChange("issued")}
-            >
+            <button data-testid="ticket-option-issued" onClick={() => onStatusChange("issued")}>
               Issued
             </button>
-            <button
-              data-testid="ticket-option-disabled"
-              onClick={() => onStatusChange("disabled")}
-            >
+            <button data-testid="ticket-option-disabled" onClick={() => onStatusChange("disabled")}>
               Disabled
             </button>
-            {redemptionCode && (
-              <button data-testid="qr-view-option">View QR Code</button>
-            )}
+            {redemptionCode && <button data-testid="qr-view-option">View QR Code</button>}
           </div>
         </div>
       );
@@ -141,11 +140,7 @@ describe("RSVP Status Management Unit Tests", () => {
     it("should show QR code option when redemption code exists", () => {
       render(
         <TestWrapper>
-          <TicketStatusDropdown
-            status="issued"
-            redemptionCode="ABC123"
-            onStatusChange={() => {}}
-          />
+          <TicketStatusDropdown status="issued" redemptionCode="ABC123" onStatusChange={() => {}} />
         </TestWrapper>,
       );
 
@@ -156,11 +151,7 @@ describe("RSVP Status Management Unit Tests", () => {
     it("should hide QR code option when no redemption code", () => {
       render(
         <TestWrapper>
-          <TicketStatusDropdown
-            status="issued"
-            redemptionCode={null}
-            onStatusChange={() => {}}
-          />
+          <TicketStatusDropdown status="issued" redemptionCode={null} onStatusChange={() => {}} />
         </TestWrapper>,
       );
 
@@ -171,10 +162,7 @@ describe("RSVP Status Management Unit Tests", () => {
       const mockOnStatusChange = mock();
       render(
         <TestWrapper>
-          <TicketStatusDropdown
-            status="none"
-            onStatusChange={mockOnStatusChange}
-          />
+          <TicketStatusDropdown status="none" onStatusChange={mockOnStatusChange} />
         </TestWrapper>,
       );
 
@@ -186,13 +174,7 @@ describe("RSVP Status Management Unit Tests", () => {
   });
 
   describe("Save Button Component", () => {
-    const SaveButton = ({
-      hasChanges,
-      onSave,
-    }: {
-      hasChanges: boolean;
-      onSave: () => void;
-    }) => {
+    const SaveButton = ({ hasChanges, onSave }: { hasChanges: boolean; onSave: () => void }) => {
       return (
         <button
           data-testid="save-button"
@@ -249,9 +231,7 @@ describe("RSVP Status Management Unit Tests", () => {
   describe("Delete Button Component", () => {
     const DeleteButton = ({ onDelete }: { onDelete: () => void }) => {
       const handleDelete = () => {
-        const confirmed = window.confirm(
-          "Are you sure you want to delete this RSVP?",
-        );
+        const confirmed = window.confirm("Are you sure you want to delete this RSVP?");
         if (confirmed) {
           onDelete();
         }
@@ -279,9 +259,7 @@ describe("RSVP Status Management Unit Tests", () => {
       const deleteButtons = screen.getAllByTestId("delete-button");
       fireEvent.click(deleteButtons[0]);
 
-      expect(mockConfirm).toHaveBeenCalledWith(
-        "Are you sure you want to delete this RSVP?",
-      );
+      expect(mockConfirm).toHaveBeenCalledWith("Are you sure you want to delete this RSVP?");
       expect(mockOnDelete).toHaveBeenCalled();
 
       window.confirm = originalConfirm;
@@ -312,15 +290,13 @@ describe("RSVP Status Management Unit Tests", () => {
       rsvp,
       pendingChanges,
     }: {
-      rsvp: any;
-      pendingChanges: any;
+      rsvp: PendingChangesTestRsvp;
+      pendingChanges: PendingChangesState | null;
     }) => {
       const hasChanges =
         pendingChanges &&
-        (pendingChanges.originalApprovalStatus !==
-          pendingChanges.currentApprovalStatus ||
-          pendingChanges.originalTicketStatus !==
-            pendingChanges.currentTicketStatus);
+        (pendingChanges.originalApprovalStatus !== pendingChanges.currentApprovalStatus ||
+          pendingChanges.originalTicketStatus !== pendingChanges.currentTicketStatus);
 
       return (
         <table>

@@ -12,15 +12,13 @@ describe("Dojo Next.js redirects", () => {
     expect(redirects).toContainEqual(
       expect.objectContaining({
         source: "/admin",
-        destination:
-          `${expectedCoucouBaseUrl}/workspaces/dojo-pomodoro/dashboard`,
+        destination: `${expectedCoucouBaseUrl}/workspaces/dojo-pomodoro/dashboard`,
       }),
     );
     expect(redirects).toContainEqual(
       expect.objectContaining({
         source: "/door",
-        destination:
-          `${expectedCoucouBaseUrl}/workspaces/dojo-pomodoro/dashboard/door`,
+        destination: `${expectedCoucouBaseUrl}/workspaces/dojo-pomodoro/dashboard/door`,
       }),
     );
   });

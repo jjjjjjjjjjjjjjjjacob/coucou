@@ -1,12 +1,12 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import type { EventThemeColorSource, PresetKey } from "@coucou/sdk";
 import { resolveSafeRedirectUrl } from "@coucou/sdk/routes";
+import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
-import { AuthShell, type AuthBrandingOverrides } from "./auth-shell";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { type AuthBrandingOverrides, AuthShell } from "./auth-shell";
 import { PhoneAuthFlow } from "./phone-auth-flow";
 
 function isExternalAbsoluteUrl(value: string): boolean {
@@ -109,10 +109,7 @@ export function PhoneAuthPage({
       return;
     }
 
-    if (
-      postAuthNavigation === "document-replace" &&
-      typeof window !== "undefined"
-    ) {
+    if (postAuthNavigation === "document-replace" && typeof window !== "undefined") {
       window.location.replace(authenticatedRedirectPath);
       return;
     }
@@ -121,21 +118,13 @@ export function PhoneAuthPage({
   }, [authenticatedRedirectPath, postAuthNavigation, router]);
 
   useEffect(() => {
-    if (
-      !isLoaded ||
-      !isSignedIn ||
-      hasTriggeredAuthenticatedRedirectRef.current
-    ) {
+    if (!isLoaded || !isSignedIn || hasTriggeredAuthenticatedRedirectRef.current) {
       return;
     }
 
     hasTriggeredAuthenticatedRedirectRef.current = true;
     navigateToAuthenticatedRedirectPath();
-  }, [
-    isLoaded,
-    isSignedIn,
-    navigateToAuthenticatedRedirectPath,
-  ]);
+  }, [isLoaded, isSignedIn, navigateToAuthenticatedRedirectPath]);
 
   const handleSuccess = useCallback(() => {
     if (onSuccess) {

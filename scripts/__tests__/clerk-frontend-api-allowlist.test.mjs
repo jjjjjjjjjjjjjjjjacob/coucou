@@ -79,9 +79,7 @@ describe("Clerk Frontend API allowlist generator", () => {
             clerkSatelliteAuthEnabled: true,
           },
         ],
-        verifiedWorkspaceSiteClerkFrontendApiUrls: [
-          "https://clerk.dojopomodoro.club",
-        ],
+        verifiedWorkspaceSiteClerkFrontendApiUrls: ["https://clerk.dojopomodoro.club"],
         staticSiteConfigurations: [
           {
             appKind: "client",
@@ -89,10 +87,7 @@ describe("Clerk Frontend API allowlist generator", () => {
           },
         ],
       }),
-    ).toEqual([
-      "https://clerk.coucou.events",
-      "https://clerk.dojopomodoro.club",
-    ]);
+    ).toEqual(["https://clerk.coucou.events", "https://clerk.dojopomodoro.club"]);
   });
 
   it("builds static bootstrap fallback values from known client site config", () => {
@@ -110,10 +105,7 @@ describe("Clerk Frontend API allowlist generator", () => {
           },
         ],
       }),
-    ).toEqual([
-      "https://clerk.coucou.events",
-      "https://clerk.dojopomodoro.club",
-    ]);
+    ).toEqual(["https://clerk.coucou.events", "https://clerk.dojopomodoro.club"]);
   });
 
   it("validates production HTTPS URLs", () => {
@@ -136,9 +128,9 @@ describe("Clerk Frontend API allowlist generator", () => {
       }),
     ).toThrow("Workspace site local Clerk Frontend API URL");
 
-    expect(() =>
-      buildClerkFrontendApiUrlFromSiteDomain("http://dojopomodoro.club"),
-    ).toThrow("Static site domain must use HTTPS");
+    expect(() => buildClerkFrontendApiUrlFromSiteDomain("http://dojopomodoro.club")).toThrow(
+      "Static site domain must use HTTPS",
+    );
   });
 
   it("parses Convex run JSON array output", () => {

@@ -1,16 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
-import { usePathname } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
+import { useQuery } from "convex/react";
+import { usePathname } from "next/navigation";
+import { useMemo } from "react";
+import { useWorkspaceAccess } from "@/components/workspace-access-gate";
 import {
   buildWorkspaceOperationPath,
   getWorkspaceSlugFromPathname,
   isCoucouWorkspaceSlug,
   type WorkspaceOperationSurface,
 } from "./workspace-config";
-import { useWorkspaceAccess } from "@/components/workspace-access-gate";
 
 interface WorkspaceScope {
   workspaceSlug: string;
@@ -28,10 +28,7 @@ interface WorkspaceScope {
 export function useWorkspaceScope() {
   const workspaceAccess = useWorkspaceAccess();
   const pathname = usePathname();
-  const workspaceSlug = useMemo(
-    () => getWorkspaceSlugFromPathname(pathname),
-    [pathname],
-  );
+  const workspaceSlug = useMemo(() => getWorkspaceSlugFromPathname(pathname), [pathname]);
   const workspace = useQuery(
     api.workspaces.getWorkspaceBySlug,
     workspaceAccess || !workspaceSlug ? "skip" : { slug: workspaceSlug },
@@ -83,11 +80,7 @@ export function useWorkspaceOperationPath(
 ): string {
   const workspaceScope = useWorkspaceScope();
   if (workspaceScope) {
-    return buildWorkspaceOperationPath(
-      workspaceScope.workspaceSlug,
-      surface,
-      pathname,
-    );
+    return buildWorkspaceOperationPath(workspaceScope.workspaceSlug, surface, pathname);
   }
 
   const normalizedPathname = pathname.replace(/^\/+/, "");

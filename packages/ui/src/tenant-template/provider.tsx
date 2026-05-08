@@ -1,21 +1,21 @@
 "use client";
 
 import {
-  PRESET_DEFINITIONS,
-  resolvePreset,
   type EventThemeColorSource,
+  PRESET_DEFINITIONS,
   type PresetDefinition,
   type PresetKey,
   type ResolvedPreset,
+  resolvePreset,
 } from "@coucou/sdk";
 import {
+  type CSSProperties,
   createContext,
+  type HTMLAttributes,
+  type ReactNode,
   useContext,
   useEffect,
   useMemo,
-  type CSSProperties,
-  type HTMLAttributes,
-  type ReactNode,
 } from "react";
 import { combineClassNames } from "./internal-utils";
 
@@ -25,12 +25,9 @@ interface TenantTemplateContextValue {
   presetKey: PresetKey;
 }
 
-const TenantTemplateContext = createContext<TenantTemplateContextValue | null>(
-  null,
-);
+const TenantTemplateContext = createContext<TenantTemplateContextValue | null>(null);
 
-export interface TenantTemplateProviderProps
-  extends HTMLAttributes<HTMLDivElement> {
+export interface TenantTemplateProviderProps extends HTMLAttributes<HTMLDivElement> {
   /**
    * Per-tenant preset stored on the workspace. Optional so callers can pass
    * a possibly-undefined value straight from a Convex query.
@@ -139,9 +136,7 @@ export function TenantTemplateProvider({
 export function useTenantTemplate(): TenantTemplateContextValue {
   const value = useContext(TenantTemplateContext);
   if (!value) {
-    throw new Error(
-      "useTenantTemplate must be used inside <TenantTemplateProvider>",
-    );
+    throw new Error("useTenantTemplate must be used inside <TenantTemplateProvider>");
   }
   return value;
 }

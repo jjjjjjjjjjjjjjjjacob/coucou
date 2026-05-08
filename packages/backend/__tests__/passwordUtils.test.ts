@@ -12,9 +12,7 @@ describe("Credential password helpers", () => {
     });
 
     it("preserves internal spaces and punctuation", () => {
-      expect(normalizeCredentialPassword("Back Stage! 123")).toBe(
-        "back stage! 123",
-      );
+      expect(normalizeCredentialPassword("Back Stage! 123")).toBe("back stage! 123");
     });
   });
 

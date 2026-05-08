@@ -10,11 +10,7 @@ export interface AdminEmptyStateProps {
  * Quiet empty state used inside admin sections when a data source has nothing
  * to show. Mirrors the Maison Obscur typography and spacing.
  */
-export function AdminEmptyState({
-  title,
-  description,
-  action,
-}: AdminEmptyStateProps) {
+export function AdminEmptyState({ title, description, action }: AdminEmptyStateProps) {
   return (
     <div
       className="flex flex-col items-center gap-3 py-16 text-center"

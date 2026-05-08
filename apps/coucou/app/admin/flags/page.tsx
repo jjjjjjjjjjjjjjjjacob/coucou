@@ -1,22 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import {
-  AdminHeader,
-  AdminSection,
-  Kpi,
-  KpiRow,
-} from "@coucou/ui/admin";
-import {
-  AdminDataTable,
-  type AdminDataTableColumn,
-} from "@/components/admin/admin-data-table";
-import { Select, SelectOption } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
+import { AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
+import { useMutation, useQuery } from "convex/react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
+import { Button } from "@/components/ui/button";
+import { Select, SelectOption } from "@/components/ui/select";
 
 interface FlagRow {
   _id: Id<"attentionFlags">;
@@ -43,9 +35,7 @@ function formatRelative(timestamp: number): string {
 
 export default function AdminFlagsPage() {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "open" | "ack" | "resolved" | "all"
-  >("open");
+  const [statusFilter, setStatusFilter] = useState<"open" | "ack" | "resolved" | "all">("open");
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorStack, setCursorStack] = useState<string[]>([]);
 
@@ -76,9 +66,7 @@ export default function AdminFlagsPage() {
       render: (row) => (
         <>
           {row.label}
-          {row.detail ? (
-            <span style={{ color: "var(--tt-fg-dim)" }}> — {row.detail}</span>
-          ) : null}
+          {row.detail ? <span style={{ color: "var(--tt-fg-dim)" }}> — {row.detail}</span> : null}
         </>
       ),
     },
@@ -130,9 +118,7 @@ export default function AdminFlagsPage() {
                     await ackMutation({ id: row._id });
                     toast.success("Flag acknowledged");
                   } catch (error) {
-                    toast.error(
-                      error instanceof Error ? error.message : "Failed",
-                    );
+                    toast.error(error instanceof Error ? error.message : "Failed");
                   }
                 }}
               >
@@ -150,9 +136,7 @@ export default function AdminFlagsPage() {
                   await resolveMutation({ id: row._id });
                   toast.success("Flag resolved");
                 } catch (error) {
-                  toast.error(
-                    error instanceof Error ? error.message : "Failed",
-                  );
+                  toast.error(error instanceof Error ? error.message : "Failed");
                 }
               }}
             >
@@ -194,9 +178,7 @@ export default function AdminFlagsPage() {
             <Select
               value={statusFilter}
               onChange={(event) => {
-                setStatusFilter(
-                  event.target.value as "open" | "ack" | "resolved" | "all",
-                );
+                setStatusFilter(event.target.value as "open" | "ack" | "resolved" | "all");
                 setCursor(null);
                 setCursorStack([]);
               }}
@@ -223,9 +205,7 @@ export default function AdminFlagsPage() {
             totalCount: flags?.totalCount,
           }}
           emptyMessage={
-            statusFilter === "open"
-              ? "No flags right now."
-              : "No flags match this filter."
+            statusFilter === "open" ? "No flags right now." : "No flags match this filter."
           }
         />
       </AdminSection>

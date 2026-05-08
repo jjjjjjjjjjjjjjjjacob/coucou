@@ -1,10 +1,9 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import React from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { PhoneAuthFlow } from "./phone-auth-flow";
 import type { PhoneAuthState } from "./config/types";
+import type { PhoneAuthFlow } from "./phone-auth-flow";
 
 GlobalRegistrator.register({ url: "http://localhost:3000" });
 

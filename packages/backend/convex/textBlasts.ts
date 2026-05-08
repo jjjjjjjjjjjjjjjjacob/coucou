@@ -3,20 +3,31 @@
  * Handles bulk SMS campaigns for events
  */
 
-import { action, mutation, query, internalAction, internalQuery, internalMutation } from "./_generated/server";
-import { v } from "convex/values";
-import { internal, api } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
-import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import type { UserIdentity } from "convex/server";
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
+import { obfuscatePhoneNumber } from "./lib/phoneUtils";
+import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
 import {
   ensureEventInSiteScope,
   ensureTextBlastInSiteScope,
   getEventInSiteScope,
   getTextBlastInSiteScope,
 } from "./lib/siteScope";
-import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 type RsvpStatus = Doc<"rsvps">["status"];
 
@@ -51,18 +62,30 @@ const parseRecipientFilter = (rawFilter: string | null | undefined): RecipientFi
       case "approved_no_approval_sms":
         return { type: "approved_no_approval_sms" };
       case "status":
-        if (typeof parsed.status === "string" && ALL_RSVP_STATUSES.includes(parsed.status as RsvpStatus)) {
+        if (
+          typeof parsed.status === "string" &&
+          ALL_RSVP_STATUSES.includes(parsed.status as RsvpStatus)
+        ) {
           return { type: "status", status: parsed.status as RsvpStatus };
         }
         break;
       case "custom_field_missing":
         if (typeof (parsed as { fieldKey?: unknown }).fieldKey === "string") {
-          return { type: "custom_field_missing", fieldKey: (parsed as { fieldKey: string }).fieldKey };
+          return {
+            type: "custom_field_missing",
+            fieldKey: (parsed as { fieldKey: string }).fieldKey,
+          };
         }
         break;
       case "rsvp_before":
-        if (typeof (parsed as { timestamp?: unknown }).timestamp === "number" && Number.isFinite((parsed as { timestamp: number }).timestamp)) {
-          return { type: "rsvp_before", timestamp: (parsed as { timestamp: number }).timestamp };
+        if (
+          typeof (parsed as { timestamp?: unknown }).timestamp === "number" &&
+          Number.isFinite((parsed as { timestamp: number }).timestamp)
+        ) {
+          return {
+            type: "rsvp_before",
+            timestamp: (parsed as { timestamp: number }).timestamp,
+          };
         }
         break;
       default:
@@ -107,10 +130,7 @@ const identityHasHostRole = (identity: IdentityWithRole): boolean => {
   return identity.role === "org:admin" || identity.role === "org:host";
 };
 
-const identityCanManageBlast = (
-  identity: IdentityWithRole,
-  blastOwnerId: string,
-): boolean => {
+const identityCanManageBlast = (identity: IdentityWithRole, blastOwnerId: string): boolean => {
   if (identity.subject === blastOwnerId) {
     return true;
   }
@@ -135,10 +155,7 @@ export const createDraft = mutation({
     recipientFilter: v.optional(v.string()),
     includeQrCodes: v.optional(v.boolean()),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<Id<"textBlasts">> => {
+  handler: async (ctx, args): Promise<Id<"textBlasts">> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -148,7 +165,7 @@ export const createDraft = mutation({
     const identityWithRole = identity as IdentityWithRole;
 
     // Verify user is host of this event (using org:admin role)
-    const event = await ensureEventInSiteScope(ctx, args.eventId, {
+    const _event = await ensureEventInSiteScope(ctx, args.eventId, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
@@ -199,10 +216,7 @@ export const updateDraft = mutation({
     recipientFilter: v.optional(v.string()),
     includeQrCodes: v.optional(v.boolean()),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<Doc<"textBlasts"> | null> => {
+  handler: async (ctx, args): Promise<Doc<"textBlasts"> | null> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -236,7 +250,7 @@ export const updateDraft = mutation({
       });
     }
 
-    const updateData: any = {
+    const updateData: Partial<Doc<"textBlasts">> = {
       updatedAt: Date.now(),
     };
 
@@ -262,15 +276,17 @@ export const updateDraft = mutation({
 /**
  * Send a text blast immediately
  */
-type SendBlastResult = {
-  success: true;
-  totalRecipients: number;
-  sentCount: number;
-  failedCount: number;
-} | {
-  success: false;
-  message?: string;
-};
+type SendBlastResult =
+  | {
+      success: true;
+      totalRecipients: number;
+      sentCount: number;
+      failedCount: number;
+    }
+  | {
+      success: false;
+      message?: string;
+    };
 
 type BlastRecipient = {
   clerkUserId: string;
@@ -325,12 +341,14 @@ const formatEventDateForSms = (timestamp: number, timezone?: string): string => 
     return "";
   }
   const date = new Date(timestamp);
-  return date.toLocaleDateString("en-US", {
-    month: "2-digit",
-    day: "2-digit",
-    year: "numeric",
-    timeZone: timezone ?? "UTC",
-  }).replace(/\//g, ".");
+  return date
+    .toLocaleDateString("en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+      timeZone: timezone ?? "UTC",
+    })
+    .replace(/\//g, ".");
 };
 
 const applyTemplateVariables = (template: string, variables: TemplateVariables): string => {
@@ -371,10 +389,7 @@ export const sendBlast = action({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<SendBlastResult> => {
+  handler: async (ctx, args): Promise<SendBlastResult> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -401,22 +416,19 @@ export const sendBlast = action({
 
     // Fetch recipients with decrypted phone numbers up front so the pre-check
     // aligns with the actual send payload
-    const recipients = await ctx.runAction(
-      internal.textBlasts.getRecipientsWithPhonesInternal,
-      {
-        eventId: blast.eventId,
-        siteKey: args.siteKey,
-        workspaceSlug: args.workspaceSlug,
-        targetLists: blast.targetLists,
-        recipientFilter: blast.recipientFilter,
-      },
-    ) as BlastRecipient[];
+    const recipients = (await ctx.runAction(internal.textBlasts.getRecipientsWithPhonesInternal, {
+      eventId: blast.eventId,
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+      targetLists: blast.targetLists,
+      recipientFilter: blast.recipientFilter,
+    })) as BlastRecipient[];
 
     if (recipients.length === 0) {
       throw new Error(
         "Cannot send text blast: No recipients found with SMS consent and phone numbers. " +
-        "Please check that: (1) RSVPs have SMS consent enabled, (2) Users have phone numbers saved in their profiles, " +
-        "and (3) Selected lists have approved/attending RSVPs."
+          "Please check that: (1) RSVPs have SMS consent enabled, (2) Users have phone numbers saved in their profiles, " +
+          "and (3) Selected lists have approved/attending RSVPs.",
       );
     }
 
@@ -446,12 +458,12 @@ export const sendBlast = action({
       // Create SMS notification records with personalized message content
       const smsRecipients: SmsRecipientPayload[] = [];
       const baseUrl = getEventBaseUrl(event);
-      
+
       for (const recipient of recipients) {
         // Generate QR code if recipient has redemption code and includeQrCodes is enabled
         let qrCodeMediaUrl: string | undefined;
         let redemptionLink: string | undefined;
-        
+
         if (blast.includeQrCodes && recipient.redemptionCode && baseUrl) {
           try {
             // Use the exact same redemption code format as the user-facing ticket page
@@ -460,7 +472,7 @@ export const sendBlast = action({
             // This ensures 100% compatibility with QR codes displayed on the ticket page
             const ticketUrl = `${baseUrl}/redeem/${recipient.redemptionCode}`;
             redemptionLink = ticketUrl; // Store the redemption link for template variable
-            
+
             // Generate QR code using internal action (no auth required)
             // The internal action properly loads Node.js QRCode module
             // The QR code value is identical to what users see on their ticket page
@@ -472,20 +484,20 @@ export const sendBlast = action({
                 backgroundColor: event.themeBackgroundColor,
               },
             );
-            
+
             // Get the publicly accessible URL for the QR code
-            const qrCodeUrl = await ctx.runAction(
-              internal.lib.qrCodeGenerator.getQrCodeUrl,
-              {
-                storageId,
-              },
-            );
-            
+            const qrCodeUrl = await ctx.runAction(internal.lib.qrCodeGenerator.getQrCodeUrl, {
+              storageId,
+            });
+
             if (qrCodeUrl) {
               qrCodeMediaUrl = qrCodeUrl; // Storage URL for MMS attachment
             }
           } catch (error) {
-            console.error(`Failed to generate QR code for recipient ${recipient.clerkUserId}:`, error);
+            console.error(
+              `Failed to generate QR code for recipient ${recipient.clerkUserId}:`,
+              error,
+            );
             // Continue without QR code - don't include in MMS if generation failed
           }
         }
@@ -522,7 +534,9 @@ export const sendBlast = action({
         messageType: "Promotional",
       })) as BulkSmsSendResult;
 
-      console.log(`[sendBlast] Bulk send result: ${result.successCount} succeeded, ${result.failureCount} failed out of ${result.totalRecipients} total`);
+      console.log(
+        `[sendBlast] Bulk send result: ${result.successCount} succeeded, ${result.failureCount} failed out of ${result.totalRecipients} total`,
+      );
 
       // Update blast with final counts
       await ctx.runMutation(internal.textBlasts.updateBlastCounts, {
@@ -538,12 +552,11 @@ export const sendBlast = action({
           .filter((r) => !r.success && r.error)
           .map((r) => r.error)
           .slice(0, 3);
-        const errorSummary = sampleErrors.length > 0 
-          ? ` Common errors: ${sampleErrors.join("; ")}`
-          : "";
+        const errorSummary =
+          sampleErrors.length > 0 ? ` Common errors: ${sampleErrors.join("; ")}` : "";
         throw new Error(
           `Failed to send any messages to ${result.totalRecipients} recipients.${errorSummary} ` +
-          `Check Twilio credentials, opt-out status, and phone number formats.`
+            `Check Twilio credentials, opt-out status, and phone number formats.`,
         );
       }
 
@@ -553,14 +566,14 @@ export const sendBlast = action({
         sentCount: result.successCount,
         failedCount: result.failureCount,
       };
-    } catch (error: any) {
+    } catch (error) {
       // Mark blast as failed
       console.error(`[sendBlast] Error sending text blast ${args.blastId}:`, error);
       await ctx.runMutation(internal.textBlasts.updateBlastStatus, {
         blastId: args.blastId,
         status: "failed",
       });
-      throw new Error(`Failed to send text blast: ${error.message}`);
+      throw new Error(`Failed to send text blast: ${getErrorMessage(error)}`);
     }
   },
 });
@@ -581,10 +594,7 @@ export const sendBlastDirect = action({
     includeQrCodes: v.optional(v.boolean()),
     selectedRsvpIds: v.optional(v.array(v.id("rsvps"))), // Filter to specific RSVP IDs for testing
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<SendBlastResult> => {
+  handler: async (ctx, args): Promise<SendBlastResult> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -606,24 +616,21 @@ export const sendBlastDirect = action({
     }
 
     // Fetch recipients with decrypted phone numbers so the validation matches the send payload
-    const recipients = await ctx.runAction(
-      internal.textBlasts.getRecipientsWithPhonesInternal,
-      {
-        eventId: args.eventId,
-        siteKey: args.siteKey,
-        workspaceSlug: args.workspaceSlug,
-        targetLists: args.targetLists,
-        recipientFilter: args.recipientFilter,
-        selectedRsvpIds: args.selectedRsvpIds,
-      },
-    ) as BlastRecipient[];
+    const recipients = (await ctx.runAction(internal.textBlasts.getRecipientsWithPhonesInternal, {
+      eventId: args.eventId,
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+      targetLists: args.targetLists,
+      recipientFilter: args.recipientFilter,
+      selectedRsvpIds: args.selectedRsvpIds,
+    })) as BlastRecipient[];
 
     // Pre-check: Validate recipients exist before attempting to send
     if (recipients.length === 0) {
       throw new Error(
         "Cannot send text blast: No recipients found with SMS consent and phone numbers. " +
-        "Please check that: (1) RSVPs have SMS consent enabled, (2) Users have phone numbers saved in their profiles, " +
-        "and (3) Selected lists have approved/attending RSVPs."
+          "Please check that: (1) RSVPs have SMS consent enabled, (2) Users have phone numbers saved in their profiles, " +
+          "and (3) Selected lists have approved/attending RSVPs.",
       );
     }
 
@@ -660,12 +667,12 @@ export const sendBlastDirect = action({
       // Create SMS notification records for each recipient
       const smsRecipients: SmsRecipientPayload[] = [];
       const baseUrl = getEventBaseUrl(event);
-      
+
       for (const recipient of recipients) {
         // Generate QR code if recipient has redemption code and includeQrCodes is enabled
         let qrCodeMediaUrl: string | undefined;
         let redemptionLink: string | undefined;
-        
+
         if (args.includeQrCodes && recipient.redemptionCode && baseUrl) {
           try {
             // Use the exact same redemption code format as the user-facing ticket page
@@ -674,7 +681,7 @@ export const sendBlastDirect = action({
             // This ensures 100% compatibility with QR codes displayed on the ticket page
             const ticketUrl = `${baseUrl}/redeem/${recipient.redemptionCode}`;
             redemptionLink = ticketUrl; // Store the redemption link for template variable
-            
+
             // Generate QR code using internal action (no auth required)
             // The internal action properly loads Node.js QRCode module
             // The QR code value is identical to what users see on their ticket page
@@ -686,20 +693,20 @@ export const sendBlastDirect = action({
                 backgroundColor: event.themeBackgroundColor,
               },
             );
-            
+
             // Get the publicly accessible URL for the QR code
-            const qrCodeUrl = await ctx.runAction(
-              internal.lib.qrCodeGenerator.getQrCodeUrl,
-              {
-                storageId,
-              },
-            );
-            
+            const qrCodeUrl = await ctx.runAction(internal.lib.qrCodeGenerator.getQrCodeUrl, {
+              storageId,
+            });
+
             if (qrCodeUrl) {
               qrCodeMediaUrl = qrCodeUrl; // Storage URL for MMS attachment
             }
           } catch (error) {
-            console.error(`Failed to generate QR code for recipient ${recipient.clerkUserId}:`, error);
+            console.error(
+              `Failed to generate QR code for recipient ${recipient.clerkUserId}:`,
+              error,
+            );
             // Continue without QR code - don't include in MMS if generation failed
           }
         }
@@ -736,7 +743,9 @@ export const sendBlastDirect = action({
         messageType: "Promotional",
       })) as BulkSmsSendResult;
 
-      console.log(`[sendBlastDirect] Bulk send result: ${result.successCount} succeeded, ${result.failureCount} failed out of ${result.totalRecipients} total`);
+      console.log(
+        `[sendBlastDirect] Bulk send result: ${result.successCount} succeeded, ${result.failureCount} failed out of ${result.totalRecipients} total`,
+      );
 
       // Update blast with final counts
       await ctx.runMutation(internal.textBlasts.updateBlastCounts, {
@@ -752,12 +761,11 @@ export const sendBlastDirect = action({
           .filter((r) => !r.success && r.error)
           .map((r) => r.error)
           .slice(0, 3);
-        const errorSummary = sampleErrors.length > 0 
-          ? ` Common errors: ${sampleErrors.join("; ")}`
-          : "";
+        const errorSummary =
+          sampleErrors.length > 0 ? ` Common errors: ${sampleErrors.join("; ")}` : "";
         throw new Error(
           `Failed to send any messages to ${result.totalRecipients} recipients.${errorSummary} ` +
-          `Check Twilio credentials, opt-out status, and phone number formats.`
+            `Check Twilio credentials, opt-out status, and phone number formats.`,
         );
       }
 
@@ -767,14 +775,14 @@ export const sendBlastDirect = action({
         sentCount: result.successCount,
         failedCount: result.failureCount,
       };
-    } catch (error: any) {
+    } catch (error) {
       // Mark blast as failed
       console.error(`[sendBlastDirect] Error sending text blast ${blastId}:`, error);
       await ctx.runMutation(internal.textBlasts.updateBlastStatus, {
         blastId,
         status: "failed",
       });
-      throw new Error(`Failed to send text blast: ${error.message}`);
+      throw new Error(`Failed to send text blast: ${getErrorMessage(error)}`);
     }
   },
 });
@@ -790,10 +798,7 @@ export const getBlastsByEvent = query({
     limit: v.optional(v.number()),
     status: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<Doc<"textBlasts">[]> => {
+  handler: async (ctx, args): Promise<Doc<"textBlasts">[]> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -820,9 +825,7 @@ export const getBlastsByEvent = query({
       query = query.filter((q) => q.eq(q.field("status"), args.status));
     }
 
-    const blasts = await query
-      .order("desc")
-      .take(args.limit || 50);
+    const blasts = await query.order("desc").take(args.limit || 50);
 
     return blasts as Doc<"textBlasts">[];
   },
@@ -839,10 +842,7 @@ export const getBlastsByEventWithSenderNames = query({
     limit: v.optional(v.number()),
     status: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<(Doc<"textBlasts"> & { sentByName: string })[]> => {
+  handler: async (ctx, args): Promise<(Doc<"textBlasts"> & { sentByName: string })[]> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -868,9 +868,7 @@ export const getBlastsByEventWithSenderNames = query({
       blastQuery = blastQuery.filter((q) => q.eq(q.field("status"), args.status));
     }
 
-    const blasts = await blastQuery
-      .order("desc")
-      .take(args.limit || 100);
+    const blasts = await blastQuery.order("desc").take(args.limit || 100);
 
     // Resolve unique sender names
     const uniqueSenderIds = [...new Set(blasts.map((blast) => blast.sentBy))];
@@ -903,10 +901,7 @@ export const getMyBlasts = query({
     limit: v.optional(v.number()),
     status: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<Doc<"textBlasts">[]> => {
+  handler: async (ctx, args): Promise<Doc<"textBlasts">[]> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
 
@@ -918,9 +913,7 @@ export const getMyBlasts = query({
       query = query.filter((q) => q.eq(q.field("status"), args.status));
     }
 
-    const blasts = await query
-      .order("desc")
-      .take(args.limit || 50);
+    const blasts = await query.order("desc").take(args.limit || 50);
 
     return blasts as Doc<"textBlasts">[];
   },
@@ -935,10 +928,7 @@ export const getBlastById = query({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<Doc<"textBlasts"> | null> => {
+  handler: async (ctx, args): Promise<Doc<"textBlasts"> | null> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -1022,7 +1012,7 @@ export const getRecipientsForSelection = query({
           name,
           listKey: rsvp.listKey,
         };
-      })
+      }),
     );
 
     // Sort by name
@@ -1072,9 +1062,7 @@ export const getAvailableListsForEvent = query({
     for (const status of statusesToFetch) {
       const rsvpsForStatus = await ctx.db
         .query("rsvps")
-        .withIndex("by_event_status", (q) =>
-          q.eq("eventId", args.eventId).eq("status", status),
-        )
+        .withIndex("by_event_status", (q) => q.eq("eventId", args.eventId).eq("status", status))
         .collect();
 
       for (const rsvp of rsvpsForStatus) {
@@ -1089,19 +1077,20 @@ export const getAvailableListsForEvent = query({
       }
     }
 
-    const result: Array<{ listKey: string; recipientCount: number; totalRsvps: number }> = [];
+    const result: Array<{
+      listKey: string;
+      recipientCount: number;
+      totalRsvps: number;
+    }> = [];
 
     for (const [listKey, userIds] of listUniqueUsers.entries()) {
-      const recipientCount = await ctx.runQuery(
-        internal.textBlasts.countRecipientsInternal,
-        {
-          eventId: args.eventId,
-          siteKey: args.siteKey,
-          workspaceSlug: args.workspaceSlug,
-          targetLists: [listKey],
-          recipientFilter: args.recipientFilter,
-        },
-      );
+      const recipientCount = await ctx.runQuery(internal.textBlasts.countRecipientsInternal, {
+        eventId: args.eventId,
+        siteKey: args.siteKey,
+        workspaceSlug: args.workspaceSlug,
+        targetLists: [listKey],
+        recipientFilter: args.recipientFilter,
+      });
 
       result.push({
         listKey,
@@ -1109,7 +1098,9 @@ export const getAvailableListsForEvent = query({
         totalRsvps: userIds.size,
       });
 
-      console.log(`[getAvailableListsForEvent] List ${listKey}: ${userIds.size} RSVPs (statuses considered: ${statusesToFetch.join(", ")}), ${recipientCount} reachable recipients`);
+      console.log(
+        `[getAvailableListsForEvent] List ${listKey}: ${userIds.size} RSVPs (statuses considered: ${statusesToFetch.join(", ")}), ${recipientCount} reachable recipients`,
+      );
     }
 
     result.sort((a, b) => a.listKey.localeCompare(b.listKey));
@@ -1127,10 +1118,7 @@ export const duplicateBlast = mutation({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<Id<"textBlasts">> => {
+  handler: async (ctx, args): Promise<Id<"textBlasts">> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -1139,11 +1127,10 @@ export const duplicateBlast = mutation({
     });
     const identityWithRole = identity as IdentityWithRole;
 
-    const { blast: originalBlast } = await ensureTextBlastInSiteScope(
-      ctx,
-      args.blastId,
-      { siteKey: args.siteKey, workspaceSlug: args.workspaceSlug },
-    );
+    const { blast: originalBlast } = await ensureTextBlastInSiteScope(ctx, args.blastId, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
 
     if (!identityCanManageBlast(identityWithRole, originalBlast.sentBy)) {
       throw new Error("Not authorized to duplicate this text blast");
@@ -1396,10 +1383,7 @@ export const getRecipientsWithPhonesInternal = internalAction({
     recipientFilter: v.optional(v.string()), // 'all' | 'approved_no_approval_sms'
     selectedRsvpIds: v.optional(v.array(v.id("rsvps"))), // Filter to specific RSVP IDs if provided
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<BlastRecipient[]> => {
+  handler: async (ctx, args): Promise<BlastRecipient[]> => {
     // Get all approved RSVPs for target lists
     const rsvps = (await ctx.runQuery(internal.textBlasts.getApprovedRsvpsForListsInternal, {
       eventId: args.eventId,
@@ -1410,7 +1394,9 @@ export const getRecipientsWithPhonesInternal = internalAction({
       selectedRsvpIds: args.selectedRsvpIds,
     })) as ApprovedRsvpForList[];
 
-    console.log(`[getRecipientsWithPhonesInternal] Found ${rsvps.length} RSVPs with SMS consent for lists: ${args.targetLists.join(", ")}`);
+    console.log(
+      `[getRecipientsWithPhonesInternal] Found ${rsvps.length} RSVPs with SMS consent for lists: ${args.targetLists.join(", ")}`,
+    );
 
     const recipients: BlastRecipient[] = [];
     const processedUsers = new Set<string>();
@@ -1450,19 +1436,23 @@ export const getRecipientsWithPhonesInternal = internalAction({
           const clerkUser = await clerkClient.users.getUser(clerkUserId);
           const preferredPhone =
             (clerkUser.primaryPhoneNumberId &&
-              clerkUser.phoneNumbers.find(
-                (phone) => phone.id === clerkUser.primaryPhoneNumberId,
-              )?.phoneNumber) ||
+              clerkUser.phoneNumbers.find((phone) => phone.id === clerkUser.primaryPhoneNumberId)
+                ?.phoneNumber) ||
             clerkUser.phoneNumbers[0]?.phoneNumber;
           if (preferredPhone) {
             return preferredPhone;
           }
         } catch (error) {
-          console.error(`[getRecipientsWithPhonesInternal] Failed to fetch phone from Clerk for user ${clerkUserId}:`, error);
+          console.error(
+            `[getRecipientsWithPhonesInternal] Failed to fetch phone from Clerk for user ${clerkUserId}:`,
+            error,
+          );
         }
       }
 
-      console.warn(`[getRecipientsWithPhonesInternal] No phone number found for user ${clerkUserId} (checked: users=${!!userRecord?.phone}, clerk=${!!clerkSecretKey})`);
+      console.warn(
+        `[getRecipientsWithPhonesInternal] No phone number found for user ${clerkUserId} (checked: users=${!!userRecord?.phone}, clerk=${!!clerkSecretKey})`,
+      );
       return null;
     };
 
@@ -1478,7 +1468,9 @@ export const getRecipientsWithPhonesInternal = internalAction({
       // Note: This should already be filtered by getApprovedRsvpsForListsInternal, but double-check
       if (rsvp.smsConsent !== true) {
         skippedNoConsent++;
-        console.warn(`[getRecipientsWithPhonesInternal] RSVP ${rsvp._id} does not have SMS consent`);
+        console.warn(
+          `[getRecipientsWithPhonesInternal] RSVP ${rsvp._id} does not have SMS consent`,
+        );
         continue;
       }
 
@@ -1491,7 +1483,9 @@ export const getRecipientsWithPhonesInternal = internalAction({
 
       if (!phoneNumber) {
         skippedNoPhone++;
-        console.warn(`[getRecipientsWithPhonesInternal] User ${rsvp.clerkUserId} does not have a phone number in profile, Clerk, or users table`);
+        console.warn(
+          `[getRecipientsWithPhonesInternal] User ${rsvp.clerkUserId} does not have a phone number in profile, Clerk, or users table`,
+        );
         continue;
       }
 
@@ -1500,7 +1494,9 @@ export const getRecipientsWithPhonesInternal = internalAction({
       const phoneNumberTrimmed = phoneNumber.trim();
       if (!phoneNumberTrimmed || phoneNumberTrimmed.length === 0) {
         skippedNoPhone++;
-        console.warn(`[getRecipientsWithPhonesInternal] User ${rsvp.clerkUserId} has empty phone number`);
+        console.warn(
+          `[getRecipientsWithPhonesInternal] User ${rsvp.clerkUserId} has empty phone number`,
+        );
         continue;
       }
 
@@ -1508,7 +1504,9 @@ export const getRecipientsWithPhonesInternal = internalAction({
       // But log a warning if it looks suspicious
       const digitsOnly = phoneNumberTrimmed.replace(/\D/g, "");
       if (digitsOnly.length < 7 || digitsOnly.length > 15) {
-        console.warn(`[getRecipientsWithPhonesInternal] User ${rsvp.clerkUserId} has suspicious phone number length: ${digitsOnly.length} digits (${obfuscatePhoneNumber(phoneNumberTrimmed)})`);
+        console.warn(
+          `[getRecipientsWithPhonesInternal] User ${rsvp.clerkUserId} has suspicious phone number length: ${digitsOnly.length} digits (${obfuscatePhoneNumber(phoneNumberTrimmed)})`,
+        );
       }
 
       const firstNameFromUserRecord = userRecord?.firstName?.trim();
@@ -1535,7 +1533,9 @@ export const getRecipientsWithPhonesInternal = internalAction({
       });
     }
 
-    console.log(`[getRecipientsWithPhonesInternal] Final count: ${recipients.length} recipients. Skipped: ${skippedNoConsent} no consent, ${skippedNoPhone} no phone, ${skippedDuplicate} duplicates`);
+    console.log(
+      `[getRecipientsWithPhonesInternal] Final count: ${recipients.length} recipients. Skipped: ${skippedNoConsent} no consent, ${skippedNoPhone} no phone, ${skippedDuplicate} duplicates`,
+    );
 
     return recipients;
   },
@@ -1569,7 +1569,7 @@ export const getRedemptionForUserEventInternal = internalQuery({
     return await ctx.db
       .query("redemptions")
       .withIndex("by_event_user", (q) =>
-        q.eq("eventId", args.eventId).eq("clerkUserId", args.clerkUserId)
+        q.eq("eventId", args.eventId).eq("clerkUserId", args.clerkUserId),
       )
       .unique();
   },
@@ -1604,9 +1604,7 @@ export const getApprovedRsvpsForListsInternal = internalQuery({
     for (const status of statusesToFetch) {
       const rsvpsForStatus = await ctx.db
         .query("rsvps")
-        .withIndex("by_event_status", (q) =>
-          q.eq("eventId", args.eventId).eq("status", status),
-        )
+        .withIndex("by_event_status", (q) => q.eq("eventId", args.eventId).eq("status", status))
         .collect();
       rsvps.push(...rsvpsForStatus);
     }
@@ -1639,7 +1637,7 @@ export const getApprovedRsvpsForListsInternal = internalQuery({
         );
 
         filteredRsvps = filteredWithApprovalSmsStatus.filter(
-          (rsvp): rsvp is typeof filteredRsvps[0] => rsvp !== null,
+          (rsvp): rsvp is (typeof filteredRsvps)[0] => rsvp !== null,
         );
         break;
       }

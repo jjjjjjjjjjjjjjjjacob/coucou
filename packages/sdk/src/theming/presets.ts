@@ -53,16 +53,9 @@ export interface PresetDefinition {
 // Helvetica Neue is system-installed on macOS/iOS. The fallback chain
 // continues to Helvetica → Arial → system-ui so non-Apple clients still
 // land on the right metrics. No Google Font needs to be loaded.
-const HELVETICA_STACK =
-  '"Helvetica Neue", "Helvetica", "Arial", system-ui, sans-serif';
+const HELVETICA_STACK = '"Helvetica Neue", "Helvetica", "Arial", system-ui, sans-serif';
 
-export const PRESET_KEYS: readonly PresetKey[] = [
-  "maison",
-  "dojo",
-  "atrium",
-  "coucou",
-  "chlorine",
-];
+export const PRESET_KEYS: readonly PresetKey[] = ["maison", "dojo", "atrium", "coucou", "chlorine"];
 
 export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
   // Maison Obscur — the original quiet/dark editorial preset from the design.
@@ -107,10 +100,8 @@ export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
     rule: "rgba(239, 68, 68, 0.20)",
     ruleStrong: "rgba(239, 68, 68, 0.40)",
     accent: "#EF4444",
-    display:
-      'var(--font-geist-sans), "Geist", "Inter", ui-sans-serif, system-ui, sans-serif',
-    text:
-      'var(--font-geist-sans), "Geist", "Inter", ui-sans-serif, system-ui, sans-serif',
+    display: 'var(--font-geist-sans), "Geist", "Inter", ui-sans-serif, system-ui, sans-serif',
+    text: 'var(--font-geist-sans), "Geist", "Inter", ui-sans-serif, system-ui, sans-serif',
     titleSize: 44,
     upper: true,
     ctaShape: "rounded",
@@ -168,10 +159,8 @@ export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
     rule: "rgba(30, 60, 255, 0.20)",
     ruleStrong: "rgba(30, 60, 255, 0.40)",
     accent: "#1E3CFF",
-    display:
-      'var(--font-bowlby-one), "Bowlby One", "Fugaz One", "Anton", "Impact", sans-serif',
-    text:
-      'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+    display: 'var(--font-bowlby-one), "Bowlby One", "Fugaz One", "Anton", "Impact", sans-serif',
+    text: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
     titleSize: 96,
     upper: true,
     ctaShape: "rounded",

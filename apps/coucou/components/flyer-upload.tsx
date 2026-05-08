@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react";
-import { Button } from "@/components/ui/button";
-import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { useMutation, useQuery } from "convex/react";
+import React from "react";
+import { Button } from "@/components/ui/button";
 
 export interface StorageImageUploadProps {
   value?: string | null;
@@ -100,13 +100,9 @@ export function StorageImageUpload({
                 alt={previewAlt}
                 className="h-20 w-20 object-cover rounded border"
                 onError={(event) => {
-                  console.error(
-                    "Failed to load preview image:",
-                    preview.url,
-                  );
+                  console.error("Failed to load preview image:", preview.url);
                   event.currentTarget.style.display = "none";
-                  const fallback = event.currentTarget
-                    .nextElementSibling as HTMLElement;
+                  const fallback = event.currentTarget.nextElementSibling as HTMLElement;
                   if (fallback) fallback.style.display = "block";
                 }}
               />
@@ -125,12 +121,7 @@ export function StorageImageUpload({
               <div className="font-medium">{uploadedTitle}</div>
               <div className="text-foreground/70 text-xs break-all">{value}</div>
               <div className="mt-2 flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onChange?.(null)}
-                >
+                <Button type="button" size="sm" variant="outline" onClick={() => onChange?.(null)}>
                   {removeButtonLabel}
                 </Button>
               </div>
@@ -143,9 +134,7 @@ export function StorageImageUpload({
           </div>
         )}
       </div>
-      {helperText ? (
-        <div className="text-xs text-muted-foreground">{helperText}</div>
-      ) : null}
+      {helperText ? <div className="text-xs text-muted-foreground">{helperText}</div> : null}
     </div>
   );
 }

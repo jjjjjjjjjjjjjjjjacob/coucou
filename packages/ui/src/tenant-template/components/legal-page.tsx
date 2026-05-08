@@ -1,11 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
 import type { PresetKey } from "@coucou/sdk";
+import type { ReactNode } from "react";
 import { TenantTemplateProvider } from "../provider";
-import { TenantShell } from "./tenant-shell";
-import { Eyebrow } from "./primitives/eyebrow";
 import { usePreset } from "../use-preset";
+import { Eyebrow } from "./primitives/eyebrow";
+import { TenantShell } from "./tenant-shell";
 
 export interface LegalPageProps {
   /**
@@ -54,23 +54,16 @@ export interface LegalPageProps {
  */
 export function LegalPage({
   preset,
-  brandName,
   title,
   eyebrow = "Legal",
   lastUpdated,
   intro,
-  footerContact,
   children,
 }: LegalPageProps) {
   return (
     <TenantTemplateProvider siteConfigurationPreset={preset}>
       <TenantShell>
-        <LegalBody
-          title={title}
-          eyebrow={eyebrow}
-          lastUpdated={lastUpdated}
-          intro={intro}
-        >
+        <LegalBody title={title} eyebrow={eyebrow} lastUpdated={lastUpdated} intro={intro}>
           {children}
         </LegalBody>
       </TenantShell>
@@ -86,13 +79,7 @@ interface LegalBodyProps {
   children: ReactNode;
 }
 
-function LegalBody({
-  title,
-  eyebrow,
-  lastUpdated,
-  intro,
-  children,
-}: LegalBodyProps) {
+function LegalBody({ title, eyebrow, lastUpdated, intro, children }: LegalBodyProps) {
   const { presetKey, preset } = usePreset();
   return (
     <article

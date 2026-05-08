@@ -3,10 +3,10 @@ import type { UserIdentity } from "convex/server";
 import type { Id } from "../convex/_generated/dataModel";
 import type { QueryCtx } from "../convex/_generated/server";
 import {
+  type ResolvedWorkspaceAuthScope,
   requireWorkspaceCapabilityForResolvedScope,
   roleHasWorkspaceReadAccess,
   roleHasWorkspaceWriteAccess,
-  type ResolvedWorkspaceAuthScope,
 } from "../convex/lib/workspaceAuth";
 
 function createIdentity(role: string): UserIdentity {
@@ -47,10 +47,7 @@ function createAuthContext(identity: UserIdentity | null) {
   };
 }
 
-function createAuthContextWithStoredMembership(
-  identity: UserIdentity | null,
-  role: string,
-) {
+function createAuthContextWithStoredMembership(identity: UserIdentity | null, role: string) {
   const db = {
     query: () => ({
       withIndex: () => ({
@@ -140,10 +137,7 @@ describe("workspace role capabilities", () => {
   it("uses stored membership when the active organization token omits role", async () => {
     await expect(
       requireWorkspaceCapabilityForResolvedScope(
-        createAuthContextWithStoredMembership(
-          createIdentityWithoutRole(),
-          "org:admin",
-        ),
+        createAuthContextWithStoredMembership(createIdentityWithoutRole(), "org:admin"),
         resolvedWorkspaceScope,
         "host",
       ),

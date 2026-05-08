@@ -1,10 +1,8 @@
 "use client";
 
-import { toast, type ExternalToast } from "sonner";
+import { type ExternalToast, toast } from "sonner";
 
-type SetActiveOrganization = (params: {
-  organization: string;
-}) => Promise<void>;
+type SetActiveOrganization = (params: { organization: string }) => Promise<void>;
 
 interface OrganizationNavigationToastMessages {
   loading: string;
@@ -70,10 +68,8 @@ export async function activateOrganizationBeforeNavigation({
       const errorMessage =
         typeof toastMessages?.error === "function"
           ? toastMessages.error(error)
-          : toastMessages?.error ??
-            (error instanceof Error
-              ? error.message
-              : "Unable to switch workspace.");
+          : (toastMessages?.error ??
+            (error instanceof Error ? error.message : "Unable to switch workspace."));
       toast.error(errorMessage, {
         id: toastIdentifier,
         className: toastMessages?.className,

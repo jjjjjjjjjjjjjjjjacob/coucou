@@ -1,6 +1,6 @@
-import { internalQuery } from "./functions";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
+import { internalQuery } from "./functions";
 import { ensureEventInSiteScope } from "./lib/siteScope";
 
 export type ExportContext = {
@@ -68,14 +68,10 @@ export const getRsvpsForExportInternal = internalQuery({
     }
 
     if (requestedStatuses.length !== allowedStatuses.length) {
-      rsvps = rsvps.filter((rsvp) =>
-        requestedStatuses.includes(rsvp.status),
-      );
+      rsvps = rsvps.filter((rsvp) => requestedStatuses.includes(rsvp.status));
     }
 
-    const clerkUserIds = [
-      ...new Set(rsvps.map((rsvp) => rsvp.clerkUserId)),
-    ];
+    const clerkUserIds = [...new Set(rsvps.map((rsvp) => rsvp.clerkUserId))];
 
     const usersByClerkUserId: Record<string, Doc<"users">> = {};
     if (clerkUserIds.length > 0) {
@@ -83,9 +79,7 @@ export const getRsvpsForExportInternal = internalQuery({
         clerkUserIds.map((clerkUserId) =>
           ctx.db
             .query("users")
-            .withIndex("by_clerkUserId", (query) =>
-              query.eq("clerkUserId", clerkUserId),
-            )
+            .withIndex("by_clerkUserId", (query) => query.eq("clerkUserId", clerkUserId))
             .unique(),
         ),
       );

@@ -14,9 +14,7 @@ export type EventLifecycleInput = EventTimingInput & {
   lifecycle?: EventLifecycle;
 };
 
-export function resolveEventEndTimestamp(
-  event: EventTimingInput,
-): number | null {
+export function resolveEventEndTimestamp(event: EventTimingInput): number | null {
   if (typeof event.eventEndDate === "number") {
     return event.eventEndDate;
   }
@@ -26,10 +24,7 @@ export function resolveEventEndTimestamp(
   return null;
 }
 
-export function isEventPast(
-  event: EventTimingInput,
-  now: number = Date.now(),
-): boolean {
+export function isEventPast(event: EventTimingInput, now: number = Date.now()): boolean {
   const endTimestamp = resolveEventEndTimestamp(event);
   if (endTimestamp === null) {
     return false;

@@ -1,15 +1,7 @@
 "use client";
 
-import {
-  useRef,
-  type AnchorHTMLAttributes,
-  type ComponentType,
-  type ReactNode,
-} from "react";
-import {
-  ChlorineComposedLogo,
-  useLandingViewport,
-} from "./chlorine-split-frame";
+import { type AnchorHTMLAttributes, type ComponentType, type ReactNode, useRef } from "react";
+import { ChlorineComposedLogo, useLandingViewport } from "./chlorine-split-frame";
 
 export interface ChlorineSplitShellProps {
   children: ReactNode;
@@ -35,9 +27,7 @@ export interface ChlorineSplitShellProps {
    * Router-aware link component (e.g. Next.js `Link`). When omitted the
    * wordmark click-catcher is not rendered.
    */
-  linkComponent?: ComponentType<
-    AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }
-  >;
+  linkComponent?: ComponentType<AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }>;
 }
 
 const DEFAULT_MIN_TALL_SCREEN_PX = 720;
@@ -72,10 +62,8 @@ export function ChlorineSplitShell({
   const hasTagline = tagline.length > 0;
 
   const isViewportTallEnough =
-    !landingViewport.hasMeasuredViewport ||
-    landingViewport.height >= minTallScreenPx;
-  const shouldRenderSplit =
-    isViewportTallEnough && !landingViewport.isShortDesktop;
+    !landingViewport.hasMeasuredViewport || landingViewport.height >= minTallScreenPx;
+  const shouldRenderSplit = isViewportTallEnough && !landingViewport.isShortDesktop;
 
   if (!shouldRenderSplit) {
     return (
@@ -95,9 +83,7 @@ export function ChlorineSplitShell({
           padding: isMobile ? 24 : 48,
         }}
       >
-        <div style={{ width: "100%", maxWidth: contentMaxWidthPx }}>
-          {children}
-        </div>
+        <div style={{ width: "100%", maxWidth: contentMaxWidthPx }}>{children}</div>
       </div>
     );
   }
@@ -199,9 +185,7 @@ export function ChlorineSplitShell({
           pointerEvents: "none",
         }}
       >
-        {contactEmail ? (
-          <span style={{ pointerEvents: "auto" }}>{contactEmail}</span>
-        ) : null}
+        {contactEmail ? <span style={{ pointerEvents: "auto" }}>{contactEmail}</span> : null}
         <span style={{ pointerEvents: "auto" }}>{yearLabel}</span>
       </div>
     </div>

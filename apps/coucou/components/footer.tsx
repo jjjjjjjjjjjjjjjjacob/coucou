@@ -1,5 +1,5 @@
-import { siteConfiguration } from "@/lib/site";
 import { TenantLegalFooter } from "@coucou/ui/tenant-template";
+import { siteConfiguration } from "@/lib/site";
 
 /**
  * Coucou's footer is the shared editorial scaffolding with the platform's

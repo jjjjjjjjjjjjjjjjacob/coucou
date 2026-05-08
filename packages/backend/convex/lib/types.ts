@@ -1,10 +1,13 @@
-import { Doc, Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 
 /**
  * Custom error types for better error handling
  */
 export class ConvexError extends Error {
-  constructor(message: string, public readonly code?: string) {
+  constructor(
+    message: string,
+    public readonly code?: string,
+  ) {
     super(message);
     this.name = "ConvexError";
   }
@@ -34,59 +37,67 @@ export class DuplicateError extends ConvexError {
 /**
  * Type-safe API response types
  */
-export type ApiResult<T> = {
-  ok: true;
-  data?: T;
-} | {
-  ok: false;
-  error: string;
-};
+export type ApiResult<T> =
+  | {
+      ok: true;
+      data?: T;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
 
 /**
  * Event patch type for better type safety
  */
-export type EventPatch = Partial<Pick<Doc<"events">,
-  | "name"
-  | "secondaryTitle"
-  | "description"
-  | "acts"
-  | "hosts"
-  | "productionCompany"
-  | "location"
-  | "flyerUrl"
-  | "flyerStorageId"
-  | "customIconStorageId"
-  | "guestPortalImageStorageId"
-  | "guestPortalLinkLabel"
-  | "guestPortalLinkUrl"
-  | "eventDate"
-  | "eventEndDate"
-  | "eventTimezone"
-  | "maxAttendees"
-  | "status"
-  | "isFeatured"
-  | "customFields"
-  | "primaryFieldConfig"
-  | "themeBackgroundColor"
-  | "themeTextColor"
-  | "approvalMessage"
-  | "qrCodeColor"
-  | "defersQrDelivery"
-  | "sendQrOnApproval"
->>;
+export type EventPatch = Partial<
+  Pick<
+    Doc<"events">,
+    | "name"
+    | "secondaryTitle"
+    | "description"
+    | "acts"
+    | "hosts"
+    | "productionCompany"
+    | "location"
+    | "flyerUrl"
+    | "flyerStorageId"
+    | "customIconStorageId"
+    | "guestPortalImageStorageId"
+    | "guestPortalLinkLabel"
+    | "guestPortalLinkUrl"
+    | "eventDate"
+    | "eventEndDate"
+    | "eventTimezone"
+    | "maxAttendees"
+    | "status"
+    | "isFeatured"
+    | "customFields"
+    | "primaryFieldConfig"
+    | "themeBackgroundColor"
+    | "themeTextColor"
+    | "approvalMessage"
+    | "qrCodeColor"
+    | "defersQrDelivery"
+    | "sendQrOnApproval"
+  >
+>;
 
 /**
  * List credential patch type
  */
-export type ListCredentialPatch = Partial<Pick<Doc<"listCredentials">,
-  | "listKey"
-  | "password"
-  | "passwordNormalized"
-  | "generateQR"
-  | "defersQrDelivery"
-  | "sendQrOnApproval"
-  | "approvalMessage"
->>;
+export type ListCredentialPatch = Partial<
+  Pick<
+    Doc<"listCredentials">,
+    | "listKey"
+    | "password"
+    | "passwordNormalized"
+    | "generateQR"
+    | "defersQrDelivery"
+    | "sendQrOnApproval"
+    | "approvalMessage"
+  >
+>;
 
 /**
  * List update type for events

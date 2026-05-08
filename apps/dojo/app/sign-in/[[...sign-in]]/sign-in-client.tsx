@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo } from "react";
 import { PhoneAuthPage } from "@coucou/ui/auth";
+import { useMemo } from "react";
 import { siteConfiguration } from "@/lib/site";
 
 interface SignInClientProps {

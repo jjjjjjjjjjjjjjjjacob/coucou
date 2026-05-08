@@ -1,19 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import {
-  AdminEmptyState,
-  AdminHeader,
-  AdminSection,
-  Kpi,
-  KpiRow,
-} from "@coucou/ui/admin";
-import {
-  AdminDataTable,
-  type AdminDataTableColumn,
-} from "@/components/admin/admin-data-table";
+import { AdminEmptyState, AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
+import { useQuery } from "convex/react";
+import { useState } from "react";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
 import { Select, SelectOption } from "@/components/ui/select";
 
 interface AuditRow {
@@ -65,8 +56,7 @@ export default function AdminAuditPage() {
       key: "actor",
       label: "Actor",
       width: "18%",
-      render: (row) =>
-        row.actorEmail ?? row.actorClerkUserId ?? "system",
+      render: (row) => row.actorEmail ?? row.actorClerkUserId ?? "system",
       cellStyle: () => ({ color: "var(--tt-fg-dim)" }),
     },
     {

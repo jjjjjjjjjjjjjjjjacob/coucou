@@ -3,9 +3,9 @@
  */
 
 "use node";
-import { internalAction } from "./_generated/server";
-import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import { internalAction } from "./_generated/server";
 
 /**
  * Hash phone number using Node.js crypto
@@ -14,7 +14,7 @@ export const hashPhoneNumber = internalAction({
   args: {
     phoneNumber: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     const crypto = require("crypto");
     return crypto.createHash("sha256").update(args.phoneNumber).digest("hex");
   },

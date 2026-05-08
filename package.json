@@ -10,7 +10,12 @@
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
     "build:deploy": "turbo run deploy",
-    "lint": "turbo run lint",
+    "lint": "biome lint .",
+    "lint:eslint": "turbo run lint:eslint --filter=@coucou/club-chlorine --filter=@coucou/dojo --filter=@coucou/site",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "biome check .",
+    "check:write": "biome check --write .",
     "test": "turbo run test",
     "test:dojo": "cd apps/dojo && bun test",
     "test:backend": "cd packages/backend && bun test",
@@ -18,6 +23,7 @@
     "sync:github-production-secrets": "bun scripts/sync-github-production-secrets.mjs"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.14",
     "@next/eslint-plugin-next": "^16.0.8",
     "eslint-plugin-react-hooks": "^7.0.1",
     "turbo": "^2.6.3"

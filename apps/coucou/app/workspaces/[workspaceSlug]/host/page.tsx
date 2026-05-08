@@ -1,33 +1,15 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
-import { api } from "@convex/_generated/api";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { CalendarDays, Users, TrendingUp, TicketCheck } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
-import { navigationItems, quickActions } from "@/components/app-sidebar";
+import { api } from "@convex/_generated/api";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { CalendarDays, TicketCheck, TrendingUp, Users } from "lucide-react";
 import Link from "next/link";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { navigationItems, quickActions } from "@/components/app-sidebar";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import type { RecentActivityEntry } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 import {
@@ -61,9 +43,7 @@ export default function HostDashboard() {
     ...convexQuery(api.dashboard.getRecentActivity, queryArgs),
     enabled: !!isSignedIn && !!workspaceScope,
   });
-  const recentActivity = recentActivityQuery.data as
-    | RecentActivityEntry[]
-    | undefined;
+  const recentActivity = recentActivityQuery.data as RecentActivityEntry[] | undefined;
 
   if (!workspaceScope) {
     return <DashboardSkeleton />;
@@ -119,9 +99,7 @@ export default function HostDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-          <p className="text-muted-foreground">
-            Overview of your events and RSVPs
-          </p>
+          <p className="text-muted-foreground">Overview of your events and RSVPs</p>
         </div>
       </div>
 
@@ -147,9 +125,7 @@ export default function HostDashboard() {
             <CalendarDays className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardStats.totalEvents}
-            </div>
+            <div className="text-2xl font-bold">{dashboardStats.totalEvents}</div>
             <p className="text-xs text-muted-foreground">Events created</p>
           </CardContent>
         </Card>
@@ -160,9 +136,7 @@ export default function HostDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardStats.totalRsvps}
-            </div>
+            <div className="text-2xl font-bold">{dashboardStats.totalRsvps}</div>
             <p className="text-xs text-muted-foreground">
               {dashboardStats.rsvpTrend >= 0 ? "+" : ""}
               {dashboardStats.rsvpTrend}% from last month
@@ -176,27 +150,20 @@ export default function HostDashboard() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardStats.approvalRate}%
-            </div>
+            <div className="text-2xl font-bold">{dashboardStats.approvalRate}%</div>
             <p className="text-xs text-muted-foreground">
-              {dashboardStats.approvedRsvps} of {dashboardStats.totalRsvps}{" "}
-              approved
+              {dashboardStats.approvedRsvps} of {dashboardStats.totalRsvps} approved
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Redemption Rate
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Redemption Rate</CardTitle>
             <TicketCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardStats.redemptionRate}%
-            </div>
+            <div className="text-2xl font-bold">{dashboardStats.redemptionRate}%</div>
             <p className="text-xs text-muted-foreground">
               {dashboardStats.redeemedTickets} tickets redeemed
             </p>
@@ -210,9 +177,7 @@ export default function HostDashboard() {
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle>RSVP Trends</CardTitle>
-            <CardDescription>
-              Daily RSVP submissions over the last 30 days
-            </CardDescription>
+            <CardDescription>Daily RSVP submissions over the last 30 days</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             <ChartContainer config={chartConfig}>
@@ -232,15 +197,8 @@ export default function HostDashboard() {
                   tickMargin={8}
                   interval="preserveStartEnd"
                 />
-                <YAxis
-                  domain={[0, "dataMax"]}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent />}
-                />
+                <YAxis domain={[0, "dataMax"]} tickLine={false} axisLine={false} />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
                 <Area
                   dataKey="rsvps"
                   type="natural"
@@ -265,12 +223,8 @@ export default function HostDashboard() {
               {recentActivity?.slice(0, 5).map((activity) => (
                 <div key={activity.id} className="flex items-center">
                   <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">
-                      {activity.guestName}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {activity.eventName}
-                    </p>
+                    <p className="text-sm font-medium leading-none">{activity.guestName}</p>
+                    <p className="text-sm text-muted-foreground">{activity.eventName}</p>
                   </div>
                   <div className="ml-auto">
                     <span
@@ -286,11 +240,7 @@ export default function HostDashboard() {
                     </span>
                   </div>
                 </div>
-              )) || (
-                <p className="text-sm text-muted-foreground">
-                  No recent activity
-                </p>
-              )}
+              )) || <p className="text-sm text-muted-foreground">No recent activity</p>}
             </div>
           </CardContent>
         </Card>
@@ -300,9 +250,7 @@ export default function HostDashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Event Performance</CardTitle>
-          <CardDescription>
-            RSVP breakdown by event (last 10 events)
-          </CardDescription>
+          <CardDescription>RSVP breakdown by event (last 10 events)</CardDescription>
         </CardHeader>
         <CardContent>
           <ChartContainer config={eventChartConfig}>
@@ -326,11 +274,7 @@ export default function HostDashboard() {
               />
               <YAxis />
               <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-              <Bar
-                dataKey="totalRsvps"
-                fill="var(--color-totalRsvps)"
-                radius={[0, 0, 4, 4]}
-              />
+              <Bar dataKey="totalRsvps" fill="var(--color-totalRsvps)" radius={[0, 0, 4, 4]} />
               <Bar
                 dataKey="approvedRsvps"
                 fill="var(--color-approvedRsvps)"

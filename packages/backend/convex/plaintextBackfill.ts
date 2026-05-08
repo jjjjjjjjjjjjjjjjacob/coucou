@@ -1,8 +1,8 @@
-import { mutation, query } from "./functions";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { requireCoucouPlatformMember } from "./lib/platformAuth";
+import { mutation, query } from "./functions";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
+import { requireCoucouPlatformMember } from "./lib/platformAuth";
 
 function resolveBatchSize(batchSize: number | undefined): number {
   return Math.max(1, Math.min(batchSize ?? 50, 200));

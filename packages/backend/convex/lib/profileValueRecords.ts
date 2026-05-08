@@ -1,9 +1,9 @@
-import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../_generated/server";
 import {
   normalizePrimaryFieldLookupText,
   normalizeSocialPlatformKey,
 } from "@coucou/sdk/shared/primary-fields";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { SanitizedSubmittedSocialProfile } from "./primaryFields";
 
 export interface ProfileFieldValueWriteResult {
@@ -77,9 +77,7 @@ export function isSocialProfileFieldKey(fieldKey: string): boolean {
   return normalizeProfileFieldKey(fieldKey).startsWith("social.");
 }
 
-export function socialPlatformKeyFromProfileFieldKey(
-  fieldKey: string,
-): string | null {
+export function socialPlatformKeyFromProfileFieldKey(fieldKey: string): string | null {
   const normalizedFieldKey = normalizeProfileFieldKey(fieldKey);
   if (!normalizedFieldKey.startsWith("social.")) return null;
   return normalizedFieldKey.slice("social.".length) || null;
@@ -96,18 +94,14 @@ async function resolveWorkspaceProfileScopeForEvent(
   if (workspaceSlug) {
     workspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", workspaceSlug),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", workspaceSlug))
       .unique();
   }
 
   if (!workspace && siteKey) {
     const workspaceSite = await ctx.db
       .query("workspaceSites")
-      .withIndex("by_siteKey", (queryBuilder) =>
-        queryBuilder.eq("siteKey", siteKey),
-      )
+      .withIndex("by_siteKey", (queryBuilder) => queryBuilder.eq("siteKey", siteKey))
       .unique();
 
     if (workspaceSite) {
@@ -118,9 +112,7 @@ async function resolveWorkspaceProfileScopeForEvent(
   if (!workspace && siteKey) {
     workspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", siteKey),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", siteKey))
       .unique();
   }
 
@@ -294,21 +286,18 @@ export async function grantWorkspaceProfileValue(
     };
   }
 
-  const workspaceProfileValueGrantId = await ctx.db.insert(
-    "workspaceProfileValueGrants",
-    {
-      workspaceId: args.workspaceId,
-      workspaceSlug: args.workspaceSlug,
-      siteKey: args.siteKey,
-      clerkUserId: args.clerkUserId,
-      fieldKey: normalizedFieldKey,
-      profileFieldValueId: args.profileFieldValueId,
-      sourceEventId: args.sourceEventId,
-      sourceRsvpId: args.sourceRsvpId,
-      createdAt: now,
-      updatedAt: now,
-    },
-  );
+  const workspaceProfileValueGrantId = await ctx.db.insert("workspaceProfileValueGrants", {
+    workspaceId: args.workspaceId,
+    workspaceSlug: args.workspaceSlug,
+    siteKey: args.siteKey,
+    clerkUserId: args.clerkUserId,
+    fieldKey: normalizedFieldKey,
+    profileFieldValueId: args.profileFieldValueId,
+    sourceEventId: args.sourceEventId,
+    sourceRsvpId: args.sourceRsvpId,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   return {
     workspaceProfileValueGrantId,
@@ -399,23 +388,20 @@ function workspaceGrantMatchesScope(
 
 export async function listWorkspaceProfileValueGrantsForUser(
   ctx: QueryCtx,
-  {
-    clerkUserId,
-    workspaceId,
-    workspaceSlug,
-    siteKey,
-  }: ListWorkspaceProfileValueGrantsArgs,
+  { clerkUserId, workspaceId, workspaceSlug, siteKey }: ListWorkspaceProfileValueGrantsArgs,
 ): Promise<Doc<"workspaceProfileValueGrants">[]> {
   const grants = await ctx.db
     .query("workspaceProfileValueGrants")
-    .withIndex("by_user", (queryBuilder) =>
-      queryBuilder.eq("clerkUserId", clerkUserId),
-    )
+    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
     .collect();
 
   return grants.filter(
     (grant) =>
       grant.revokedAt === undefined &&
-      workspaceGrantMatchesScope(grant, { workspaceId, workspaceSlug, siteKey }),
+      workspaceGrantMatchesScope(grant, {
+        workspaceId,
+        workspaceSlug,
+        siteKey,
+      }),
   );
 }

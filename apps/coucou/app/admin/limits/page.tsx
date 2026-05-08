@@ -1,21 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import {
-  AdminEmptyState,
-  AdminHeader,
-  AdminSection,
-  Kpi,
-  KpiRow,
-} from "@coucou/ui/admin";
-import {
-  AdminDataTable,
-  type AdminDataTableColumn,
-} from "@/components/admin/admin-data-table";
-import { Button } from "@/components/ui/button";
+import { AdminEmptyState, AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
+import { useQuery } from "convex/react";
+import { useState } from "react";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
 import { LimitsEditDialog } from "@/components/admin/limits-edit-dialog";
+import { Button } from "@/components/ui/button";
 
 interface WorkspaceRow {
   _id: string;
@@ -43,12 +34,15 @@ export default function AdminLimitsPage() {
     search: search.trim() ? search.trim() : undefined,
   });
 
-  const configuredCount = (tenancies?.page ?? []).filter(
-    (row: WorkspaceRow) => row.limits,
-  ).length;
+  const configuredCount = (tenancies?.page ?? []).filter((row: WorkspaceRow) => row.limits).length;
 
   const columns: AdminDataTableColumn<WorkspaceRow>[] = [
-    { key: "name", label: "Workspace", width: "22%", render: (row) => row.name },
+    {
+      key: "name",
+      label: "Workspace",
+      width: "22%",
+      render: (row) => row.name,
+    },
     {
       key: "smsDay",
       label: "SMS / day",

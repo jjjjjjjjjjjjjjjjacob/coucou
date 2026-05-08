@@ -12,9 +12,7 @@ export interface ResolveEventMessagingBrandNameOptions {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const sanitizeBrandCandidate = (
-  value: string | null | undefined,
-): string | undefined => {
+const sanitizeBrandCandidate = (value: string | null | undefined): string | undefined => {
   if (!value) return undefined;
   const trimmedValue = value.trim();
   if (!trimmedValue) return undefined;
@@ -75,9 +73,7 @@ export function resolveEventMessagingBrandName(
   source: EventMessagingBrandSource | null | undefined,
   { fallback = "Event Host" }: ResolveEventMessagingBrandNameOptions = {},
 ): string {
-  const productionCompanyBrand = sanitizeBrandCandidate(
-    source?.productionCompany ?? undefined,
-  );
+  const productionCompanyBrand = sanitizeBrandCandidate(source?.productionCompany ?? undefined);
   if (productionCompanyBrand) {
     return productionCompanyBrand;
   }
@@ -88,9 +84,7 @@ export function resolveEventMessagingBrandName(
     return formattedHostNames;
   }
 
-  const secondaryTitleBrand = extractBrandFromSecondaryTitle(
-    source?.secondaryTitle ?? undefined,
-  );
+  const secondaryTitleBrand = extractBrandFromSecondaryTitle(source?.secondaryTitle ?? undefined);
   if (secondaryTitleBrand) {
     return secondaryTitleBrand;
   }

@@ -1,24 +1,24 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
-import {
-  useQuery as useConvexQuery,
-  useConvexAuth,
-  Preloaded,
-  usePreloadedQuery,
-} from "convex/react";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { Button } from "@/components/ui/button";
+import { useConvexMutation } from "@convex-dev/react-query";
+import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
+import { useMutation } from "@tanstack/react-query";
+import {
+  type Preloaded,
+  useConvexAuth,
+  useQuery as useConvexQuery,
+  usePreloadedQuery,
+} from "convex/react";
+import { Check, Download } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Check, Download } from "lucide-react";
-import { useAuth } from "@clerk/nextjs";
 import { formatEventTitleInline, hasEventSecondaryTitle } from "@/lib/event-display";
 import { siteConfiguration } from "@/lib/site";
-import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
 
 function downloadQRCodeAsImage(
   qrCodeValue: string,
@@ -132,12 +132,9 @@ export default function TicketClientPage({
   statusPreload,
 }: TicketClientPageProps) {
   const { isLoaded: isClerkLoaded, isSignedIn } = useAuth();
-  const {
-    isAuthenticated: isConvexAuthenticated,
-    isLoading: isConvexAuthLoading,
-  } = useConvexAuth();
-  const canLoadAuthenticatedTicketData =
-    isClerkLoaded && isSignedIn && isConvexAuthenticated;
+  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
+    useConvexAuth();
+  const canLoadAuthenticatedTicketData = isClerkLoaded && isSignedIn && isConvexAuthenticated;
 
   const event = usePreloadedQuery(eventPreload);
   const status = usePreloadedQuery(statusPreload);
@@ -161,8 +158,7 @@ export default function TicketClientPage({
   const guestPortalImageUrl = guestPortalImageResponse?.url ?? null;
   const guestPortalLinkLabel = event?.guestPortalLinkLabel?.trim() ?? "";
   const guestPortalLinkUrl = event?.guestPortalLinkUrl?.trim() ?? "";
-  const shouldShowGuestLink =
-    guestPortalLinkLabel.length > 0 && guestPortalLinkUrl.length > 0;
+  const shouldShowGuestLink = guestPortalLinkLabel.length > 0 && guestPortalLinkUrl.length > 0;
 
   const acceptRsvp = useMutation({
     mutationFn: useConvexMutation(api.rsvps.acceptRsvp),
@@ -204,9 +200,7 @@ export default function TicketClientPage({
           },
           onError: (error) => {
             console.error("Failed to accept RSVP:", error);
-            toast.error(
-              "Failed to confirm attendance. Please refresh and try again.",
-            );
+            toast.error("Failed to confirm attendance. Please refresh and try again.");
           },
         },
       );
@@ -240,20 +234,15 @@ export default function TicketClientPage({
   }, [event?.eventDate, event?.eventTimezone]);
 
   const isStatusLoading =
-    !canLoadAuthenticatedTicketData ||
-    isConvexAuthLoading ||
-    status === undefined;
-  const isRedemptionLoading =
-    canLoadAuthenticatedTicketData && myRedemptionQuery === undefined;
+    !canLoadAuthenticatedTicketData || isConvexAuthLoading || status === undefined;
+  const isRedemptionLoading = canLoadAuthenticatedTicketData && myRedemptionQuery === undefined;
   const hasRedemptionData = myRedemption && myRedemption.code;
 
   const renderEventNotFound = () => (
     <div className="w-full max-w-2xl space-y-6 text-center">
       <div className="text-primary/70">
         <p className="text-lg font-medium">Event Not Found</p>
-        <p className="text-sm mt-2">
-          This event may not exist or may have been removed.
-        </p>
+        <p className="text-sm mt-2">This event may not exist or may have been removed.</p>
       </div>
     </div>
   );
@@ -261,9 +250,7 @@ export default function TicketClientPage({
   const renderEventHeader = () => (
     <header className="space-y-1">
       <div className="space-y-1">
-        <h1 className="text-4xl font-semibold text-primary">
-          {event?.name}
-        </h1>
+        <h1 className="text-4xl font-semibold text-primary">{event?.name}</h1>
         {eventHasSecondaryTitle && (
           <p className="text-3xl text-primary/85 font-medium leading-tight">
             {event?.secondaryTitle}
@@ -271,9 +258,7 @@ export default function TicketClientPage({
         )}
       </div>
       <div>
-        <p className="text-sm text-foreground/70 text-primary">
-          {event?.location}
-        </p>
+        <p className="text-sm text-foreground/70 text-primary">{event?.location}</p>
         <p className="text-sm text-foreground/70 text-primary">{dateText}</p>
       </div>
     </header>
@@ -281,9 +266,7 @@ export default function TicketClientPage({
 
   const renderStatusLoading = () => (
     <div className="rounded border border-primary/20 p-3 space-y-2 mt-2">
-      <div className="font-medium text-sm text-primary">
-        Checking your status...
-      </div>
+      <div className="font-medium text-sm text-primary">Checking your status...</div>
       <div className="flex justify-center text-primary py-4">
         <Spinner />
       </div>
@@ -318,9 +301,7 @@ export default function TicketClientPage({
           <Download className="w-4 h-4 mr-2" />
           Download QR Code
         </Button>
-        <div className="text-xs text-primary">
-          Show this at the door to get in.
-        </div>
+        <div className="text-xs text-primary">Show this at the door to get in.</div>
         <div className="text-xs text-primary/80 font-medium">
           ⚠️ This QR code can only be redeemed once
         </div>
@@ -329,9 +310,7 @@ export default function TicketClientPage({
             GA: This doesn&apos;t guarantee admission; required to get in.
           </div>
         ) : myRedemption?.listKey?.toLowerCase() === "vip" ? (
-          <div className="text-xs text-primary/70">
-            VIP: This guarantees admission.
-          </div>
+          <div className="text-xs text-primary/70">VIP: This guarantees admission.</div>
         ) : (
           ""
         )}
@@ -350,9 +329,7 @@ export default function TicketClientPage({
 
   const renderGeneratingQR = () => (
     <>
-      <div className="font-medium text-sm text-amber-700">
-        Generating Your QR Code...
-      </div>
+      <div className="font-medium text-sm text-amber-700">Generating Your QR Code...</div>
       <div className="text-xs text-amber-600">
         Your ticket is being prepared. This usually takes just a moment.
       </div>
@@ -380,9 +357,7 @@ export default function TicketClientPage({
 
   const renderPendingContent = () => (
     <div className="rounded border border-amber-200 p-3 space-y-2 mt-2">
-      <div className="font-medium text-sm text-amber-700">
-        RSVP Pending Approval
-      </div>
+      <div className="font-medium text-sm text-amber-700">RSVP Pending Approval</div>
       <div className="text-xs text-amber-600">
         Your RSVP request is being reviewed by the hosts.
       </div>
@@ -392,17 +367,13 @@ export default function TicketClientPage({
   const renderDeniedContent = () => (
     <div className="rounded border border-red-200 p-3 space-y-2 mt-2">
       <div className="font-medium text-sm text-red-600">RSVP Denied</div>
-      <div className="text-xs text-red-500">
-        Your RSVP was not approved for this event.
-      </div>
+      <div className="text-xs text-red-500">Your RSVP was not approved for this event.</div>
     </div>
   );
 
   const renderUnavailableContent = () => (
     <div className="rounded border border-primary/20 p-3 space-y-2 mt-2">
-      <div className="font-medium text-sm text-primary/70">
-        QR Code Not Available
-      </div>
+      <div className="font-medium text-sm text-primary/70">QR Code Not Available</div>
       <div className="text-xs text-primary/60">
         Your RSVP needs to be approved before your QR code will be available.
       </div>

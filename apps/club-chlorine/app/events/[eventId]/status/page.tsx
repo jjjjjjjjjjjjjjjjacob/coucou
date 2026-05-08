@@ -1,37 +1,31 @@
 "use client";
 
-import React, { use, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { useMutation, useQuery as useConvexQuery } from "convex/react";
-import { convexQuery } from "@convex-dev/react-query";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { useAuth } from "@clerk/nextjs";
-import { toast } from "sonner";
+import { convexQuery } from "@convex-dev/react-query";
+import { EyebrowPill, RsvpPending } from "@coucou/ui/tenant-template";
+import { useQuery } from "@tanstack/react-query";
+import { useQuery as useConvexQuery, useMutation } from "convex/react";
 import { CheckCircle2, CircleDashed } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { use, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
-import { EyebrowPill, RsvpPending } from "@coucou/ui/tenant-template";
 
-export default function StatusPage({
-  params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
+export default function StatusPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = use(params);
   const router = useRouter();
   const { isSignedIn, isLoaded } = useAuth();
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
   const [isUpdatingSmsPreference, setIsUpdatingSmsPreference] = useState(false);
-  const [smsConsentIpAddress, setSmsConsentIpAddress] = useState<
-    string | undefined
-  >(undefined);
+  const [smsConsentIpAddress, setSmsConsentIpAddress] = useState<string | undefined>(undefined);
 
   const statusQuery = useQuery(
     convexQuery(
@@ -65,12 +59,7 @@ export default function StatusPage({
         },
         { fallback: event?.name?.trim() ?? "Event Host" },
       ),
-    [
-      event?.hosts,
-      event?.name,
-      event?.secondaryTitle,
-      event?.productionCompany,
-    ],
+    [event?.hosts, event?.name, event?.secondaryTitle, event?.productionCompany],
   );
 
   const guestPortalImageResponse = useConvexQuery(
@@ -81,15 +70,11 @@ export default function StatusPage({
   );
   const guestPortalLinkLabel = event?.guestPortalLinkLabel?.trim() ?? "";
   const guestPortalLinkUrl = event?.guestPortalLinkUrl?.trim() ?? "";
-  const shouldShowGuestLink =
-    guestPortalLinkLabel.length > 0 && guestPortalLinkUrl.length > 0;
+  const shouldShowGuestLink = guestPortalLinkLabel.length > 0 && guestPortalLinkUrl.length > 0;
   const guestPortalImageUrl = guestPortalImageResponse?.url ?? null;
 
   useEffect(() => {
-    if (
-      typeof status?.smsConsentIpAddress === "string" &&
-      status.smsConsentIpAddress.length > 0
-    ) {
+    if (typeof status?.smsConsentIpAddress === "string" && status.smsConsentIpAddress.length > 0) {
       setSmsConsentIpAddress(status.smsConsentIpAddress);
     }
   }, [status?.smsConsentIpAddress]);
@@ -119,8 +104,7 @@ export default function StatusPage({
       await updateSmsPreference({
         rsvpId: status.rsvpId as Id<"rsvps">,
         smsConsent: desiredSmsConsent,
-        smsConsentIpAddress:
-          desiredSmsConsent && consentIpAddress ? consentIpAddress : undefined,
+        smsConsentIpAddress: desiredSmsConsent && consentIpAddress ? consentIpAddress : undefined,
       });
       await statusQuery.refetch();
       toast.success(
@@ -166,10 +150,7 @@ export default function StatusPage({
         <RsvpPending
           eyebrow="Status"
           eyebrowTrailing={
-            <EyebrowPill
-              href={`/events/${eventId}`}
-              linkComponent={Link}
-            >
+            <EyebrowPill href={`/events/${eventId}`} linkComponent={Link}>
               ← Back to event
             </EyebrowPill>
           }
@@ -193,25 +174,20 @@ export default function StatusPage({
             ← Back to event
           </EyebrowPill>
         }
-      description={
-            <>
-              {status.listKey ? (
-                <div className="mb-3">
-                  <Badge
-                    variant="outline"
-                    style={{ letterSpacing: "0.05em" }}
-                  >
-                    {status.listKey.toUpperCase()}
-                  </Badge>
-                </div>
-              ) : null}
-              Your request is{" "}
-              <strong>pending host approval</strong>. You will receive
-              instructions once approved. Approval is necessary to access the
-              event.
-            </>
-          }
-          extras={
+        description={
+          <>
+            {status.listKey ? (
+              <div className="mb-3">
+                <Badge variant="outline" style={{ letterSpacing: "0.05em" }}>
+                  {status.listKey.toUpperCase()}
+                </Badge>
+              </div>
+            ) : null}
+            Your request is <strong>pending host approval</strong>. You will receive instructions
+            once approved. Approval is necessary to access the event.
+          </>
+        }
+        extras={
           <div className="flex flex-col items-start gap-6 text-sm">
             {(guestPortalImageUrl || shouldShowGuestLink) && (
               <section
@@ -225,11 +201,7 @@ export default function StatusPage({
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={guestPortalImageUrl}
-                      alt={
-                        event?.name
-                          ? `${event.name} guest info`
-                          : "Event guest information"
-                      }
+                      alt={event?.name ? `${event.name} guest info` : "Event guest information"}
                       className="max-h-64 w-full rounded-md object-cover"
                     />
                   </div>
@@ -268,14 +240,10 @@ export default function StatusPage({
                     className="min-w-[7rem]"
                     onClick={() => handleSmsPreferenceChange(false)}
                     disabled={
-                      statusQuery.isLoading ||
-                      statusQuery.isFetching ||
-                      isUpdatingSmsPreference
+                      statusQuery.isLoading || statusQuery.isFetching || isUpdatingSmsPreference
                     }
                   >
-                    {isUpdatingSmsPreference && (
-                      <Spinner className="h-3.5 w-3.5" />
-                    )}
+                    {isUpdatingSmsPreference && <Spinner className="h-3.5 w-3.5" />}
                     SMS On
                   </Button>
                 </div>
@@ -293,14 +261,10 @@ export default function StatusPage({
                     variant="outline"
                     onClick={() => handleSmsPreferenceChange(true)}
                     disabled={
-                      statusQuery.isLoading ||
-                      statusQuery.isFetching ||
-                      isUpdatingSmsPreference
+                      statusQuery.isLoading || statusQuery.isFetching || isUpdatingSmsPreference
                     }
                   >
-                    {isUpdatingSmsPreference && (
-                      <Spinner className="h-3.5 w-3.5" />
-                    )}
+                    {isUpdatingSmsPreference && <Spinner className="h-3.5 w-3.5" />}
                     Enable SMS Updates
                   </Button>
                 </div>
@@ -309,10 +273,9 @@ export default function StatusPage({
                 className="max-w-sm text-[10px] leading-tight"
                 style={{ color: "var(--tt-fg-mute)" }}
               >
-                RSVP updates, reminders, and offers via SMS. Sent by Coucou on
-                behalf of {smsSenderDisplayName} using Club Chlorine. Msg &amp;
-                data rates may apply. Reply STOP to cancel. Consent not
-                required for purchase.{" "}
+                RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+                {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply
+                STOP to cancel. Consent not required for purchase.{" "}
                 <a href="/terms" className="underline">
                   Terms
                 </a>{" "}
@@ -327,5 +290,5 @@ export default function StatusPage({
         }
       />
     </div>
-    );
+  );
 }

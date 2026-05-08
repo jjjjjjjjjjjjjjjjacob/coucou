@@ -1,22 +1,10 @@
 "use client";
-import {
-  SignedIn,
-  SignedOut,
-  SignOutButton,
-  useUser,
-} from "@clerk/nextjs";
-import { usePathname } from "next/navigation";
+import { SignedIn, SignedOut, SignOutButton, useUser } from "@clerk/nextjs";
+import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
+import { Cog, DoorOpen, LogIn, LogOut, Menu, Settings, User } from "lucide-react";
 import Link from "next/link";
-import {
-  Cog,
-  DoorOpen,
-  LogIn,
-  LogOut,
-  Menu,
-  Settings,
-  User,
-} from "lucide-react";
-
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -26,28 +14,20 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { siteConfiguration } from "@/lib/site";
-import {
-  buildSatelliteReturnUrl,
-  buildTenantPrimarySignInUrl,
-  getSiteOrigin,
-} from "@coucou/sdk";
 
 const workspaceSlug = "club-chlorine";
-const workspaceOrganizationId =
-  process.env.NEXT_PUBLIC_CLUB_CHLORINE_CLERK_ORGANIZATION_ID ?? "";
-const coucouBaseUrl = (
-  process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
-).replace(/\/+$/, "");
+const workspaceOrganizationId = process.env.NEXT_PUBLIC_CLUB_CHLORINE_CLERK_ORGANIZATION_ID ?? "";
+const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
+  /\/+$/,
+  "",
+);
 
 function buildCoucouWorkspaceHref(surface: "host" | "door") {
   return `${coucouBaseUrl}/workspaces/${workspaceSlug}/${surface}`;
 }
 
-function buildPrimarySignInHref(redirectPath: string): string {
-  const satelliteReturnUrl = buildSatelliteReturnUrl(
-    getSiteOrigin(siteConfiguration),
-    redirectPath,
-  );
+function buildPrimarySignInHref(satelliteOrigin: string, redirectPath: string): string {
+  const satelliteReturnUrl = buildSatelliteReturnUrl(satelliteOrigin, redirectPath);
   return buildTenantPrimarySignInUrl({
     primaryBaseUrl: coucouBaseUrl,
     siteConfiguration,
@@ -55,27 +35,40 @@ function buildPrimarySignInHref(redirectPath: string): string {
   });
 }
 
+// Hard-coded production fallback used during SSR / first render before
+// the browser-only `window.location.origin` is available. The effect
+// below replaces it with the live origin so the post-auth redirect
+// returns to the same satellite the user came from.
+const fallbackSatelliteOrigin = (() => {
+  try {
+    return new URL(siteConfiguration.domain).origin;
+  } catch {
+    return "https://clubchlorine.party";
+  }
+})();
+
 function useRoleFlags() {
   const { isSignedIn, user } = useUser();
   const workspaceMembership = user?.organizationMemberships?.find(
     (membership) =>
-      workspaceOrganizationId.length > 0 &&
-      membership.organization.id === workspaceOrganizationId,
+      workspaceOrganizationId.length > 0 && membership.organization.id === workspaceOrganizationId,
   );
   const workspaceRole = workspaceMembership?.role;
-  const isHost =
-    isSignedIn &&
-    (workspaceRole === "org:admin" || workspaceRole === "org:host");
-  const isDoor =
-    isSignedIn &&
-    (workspaceRole === "org:admin" || workspaceRole === "org:door");
+  const isHost = isSignedIn && (workspaceRole === "org:admin" || workspaceRole === "org:host");
+  const isDoor = isSignedIn && (workspaceRole === "org:admin" || workspaceRole === "org:door");
   return { isHost, isDoor };
 }
 
 export default function HeaderClient() {
   const { isHost, isDoor } = useRoleFlags();
   const pathname = usePathname();
+  const [satelliteOrigin, setSatelliteOrigin] = useState<string>(fallbackSatelliteOrigin);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setSatelliteOrigin(window.location.origin);
+  }, []);
   const signInHref = buildPrimarySignInHref(
+    satelliteOrigin,
     pathname ?? siteConfiguration.auth.signInRedirectPath,
   );
   const hostHref = buildCoucouWorkspaceHref("host");
@@ -134,10 +127,7 @@ export default function HeaderClient() {
           </SignedIn>
           <SignedOut>
             <DropdownMenuItem asChild>
-              <Link
-                href={signInHref}
-                className="flex items-center gap-2"
-              >
+              <Link href={signInHref} className="flex items-center gap-2">
                 <LogIn size={16} />
                 Sign In
               </Link>

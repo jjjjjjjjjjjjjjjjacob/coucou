@@ -1,32 +1,26 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { useMutation, useQuery } from "convex/react";
 import { Save } from "lucide-react";
+import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { StorageImageUpload } from "@/components/flyer-upload";
+import {
+  draftToPrimaryFieldConfig,
+  EMPTY_PRIMARY_FIELD_CONFIG,
+  type PrimaryFieldConfigDraft,
+  PrimaryFieldConfigEditor,
+  primaryFieldConfigToDraft,
+} from "@/components/primary-field-config-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectOption } from "@/components/ui/select";
-import { StorageImageUpload } from "@/components/flyer-upload";
-import {
-  EMPTY_PRIMARY_FIELD_CONFIG,
-  PrimaryFieldConfigEditor,
-  draftToPrimaryFieldConfig,
-  primaryFieldConfigToDraft,
-  type PrimaryFieldConfigDraft,
-} from "@/components/primary-field-config-editor";
 import { useWorkspaceAccess } from "@/components/workspace-access-gate";
 import { runMutationWithToast } from "@/lib/toast-mutation";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
@@ -51,9 +45,7 @@ function optionalPrimaryDomain(value: string): string | null {
   return trimmedValue.length > 0 ? trimmedValue : null;
 }
 
-function readPrimaryDomainFromMutationResult(
-  mutationResult: unknown,
-): string | null | undefined {
+function readPrimaryDomainFromMutationResult(mutationResult: unknown): string | null | undefined {
   if (typeof mutationResult !== "object" || mutationResult === null) {
     return undefined;
   }
@@ -87,36 +79,28 @@ export default function WorkspaceDashboardSettingsPage() {
   const setTenantWorkspacePrimaryDomain = useMutation(
     api.workspaces.setTenantWorkspacePrimaryDomain,
   );
-  const setTenantWorkspaceDefaults = useMutation(
-    api.workspaces.setTenantWorkspaceDefaults,
-  );
-  const setTenantWorkspaceAuthBranding = useMutation(
-    api.workspaces.setTenantWorkspaceAuthBranding,
-  );
+  const setTenantWorkspaceDefaults = useMutation(api.workspaces.setTenantWorkspaceDefaults);
+  const setTenantWorkspaceAuthBranding = useMutation(api.workspaces.setTenantWorkspaceAuthBranding);
   const setTenantWorkspaceProfileLinkSettings = useMutation(
     api.workspaces.setTenantWorkspaceProfileLinkSettings,
   );
   const [primaryDomainDraft, setPrimaryDomainDraft] = useState("");
   const [isSavingPrimaryDomain, setIsSavingPrimaryDomain] = useState(false);
-  const [themeBackgroundColorDraft, setThemeBackgroundColorDraft] =
-    useState("#FFFFFF");
+  const [themeBackgroundColorDraft, setThemeBackgroundColorDraft] = useState("#FFFFFF");
   const [themeTextColorDraft, setThemeTextColorDraft] = useState("#EF4444");
   const [listKeysDraft, setListKeysDraft] = useState("vip, ga");
-  const [primaryFieldConfigDraft, setPrimaryFieldConfigDraft] =
-    useState<PrimaryFieldConfigDraft>(EMPTY_PRIMARY_FIELD_CONFIG);
+  const [primaryFieldConfigDraft, setPrimaryFieldConfigDraft] = useState<PrimaryFieldConfigDraft>(
+    EMPTY_PRIMARY_FIELD_CONFIG,
+  );
   const [isSavingDefaults, setIsSavingDefaults] = useState(false);
   const [authHeadingDraft, setAuthHeadingDraft] = useState("");
   const [authSubDraft, setAuthSubDraft] = useState("");
   const [authEyebrowDraft, setAuthEyebrowDraft] = useState("");
-  const [brandMarkStyleDraft, setBrandMarkStyleDraft] =
-    useState<BrandMarkStyle>("filled-circle");
-  const [authLogoStorageId, setAuthLogoStorageId] = useState<string | null>(
-    null,
-  );
+  const [brandMarkStyleDraft, setBrandMarkStyleDraft] = useState<BrandMarkStyle>("filled-circle");
+  const [authLogoStorageId, setAuthLogoStorageId] = useState<string | null>(null);
   const [authShowAttribution, setAuthShowAttribution] = useState(true);
   const [isSavingAuthBranding, setIsSavingAuthBranding] = useState(false);
-  const [showCoucouProfileLinkDraft, setShowCoucouProfileLinkDraft] =
-    useState(false);
+  const [showCoucouProfileLinkDraft, setShowCoucouProfileLinkDraft] = useState(false);
   const [isSavingProfileLink, setIsSavingProfileLink] = useState(false);
   const canWriteSettings = workspaceAccess?.canWrite === true;
 
@@ -126,9 +110,7 @@ export default function WorkspaceDashboardSettingsPage() {
 
   useEffect(() => {
     const eventDefaults = workspace?.eventDefaults;
-    setThemeBackgroundColorDraft(
-      eventDefaults?.themeBackgroundColor ?? "#FFFFFF",
-    );
+    setThemeBackgroundColorDraft(eventDefaults?.themeBackgroundColor ?? "#FFFFFF");
     setThemeTextColorDraft(eventDefaults?.themeTextColor ?? "#EF4444");
     setListKeysDraft((eventDefaults?.listKeys ?? ["vip", "ga"]).join(", "));
     setPrimaryFieldConfigDraft(
@@ -145,8 +127,7 @@ export default function WorkspaceDashboardSettingsPage() {
     setAuthSubDraft(branding?.sub ?? "");
     setAuthEyebrowDraft(branding?.eyebrow ?? "");
     setBrandMarkStyleDraft(
-      (branding?.brandMarkStyle as BrandMarkStyle | undefined) ??
-        "filled-circle",
+      (branding?.brandMarkStyle as BrandMarkStyle | undefined) ?? "filled-circle",
     );
     setAuthLogoStorageId(branding?.logoStorageId ?? null);
     setAuthShowAttribution(branding?.showCoucouAttribution ?? true);
@@ -189,8 +170,7 @@ export default function WorkspaceDashboardSettingsPage() {
           success: "Settings saved",
         },
       );
-      const savedPrimaryDomain =
-        readPrimaryDomainFromMutationResult(mutationResult);
+      const savedPrimaryDomain = readPrimaryDomainFromMutationResult(mutationResult);
       if (savedPrimaryDomain !== undefined) {
         setPrimaryDomainDraft(savedPrimaryDomain ?? "");
       }
@@ -249,9 +229,7 @@ export default function WorkspaceDashboardSettingsPage() {
     }
   }
 
-  async function handleAuthBrandingSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
+  async function handleAuthBrandingSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!workspaceScope || !workspaceAccess) {
@@ -333,17 +311,13 @@ export default function WorkspaceDashboardSettingsPage() {
     <main className="max-w-3xl space-y-4">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
-        <p className="text-muted-foreground">
-          Workspace routing and tenant configuration.
-        </p>
+        <p className="text-muted-foreground">Workspace routing and tenant configuration.</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Primary URL</CardTitle>
-          <CardDescription>
-            The main domain Coucou associates with this workspace.
-          </CardDescription>
+          <CardDescription>The main domain Coucou associates with this workspace.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-3" onSubmit={handleSubmit}>
@@ -352,9 +326,7 @@ export default function WorkspaceDashboardSettingsPage() {
               <Input
                 id="primary-domain"
                 value={primaryDomainDraft}
-                onChange={(event) =>
-                  setPrimaryDomainDraft(event.target.value)
-                }
+                onChange={(event) => setPrimaryDomainDraft(event.target.value)}
                 disabled={!canWriteSettings || isSavingPrimaryDomain}
                 placeholder="dojopomodoro.club"
                 inputMode="url"
@@ -377,24 +349,18 @@ export default function WorkspaceDashboardSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Event defaults</CardTitle>
-          <CardDescription>
-            Prefilled values for new events in this workspace.
-          </CardDescription>
+          <CardDescription>Prefilled values for new events in this workspace.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-5" onSubmit={handleDefaultsSubmit}>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="default-background-color">
-                  Background color
-                </Label>
+                <Label htmlFor="default-background-color">Background color</Label>
                 <Input
                   id="default-background-color"
                   type="color"
                   value={themeBackgroundColorDraft}
-                  onChange={(event) =>
-                    setThemeBackgroundColorDraft(event.target.value)
-                  }
+                  onChange={(event) => setThemeBackgroundColorDraft(event.target.value)}
                   disabled={!canWriteSettings || isSavingDefaults}
                   className="h-10 cursor-pointer p-1"
                 />
@@ -405,9 +371,7 @@ export default function WorkspaceDashboardSettingsPage() {
                   id="default-text-color"
                   type="color"
                   value={themeTextColorDraft}
-                  onChange={(event) =>
-                    setThemeTextColorDraft(event.target.value)
-                  }
+                  onChange={(event) => setThemeTextColorDraft(event.target.value)}
                   disabled={!canWriteSettings || isSavingDefaults}
                   className="h-10 cursor-pointer p-1"
                 />
@@ -448,24 +412,17 @@ export default function WorkspaceDashboardSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Login experience</CardTitle>
-          <CardDescription>
-            Branding shown on this workspace&apos;s sign-in page.
-          </CardDescription>
+          <CardDescription>Branding shown on this workspace&apos;s sign-in page.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form
-            className="space-y-5"
-            onSubmit={handleAuthBrandingSubmit}
-          >
+          <form className="space-y-5" onSubmit={handleAuthBrandingSubmit}>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="auth-eyebrow">Eyebrow</Label>
                 <Input
                   id="auth-eyebrow"
                   value={authEyebrowDraft}
-                  onChange={(event) =>
-                    setAuthEyebrowDraft(event.target.value)
-                  }
+                  onChange={(event) => setAuthEyebrowDraft(event.target.value)}
                   disabled={!canWriteSettings || isSavingAuthBranding}
                   placeholder="Members"
                 />
@@ -475,9 +432,7 @@ export default function WorkspaceDashboardSettingsPage() {
                 <Input
                   id="auth-heading"
                   value={authHeadingDraft}
-                  onChange={(event) =>
-                    setAuthHeadingDraft(event.target.value)
-                  }
+                  onChange={(event) => setAuthHeadingDraft(event.target.value)}
                   disabled={!canWriteSettings || isSavingAuthBranding}
                   placeholder="Welcome back"
                 />
@@ -498,9 +453,7 @@ export default function WorkspaceDashboardSettingsPage() {
               <Select
                 id="brand-mark-style"
                 value={brandMarkStyleDraft}
-                onValueChange={(value) =>
-                  setBrandMarkStyleDraft(value as BrandMarkStyle)
-                }
+                onValueChange={(value) => setBrandMarkStyleDraft(value as BrandMarkStyle)}
                 disabled={!canWriteSettings || isSavingAuthBranding}
               >
                 {BRAND_MARK_STYLES.map((style) => (
@@ -527,9 +480,7 @@ export default function WorkspaceDashboardSettingsPage() {
             <label className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
               <Checkbox
                 checked={authShowAttribution}
-                onCheckedChange={(checked) =>
-                  setAuthShowAttribution(Boolean(checked))
-                }
+                onCheckedChange={(checked) => setAuthShowAttribution(Boolean(checked))}
                 disabled={!canWriteSettings || isSavingAuthBranding}
               />
               <span>Show &ldquo;Powered by Coucou&rdquo; attribution</span>
@@ -553,8 +504,8 @@ export default function WorkspaceDashboardSettingsPage() {
         <CardHeader>
           <CardTitle>Profile sharing</CardTitle>
           <CardDescription>
-            Optionally surface a link from this tenant&apos;s profile page to
-            the user&apos;s aggregated Coucou profile.
+            Optionally surface a link from this tenant&apos;s profile page to the user&apos;s
+            aggregated Coucou profile.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -562,15 +513,13 @@ export default function WorkspaceDashboardSettingsPage() {
             <label className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
               <Checkbox
                 checked={showCoucouProfileLinkDraft}
-                onCheckedChange={(checked) =>
-                  setShowCoucouProfileLinkDraft(Boolean(checked))
-                }
+                onCheckedChange={(checked) => setShowCoucouProfileLinkDraft(Boolean(checked))}
                 disabled={!canWriteSettings || isSavingProfileLink}
               />
               <span>
-                Show a &ldquo;View your full Coucou profile&rdquo; link on this
-                tenant&apos;s profile page. Off by default; signed-in users
-                still navigate to coucou.com without re-authenticating.
+                Show a &ldquo;View your full Coucou profile&rdquo; link on this tenant&apos;s
+                profile page. Off by default; signed-in users still navigate to coucou.com without
+                re-authenticating.
               </span>
             </label>
 
@@ -592,18 +541,15 @@ export default function WorkspaceDashboardSettingsPage() {
         <CardHeader>
           <CardTitle>Domain authentication</CardTitle>
           <CardDescription>
-            Clerk satellite verification status for each connected domain.
-            Verification and frontend API URL changes are managed by Coucou
-            staff — contact support to make changes.
+            Clerk satellite verification status for each connected domain. Verification and frontend
+            API URL changes are managed by Coucou staff — contact support to make changes.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {workspaceSites === undefined ? (
             <p className="text-sm text-muted-foreground">Loading...</p>
           ) : workspaceSites.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No connected domains.
-            </p>
+            <p className="text-sm text-muted-foreground">No connected domains.</p>
           ) : (
             <div className="space-y-3">
               {workspaceSites.map((site) => (
@@ -615,18 +561,12 @@ export default function WorkspaceDashboardSettingsPage() {
                     <p className="text-sm font-medium">{site.domain}</p>
                     <p className="text-xs text-muted-foreground">
                       Site key: {site.siteKey}
-                      {site.clerkFrontendApiUrl
-                        ? ` · Clerk URL: ${site.clerkFrontendApiUrl}`
-                        : ""}
+                      {site.clerkFrontendApiUrl ? ` · Clerk URL: ${site.clerkFrontendApiUrl}` : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge
-                      variant="outline"
-                      className="capitalize"
-                    >
-                      {site.clerkSatelliteVerificationStatus ??
-                        "unconfigured"}
+                    <Badge variant="outline" className="capitalize">
+                      {site.clerkSatelliteVerificationStatus ?? "unconfigured"}
                     </Badge>
                     {site.clerkSatelliteAuthEnabled ? (
                       <Badge variant="default">Satellite auth on</Badge>

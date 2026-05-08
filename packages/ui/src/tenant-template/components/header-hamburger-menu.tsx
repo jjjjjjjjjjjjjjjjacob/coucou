@@ -1,13 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import {
-  useCallback,
-  useState,
   type CSSProperties,
   type MouseEventHandler,
   type ReactNode,
+  useCallback,
+  useState,
 } from "react";
-import Link from "next/link";
 import { Drawer as Vaul } from "vaul";
 import { usePresetOptional } from "../use-preset";
 
@@ -56,12 +56,7 @@ export function HeaderHamburgerMenu({
   const close = useCallback(() => setIsOpen(false), []);
 
   return (
-    <Vaul.Root
-      open={isOpen}
-      onOpenChange={setIsOpen}
-      direction="top"
-      shouldScaleBackground
-    >
+    <Vaul.Root open={isOpen} onOpenChange={setIsOpen} direction="top" shouldScaleBackground>
       <Vaul.Trigger asChild>
         <button
           type="button"
@@ -319,12 +314,7 @@ export function HamburgerMenuItem({
 
   if (href) {
     return (
-      <Link
-        href={href}
-        data-hamburger-close
-        style={itemStyle}
-        className="hover:opacity-80"
-      >
+      <Link href={href} data-hamburger-close style={itemStyle} className="hover:opacity-80">
         {children}
       </Link>
     );
@@ -352,10 +342,7 @@ export interface HamburgerMenuSectionProps {
  * Optional eyebrow above a group of items. Tighter spacing than the previous
  * version so adjacent sections feel related instead of detached.
  */
-export function HamburgerMenuSection({
-  label,
-  children,
-}: HamburgerMenuSectionProps) {
+export function HamburgerMenuSection({ label, children }: HamburgerMenuSectionProps) {
   return (
     <div style={{ marginTop: 24 }}>
       <div

@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import { useAuth, useOrganizationList, useUser } from "@clerk/nextjs";
-import { useAction, useConvexAuth, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import Link from "next/link";
 import { AdminShell } from "@coucou/ui/admin";
 import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
+import { useAction, useConvexAuth, useQuery } from "convex/react";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { CoucouLogoWordmark } from "@/components/coucou-logo";
@@ -80,8 +80,7 @@ function AdminSignedOutState() {
             color: "var(--tt-fg-dim)",
           }}
         >
-          Use the shared auth domain first, then choose the active organization
-          or workspace.
+          Use the shared auth domain first, then choose the active organization or workspace.
         </p>
         <Link
           href="/admin/login?redirect_url=%2Fadmin"
@@ -160,19 +159,18 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
     api.workspaces.listAccessibleWorkspaceNavigationForUser,
     !isSignedIn || !isAuthenticated ? "skip" : {},
   );
-  const [attemptedActivationOrganizationId, setAttemptedActivationOrganizationId] =
-    useState<string | null>(null);
-  const [activationErrorMessage, setActivationErrorMessage] = useState<
+  const [attemptedActivationOrganizationId, setAttemptedActivationOrganizationId] = useState<
     string | null
   >(null);
-  const [verifiedMembershipOrganizationId, setVerifiedMembershipOrganizationId] =
-    useState<string | null>(null);
-  const [membershipVerificationErrorMessage, setMembershipVerificationErrorMessage] =
-    useState<string | null>(null);
+  const [activationErrorMessage, setActivationErrorMessage] = useState<string | null>(null);
+  const [verifiedMembershipOrganizationId, setVerifiedMembershipOrganizationId] = useState<
+    string | null
+  >(null);
+  const [membershipVerificationErrorMessage, setMembershipVerificationErrorMessage] = useState<
+    string | null
+  >(null);
   const [isVerifyingMembership, setIsVerifyingMembership] = useState(false);
-  const membershipVerificationInFlightOrganizationIdRef = useRef<
-    string | null
-  >(null);
+  const membershipVerificationInFlightOrganizationIdRef = useRef<string | null>(null);
   const coucouSwitchToastIdentifierRef = useRef<string | number | null>(null);
   const coucouSwitchToastOrganizationIdRef = useRef<string | null>(null);
   const activationErrorToastMessageRef = useRef<string | null>(null);
@@ -181,19 +179,14 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
   const coucouMembership = useMemo(
     () =>
       (userMemberships?.data ?? []).find(
-        (membership) =>
-          membership.organization.slug?.toLowerCase() ===
-          coucouOrganizationSlug,
+        (membership) => membership.organization.slug?.toLowerCase() === coucouOrganizationSlug,
       ) ?? null,
     [coucouOrganizationSlug, userMemberships?.data],
   );
   const coucouOrganizationId =
-    workspaceNavigationAccess?.coucouOrganizationId ??
-    coucouMembership?.organization.id ??
-    null;
-  const hasCoucouMembership = Boolean(
-    workspaceNavigationAccess?.hasCoucouOrganizationAccess,
-  ) || Boolean(coucouMembership);
+    workspaceNavigationAccess?.coucouOrganizationId ?? coucouMembership?.organization.id ?? null;
+  const hasCoucouMembership =
+    Boolean(workspaceNavigationAccess?.hasCoucouOrganizationAccess) || Boolean(coucouMembership);
   const isSwitchingToCoucouOrganization =
     Boolean(isLoaded) &&
     Boolean(isSignedIn) &&
@@ -205,10 +198,7 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isSwitchingToCoucouOrganization || !coucouOrganizationId) {
-      if (
-        !activationErrorMessage &&
-        coucouSwitchToastIdentifierRef.current !== null
-      ) {
+      if (!activationErrorMessage && coucouSwitchToastIdentifierRef.current !== null) {
         toast.dismiss(coucouSwitchToastIdentifierRef.current);
         coucouSwitchToastIdentifierRef.current = null;
         coucouSwitchToastOrganizationIdRef.current = null;
@@ -232,11 +222,7 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
       MAISON_OBSCUR_TOAST_OPTIONS,
     );
     coucouSwitchToastOrganizationIdRef.current = coucouOrganizationId;
-  }, [
-    activationErrorMessage,
-    coucouOrganizationId,
-    isSwitchingToCoucouOrganization,
-  ]);
+  }, [activationErrorMessage, coucouOrganizationId, isSwitchingToCoucouOrganization]);
 
   useEffect(() => {
     if (
@@ -306,15 +292,13 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
       !hasCoucouMembership ||
       !coucouOrganizationId ||
       verifiedMembershipOrganizationId === coucouOrganizationId ||
-      membershipVerificationInFlightOrganizationIdRef.current ===
-        coucouOrganizationId ||
+      membershipVerificationInFlightOrganizationIdRef.current === coucouOrganizationId ||
       membershipVerificationErrorMessage
     ) {
       return;
     }
 
-    membershipVerificationInFlightOrganizationIdRef.current =
-      coucouOrganizationId;
+    membershipVerificationInFlightOrganizationIdRef.current = coucouOrganizationId;
     setIsVerifyingMembership(true);
     setMembershipVerificationErrorMessage(null);
     ensureOrganizationMembership({
@@ -331,10 +315,7 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
         );
       })
       .finally(() => {
-        if (
-          membershipVerificationInFlightOrganizationIdRef.current ===
-          coucouOrganizationId
-        ) {
+        if (membershipVerificationInFlightOrganizationIdRef.current === coucouOrganizationId) {
           membershipVerificationInFlightOrganizationIdRef.current = null;
           setIsVerifyingMembership(false);
         }
@@ -413,8 +394,7 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
 
   if (
     coucouOrganizationId &&
-    (isVerifyingMembership ||
-      verifiedMembershipOrganizationId !== coucouOrganizationId)
+    (isVerifyingMembership || verifiedMembershipOrganizationId !== coucouOrganizationId)
   ) {
     return (
       <AdminGateSurface>

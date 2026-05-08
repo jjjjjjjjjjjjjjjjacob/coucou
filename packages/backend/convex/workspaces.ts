@@ -1,8 +1,8 @@
-import { internalMutation, mutation, query } from "./functions";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
-import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
+import { internalMutation, mutation, query } from "./functions";
 import {
   getCoucouOrganizationSlug,
   getIdentityOrganizationId,
@@ -11,26 +11,26 @@ import {
   requireCoucouPlatformMember,
 } from "./lib/platformAuth";
 import {
+  sanitizeWorkspaceEventDefaults,
+  workspaceEventDefaultsValidator,
+} from "./lib/primaryFields";
+import {
   requireWorkspaceAdmin,
+  resolveWorkspaceAuthScopeFromDatabase,
   roleHasWorkspaceReadAccess,
   roleHasWorkspaceWriteAccess,
-  resolveWorkspaceAuthScopeFromDatabase,
 } from "./lib/workspaceAuth";
 import {
   type ClerkSatelliteVerificationStatus,
   ensureTenantWorkspaceRecordForOrganization,
   normalizePrimaryDomain,
   normalizeTenantWorkspaceSlug,
-  upsertAdminWorkspaceRecordForClerkOrganization,
   syncWorkspacePrimaryDomainSites,
+  upsertAdminWorkspaceRecordForClerkOrganization,
   upsertTenantWorkspaceRecordForClerkOrganization,
   upsertWorkspaceRecord,
   upsertWorkspaceSiteRecord,
 } from "./lib/workspaceRecords";
-import {
-  sanitizeWorkspaceEventDefaults,
-  workspaceEventDefaultsValidator,
-} from "./lib/primaryFields";
 
 const dashboardMembershipValidator = v.object({
   organizationId: v.string(),
@@ -59,9 +59,7 @@ interface AccessibleWorkspaceNavigationEntry {
   isWorkspaceConfigured: boolean;
 }
 
-function normalizeOptionalClerkFrontendApiUrl(
-  value: string | undefined,
-): string | undefined {
+function normalizeOptionalClerkFrontendApiUrl(value: string | undefined): string | undefined {
   const trimmedValue = value?.trim();
   if (!trimmedValue) {
     return undefined;
@@ -99,9 +97,7 @@ async function getCoucouWorkspace(
 ): Promise<Doc<"workspaces"> | null> {
   const workspaceBySlug = await ctx.db
     .query("workspaces")
-    .withIndex("by_slug", (queryBuilder) =>
-      queryBuilder.eq("slug", coucouOrganizationSlug),
-    )
+    .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", coucouOrganizationSlug))
     .unique();
 
   if (workspaceBySlug) {
@@ -147,9 +143,7 @@ async function getWorkspaceForNavigationMembership(
 
   return await ctx.db
     .query("workspaces")
-    .withIndex("by_slug", (queryBuilder) =>
-      queryBuilder.eq("slug", organizationSlug),
-    )
+    .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", organizationSlug))
     .unique();
 }
 
@@ -292,9 +286,7 @@ export const upsertWorkspaceSite = mutation({
     domain: v.string(),
     appKind: v.string(),
     clerkFrontendApiUrl: v.optional(v.string()),
-    clerkSatelliteVerificationStatus: v.optional(
-      clerkSatelliteVerificationStatusValidator,
-    ),
+    clerkSatelliteVerificationStatus: v.optional(clerkSatelliteVerificationStatusValidator),
     clerkSatelliteAuthEnabled: v.optional(v.boolean()),
     clerkSatelliteLastSyncedAt: v.optional(v.number()),
   },
@@ -302,9 +294,7 @@ export const upsertWorkspaceSite = mutation({
     await requireCoucouPlatformMember(ctx);
     return await upsertWorkspaceSiteRecord(ctx, {
       ...args,
-      clerkFrontendApiUrl: normalizeOptionalClerkFrontendApiUrl(
-        args.clerkFrontendApiUrl,
-      ),
+      clerkFrontendApiUrl: normalizeOptionalClerkFrontendApiUrl(args.clerkFrontendApiUrl),
     });
   },
 });
@@ -331,9 +321,7 @@ export const setWorkspaceSiteClerkSatelliteAuth = mutation({
 
     const workspaceSite = await ctx.db
       .query("workspaceSites")
-      .withIndex("by_siteKey", (queryBuilder) =>
-        queryBuilder.eq("siteKey", siteKey),
-      )
+      .withIndex("by_siteKey", (queryBuilder) => queryBuilder.eq("siteKey", siteKey))
       .unique();
 
     if (!workspaceSite) {
@@ -353,8 +341,7 @@ export const setWorkspaceSiteClerkSatelliteAuth = mutation({
       updatedAt: Date.now(),
     };
 
-    const normalizedClerkFrontendApiUrl =
-      normalizeOptionalClerkFrontendApiUrl(clerkFrontendApiUrl);
+    const normalizedClerkFrontendApiUrl = normalizeOptionalClerkFrontendApiUrl(clerkFrontendApiUrl);
     if (normalizedClerkFrontendApiUrl !== undefined) {
       workspaceSitePatch.clerkFrontendApiUrl = normalizedClerkFrontendApiUrl;
     }
@@ -416,9 +403,7 @@ async function requireWorkspaceWriteAccessForOrganization(
 
   const storedMembership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_user", (queryBuilder) =>
-      queryBuilder.eq("clerkUserId", identity.subject),
-    )
+    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
     .filter((queryBuilder) =>
       queryBuilder.eq(queryBuilder.field("organizationId"), clerkOrganizationId),
     )
@@ -443,9 +428,7 @@ export const setTenantWorkspacePrimaryDomain = mutation({
     const normalizedSlug = normalizeTenantWorkspaceSlug(slug);
     const existingWorkspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", normalizedSlug),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", normalizedSlug))
       .unique();
 
     if (
@@ -461,8 +444,7 @@ export const setTenantWorkspacePrimaryDomain = mutation({
         slug: normalizedSlug,
         name: existingWorkspace?.name ?? normalizedSlug,
         clerkOrganizationId,
-        clerkOrganizationSlug:
-          existingWorkspace?.clerkOrganizationSlug ?? normalizedSlug,
+        clerkOrganizationSlug: existingWorkspace?.clerkOrganizationSlug ?? normalizedSlug,
       });
     }
 
@@ -561,10 +543,7 @@ export const setTenantWorkspaceProfileLinkSettings = mutation({
     clerkOrganizationId: v.string(),
     showCoucouProfileLink: v.optional(v.boolean()),
   },
-  handler: async (
-    ctx,
-    { slug, clerkOrganizationId, showCoucouProfileLink },
-  ) => {
+  handler: async (ctx, { slug, clerkOrganizationId, showCoucouProfileLink }) => {
     const normalizedSlug = normalizeTenantWorkspaceSlug(slug);
     const resolvedScope = await requireWorkspaceAdmin(ctx, {
       workspaceSlug: normalizedSlug,
@@ -625,14 +604,11 @@ export const listTenantWorkspaceSites = query({
         domain: site.domain,
         appKind: site.appKind,
         clerkFrontendApiUrl: site.clerkFrontendApiUrl,
-        clerkSatelliteVerificationStatus:
-          site.clerkSatelliteVerificationStatus,
+        clerkSatelliteVerificationStatus: site.clerkSatelliteVerificationStatus,
         clerkSatelliteAuthEnabled: site.clerkSatelliteAuthEnabled,
         clerkSatelliteLastSyncedAt: site.clerkSatelliteLastSyncedAt,
       }))
-      .sort((firstSite, secondSite) =>
-        firstSite.domain.localeCompare(secondSite.domain),
-      );
+      .sort((firstSite, secondSite) => firstSite.domain.localeCompare(secondSite.domain));
   },
 });
 
@@ -646,9 +622,7 @@ export const setTenantWorkspaceDefaults = mutation({
     const normalizedSlug = normalizeTenantWorkspaceSlug(slug);
     const existingWorkspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", normalizedSlug),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", normalizedSlug))
       .unique();
 
     if (
@@ -664,8 +638,7 @@ export const setTenantWorkspaceDefaults = mutation({
         slug: normalizedSlug,
         name: existingWorkspace?.name ?? normalizedSlug,
         clerkOrganizationId,
-        clerkOrganizationSlug:
-          existingWorkspace?.clerkOrganizationSlug ?? normalizedSlug,
+        clerkOrganizationSlug: existingWorkspace?.clerkOrganizationSlug ?? normalizedSlug,
       });
     }
 
@@ -712,9 +685,7 @@ export const listAttentionFlags = query({
     await requireCoucouPlatformMember(ctx);
     const open = await ctx.db
       .query("attentionFlags")
-      .withIndex("by_status", (queryBuilder) =>
-        queryBuilder.eq("status", "open"),
-      )
+      .withIndex("by_status", (queryBuilder) => queryBuilder.eq("status", "open"))
       .collect();
 
     open.sort((a, b) => b.observedAt - a.observedAt);
@@ -737,9 +708,7 @@ export const listPendingApplications = query({
     await requireCoucouPlatformMember(ctx);
     const pending = await ctx.db
       .query("tenantApplications")
-      .withIndex("by_status", (queryBuilder) =>
-        queryBuilder.eq("status", "pending"),
-      )
+      .withIndex("by_status", (queryBuilder) => queryBuilder.eq("status", "pending"))
       .collect();
 
     pending.sort((a, b) => b.submittedAt - a.submittedAt);
@@ -791,8 +760,7 @@ export const listVerifiedClerkFrontendApiUrls = query({
         continue;
       }
 
-      const clerkFrontendApiUrl =
-        workspaceSite.clerkFrontendApiUrl?.trim() ?? "";
+      const clerkFrontendApiUrl = workspaceSite.clerkFrontendApiUrl?.trim() ?? "";
       if (clerkFrontendApiUrl.length === 0) {
         continue;
       }
@@ -820,9 +788,7 @@ export const getWorkspaceBySlug = query({
 
     const sites = await ctx.db
       .query("workspaceSites")
-      .withIndex("by_workspace", (queryBuilder) =>
-        queryBuilder.eq("workspaceId", workspace._id),
-      )
+      .withIndex("by_workspace", (queryBuilder) => queryBuilder.eq("workspaceId", workspace._id))
       .collect();
 
     return {
@@ -867,10 +833,7 @@ export const listAccessibleWorkspaceNavigationForUser = query({
     }
 
     const coucouOrganizationSlug = getCoucouOrganizationSlug();
-    const coucouWorkspace = await getCoucouWorkspace(
-      ctx,
-      coucouOrganizationSlug,
-    );
+    const coucouWorkspace = await getCoucouWorkspace(ctx, coucouOrganizationSlug);
     const coucouOrganizationId = coucouWorkspace?.clerkOrganizationId ?? null;
     const activeOrganizationId = getIdentityOrganizationId(identity);
     const activeOrganizationSlug = getIdentityOrganizationSlug(identity);
@@ -879,9 +842,7 @@ export const listAccessibleWorkspaceNavigationForUser = query({
 
     const storedMemberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
       .collect();
 
     for (const membership of storedMemberships) {
@@ -917,10 +878,7 @@ export const listAccessibleWorkspaceNavigationForUser = query({
         continue;
       }
 
-      const workspace = await getWorkspaceForNavigationMembership(
-        ctx,
-        membership,
-      );
+      const workspace = await getWorkspaceForNavigationMembership(ctx, membership);
 
       if (
         !workspace ||
@@ -975,9 +933,7 @@ export const getDashboardWorkspaceAccess = query({
     const coucouOrganizationSlug = getCoucouOrganizationSlug();
     const workspaces = await ctx.db.query("workspaces").collect();
     const coucouWorkspace = workspaces.find(
-      (workspace) =>
-        workspace.slug === coucouOrganizationSlug ||
-        workspace.kind === "admin",
+      (workspace) => workspace.slug === coucouOrganizationSlug || workspace.kind === "admin",
     );
     const hasCoucouOrganizationAccess = memberships.some((membership) => {
       const organizationSlug = membership.organizationSlug?.toLowerCase();
@@ -994,10 +950,7 @@ export const getDashboardWorkspaceAccess = query({
     const workspaceByClerkOrganizationSlug = new Map(
       workspaces
         .filter((workspace) => workspace.clerkOrganizationSlug)
-        .map((workspace) => [
-          workspace.clerkOrganizationSlug?.toLowerCase() ?? "",
-          workspace,
-        ]),
+        .map((workspace) => [workspace.clerkOrganizationSlug?.toLowerCase() ?? "", workspace]),
     );
     const workspaceBySlug = new Map(
       workspaces.map((workspace) => [workspace.slug.toLowerCase(), workspace]),
@@ -1017,15 +970,10 @@ export const getDashboardWorkspaceAccess = query({
 
         const workspace =
           workspaceByClerkOrganizationId.get(membership.organizationId) ??
-          (organizationSlug
-            ? workspaceByClerkOrganizationSlug.get(organizationSlug)
-            : undefined) ??
+          (organizationSlug ? workspaceByClerkOrganizationSlug.get(organizationSlug) : undefined) ??
           (organizationSlug ? workspaceBySlug.get(organizationSlug) : undefined);
 
-        if (
-          workspace?.kind === "admin" ||
-          workspace?.slug === coucouOrganizationSlug
-        ) {
+        if (workspace?.kind === "admin" || workspace?.slug === coucouOrganizationSlug) {
           return [];
         }
 
@@ -1045,10 +993,8 @@ export const getDashboardWorkspaceAccess = query({
               membership.organizationSlug ??
               "Untitled organization",
             primaryDomain: workspace?.primaryDomain,
-            clerkOrganizationId:
-              workspace?.clerkOrganizationId ?? membership.organizationId,
-            clerkOrganizationSlug:
-              workspace?.clerkOrganizationSlug ?? membership.organizationSlug,
+            clerkOrganizationId: workspace?.clerkOrganizationId ?? membership.organizationId,
+            clerkOrganizationSlug: workspace?.clerkOrganizationSlug ?? membership.organizationSlug,
             organizationId: membership.organizationId,
             organizationSlug: membership.organizationSlug,
             membershipRole: membership.role,
@@ -1092,10 +1038,7 @@ export const ensureTenantWorkspaceForActiveOrganization = mutation({
     clerkOrganizationId: v.string(),
     clerkOrganizationSlug: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    { slug, name, clerkOrganizationId, clerkOrganizationSlug },
-  ) => {
+  handler: async (ctx, { slug, name, clerkOrganizationId, clerkOrganizationSlug }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Unauthorized");
@@ -1105,14 +1048,9 @@ export const ensureTenantWorkspaceForActiveOrganization = mutation({
     const activeOrganizationId = getIdentityOrganizationId(identity);
     const storedMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
       .filter((queryBuilder) =>
-        queryBuilder.eq(
-          queryBuilder.field("organizationId"),
-          clerkOrganizationId,
-        ),
+        queryBuilder.eq(queryBuilder.field("organizationId"), clerkOrganizationId),
       )
       .unique();
 
@@ -1136,10 +1074,7 @@ export const ensureTenantWorkspaceInDatabase = internalMutation({
     clerkOrganizationId: v.string(),
     clerkOrganizationSlug: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    { slug, name, clerkOrganizationId, clerkOrganizationSlug },
-  ) => {
+  handler: async (ctx, { slug, name, clerkOrganizationId, clerkOrganizationSlug }) => {
     return await ensureTenantWorkspaceRecordForOrganization(ctx, {
       slug,
       name,
@@ -1173,11 +1108,7 @@ export const listWorkspacesPaginated = query({
         return false;
       }
       if (trimmedSearch) {
-        const haystack = [
-          workspace.name,
-          workspace.slug,
-          workspace.primaryDomain ?? "",
-        ]
+        const haystack = [workspace.name, workspace.slug, workspace.primaryDomain ?? ""]
           .join(" ")
           .toLowerCase();
         if (!haystack.includes(trimmedSearch)) return false;
@@ -1205,10 +1136,7 @@ export const listWorkspacesPaginated = query({
     const allRsvps = await ctx.db.query("rsvps").collect();
     const rsvpCountByEventId = new Map<string, number>();
     for (const rsvp of allRsvps) {
-      rsvpCountByEventId.set(
-        rsvp.eventId,
-        (rsvpCountByEventId.get(rsvp.eventId) ?? 0) + 1,
-      );
+      rsvpCountByEventId.set(rsvp.eventId, (rsvpCountByEventId.get(rsvp.eventId) ?? 0) + 1);
     }
 
     const enriched = await Promise.all(
@@ -1237,10 +1165,7 @@ export const listWorkspacesPaginated = query({
 
     return {
       page: enriched,
-      nextCursor:
-        cursorIndex + pageSize < filtered.length
-          ? String(cursorIndex + pageSize)
-          : null,
+      nextCursor: cursorIndex + pageSize < filtered.length ? String(cursorIndex + pageSize) : null,
       isDone: cursorIndex + pageSize >= filtered.length,
       totalCount: filtered.length,
     };
@@ -1255,11 +1180,7 @@ export const setWorkspacePlan = mutation({
         tier: v.string(),
         priceCents: v.optional(v.number()),
         billingStatus: v.optional(
-          v.union(
-            v.literal("ok"),
-            v.literal("watch"),
-            v.literal("overdue"),
-          ),
+          v.union(v.literal("ok"), v.literal("watch"), v.literal("overdue")),
         ),
         nextInvoiceAt: v.optional(v.number()),
         lastInvoiceAt: v.optional(v.number()),

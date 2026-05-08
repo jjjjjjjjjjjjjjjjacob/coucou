@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
+  "scripts": {
+    "lint": "biome lint ."
+  },
   "dependencies": {
     "@coucou/sdk": "workspace:*",
     "input-otp": "^1.4.2",

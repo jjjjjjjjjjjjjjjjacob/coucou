@@ -1,8 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMobile } from "../../use-mobile";
 import { combineClassNames } from "../../internal-utils";
+import { useMobile } from "../../use-mobile";
 
 export interface FieldProps {
   label: string;
@@ -45,10 +45,7 @@ export function Field({ label, children, hint, forceMobile }: FieldProps) {
       <div className="flex flex-col gap-1">
         {children}
         {hint ? (
-          <div
-            className="text-[12px] leading-snug"
-            style={{ color: "var(--tt-fg-dim)" }}
-          >
+          <div className="text-[12px] leading-snug" style={{ color: "var(--tt-fg-dim)" }}>
             {hint}
           </div>
         ) : null}
@@ -57,8 +54,7 @@ export function Field({ label, children, hint, forceMobile }: FieldProps) {
   );
 }
 
-export const fieldInputClassName =
-  "w-full bg-transparent border-0 outline-none p-0 text-[14px]";
+export const fieldInputClassName = "w-full bg-transparent border-0 outline-none p-0 text-[14px]";
 
 export function fieldInputStyle(): React.CSSProperties {
   return {

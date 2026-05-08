@@ -1,9 +1,9 @@
-import React from "react";
-import { fetchQuery } from "convex/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { buildEventThemeStyle } from "@/lib/event-theme";
+import { fetchQuery } from "convex/nextjs";
+import type React from "react";
 import { EventThemeProvider } from "@/components/event-theme-provider";
+import { buildEventThemeStyle } from "@/lib/event-theme";
 
 export default async function EventLayout({
   children,

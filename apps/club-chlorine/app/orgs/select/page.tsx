@@ -1,19 +1,21 @@
 "use client";
-import { useRouter } from "next/navigation";
 import { useOrganizationList } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 export default function SelectOrgPage() {
   const router = useRouter();
-  const { userMemberships, setActive } = useOrganizationList({ userMemberships: { infinite: true } });
+  const { userMemberships, setActive } = useOrganizationList({
+    userMemberships: { infinite: true },
+  });
   const memberships = userMemberships?.data ?? [];
 
   return (
     <main className="max-w-xl mx-auto p-6 space-y-4">
       <h1 className="text-xl font-semibold">Select Organization</h1>
       <p className="text-sm text-foreground/70">
-        Pick an existing organization to continue. If you don’t see yours,
-        ask an admin to invite you to it. Organization creation is disabled.
+        Pick an existing organization to continue. If you don’t see yours, ask an admin to invite
+        you to it. Organization creation is disabled.
       </p>
       {userMemberships === undefined ? (
         <div className="text-sm text-foreground/70">Loading organizations…</div>
@@ -43,4 +45,3 @@ export default function SelectOrgPage() {
     </main>
   );
 }
-

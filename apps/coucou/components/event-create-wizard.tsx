@@ -1,57 +1,57 @@
 "use client";
-import React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import { useForm, type Path } from "react-hook-form";
+import type { Id } from "@convex/_generated/dataModel";
+import {
+  getDefaultApprovalMessage,
+  sanitizeOptionalApprovalMessage,
+} from "@coucou/sdk/shared/approval-messages";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React from "react";
+import { type Path, useForm } from "react-hook-form";
 import { toast } from "sonner";
-
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage, FormDescription } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { type CustomFieldDef, CustomFieldsEditor } from "@/components/custom-fields-builder";
+import { DateTimePicker } from "@/components/date-time-picker";
+import { EventActsEditor } from "@/components/event-acts-editor";
+import { EventIconUpload } from "@/components/event-icon-upload";
+import { FlyerUpload, StorageImageUpload } from "@/components/flyer-upload";
+import {
+  draftToPrimaryFieldConfig,
+  EMPTY_PRIMARY_FIELD_CONFIG,
+  type PrimaryFieldConfigDraft,
+  PrimaryFieldConfigOverrideEditor,
+  primaryFieldConfigToDraft,
+} from "@/components/primary-field-config-editor";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectOption } from "@/components/ui/select";
-import { DateTimePicker } from "@/components/date-time-picker";
-import { FlyerUpload, StorageImageUpload } from "@/components/flyer-upload";
-import { EventIconUpload } from "@/components/event-icon-upload";
-import { CustomFieldsEditor, type CustomFieldDef } from "@/components/custom-fields-builder";
-import { EventActsEditor } from "@/components/event-acts-editor";
 import {
-  EMPTY_PRIMARY_FIELD_CONFIG,
-  PrimaryFieldConfigOverrideEditor,
-  draftToPrimaryFieldConfig,
-  primaryFieldConfigToDraft,
-  type PrimaryFieldConfigDraft,
-} from "@/components/primary-field-config-editor";
-
-import { cn } from "@/lib/utils";
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Select, SelectOption } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   createTimestamp,
   extractDateFromTimestamp,
   extractTimeFromTimestamp,
 } from "@/lib/date-utils";
-import { ApplicationError, EventAct, EventFormData } from "@/lib/types";
-import {
-  formatActSummary,
-  sanitizeEventActsForSubmit,
-} from "@/lib/event-metadata";
+import { formatActSummary, sanitizeEventActsForSubmit } from "@/lib/event-metadata";
 import {
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
   isValidHexColor,
   normalizeHexColorInput,
 } from "@/lib/event-theme";
-import {
-  getDefaultApprovalMessage,
-  sanitizeOptionalApprovalMessage,
-} from "@coucou/sdk/shared/approval-messages";
-import {
-  useWorkspaceOperationPath,
-  useWorkspaceScope,
-} from "@/lib/use-workspace-scope";
-import { Id } from "@convex/_generated/dataModel";
+import type { ApplicationError, EventAct, EventFormData } from "@/lib/types";
+import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { cn } from "@/lib/utils";
 
 // `sendQrOnApprovalOverride` is a tri-state: undefined inherits the
 // event-level toggle, `true` forces immediate send for that list,
@@ -80,24 +80,21 @@ const STEPS: WizardStep[] = [
     number: "01",
     eyebrow: "Identity",
     title: "Name the night.",
-    description:
-      "What guests will see across invites, tickets, and the front door.",
+    description: "What guests will see across invites, tickets, and the front door.",
     validate: ["name"],
   },
   {
     number: "02",
     eyebrow: "Time & place",
     title: "Where, when, how many.",
-    description:
-      "We'll show this on the public landing and use it on the door list.",
+    description: "We'll show this on the public landing and use it on the door list.",
     validate: ["location", "eventDate"],
   },
   {
     number: "03",
     eyebrow: "Look",
     title: "Pick the colors.",
-    description:
-      "Two colors carry the whole guest experience — invitation, status, ticket.",
+    description: "Two colors carry the whole guest experience — invitation, status, ticket.",
     validate: ["themeBackgroundColor", "themeTextColor"],
   },
   {
@@ -111,24 +108,21 @@ const STEPS: WizardStep[] = [
     number: "05",
     eyebrow: "Guest experience",
     title: "Status & ticket details.",
-    description:
-      "Optional image and a button to give guests something to read while they wait.",
+    description: "Optional image and a button to give guests something to read while they wait.",
     validate: ["guestPortalLinkLabel", "guestPortalLinkUrl"],
   },
   {
     number: "06",
     eyebrow: "Lists",
     title: "How they get in.",
-    description:
-      "Each password routes its guest to a list. Add a list per crowd.",
+    description: "Each password routes its guest to a list. Add a list per crowd.",
     validate: [],
   },
   {
     number: "07",
     eyebrow: "RSVP fields",
     title: "What you want to know.",
-    description:
-      "Optional. Anything you'd like guests to tell you when they RSVP.",
+    description: "Optional. Anything you'd like guests to tell you when they RSVP.",
     validate: [],
   },
   {
@@ -150,10 +144,7 @@ function validateLists(lists: ListRow[]): string[] {
 
 function validateColors(values: EventFormData): string[] {
   const errors: string[] = [];
-  if (
-    values.themeBackgroundColor &&
-    !isValidHexColor(values.themeBackgroundColor)
-  ) {
+  if (values.themeBackgroundColor && !isValidHexColor(values.themeBackgroundColor)) {
     errors.push("Background color must be a valid hex color (e.g. #FFFFFF)");
   }
   if (values.themeTextColor && !isValidHexColor(values.themeTextColor)) {
@@ -187,14 +178,8 @@ export default function EventCreateWizard() {
     if (!draftEventId || !workspaceScope) return null;
     return { eventId: draftEventId, ...workspaceScope.queryArgs };
   }, [draftEventId, workspaceScope]);
-  const draftEvent = useQuery(
-    api.events.get,
-    draftQueryArgs ?? "skip",
-  );
-  const draftCredentials = useQuery(
-    api.credentials.getHostCredsForEvent,
-    draftQueryArgs ?? "skip",
-  );
+  const draftEvent = useQuery(api.events.get, draftQueryArgs ?? "skip");
+  const draftCredentials = useQuery(api.credentials.getHostCredsForEvent, draftQueryArgs ?? "skip");
 
   const form = useForm<EventFormData>({
     defaultValues: {
@@ -225,13 +210,22 @@ export default function EventCreateWizard() {
   const [furthest, setFurthest] = React.useState(0);
   const [submitting, setSubmitting] = React.useState(false);
   const [lists, setLists] = React.useState<ListRow[]>([
-    { listKey: "vip", password: "", shouldGenerateQrCode: false, approvalMessage: "" },
-    { listKey: "ga", password: "", shouldGenerateQrCode: false, approvalMessage: "" },
+    {
+      listKey: "vip",
+      password: "",
+      shouldGenerateQrCode: false,
+      approvalMessage: "",
+    },
+    {
+      listKey: "ga",
+      password: "",
+      shouldGenerateQrCode: false,
+      approvalMessage: "",
+    },
   ]);
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>([]);
   const [acts, setActs] = React.useState<EventAct[]>([]);
-  const [usePrimaryFieldDefaults, setUsePrimaryFieldDefaults] =
-    React.useState(true);
+  const [usePrimaryFieldDefaults, setUsePrimaryFieldDefaults] = React.useState(true);
   const [primaryFieldConfigDraft, setPrimaryFieldConfigDraft] =
     React.useState<PrimaryFieldConfigDraft>(EMPTY_PRIMARY_FIELD_CONFIG);
   // `sendQrOnApproval` is the new explicit opt-in for sending QR codes
@@ -240,18 +234,14 @@ export default function EventCreateWizard() {
   // dashboard's "Send QR Codes" button.
   const [sendQrOnApproval, setSendQrOnApproval] = React.useState(false);
 
-  const workspacePrimaryFieldDefaultsDraft: PrimaryFieldConfigDraft =
-    React.useMemo(
-      () =>
-        primaryFieldConfigToDraft({
-          socialPlatforms: workspace?.eventDefaults?.socialPlatforms,
-          invitedBy: workspace?.eventDefaults?.invitedBy,
-        }),
-      [
-        workspace?.eventDefaults?.socialPlatforms,
-        workspace?.eventDefaults?.invitedBy,
-      ],
-    );
+  const workspacePrimaryFieldDefaultsDraft: PrimaryFieldConfigDraft = React.useMemo(
+    () =>
+      primaryFieldConfigToDraft({
+        socialPlatforms: workspace?.eventDefaults?.socialPlatforms,
+        invitedBy: workspace?.eventDefaults?.invitedBy,
+      }),
+    [workspace?.eventDefaults?.socialPlatforms, workspace?.eventDefaults?.invitedBy],
+  );
 
   React.useEffect(() => {
     if (usePrimaryFieldDefaults) {
@@ -261,8 +251,7 @@ export default function EventCreateWizard() {
 
   const flyerStorageId = form.watch("flyerStorageId") ?? null;
   const eventIconStorageId = form.watch("customIconStorageId") ?? null;
-  const guestPortalImageStorageId =
-    form.watch("guestPortalImageStorageId") ?? null;
+  const guestPortalImageStorageId = form.watch("guestPortalImageStorageId") ?? null;
   const eventName = form.watch("name");
   const defaultApprovalMessage = getDefaultApprovalMessage(eventName);
 
@@ -295,9 +284,7 @@ export default function EventCreateWizard() {
     if (hasHydratedFromDraft.current) return;
     if (!draftEvent || draftCredentials === undefined) return;
 
-    const timezone =
-      draftEvent.eventTimezone ||
-      Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const timezone = draftEvent.eventTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
     const formatTimestampDate = (timestamp: number | undefined | null) => {
       if (!timestamp) return "";
       try {
@@ -322,10 +309,8 @@ export default function EventCreateWizard() {
       hosts: (draftEvent.hosts ?? []).join(", "),
       productionCompany: draftEvent.productionCompany ?? "",
       location: draftEvent.location ?? "",
-      flyerStorageId:
-        (draftEvent.flyerStorageId as string | undefined) ?? null,
-      customIconStorageId:
-        (draftEvent.customIconStorageId as string | undefined) ?? null,
+      flyerStorageId: (draftEvent.flyerStorageId as string | undefined) ?? null,
+      customIconStorageId: (draftEvent.customIconStorageId as string | undefined) ?? null,
       guestPortalImageStorageId:
         (draftEvent.guestPortalImageStorageId as string | undefined) ?? null,
       guestPortalLinkLabel: draftEvent.guestPortalLinkLabel ?? "",
@@ -335,10 +320,8 @@ export default function EventCreateWizard() {
       eventTimezone: timezone,
       maxAttendees: draftEvent.maxAttendees ?? 1,
       status: draftEvent.status ?? "inactive",
-      themeBackgroundColor:
-        draftEvent.themeBackgroundColor ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
-      themeTextColor:
-        draftEvent.themeTextColor ?? EVENT_THEME_DEFAULT_TEXT_COLOR,
+      themeBackgroundColor: draftEvent.themeBackgroundColor ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
+      themeTextColor: draftEvent.themeTextColor ?? EVENT_THEME_DEFAULT_TEXT_COLOR,
       qrCodeColor: draftEvent.qrCodeColor ?? "#000000",
     });
 
@@ -350,9 +333,7 @@ export default function EventCreateWizard() {
     }
     if (draftEvent.primaryFieldConfig) {
       setUsePrimaryFieldDefaults(false);
-      setPrimaryFieldConfigDraft(
-        primaryFieldConfigToDraft(draftEvent.primaryFieldConfig),
-      );
+      setPrimaryFieldConfigDraft(primaryFieldConfigToDraft(draftEvent.primaryFieldConfig));
     }
     // Hydrate the new opt-in toggle from a v(n+1) draft (`sendQrOnApproval`).
     // Drafts written before this change only carry `defersQrDelivery`;
@@ -398,9 +379,7 @@ export default function EventCreateWizard() {
   };
 
   const next = async () => {
-    const fieldsValid = step.validate.length
-      ? await form.trigger(step.validate)
-      : true;
+    const fieldsValid = step.validate.length ? await form.trigger(step.validate) : true;
 
     if (stepIndex === 2) {
       const errors = validateColors(form.getValues());
@@ -415,9 +394,7 @@ export default function EventCreateWizard() {
       const labelTrimmed = values.guestPortalLinkLabel?.trim() ?? "";
       const urlTrimmed = values.guestPortalLinkUrl?.trim() ?? "";
       if ((labelTrimmed && !urlTrimmed) || (urlTrimmed && !labelTrimmed)) {
-        toast.error(
-          "Provide both a guest link label and URL or leave both blank",
-        );
+        toast.error("Provide both a guest link label and URL or leave both blank");
         return;
       }
     }
@@ -470,17 +447,11 @@ export default function EventCreateWizard() {
       .filter(Boolean);
 
     const startTimestamp = values.eventDate
-      ? createTimestamp(
-          values.eventDate,
-          values.eventTime,
-          values.eventTimezone,
-        )
+      ? createTimestamp(values.eventDate, values.eventTime, values.eventTimezone)
       : undefined;
 
-    const themeBackground =
-      normalizeHexColorInput(values.themeBackgroundColor) ?? undefined;
-    const themeText =
-      normalizeHexColorInput(values.themeTextColor) ?? undefined;
+    const themeBackground = normalizeHexColorInput(values.themeBackgroundColor) ?? undefined;
+    const themeText = normalizeHexColorInput(values.themeTextColor) ?? undefined;
 
     const patch: Record<string, unknown> = {
       name: values.name?.trim() || "Untitled event",
@@ -525,10 +496,7 @@ export default function EventCreateWizard() {
     const credentialIdByKey = new Map<string, Id<"listCredentials">>();
     if (draftCredentials) {
       for (const credential of draftCredentials) {
-        credentialIdByKey.set(
-          credential.listKey,
-          credential._id as Id<"listCredentials">,
-        );
+        credentialIdByKey.set(credential.listKey, credential._id as Id<"listCredentials">);
       }
     }
 
@@ -593,11 +561,7 @@ export default function EventCreateWizard() {
 
   const handleSubmit = async () => {
     const values = form.getValues();
-    const baseValid = await form.trigger([
-      "name",
-      "location",
-      "eventDate",
-    ]);
+    const baseValid = await form.trigger(["name", "location", "eventDate"]);
     const colorErrors = validateColors(values);
     const listErrors = validateLists(lists);
     if (colorErrors.length) {
@@ -630,11 +594,7 @@ export default function EventCreateWizard() {
     }
     setSubmitting(true);
     try {
-      const timestamp = createTimestamp(
-        values.eventDate,
-        values.eventTime,
-        values.eventTimezone,
-      );
+      const timestamp = createTimestamp(values.eventDate, values.eventTime, values.eventTimezone);
 
       if (draftEventId) {
         const { patch, lists: listsForPatch } = buildDraftPayload();
@@ -671,11 +631,9 @@ export default function EventCreateWizard() {
         }))
         .filter((list) => list.listKey);
       const themeBackground =
-        normalizeHexColorInput(values.themeBackgroundColor) ??
-        EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
+        normalizeHexColorInput(values.themeBackgroundColor) ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
       const themeText =
-        normalizeHexColorInput(values.themeTextColor) ??
-        EVENT_THEME_DEFAULT_TEXT_COLOR;
+        normalizeHexColorInput(values.themeTextColor) ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
       await create({
         name: values.name.trim(),
         secondaryTitle: trimmedSecondaryTitle || undefined,
@@ -743,9 +701,7 @@ export default function EventCreateWizard() {
         className="mx-auto flex w-full max-w-3xl flex-col"
       >
         <header className="flex items-center justify-between border-b border-border/60 py-6">
-          <div className="text-sm uppercase tracking-[0.18em] text-foreground">
-            New event
-          </div>
+          <div className="text-sm uppercase tracking-[0.18em] text-foreground">New event</div>
           <div className="text-sm tabular-nums text-muted-foreground">
             {step.number} <span className="text-muted-foreground/50">/ 08</span>
           </div>
@@ -763,7 +719,7 @@ export default function EventCreateWizard() {
           {STEPS.map((entry, index) => {
             const isCurrent = index === stepIndex;
             const isReached = index <= furthest;
-            const isComplete = index < furthest || (index < stepIndex);
+            const isComplete = index < furthest || index < stepIndex;
             return (
               <button
                 key={entry.number}
@@ -815,9 +771,7 @@ export default function EventCreateWizard() {
           </div>
 
           <div className="space-y-12">
-            {stepIndex === 0 && (
-              <StepIdentity form={form} acts={acts} onActsChange={setActs} />
-            )}
+            {stepIndex === 0 && <StepIdentity form={form} acts={acts} onActsChange={setActs} />}
             {stepIndex === 1 && (
               <StepWhereWhen
                 form={form}
@@ -831,7 +785,9 @@ export default function EventCreateWizard() {
                 form={form}
                 eventIconStorageId={eventIconStorageId}
                 onEventIconChange={(value) =>
-                  form.setValue("customIconStorageId", value, { shouldDirty: true })
+                  form.setValue("customIconStorageId", value, {
+                    shouldDirty: true,
+                  })
                 }
               />
             )}
@@ -871,9 +827,7 @@ export default function EventCreateWizard() {
                 onPrimaryFieldConfigChange={setPrimaryFieldConfigDraft}
                 usePrimaryFieldDefaults={usePrimaryFieldDefaults}
                 onUsePrimaryFieldDefaultsChange={setUsePrimaryFieldDefaults}
-                workspacePrimaryFieldDefaults={
-                  workspacePrimaryFieldDefaultsDraft
-                }
+                workspacePrimaryFieldDefaults={workspacePrimaryFieldDefaultsDraft}
               />
             )}
             {stepIndex === 7 && (
@@ -903,17 +857,8 @@ export default function EventCreateWizard() {
           <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground/70">
             autosaved locally
           </span>
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleAdvance}
-            disabled={submitting}
-          >
-            {isLast
-              ? submitting
-                ? "Publishing…"
-                : "Publish"
-              : "Continue"}
+          <Button type="button" size="sm" onClick={handleAdvance} disabled={submitting}>
+            {isLast ? (submitting ? "Publishing…" : "Publish") : "Continue"}
             {!isLast && <ArrowRight className="h-4 w-4" />}
           </Button>
         </footer>
@@ -965,7 +910,8 @@ function StepIdentity({
         render={({ field }) => (
           <FormItem>
             <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Secondary title <span className="normal-case text-muted-foreground/70">(optional)</span>
+              Secondary title{" "}
+              <span className="normal-case text-muted-foreground/70">(optional)</span>
             </FormLabel>
             <FormControl>
               <Input
@@ -1007,7 +953,10 @@ function StepIdentity({
         render={({ field }) => (
           <FormItem>
             <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Hosts <span className="normal-case text-muted-foreground/70">(optional, comma-separated)</span>
+              Hosts{" "}
+              <span className="normal-case text-muted-foreground/70">
+                (optional, comma-separated)
+              </span>
             </FormLabel>
             <FormControl>
               <Input
@@ -1017,9 +966,7 @@ function StepIdentity({
                 className="h-11 border-0 border-b border-border/60 px-0 text-base shadow-none focus-visible:border-foreground focus-visible:ring-0"
               />
             </FormControl>
-            <FormDescription>
-              Whoever guests should ask for at the door.
-            </FormDescription>
+            <FormDescription>Whoever guests should ask for at the door.</FormDescription>
             <FormMessage />
           </FormItem>
         )}
@@ -1030,7 +977,8 @@ function StepIdentity({
         render={({ field }) => (
           <FormItem>
             <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Production company <span className="normal-case text-muted-foreground/70">(optional)</span>
+              Production company{" "}
+              <span className="normal-case text-muted-foreground/70">(optional)</span>
             </FormLabel>
             <FormControl>
               <Input
@@ -1095,21 +1043,14 @@ function StepWhereWhen({
             <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
               Date, time & timezone
             </FormLabel>
-            <FormDescription>
-              RSVPs close 24 hours after this start time.
-            </FormDescription>
+            <FormDescription>RSVPs close 24 hours after this start time.</FormDescription>
             <FormControl>
               <DateTimePicker
                 date={eventDate}
                 time={eventTime ?? "19:00"}
-                timezone={
-                  eventTimezone ??
-                  Intl.DateTimeFormat().resolvedOptions().timeZone
-                }
+                timezone={eventTimezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone}
                 onDateChange={(value) => field.onChange(value)}
-                onTimeChange={(value) =>
-                  form.setValue("eventTime", value, { shouldDirty: true })
-                }
+                onTimeChange={(value) => form.setValue("eventTime", value, { shouldDirty: true })}
                 onTimezoneChange={(value) =>
                   form.setValue("eventTimezone", value, { shouldDirty: true })
                 }
@@ -1131,9 +1072,7 @@ function StepWhereWhen({
               <Select
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={field.value ? String(field.value) : "1"}
-                onValueChange={(value) =>
-                  field.onChange(Number.parseInt(value, 10))
-                }
+                onValueChange={(value) => field.onChange(Number.parseInt(value, 10))}
               >
                 <SelectOption value="1">1 (no plus-ones)</SelectOption>
                 <SelectOption value="2">2</SelectOption>
@@ -1166,9 +1105,7 @@ function StepWhereWhen({
                 <SelectOption value="past">Past</SelectOption>
               </Select>
             </FormControl>
-            <FormDescription>
-              Active events can receive RSVP submissions.
-            </FormDescription>
+            <FormDescription>Active events can receive RSVP submissions.</FormDescription>
             <FormMessage />
           </FormItem>
         )}
@@ -1204,7 +1141,9 @@ function StepLook({
               </FormLabel>
               <FormControl>
                 <ColorRow
-                  value={(field.value as string | undefined) ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR}
+                  value={
+                    (field.value as string | undefined) ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR
+                  }
                   onChange={field.onChange}
                 />
               </FormControl>
@@ -1236,15 +1175,9 @@ function StepLook({
         className="rounded-md border border-border/60 p-8 transition-colors"
         style={{ background, color: text }}
       >
-        <div className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-          Live preview
-        </div>
-        <div className="mt-3 text-3xl font-light tracking-tight">
-          {eventName}
-        </div>
-        <div className="mt-2 text-sm opacity-70">
-          The next night · doors at nine
-        </div>
+        <div className="text-[10px] uppercase tracking-[0.18em] opacity-60">Live preview</div>
+        <div className="mt-3 text-3xl font-light tracking-tight">{eventName}</div>
+        <div className="mt-2 text-sm opacity-70">The next night · doors at nine</div>
         <div className="mt-6 inline-flex items-center gap-2 border-b" style={{ borderColor: text }}>
           RSVP →
         </div>
@@ -1263,13 +1196,7 @@ function StepLook({
   );
 }
 
-function ColorRow({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
+function ColorRow({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
     <div className="flex items-center gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
       <input
@@ -1318,8 +1245,7 @@ function StepGuestExperience({
     normalizeHexColorInput(form.watch("themeBackgroundColor")) ??
     EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
   const themeText =
-    normalizeHexColorInput(form.watch("themeTextColor")) ??
-    EVENT_THEME_DEFAULT_TEXT_COLOR;
+    normalizeHexColorInput(form.watch("themeTextColor")) ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
   const eventName = form.watch("name") || "Your event";
   const guestLinkLabel = form.watch("guestPortalLinkLabel");
 
@@ -1351,21 +1277,15 @@ function StepGuestExperience({
                     key={index}
                     className="rounded-sm"
                     style={{
-                      backgroundColor:
-                        index % 3 === 0 ? themeBackground : "transparent",
+                      backgroundColor: index % 3 === 0 ? themeBackground : "transparent",
                     }}
                   />
                 ))}
               </div>
             </div>
             <div className="flex-1 space-y-2">
-              <div className="text-xs uppercase tracking-[0.12em] opacity-60">
-                Approved
-              </div>
-              <div
-                className="text-xl font-semibold leading-tight"
-                style={{ color: themeText }}
-              >
+              <div className="text-xs uppercase tracking-[0.12em] opacity-60">Approved</div>
+              <div className="text-xl font-semibold leading-tight" style={{ color: themeText }}>
                 {eventName}
               </div>
               <div className="text-xs opacity-70">
@@ -1386,7 +1306,8 @@ function StepGuestExperience({
 
       <div>
         <div className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-          Status & ticket image <span className="normal-case text-muted-foreground/70">(optional)</span>
+          Status & ticket image{" "}
+          <span className="normal-case text-muted-foreground/70">(optional)</span>
         </div>
         <p className="mb-3 max-w-lg text-sm text-muted-foreground">
           Shown on the pending status screen and beneath approved tickets.
@@ -1409,14 +1330,11 @@ function StepGuestExperience({
           render={({ field }) => (
             <FormItem>
               <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                Guest link label <span className="normal-case text-muted-foreground/70">(optional)</span>
+                Guest link label{" "}
+                <span className="normal-case text-muted-foreground/70">(optional)</span>
               </FormLabel>
               <FormControl>
-                <Input
-                  {...field}
-                  value={field.value ?? ""}
-                  placeholder="View event guide"
-                />
+                <Input {...field} value={field.value ?? ""} placeholder="View event guide" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -1428,7 +1346,8 @@ function StepGuestExperience({
           render={({ field }) => (
             <FormItem>
               <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                Guest link URL <span className="normal-case text-muted-foreground/70">(optional)</span>
+                Guest link URL{" "}
+                <span className="normal-case text-muted-foreground/70">(optional)</span>
               </FormLabel>
               <FormControl>
                 <Input
@@ -1458,17 +1377,13 @@ function StepGuestExperience({
 // the value through stringification.
 type SendQrOnApprovalOverrideOption = "inherit" | "on" | "off";
 
-function overrideValueToOption(
-  value: boolean | undefined,
-): SendQrOnApprovalOverrideOption {
+function overrideValueToOption(value: boolean | undefined): SendQrOnApprovalOverrideOption {
   if (value === true) return "on";
   if (value === false) return "off";
   return "inherit";
 }
 
-function overrideOptionToValue(
-  option: SendQrOnApprovalOverrideOption,
-): boolean | undefined {
+function overrideOptionToValue(option: SendQrOnApprovalOverrideOption): boolean | undefined {
   if (option === "on") return true;
   if (option === "off") return false;
   return undefined;
@@ -1487,15 +1402,9 @@ function StepLists({
   sendQrOnApproval: boolean;
   onSendQrOnApprovalChange: (value: boolean) => void;
 }) {
-  const update = <Key extends keyof ListRow>(
-    index: number,
-    key: Key,
-    value: ListRow[Key],
-  ) =>
+  const update = <Key extends keyof ListRow>(index: number, key: Key, value: ListRow[Key]) =>
     setLists((current) =>
-      current.map((item, idx) =>
-        idx === index ? { ...item, [key]: value } : item,
-      ),
+      current.map((item, idx) => (idx === index ? { ...item, [key]: value } : item)),
     );
   const remove = (index: number) =>
     setLists((current) => current.filter((_, idx) => idx !== index));
@@ -1520,24 +1429,20 @@ function StepLists({
         <span className="text-right">Actions</span>
       </div>
       <p className="text-xs text-muted-foreground">
-        Leave password blank for an open list — the first list with no password
-        receives RSVPs that skip the password step.
+        Leave password blank for an open list — the first list with no password receives RSVPs that
+        skip the password step.
       </p>
       <label className="flex items-start gap-3 rounded border border-border/60 p-3">
         <Checkbox
           checked={sendQrOnApproval}
-          onCheckedChange={(checked) =>
-            onSendQrOnApprovalChange(Boolean(checked))
-          }
+          onCheckedChange={(checked) => onSendQrOnApprovalChange(Boolean(checked))}
           className="mt-0.5"
         />
         <span className="space-y-1">
-          <span className="block text-sm font-medium">
-            Send QR on approval
-          </span>
+          <span className="block text-sm font-medium">Send QR on approval</span>
           <span className="block text-xs text-muted-foreground">
-            When on, approval texts include the QR code immediately. Default
-            off — most hosts send a manual blast closer to the event.
+            When on, approval texts include the QR code immediately. Default off — most hosts send a
+            manual blast closer to the event.
           </span>
         </span>
       </label>
@@ -1588,9 +1493,7 @@ function StepLists({
                   update(
                     index,
                     "sendQrOnApprovalOverride",
-                    overrideOptionToValue(
-                      value as SendQrOnApprovalOverrideOption,
-                    ),
+                    overrideOptionToValue(value as SendQrOnApprovalOverrideOption),
                   )
                 }
               >
@@ -1604,26 +1507,19 @@ function StepLists({
           ) : null}
           <div className="space-y-1">
             <label className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-              Approval message <span className="normal-case text-muted-foreground/70">(optional)</span>
+              Approval message{" "}
+              <span className="normal-case text-muted-foreground/70">(optional)</span>
             </label>
             <Textarea
               rows={2}
               placeholder={defaultApprovalMessage}
               value={list.approvalMessage}
-              onChange={(event) =>
-                update(index, "approvalMessage", event.target.value)
-              }
+              onChange={(event) => update(index, "approvalMessage", event.target.value)}
             />
           </div>
         </div>
       ))}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={add}
-        className="w-full"
-      >
+      <Button type="button" variant="outline" size="sm" onClick={add} className="w-full">
         + Add another list
       </Button>
     </div>
@@ -1652,13 +1548,10 @@ function StepCustomFields({
   return (
     <div className="space-y-6">
       <div className="rounded-lg border bg-card p-4 space-y-4">
-        <h3 className="font-medium text-sm text-muted-foreground">
-          PRIMARY FIELDS
-        </h3>
+        <h3 className="font-medium text-sm text-muted-foreground">PRIMARY FIELDS</h3>
         <p className="text-sm text-muted-foreground">
-          Social fields and the &ldquo;invited by&rdquo; question for this
-          event. Defaults come from workspace settings; override here if
-          needed.
+          Social fields and the &ldquo;invited by&rdquo; question for this event. Defaults come from
+          workspace settings; override here if needed.
         </p>
         <PrimaryFieldConfigOverrideEditor
           value={primaryFieldConfigDraft}
@@ -1694,9 +1587,7 @@ function StepReview({
   customFields: CustomFieldDef[];
   onJump: (index: number) => void;
 }) {
-  const filteredLists = lists.filter(
-    (list) => list.listKey?.trim() && list.password?.trim(),
-  );
+  const filteredLists = lists.filter((list) => list.listKey?.trim() && list.password?.trim());
   const dateLabel = values.eventDate
     ? `${values.eventDate} · ${values.eventTime ?? ""} ${values.eventTimezone ?? ""}`.trim()
     : "—";
@@ -1747,9 +1638,7 @@ function StepReview({
     {
       stepIndex: 5,
       key: "Lists",
-      value: filteredLists.length
-        ? filteredLists.map((list) => list.listKey).join(", ")
-        : "—",
+      value: filteredLists.length ? filteredLists.map((list) => list.listKey).join(", ") : "—",
     },
     {
       stepIndex: 6,

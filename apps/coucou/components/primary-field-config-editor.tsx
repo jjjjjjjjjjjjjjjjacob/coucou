@@ -1,16 +1,15 @@
 "use client";
 
-import React from "react";
-import { Trash2 } from "lucide-react";
 import {
   DEFAULT_SOCIAL_PLATFORM_CONFIGS,
   dedupeSocialPlatformConfigs,
+  type InvitedByPrimaryFieldConfig,
   isPresetSocialPlatformKey,
   normalizeSocialPlatformKey,
-  type InvitedByPrimaryFieldConfig,
   type PrimaryFieldConfig,
   type PrimarySocialPlatformConfig,
 } from "@coucou/sdk/shared/primary-fields";
+import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -50,18 +49,13 @@ export function primaryFieldConfigToDraft(
     invitedBy: {
       enabled: invitedByConfig?.enabled ?? false,
       label: invitedByConfig?.label ?? EMPTY_INVITED_BY.label,
-      placeholder:
-        invitedByConfig?.placeholder ?? EMPTY_INVITED_BY.placeholder,
-      required: invitedByConfig
-        ? invitedByConfig.required === true
-        : EMPTY_INVITED_BY.required,
+      placeholder: invitedByConfig?.placeholder ?? EMPTY_INVITED_BY.placeholder,
+      required: invitedByConfig ? invitedByConfig.required === true : EMPTY_INVITED_BY.required,
     },
   };
 }
 
-export function draftToPrimaryFieldConfig(
-  draft: PrimaryFieldConfigDraft,
-): PrimaryFieldConfig {
+export function draftToPrimaryFieldConfig(draft: PrimaryFieldConfigDraft): PrimaryFieldConfig {
   const socialPlatforms = dedupeSocialPlatformConfigs(
     draft.socialPlatforms.map((platform) => ({
       platformKey: normalizeSocialPlatformKey(platform.platformKey),
@@ -71,8 +65,7 @@ export function draftToPrimaryFieldConfig(
       required: platform.required === true ? true : undefined,
     })),
   );
-  const invitedBy: InvitedByPrimaryFieldConfig | undefined = draft.invitedBy
-    .enabled
+  const invitedBy: InvitedByPrimaryFieldConfig | undefined = draft.invitedBy.enabled
     ? {
         enabled: true,
         label: draft.invitedBy.label.trim() || undefined,
@@ -100,17 +93,11 @@ export function PrimaryFieldConfigEditor({
   const addSocialPlatform = (platform: PrimarySocialPlatformConfig) => {
     onChange({
       ...value,
-      socialPlatforms: dedupeSocialPlatformConfigs([
-        ...value.socialPlatforms,
-        platform,
-      ]),
+      socialPlatforms: dedupeSocialPlatformConfigs([...value.socialPlatforms, platform]),
     });
   };
 
-  const updateSocialPlatform = (
-    index: number,
-    patch: Partial<PrimarySocialPlatformConfig>,
-  ) => {
+  const updateSocialPlatform = (index: number, patch: Partial<PrimarySocialPlatformConfig>) => {
     onChange({
       ...value,
       socialPlatforms: value.socialPlatforms.map((platform, platformIndex) =>
@@ -122,9 +109,7 @@ export function PrimaryFieldConfigEditor({
   const removeSocialPlatform = (index: number) => {
     onChange({
       ...value,
-      socialPlatforms: value.socialPlatforms.filter(
-        (_, platformIndex) => platformIndex !== index,
-      ),
+      socialPlatforms: value.socialPlatforms.filter((_, platformIndex) => platformIndex !== index),
     });
   };
 
@@ -134,9 +119,7 @@ export function PrimaryFieldConfigEditor({
 
   const updateInvitedByEnabled = (enabled: boolean) => {
     updateInvitedBy(
-      enabled && !value.invitedBy.enabled
-        ? { enabled, required: true }
-        : { enabled },
+      enabled && !value.invitedBy.enabled ? { enabled, required: true } : { enabled },
     );
   };
 
@@ -217,9 +200,7 @@ export function PrimaryFieldConfigEditor({
                 </div>
                 <Input
                   value={platform.label}
-                  onChange={(event) =>
-                    updateSocialPlatform(index, { label: event.target.value })
-                  }
+                  onChange={(event) => updateSocialPlatform(index, { label: event.target.value })}
                   disabled={disabled}
                   placeholder="Instagram"
                   aria-label="Display label"
@@ -280,9 +261,7 @@ export function PrimaryFieldConfigEditor({
             );
           })}
           {value.socialPlatforms.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No social fields configured.
-            </p>
+            <p className="text-sm text-muted-foreground">No social fields configured.</p>
           )}
         </div>
       </div>
@@ -292,9 +271,7 @@ export function PrimaryFieldConfigEditor({
           <Checkbox
             id="invited-by-enabled"
             checked={value.invitedBy.enabled}
-            onCheckedChange={(checked) =>
-              updateInvitedByEnabled(Boolean(checked))
-            }
+            onCheckedChange={(checked) => updateInvitedByEnabled(Boolean(checked))}
             disabled={disabled}
           />
           <Label htmlFor="invited-by-enabled">Ask for invited by</Label>
@@ -308,9 +285,7 @@ export function PrimaryFieldConfigEditor({
           />
           <Input
             value={value.invitedBy.placeholder}
-            onChange={(event) =>
-              updateInvitedBy({ placeholder: event.target.value })
-            }
+            onChange={(event) => updateInvitedBy({ placeholder: event.target.value })}
             disabled={disabled || !value.invitedBy.enabled}
             placeholder="Who invited you?"
           />
@@ -319,9 +294,7 @@ export function PrimaryFieldConfigEditor({
           <Checkbox
             id="invited-by-required"
             checked={value.invitedBy.required}
-            onCheckedChange={(checked) =>
-              updateInvitedBy({ required: Boolean(checked) })
-            }
+            onCheckedChange={(checked) => updateInvitedBy({ required: Boolean(checked) })}
             disabled={disabled || !value.invitedBy.enabled}
           />
           <Label
@@ -380,16 +353,12 @@ export function PrimaryFieldConfigOverrideEditor({
         <div className="space-y-0.5">
           <span className="font-medium">Use workspace defaults</span>
           <p className="text-xs text-muted-foreground">
-            Currently inheriting the workspace&apos;s social fields and
-            invited-by settings. Edit anything below to customize for this event.
+            Currently inheriting the workspace&apos;s social fields and invited-by settings. Edit
+            anything below to customize for this event.
           </p>
         </div>
       </label>
-      <PrimaryFieldConfigEditor
-        value={value}
-        onChange={handleEditorChange}
-        disabled={disabled}
-      />
+      <PrimaryFieldConfigEditor value={value} onChange={handleEditorChange} disabled={disabled} />
     </div>
   );
 }

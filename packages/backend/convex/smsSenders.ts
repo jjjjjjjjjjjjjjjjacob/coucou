@@ -1,6 +1,6 @@
-import { mutation, query } from "./functions";
 import { v } from "convex/values";
 import { writeAuditEntry } from "./audit";
+import { mutation, query } from "./functions";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
 
 export const listForWorkspaces = query({
@@ -18,9 +18,7 @@ export const listForWorkspaces = query({
     }
 
     return workspaces
-      .filter(
-        (workspace) => workspace.slug !== "coucou" && workspace.kind !== "admin",
-      )
+      .filter((workspace) => workspace.slug !== "coucou" && workspace.kind !== "admin")
       .map((workspace) => ({
         workspace,
         senders: sendersByWorkspace.get(workspace._id) ?? [],
@@ -37,19 +35,14 @@ export const upsert = mutation({
     isDefault: v.optional(v.boolean()),
     verifiedAt: v.optional(v.number()),
   },
-  handler: async (
-    ctx,
-    { id, workspaceId, phoneNumber, brandLabel, isDefault, verifiedAt },
-  ) => {
+  handler: async (ctx, { id, workspaceId, phoneNumber, brandLabel, isDefault, verifiedAt }) => {
     const identity = await requireCoucouPlatformMember(ctx);
     const now = Date.now();
 
     if (isDefault) {
       const existingForWorkspace = await ctx.db
         .query("smsSenders")
-        .withIndex("by_workspace", (queryBuilder) =>
-          queryBuilder.eq("workspaceId", workspaceId),
-        )
+        .withIndex("by_workspace", (queryBuilder) => queryBuilder.eq("workspaceId", workspaceId))
         .collect();
       for (const sender of existingForWorkspace) {
         if (sender.isDefault && sender._id !== id) {

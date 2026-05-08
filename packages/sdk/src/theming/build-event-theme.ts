@@ -32,63 +32,40 @@ function hexToRgbComponents(hexColor: string): {
   };
 }
 
-export function mixHexColors(
-  baseColor: string,
-  mixColor: string,
-  weight: number,
-): string {
+export function mixHexColors(baseColor: string, mixColor: string, weight: number): string {
   const ratio = Math.max(0, Math.min(1, weight));
   const normalizedBase = normalizeHexColorInput(baseColor) ?? "#000000";
   const normalizedMix = normalizeHexColorInput(mixColor) ?? "#000000";
   const baseComponents = hexToRgbComponents(normalizedBase);
   const mixComponents = hexToRgbComponents(normalizedMix);
-  const mixedRed =
-    baseComponents.red * (1 - ratio) + mixComponents.red * ratio;
-  const mixedGreen =
-    baseComponents.green * (1 - ratio) + mixComponents.green * ratio;
-  const mixedBlue =
-    baseComponents.blue * (1 - ratio) + mixComponents.blue * ratio;
-  return `#${componentToHex(mixedRed)}${componentToHex(mixedGreen)}${componentToHex(
-    mixedBlue,
-  )}`;
+  const mixedRed = baseComponents.red * (1 - ratio) + mixComponents.red * ratio;
+  const mixedGreen = baseComponents.green * (1 - ratio) + mixComponents.green * ratio;
+  const mixedBlue = baseComponents.blue * (1 - ratio) + mixComponents.blue * ratio;
+  return `#${componentToHex(mixedRed)}${componentToHex(mixedGreen)}${componentToHex(mixedBlue)}`;
 }
 
 function calculateRelativeLuminance(hexColor: string): number {
   const { red, green, blue } = hexToRgbComponents(hexColor);
   const channelValues = [red, green, blue].map((channel) => {
     const normalized = channel / 255;
-    return normalized <= 0.03928
-      ? normalized / 12.92
-      : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
   });
-  return (
-    0.2126 * channelValues[0] +
-    0.7152 * channelValues[1] +
-    0.0722 * channelValues[2]
-  );
+  return 0.2126 * channelValues[0] + 0.7152 * channelValues[1] + 0.0722 * channelValues[2];
 }
 
-export function isValidHexColor(
-  value: string | null | undefined,
-): value is string {
+export function isValidHexColor(value: string | null | undefined): value is string {
   if (!value) return false;
   const trimmedValue = value.trim();
   if (trimmedValue.length === 0) return false;
-  const normalizedValue = trimmedValue.startsWith("#")
-    ? trimmedValue
-    : `#${trimmedValue}`;
+  const normalizedValue = trimmedValue.startsWith("#") ? trimmedValue : `#${trimmedValue}`;
   return HEX_COLOR_PATTERN.test(normalizedValue);
 }
 
-export function normalizeHexColorInput(
-  value: string | null | undefined,
-): string | undefined {
+export function normalizeHexColorInput(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
   const trimmedValue = value.trim();
   if (trimmedValue.length === 0) return undefined;
-  const normalizedValue = trimmedValue.startsWith("#")
-    ? trimmedValue
-    : `#${trimmedValue}`;
+  const normalizedValue = trimmedValue.startsWith("#") ? trimmedValue : `#${trimmedValue}`;
   if (!HEX_COLOR_PATTERN.test(normalizedValue)) {
     return undefined;
   }
@@ -101,10 +78,7 @@ export function getAccessibleTextColor(hexColor: string): string {
   return luminance > 0.5 ? "#000000" : "#FFFFFF";
 }
 
-export function getColorContrastRatio(
-  colorA: string,
-  colorB: string,
-): number {
+export function getColorContrastRatio(colorA: string, colorB: string): number {
   const normalizedColorA = normalizeHexColorInput(colorA) ?? "#000000";
   const normalizedColorB = normalizeHexColorInput(colorB) ?? "#000000";
   const luminanceA = calculateRelativeLuminance(normalizedColorA);
@@ -121,13 +95,11 @@ export function getEventThemeColors(
   backgroundColor: string;
   textColor: string;
 } {
-  const fallbackBackground =
-    fallbacks?.backgroundColor ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
+  const fallbackBackground = fallbacks?.backgroundColor ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
   const fallbackText = fallbacks?.textColor ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
   const normalizedBackground =
     normalizeHexColorInput(event?.themeBackgroundColor) ?? fallbackBackground;
-  const normalizedText =
-    normalizeHexColorInput(event?.themeTextColor) ?? fallbackText;
+  const normalizedText = normalizeHexColorInput(event?.themeTextColor) ?? fallbackText;
   return {
     backgroundColor: normalizedBackground,
     textColor: normalizedText,
@@ -142,11 +114,7 @@ export function buildEventThemeStyle(
   const foregroundColor = getAccessibleTextColor(backgroundColor);
   const primaryForegroundColor = getAccessibleTextColor(textColor);
   const accentSurfaceColor = mixHexColors(backgroundColor, textColor, 0.12);
-  const mutedForegroundColor = mixHexColors(
-    foregroundColor,
-    backgroundColor,
-    0.35,
-  );
+  const mutedForegroundColor = mixHexColors(foregroundColor, backgroundColor, 0.35);
   const borderColor = mixHexColors(backgroundColor, textColor, 0.24);
   const accentColor = mixHexColors(textColor, backgroundColor, 0.18);
 

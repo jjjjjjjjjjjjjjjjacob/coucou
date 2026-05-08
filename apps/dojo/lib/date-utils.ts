@@ -52,15 +52,17 @@ export function getTimeZoneOptions(): Array<{ value: string; label: string }> {
   const supportedTimeZones =
     typeof (Intl as unknown as { supportedValuesOf?: (key: string) => string[] })
       .supportedValuesOf === "function"
-      ? (Intl as unknown as { supportedValuesOf: (key: string) => string[] })
-          .supportedValuesOf("timeZone")
+      ? (Intl as unknown as { supportedValuesOf: (key: string) => string[] }).supportedValuesOf(
+          "timeZone",
+        )
       : baseTimeZones;
 
   const uniqueTimeZoneSet = new Set<string>();
   const canonicalize = (value: string) => {
     try {
-      return new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions()
-        .timeZone;
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: value,
+      }).resolvedOptions().timeZone;
     } catch {
       return value;
     }
@@ -81,9 +83,7 @@ export function getTimeZoneOptions(): Array<{ value: string; label: string }> {
     return sortedOptions;
   }
 
-  const resolvedOptionIndex = sortedOptions.findIndex(
-    (option) => option.value === resolved,
-  );
+  const resolvedOptionIndex = sortedOptions.findIndex((option) => option.value === resolved);
 
   if (resolvedOptionIndex === -1) {
     return sortedOptions;
@@ -150,22 +150,26 @@ export function extractTimeFromTimestamp(timestamp: number, timezone?: string): 
 /**
  * Creates a timestamp from date and time strings
  * Interprets the date/time as being IN the specified timezone, then converts to UTC timestamp
- * 
+ *
  * Example: createTimestamp("2024-01-15", "19:00", "America/New_York")
  * Returns: UTC timestamp for Jan 15, 2024 7:00 PM New York time
  */
-export function createTimestamp(dateString: string, timeString?: string, timezone?: string): number {
-  const [year, month, day] = dateString.split("-").map(value => parseInt(value, 10));
+export function createTimestamp(
+  dateString: string,
+  timeString?: string,
+  timezone?: string,
+): number {
+  const [year, month, day] = dateString.split("-").map((value) => parseInt(value, 10));
 
   if (timeString) {
-    const [hours, minutes] = timeString.split(":").map(value => parseInt(value, 10));
+    const [hours, minutes] = timeString.split(":").map((value) => parseInt(value, 10));
     if (timezone) {
       // Strategy: Use binary search or iterative approach to find the UTC timestamp
       // that, when formatted in the target timezone, matches our desired local time
-      
+
       // Start with a reasonable guess: UTC time equal to local time
       let candidateUtc = new Date(Date.UTC(year, month - 1, day, hours || 0, minutes || 0));
-      
+
       const formatter = new Intl.DateTimeFormat("en-US", {
         timeZone: timezone,
         year: "numeric",
@@ -175,7 +179,7 @@ export function createTimestamp(dateString: string, timeString?: string, timezon
         minute: "2-digit",
         hour12: false,
       });
-      
+
       // Refine the candidate by checking what local time it represents
       // and adjusting until it matches our target
       for (let iteration = 0; iteration < 3; iteration++) {
@@ -185,7 +189,7 @@ export function createTimestamp(dateString: string, timeString?: string, timezon
         const candidateDay = parseInt(parts.find((p) => p.type === "day")?.value || "0", 10);
         const candidateHour = parseInt(parts.find((p) => p.type === "hour")?.value || "0", 10);
         const candidateMinute = parseInt(parts.find((p) => p.type === "minute")?.value || "0", 10);
-        
+
         // Check if we've found the right date/time
         if (
           candidateYear === year &&
@@ -196,17 +200,17 @@ export function createTimestamp(dateString: string, timeString?: string, timezon
         ) {
           return candidateUtc.getTime();
         }
-        
+
         // Calculate the difference and adjust
         const hourDiff = (hours || 0) - candidateHour;
         const minuteDiff = (minutes || 0) - candidateMinute;
         const dayDiff = day - candidateDay;
-        
+
         // Adjust by the difference (in milliseconds)
         const adjustmentMs = (dayDiff * 24 * 60 + hourDiff * 60 + minuteDiff) * 60 * 1000;
         candidateUtc = new Date(candidateUtc.getTime() + adjustmentMs);
       }
-      
+
       // Final check - if still not matching, use the last candidate
       return candidateUtc.getTime();
     }
@@ -215,7 +219,7 @@ export function createTimestamp(dateString: string, timeString?: string, timezon
     if (timezone) {
       // For date-only, we want midnight in the timezone
       let candidateUtc = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-      
+
       const formatter = new Intl.DateTimeFormat("en-US", {
         timeZone: timezone,
         year: "numeric",
@@ -225,7 +229,7 @@ export function createTimestamp(dateString: string, timeString?: string, timezon
         minute: "2-digit",
         hour12: false,
       });
-      
+
       for (let iteration = 0; iteration < 3; iteration++) {
         const parts = formatter.formatToParts(candidateUtc);
         const candidateYear = parseInt(parts.find((p) => p.type === "year")?.value || "0", 10);
@@ -233,7 +237,7 @@ export function createTimestamp(dateString: string, timeString?: string, timezon
         const candidateDay = parseInt(parts.find((p) => p.type === "day")?.value || "0", 10);
         const candidateHour = parseInt(parts.find((p) => p.type === "hour")?.value || "0", 10);
         const candidateMinute = parseInt(parts.find((p) => p.type === "minute")?.value || "0", 10);
-        
+
         if (
           candidateYear === year &&
           candidateMonth === month &&
@@ -243,15 +247,15 @@ export function createTimestamp(dateString: string, timeString?: string, timezon
         ) {
           return candidateUtc.getTime();
         }
-        
+
         const hourDiff = 0 - candidateHour;
         const minuteDiff = 0 - candidateMinute;
         const dayDiff = day - candidateDay;
-        
+
         const adjustmentMs = (dayDiff * 24 * 60 + hourDiff * 60 + minuteDiff) * 60 * 1000;
         candidateUtc = new Date(candidateUtc.getTime() + adjustmentMs);
       }
-      
+
       return candidateUtc.getTime();
     }
     return new Date(Date.UTC(year, month - 1, day)).getTime();

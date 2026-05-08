@@ -1,14 +1,16 @@
 "use client";
-import React, { use, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { UserProfile, useClerk, useUser } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { useUser, useClerk, UserProfile } from "@clerk/nextjs";
+import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { QrCode, ToggleLeft } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React, { use, useEffect, useMemo, useState } from "react";
+import { type Path, useForm } from "react-hook-form";
+import QRCode from "react-qr-code";
 import { toast } from "sonner";
-import { Checkbox } from "@/components/ui/checkbox";
+import { GuestInfoFields, NoteForHostsField } from "@/components/guest-info-form";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,55 +21,34 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  validateRequiredPrimaryFields,
-  validateRequiredWithFirstName,
-} from "@/lib/mini-zod";
-import { useForm, type Path } from "react-hook-form";
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  GuestInfoFields,
-  NoteForHostsField,
-} from "@/components/guest-info-form";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuTrigger,
   ContextMenuSeparator,
   ContextMenuSub,
-  ContextMenuSubTrigger,
   ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import QRCode from "react-qr-code";
-import { QrCode, ToggleLeft, ToggleRight } from "lucide-react";
-import {
-  Event,
-  User,
-  ClerkUser,
-  RSVPFormData,
-  CustomField,
-  ApplicationError,
-  UseFormReturn,
-} from "@/lib/types";
-import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import { Form } from "@/components/ui/form";
+import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
+import { validateRequiredPrimaryFields, validateRequiredWithFirstName } from "@/lib/mini-zod";
 import { siteConfiguration } from "@/lib/site";
-import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
+import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import {
+  type ApplicationError,
+  type ClerkUser,
+  type CustomField,
+  type Event,
+  type RSVPFormData,
+  type User,
+} from "@/lib/types";
 
-export default function RsvpPage({
-  params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
+export default function RsvpPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -106,9 +87,7 @@ export default function RsvpPage({
   const [firstName, setFirstName] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
   const [custom, setCustom] = useState<Record<string, string>>({});
-  const [socialProfiles, setSocialProfiles] = useState<Record<string, string>>(
-    {},
-  );
+  const [socialProfiles, setSocialProfiles] = useState<Record<string, string>>({});
   const [invitedByName, setInvitedByName] = useState<string>("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
@@ -116,18 +95,14 @@ export default function RsvpPage({
   const [submitting, setSubmitting] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
   const [smsConsentEnabled, setSmsConsentEnabled] = useState<boolean>(false);
-  const [hasInitializedSmsConsent, setHasInitializedSmsConsent] =
-    useState<boolean>(false);
-  const [smsConsentIpAddress, setSmsConsentIpAddress] = useState<
-    string | undefined
-  >(undefined);
-  const [hasConfirmedSmsOptIn, setHasConfirmedSmsOptIn] =
-    useState<boolean>(false);
+  const [hasInitializedSmsConsent, setHasInitializedSmsConsent] = useState<boolean>(false);
+  const [smsConsentIpAddress, setSmsConsentIpAddress] = useState<string | undefined>(undefined);
+  const [hasConfirmedSmsOptIn, setHasConfirmedSmsOptIn] = useState<boolean>(false);
   const [hasAcknowledgedSmsOptOutPrompt, setHasAcknowledgedSmsOptOutPrompt] =
     useState<boolean>(false);
-  const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<
-    "confirm" | "encourage" | null
-  >(null);
+  const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<"confirm" | "encourage" | null>(
+    null,
+  );
   const smsSenderDisplayName = useMemo(
     () =>
       resolveEventMessagingBrandName(
@@ -139,25 +114,18 @@ export default function RsvpPage({
         },
         { fallback: event?.name?.trim() ?? "Event Host" },
       ),
-    [
-      event?.hosts,
-      event?.name,
-      event?.secondaryTitle,
-      event?.productionCompany,
-    ],
+    [event?.hosts, event?.name, event?.secondaryTitle, event?.productionCompany],
   );
-  const {
-    foregroundColor: qrForegroundColor,
-    backgroundColor: qrBackgroundColor,
-  } = resolveQrCodeColors({
-    foregroundColor: event?.themeTextColor,
-    backgroundColor: event?.themeBackgroundColor,
-  });
+  const { foregroundColor: qrForegroundColor, backgroundColor: qrBackgroundColor } =
+    resolveQrCodeColors({
+      foregroundColor: event?.themeTextColor,
+      backgroundColor: event?.themeBackgroundColor,
+    });
 
   const resolve = useAction(api.credentialsNode.resolveListByPassword);
   const upsertContact = useMutation(api.users.upsertContactPhone);
   const submitRsvp = useMutation(api.rsvps.submitRequest);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [_fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const form = useForm<RSVPFormData>({
     defaultValues: {
       name: "",
@@ -193,8 +161,7 @@ export default function RsvpPage({
         }
       } catch (error: unknown) {
         const errorDetails = error as ApplicationError | Error;
-        if (!cancelled)
-          setMessage(errorDetails?.message || "Error validating password");
+        if (!cancelled) setMessage(errorDetails?.message || "Error validating password");
       } finally {
         if (!cancelled) setChecking(false);
       }
@@ -244,8 +211,7 @@ export default function RsvpPage({
         return next;
       });
     }
-    const configuredSocialPlatforms =
-      event.primaryFieldConfig?.socialPlatforms ?? [];
+    const configuredSocialPlatforms = event.primaryFieldConfig?.socialPlatforms ?? [];
     if (configuredSocialPlatforms.length > 0) {
       setSocialProfiles((previousSocialProfiles) => {
         const nextSocialProfiles = { ...previousSocialProfiles };
@@ -319,16 +285,13 @@ export default function RsvpPage({
   const phone = useMemo(() => {
     const clerkUser = user as ClerkUser | undefined;
     return (
-      (clerkUser?.primaryPhoneNumber?.phoneNumber ||
-        clerkUser?.phoneNumbers?.[0]?.phoneNumber) ??
+      (clerkUser?.primaryPhoneNumber?.phoneNumber || clerkUser?.phoneNumbers?.[0]?.phoneNumber) ??
       ""
     );
   }, [user]);
 
   const deniedForThisList = useMemo(() => {
-    return (
-      status?.status === "denied" && !!listKey && status.listKey === listKey
-    );
+    return status?.status === "denied" && !!listKey && status.listKey === listKey;
   }, [status?.status, status?.listKey, listKey]);
 
   const handleSmsConsentChange = React.useCallback(
@@ -361,8 +324,7 @@ export default function RsvpPage({
         return;
       }
       const eventCustomFields: CustomField[] = event?.customFields ?? [];
-      const eventSocialPlatforms =
-        event?.primaryFieldConfig?.socialPlatforms ?? [];
+      const eventSocialPlatforms = event?.primaryFieldConfig?.socialPlatforms ?? [];
       const invitedByConfig = event?.primaryFieldConfig?.invitedBy;
       const errs = [
         ...validateRequiredWithFirstName(
@@ -413,8 +375,7 @@ export default function RsvpPage({
         for (const platform of eventSocialPlatforms) {
           const message = `${platform.label} is required`;
           if (errs.includes(message)) {
-            const fieldPath =
-              `socialProfiles.${platform.platformKey}` as Path<RSVPFormData>;
+            const fieldPath = `socialProfiles.${platform.platformKey}` as Path<RSVPFormData>;
             form.setError(fieldPath, {
               type: "required",
               message,
@@ -449,15 +410,16 @@ export default function RsvpPage({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
       });
-      const filteredCustomFields = eventCustomFields.reduce<
-        Record<string, string>
-      >((accumulator, customField) => {
-        const value = custom[customField.key];
-        if (value) {
-          accumulator[customField.key] = value;
-        }
-        return accumulator;
-      }, {});
+      const filteredCustomFields = eventCustomFields.reduce<Record<string, string>>(
+        (accumulator, customField) => {
+          const value = custom[customField.key];
+          if (value) {
+            accumulator[customField.key] = value;
+          }
+          return accumulator;
+        },
+        {},
+      );
       await upsertContact({
         phone: phone || undefined,
       });
@@ -478,8 +440,7 @@ export default function RsvpPage({
         shareContact: true,
         attendees: form.getValues("attendees") || 1,
         smsConsent: smsConsentEnabled,
-        smsConsentIpAddress:
-          smsConsentEnabled && consentIpAddress ? consentIpAddress : undefined,
+        smsConsentIpAddress: smsConsentEnabled && consentIpAddress ? consentIpAddress : undefined,
         customFields: filteredCustomFields,
         socialProfiles: (event?.primaryFieldConfig?.socialPlatforms ?? [])
           .map((platform) => ({
@@ -488,9 +449,7 @@ export default function RsvpPage({
           }))
           .filter((profile) => profile.handle.length > 0),
         invitedByName:
-          event?.primaryFieldConfig?.invitedBy?.enabled === true
-            ? invitedByName.trim()
-            : undefined,
+          event?.primaryFieldConfig?.invitedBy?.enabled === true ? invitedByName.trim() : undefined,
       });
 
       toast.success("RSVP submitted");
@@ -550,10 +509,7 @@ export default function RsvpPage({
       setHasAcknowledgedSmsOptOutPrompt(true);
       setHasConfirmedSmsOptIn(false);
     }
-    if (
-      typeof status.smsConsentIpAddress === "string" &&
-      status.smsConsentIpAddress.length > 0
-    ) {
+    if (typeof status.smsConsentIpAddress === "string" && status.smsConsentIpAddress.length > 0) {
       setSmsConsentIpAddress(status.smsConsentIpAddress);
     }
   }, [status, hasInitializedSmsConsent]);
@@ -583,10 +539,7 @@ export default function RsvpPage({
           ) : listKey ? (
             <section className="space-y-3 text-left mx-auto max-w-xl">
               <Form {...form}>
-                <form
-                  onSubmit={form.handleSubmit(onSubmit)}
-                  className="space-y-3"
-                >
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
                   <GuestInfoFields
                     form={form}
                     event={event as Event}
@@ -621,14 +574,12 @@ export default function RsvpPage({
                       />
                       <span className="flex flex-col text-left gap-0.5">
                         <span className="font-medium text-primary text-sm">
-                          I consent to receive SMS messages from{" "}
-                          {smsSenderDisplayName}.
+                          I consent to receive SMS messages from {smsSenderDisplayName}.
                         </span>
                         <span className="text-[10px] text-muted-foreground leading-tight">
-                          RSVP updates, reminders, and offers via SMS. Sent by
-                          Coucou on behalf of {smsSenderDisplayName} using Dojo
-                          Pomodoro. Msg & data rates may apply. Reply STOP to
-                          cancel. Consent not required for purchase.{" "}
+                          RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+                          {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply.
+                          Reply STOP to cancel. Consent not required for purchase.{" "}
                           <a href="/terms" className="underline">
                             Terms
                           </a>{" "}
@@ -643,10 +594,7 @@ export default function RsvpPage({
                     <Button
                       type="submit"
                       disabled={
-                        submitting ||
-                        !phone ||
-                        deniedForThisList ||
-                        form.formState.isSubmitting
+                        submitting || !phone || deniedForThisList || form.formState.isSubmitting
                       }
                     >
                       {submitting ? "Submitting…" : "Submit Request"}
@@ -662,14 +610,11 @@ export default function RsvpPage({
               >
                 <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
                   <AlertDialogHeader>
-                    <AlertDialogTitle className="text-lg">
-                      Confirm SMS Updates
-                    </AlertDialogTitle>
+                    <AlertDialogTitle className="text-lg">Confirm SMS Updates</AlertDialogTitle>
                     <AlertDialogDescription className="text-[11px] leading-tight break-words">
-                      RSVP updates, reminders, and offers via SMS. Sent by
-                      Coucou on behalf of {smsSenderDisplayName} using Dojo
-                      Pomodoro. Msg & data rates may apply. Reply STOP to
-                      cancel. Consent not required for purchase.{" "}
+                      RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+                      {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply
+                      STOP to cancel. Consent not required for purchase.{" "}
                       <a href="/terms" className="underline break-words">
                         Terms
                       </a>{" "}
@@ -704,15 +649,13 @@ export default function RsvpPage({
                       Get Event Updates by SMS
                     </AlertDialogTitle>
                     <p className="text-sm text-foreground break-words">
-                      Turn on SMS updates and we will text you the moment your
-                      RSVP status changes, so you never have to refresh this
-                      page to see if you are approved.
+                      Turn on SMS updates and we will text you the moment your RSVP status changes,
+                      so you never have to refresh this page to see if you are approved.
                     </p>
                     <AlertDialogDescription className="text-[10px] leading-tight text-muted-foreground break-words">
-                      RSVP updates, reminders, and offers via SMS. Sent by
-                      Coucou on behalf of {smsSenderDisplayName} using Dojo
-                      Pomodoro. Msg & data rates may apply. Reply STOP to
-                      cancel. Consent not required for purchase.{" "}
+                      RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+                      {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply
+                      STOP to cancel. Consent not required for purchase.{" "}
                       <a href="/terms" className="underline break-words">
                         Terms
                       </a>{" "}
@@ -758,13 +701,10 @@ export default function RsvpPage({
               {message && <div className="text-sm text-red-500">{message}</div>}
 
               {/* QR Code and Redemption Status Context Menu - only show if approved */}
-              {(status?.status === "approved" ||
-                status?.status === "attending") &&
+              {(status?.status === "approved" || status?.status === "attending") &&
                 myRedemption && (
                   <div className="rounded border border-primary/20 p-3 space-y-2 mt-4">
-                    <div className="font-medium text-sm text-primary">
-                      Ticket Management
-                    </div>
+                    <div className="font-medium text-sm text-primary">Ticket Management</div>
                     <ContextMenu>
                       <ContextMenuTrigger asChild>
                         <Button variant="outline" className="w-full">
@@ -773,9 +713,7 @@ export default function RsvpPage({
                         </Button>
                       </ContextMenuTrigger>
                       <ContextMenuContent className="w-48">
-                        <ContextMenuItem
-                          onClick={() => setShowQRCode(!showQRCode)}
-                        >
+                        <ContextMenuItem onClick={() => setShowQRCode(!showQRCode)}>
                           <QrCode className="w-4 h-4 mr-2" />
                           {showQRCode ? "Hide" : "Show"} QR Code
                         </ContextMenuItem>
@@ -787,9 +725,7 @@ export default function RsvpPage({
                           </ContextMenuSubTrigger>
                           <ContextMenuSubContent>
                             <ContextMenuItem disabled>
-                              <span className="text-sm font-medium">
-                                Current: Issued
-                              </span>
+                              <span className="text-sm font-medium">Current: Issued</span>
                             </ContextMenuItem>
                             <ContextMenuSeparator />
                             <ContextMenuItem disabled>
@@ -823,9 +759,7 @@ export default function RsvpPage({
                 )}
             </section>
           ) : (
-            <div className="text-sm text-red-500">
-              {message || "Access denied"}
-            </div>
+            <div className="text-sm text-red-500">{message || "Access denied"}</div>
           )}
         </div>
       )}

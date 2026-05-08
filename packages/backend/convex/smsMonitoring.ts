@@ -2,9 +2,9 @@
  * SMS monitoring and cost tracking
  */
 
-import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
+import { internalMutation, internalQuery } from "./_generated/server";
 
 const DEFAULT_LIMIT = 1000;
 
@@ -81,7 +81,7 @@ export const getSmsUsageLogs = internalQuery({
     const logs = await ctx.db
       .query("smsUsageLogs")
       .withIndex("by_timestamp", (q) =>
-        q.gte("timestamp", args.startDate).lte("timestamp", args.endDate)
+        q.gte("timestamp", args.startDate).lte("timestamp", args.endDate),
       )
       .take(limit);
 
@@ -101,7 +101,7 @@ export const getSmsCostSummary = internalQuery({
     const logs = await ctx.db
       .query("smsUsageLogs")
       .withIndex("by_timestamp", (q) =>
-        q.gte("timestamp", args.startDate).lte("timestamp", args.endDate)
+        q.gte("timestamp", args.startDate).lte("timestamp", args.endDate),
       )
       .collect();
 

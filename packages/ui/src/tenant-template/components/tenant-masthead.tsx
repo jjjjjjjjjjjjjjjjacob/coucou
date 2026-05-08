@@ -1,8 +1,8 @@
 "use client";
 
+import type { PresetKey } from "@coucou/sdk";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { PresetKey } from "@coucou/sdk";
 import { TenantTemplateProvider } from "../provider";
 import { usePreset } from "../use-preset";
 
@@ -129,14 +129,10 @@ function MastheadInner({
             lineHeight: 1,
           }}
         >
-          {logoSlot ??
-            (preset.upper ? resolvedBrand.toUpperCase() : resolvedBrand)}
+          {logoSlot ?? (preset.upper ? resolvedBrand.toUpperCase() : resolvedBrand)}
         </Link>
 
-        <div
-          className="ml-auto flex items-center"
-          style={{ gap: 24, height: 32 }}
-        >
+        <div className="ml-auto flex items-center" style={{ gap: 24, height: 32 }}>
           {showTagline ? (
             <span
               className="inline-flex items-center"
@@ -150,10 +146,7 @@ function MastheadInner({
             </span>
           ) : null}
           {rightSlot ? (
-            <span
-              className="flex items-center"
-              style={{ gap: 16, height: 32 }}
-            >
+            <span className="flex items-center" style={{ gap: 16, height: 32 }}>
               {rightSlot}
             </span>
           ) : null}

@@ -1,12 +1,12 @@
 "use client";
-import React from "react";
-import { Form } from "@/components/ui/form";
-import { Button } from "@/components/ui/button";
+import type React from "react";
 import { EventDetailsSection } from "@/components/event-form-sections/event-details-section";
-import { EventScheduleSection } from "@/components/event-form-sections/event-schedule-section";
-import { EventLookSection } from "@/components/event-form-sections/event-look-section";
 import { EventGuestPageSection } from "@/components/event-form-sections/event-guest-page-section";
-import type { UseFormReturn, BaseEventFormValues } from "@/lib/types";
+import { EventLookSection } from "@/components/event-form-sections/event-look-section";
+import { EventScheduleSection } from "@/components/event-form-sections/event-schedule-section";
+import { Button } from "@/components/ui/button";
+import { Form } from "@/components/ui/form";
+import type { BaseEventFormValues, UseFormReturn } from "@/lib/types";
 
 export interface HostEventFormProps<FormValues extends BaseEventFormValues> {
   form: UseFormReturn<FormValues>;
@@ -47,9 +47,7 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <EventDetailsSection form={form} />
-        {actsSection ? (
-          <div className="rounded-lg border bg-card p-4">{actsSection}</div>
-        ) : null}
+        {actsSection ? <div className="rounded-lg border bg-card p-4">{actsSection}</div> : null}
         <EventGuestPageSection
           form={form}
           guestPortalImageStorageId={guestPortalImageStorageId}
@@ -68,9 +66,7 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
         {footer ?? (
           <div className="flex justify-end pt-4 border-t">
             <Button type="submit" disabled={isSubmitting} size="lg">
-              {isSubmitting
-                ? (submittingLabel ?? `${submitLabel}...`)
-                : submitLabel}
+              {isSubmitting ? (submittingLabel ?? `${submitLabel}...`) : submitLabel}
             </Button>
           </div>
         )}

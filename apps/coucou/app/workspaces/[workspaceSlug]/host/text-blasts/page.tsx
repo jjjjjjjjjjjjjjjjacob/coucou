@@ -1,58 +1,50 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
-import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import type { Event, TextBlast, TextBlastStatus } from "@/lib/types";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Select, SelectOption } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import type { BadgeProps } from "@/components/ui/badge";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  CheckCircle,
+  Clock,
+  Copy,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Send,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import type { BadgeProps } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogTrigger,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from "@/components/ui/alert-dialog";
-import {
-  Search,
-  Plus,
-  MoreHorizontal,
-  Copy,
-  Trash2,
-  Send,
-  Clock,
-  CheckCircle,
-  XCircle,
-} from "lucide-react";
-import { toast } from "sonner";
-import { formatEventDateTime } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Select, SelectOption } from "@/components/ui/select";
 import { formatEventTitleInline } from "@/lib/event-display";
-import TextBlastDialog from "./text-blast-dialog";
+import type { Event, TextBlast, TextBlastStatus } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { formatEventDateTime } from "@/lib/utils";
+import TextBlastDialog from "./text-blast-dialog";
 
 type TextBlastWithSender = TextBlast & { sentByName: string };
 type FilterOption = "all" | "draft" | "sent" | "failed";
@@ -73,7 +65,10 @@ function getStatusIcon(status: TextBlastStatus) {
   }
 }
 
-function getStatusBadgeProps(status: TextBlastStatus): { variant: NonNullable<BadgeProps["variant"]>; label: string } {
+function getStatusBadgeProps(status: TextBlastStatus): {
+  variant: NonNullable<BadgeProps["variant"]>;
+  label: string;
+} {
   switch (status) {
     case "draft":
       return { variant: "secondary", label: "Draft" };
@@ -100,8 +95,7 @@ export default function TextBlastsPage() {
       (events ?? [])
         .slice()
         .sort(
-          (firstEvent, secondEvent) =>
-            (secondEvent.eventDate ?? 0) - (firstEvent.eventDate ?? 0),
+          (firstEvent, secondEvent) => (secondEvent.eventDate ?? 0) - (firstEvent.eventDate ?? 0),
         ),
     [events],
   );
@@ -134,7 +128,9 @@ export default function TextBlastsPage() {
   const [filterBy, setFilterBy] = useState<FilterOption>("all");
   const [sortBy, setSortBy] = useState<SortOption>("date");
   const [sentByFilter, setSentByFilter] = useState<string>("all");
-  const [selectedBlastForDialog, setSelectedBlastForDialog] = useState<Id<"textBlasts"> | null>(null);
+  const [selectedBlastForDialog, setSelectedBlastForDialog] = useState<Id<"textBlasts"> | null>(
+    null,
+  );
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [sendingBlastId, setSendingBlastId] = useState<Id<"textBlasts"> | null>(null);
 
@@ -207,11 +203,7 @@ export default function TextBlastsPage() {
       await duplicateBlastMutation({ blastId, ...workspaceScope.queryArgs });
       toast.success("Text blast duplicated successfully");
     } catch (error: unknown) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to duplicate text blast",
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to duplicate text blast");
     }
   };
 
@@ -224,11 +216,7 @@ export default function TextBlastsPage() {
       await deleteBlastMutation({ blastId, ...workspaceScope.queryArgs });
       toast.success("Text blast deleted successfully");
     } catch (error: unknown) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to delete text blast",
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to delete text blast");
     }
   };
 
@@ -244,18 +232,12 @@ export default function TextBlastsPage() {
         ...workspaceScope.queryArgs,
       });
       if (result.success) {
-        toast.success(
-          `Text blast sent successfully! ${result.sentCount} messages delivered.`,
-        );
+        toast.success(`Text blast sent successfully! ${result.sentCount} messages delivered.`);
       } else {
         toast.error(result.message || "Failed to send text blast");
       }
     } catch (error: unknown) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to send text blast",
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to send text blast");
     } finally {
       setSendingBlastId(null);
     }
@@ -272,9 +254,7 @@ export default function TextBlastsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Text Blasts</h2>
-          <p className="text-muted-foreground">
-            Send bulk SMS messages to event attendees
-          </p>
+          <p className="text-muted-foreground">Send bulk SMS messages to event attendees</p>
         </div>
         <Button onClick={handleCreateNew}>
           <Plus className="h-4 w-4 mr-2" />
@@ -312,10 +292,7 @@ export default function TextBlastsPage() {
           </div>
 
           {/* Status Filter */}
-          <Select
-            value={filterBy}
-            onValueChange={(value) => setFilterBy(value as FilterOption)}
-          >
+          <Select value={filterBy} onValueChange={(value) => setFilterBy(value as FilterOption)}>
             <SelectOption value="all">All Statuses</SelectOption>
             <SelectOption value="draft">Drafts</SelectOption>
             <SelectOption value="sent">Sent</SelectOption>
@@ -324,10 +301,7 @@ export default function TextBlastsPage() {
 
           {/* Sent By Filter */}
           {uniqueSenders.length > 1 && (
-            <Select
-              value={sentByFilter}
-              onValueChange={(value) => setSentByFilter(value)}
-            >
+            <Select value={sentByFilter} onValueChange={(value) => setSentByFilter(value)}>
               <SelectOption value="all">All Hosts</SelectOption>
               {uniqueSenders.map(({ sentById, sentByName }) => (
                 <SelectOption key={sentById} value={sentById}>
@@ -338,10 +312,7 @@ export default function TextBlastsPage() {
           )}
 
           {/* Sort */}
-          <Select
-            value={sortBy}
-            onValueChange={(value) => setSortBy(value as SortOption)}
-          >
+          <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortOption)}>
             <SelectOption value="date">Sort by Date</SelectOption>
             <SelectOption value="name">Sort by Name</SelectOption>
             <SelectOption value="recipients">Sort by Recipients</SelectOption>
@@ -382,16 +353,14 @@ export default function TextBlastsPage() {
       ) : selectedEventId ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedBlasts.map((blast) => {
-            const event = eventsMap.get(blast.eventId);
+            const _event = eventsMap.get(blast.eventId);
             const statusBadge = getStatusBadgeProps(blast.status);
             return (
               <Card key={blast._id} className="hover:shadow-md transition-shadow">
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1 flex-1">
-                      <CardTitle className="text-lg line-clamp-1">
-                        {blast.name}
-                      </CardTitle>
+                      <CardTitle className="text-lg line-clamp-1">{blast.name}</CardTitle>
                       <p className="text-sm text-muted-foreground line-clamp-1">
                         Sent by {blast.sentByName}
                       </p>
@@ -418,15 +387,19 @@ export default function TextBlastsPage() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Send Text Blast</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Are you sure you want to send &ldquo;{blast.name}&rdquo; to {blast.recipientCount} recipient{blast.recipientCount !== 1 ? "s" : ""}?
-                                  {blast.status === "failed" && " This will retry the failed blast."}
+                                  Are you sure you want to send &ldquo;
+                                  {blast.name}&rdquo; to {blast.recipientCount} recipient
+                                  {blast.recipientCount !== 1 ? "s" : ""}?
+                                  {blast.status === "failed" &&
+                                    " This will retry the failed blast."}
                                   This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction onClick={() => handleSendBlast(blast._id)}>
-                                  Send {blast.recipientCount} Message{blast.recipientCount !== 1 ? "s" : ""}
+                                  Send {blast.recipientCount} Message
+                                  {blast.recipientCount !== 1 ? "s" : ""}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -440,9 +413,7 @@ export default function TextBlastsPage() {
                         >
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDuplicateBlast(blast._id)}
-                        >
+                        <DropdownMenuItem onClick={() => handleDuplicateBlast(blast._id)}>
                           <Copy className="h-4 w-4 mr-2" />
                           Duplicate
                         </DropdownMenuItem>
@@ -463,21 +434,28 @@ export default function TextBlastsPage() {
                                 <AlertDialogDescription>
                                   {blast.status === "sent" ? (
                                     <>
-                                      Are you sure you want to delete &ldquo;{blast.name}&rdquo;? This text blast was already sent to {blast.sentCount} recipient{blast.sentCount !== 1 ? "s" : ""}.
+                                      Are you sure you want to delete &ldquo;
+                                      {blast.name}&rdquo;? This text blast was already sent to{" "}
+                                      {blast.sentCount} recipient
+                                      {blast.sentCount !== 1 ? "s" : ""}.
                                       <br />
                                       <br />
-                                      This will remove the text blast record from your dashboard, but it will not affect messages that were already sent. This action cannot be undone.
+                                      This will remove the text blast record from your dashboard,
+                                      but it will not affect messages that were already sent. This
+                                      action cannot be undone.
                                     </>
                                   ) : blast.status === "failed" ? (
                                     <>
-                                      Are you sure you want to delete &ldquo;{blast.name}&rdquo;? This text blast failed to send.
+                                      Are you sure you want to delete &ldquo;
+                                      {blast.name}&rdquo;? This text blast failed to send.
                                       <br />
                                       <br />
                                       This action cannot be undone.
                                     </>
                                   ) : (
                                     <>
-                                      Are you sure you want to delete &ldquo;{blast.name}&rdquo;? This action cannot be undone.
+                                      Are you sure you want to delete &ldquo;
+                                      {blast.name}&rdquo;? This action cannot be undone.
                                     </>
                                   )}
                                 </AlertDialogDescription>
@@ -502,24 +480,20 @@ export default function TextBlastsPage() {
                 <CardContent className="space-y-3">
                   {/* Status Badge */}
                   <div className="flex items-center gap-2">
-                    <Badge
-                      variant={statusBadge.variant}
-                      className="flex items-center gap-1"
-                    >
+                    <Badge variant={statusBadge.variant} className="flex items-center gap-1">
                       {getStatusIcon(blast.status)}
                       {statusBadge.label}
                     </Badge>
                   </div>
 
                   {/* Message Preview */}
-                  <p className="text-sm line-clamp-3 text-muted-foreground">
-                    {blast.message}
-                  </p>
+                  <p className="text-sm line-clamp-3 text-muted-foreground">{blast.message}</p>
 
                   {/* Stats */}
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>
-                      {blast.recipientCount} recipient{blast.recipientCount !== 1 ? "s" : ""}
+                      {blast.recipientCount} recipient
+                      {blast.recipientCount !== 1 ? "s" : ""}
                     </span>
                     <span>
                       {blast.status === "sent" && blast.sentAt
@@ -531,13 +505,9 @@ export default function TextBlastsPage() {
                   {/* Delivery Stats for Sent Blasts */}
                   {blast.status === "sent" && (
                     <div className="flex justify-between text-xs">
-                      <span className="text-green-600">
-                        ✓ {blast.sentCount} delivered
-                      </span>
+                      <span className="text-green-600">✓ {blast.sentCount} delivered</span>
                       {blast.failedCount > 0 && (
-                        <span className="text-red-600">
-                          ✗ {blast.failedCount} failed
-                        </span>
+                        <span className="text-red-600">✗ {blast.failedCount} failed</span>
                       )}
                     </div>
                   )}

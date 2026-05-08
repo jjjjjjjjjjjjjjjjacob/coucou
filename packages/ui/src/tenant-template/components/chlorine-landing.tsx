@@ -1,22 +1,22 @@
 "use client";
 
 import {
-  useEffect,
-  useRef,
-  useState,
   type AnchorHTMLAttributes,
   type ComponentType,
   type CSSProperties,
   type ElementType,
   type ReactNode,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 import { TenantTemplateProvider } from "../provider";
 import {
   CHLORINE_PHASE_CASCADE_MS,
   CHLORINE_PHASE_SPLIT_MS,
   ChlorineComposedLogo,
-  useLandingViewport,
   type ChlorinePhase,
+  useLandingViewport,
 } from "./chlorine-split-frame";
 
 // Module-level flag persists across re-mounts within the same JS module
@@ -119,9 +119,7 @@ export interface ChlorineLandingProps {
    * app to keep client-side navigation intact. Defaults to `"/"`.
    */
   wordmarkHref?: string;
-  linkComponent?: ComponentType<
-    AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }
-  >;
+  linkComponent?: ComponentType<AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }>;
 }
 
 /**
@@ -156,10 +154,8 @@ export function ChlorineLanding({
   // the effect below reads `introHasPlayedInThisModuleInstance` and either
   // fast-forwards to phase=2 (no animation) or kicks off the timeline.
   const [phase, setPhase] = useState<ChlorinePhase>(skipAnimation ? 2 : 0);
-  const [hasEnabledIntroTransitions, setHasEnabledIntroTransitions] =
-    useState(skipAnimation);
-  const [hasStartedIntroColor, setHasStartedIntroColor] =
-    useState(skipAnimation);
+  const [hasEnabledIntroTransitions, setHasEnabledIntroTransitions] = useState(skipAnimation);
+  const [hasStartedIntroColor, setHasStartedIntroColor] = useState(skipAnimation);
   const [introCheckComplete, setIntroCheckComplete] = useState(skipAnimation);
 
   // Resolve whether the intro should run on this mount. Runs once per
@@ -199,11 +195,7 @@ export function ChlorineLanding({
         window.cancelAnimationFrame(colorFrame);
       }
     };
-  }, [
-    introCheckComplete,
-    hasStartedIntroColor,
-    landingViewport.hasMeasuredViewport,
-  ]);
+  }, [introCheckComplete, hasStartedIntroColor, landingViewport.hasMeasuredViewport]);
 
   useEffect(() => {
     if (!introCheckComplete) return;
@@ -225,11 +217,7 @@ export function ChlorineLanding({
       window.clearTimeout(cascade);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    introCheckComplete,
-    hasStartedIntroColor,
-    landingViewport.hasMeasuredViewport,
-  ]);
+  }, [introCheckComplete, hasStartedIntroColor, landingViewport.hasMeasuredViewport]);
 
   const showEvents = !children && (events?.length ?? 0) > 0;
   const showChildren = !!children;
@@ -391,9 +379,7 @@ export interface ChlorineEventRowProps {
    * reload, which would unmount the persistent shell and re-play the
    * intro animation. Defaults to a native `<a>`.
    */
-  linkComponent?: ComponentType<
-    AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }
-  >;
+  linkComponent?: ComponentType<AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }>;
   /**
    * Visual variant. "default" matches the home listing. "minimized" shrinks
    * the row to a single dim line — used for sibling events on the detail
@@ -448,35 +434,19 @@ export function ChlorineEventRow({
   const RowTag = rowIsLink ? ((LinkComponent ?? "a") as ElementType) : "div";
   const rowHref = wrapMinimizedAsDetailLink ? detailHref! : event.rsvpHref;
   const rowProps =
-    rowIsLink && rowHref
-      ? ({ href: rowHref } as { href: string })
-      : ({} as Record<string, never>);
-  const verticalPadding = isMinimized
-    ? mobile
-      ? "6px 0"
-      : "8px 0"
-    : mobile
-      ? "10px 0"
-      : "14px 0";
+    rowIsLink && rowHref ? ({ href: rowHref } as { href: string }) : ({} as Record<string, never>);
+  const verticalPadding = isMinimized ? (mobile ? "6px 0" : "8px 0") : mobile ? "10px 0" : "14px 0";
 
   // Brick = the visible "RSVP" / "CLOSED" tile in column 3. When we are NOT
   // wrapping the whole row in the rsvp anchor, the brick must itself be the
   // link target so the user has something clickable.
   const renderBrick = () => {
     if (!rsvpClickable) {
-      return (
-        <span style={buildRsvpBrickStyle(mobile, true)}>
-          {event.rsvpLabel ?? "CLOSED"}
-        </span>
-      );
+      return <span style={buildRsvpBrickStyle(mobile, true)}>{event.rsvpLabel ?? "CLOSED"}</span>;
     }
     if (wrapDefaultAsRsvpLink) {
       // Whole row is the link → brick is just the visual tile.
-      return (
-        <span style={buildRsvpBrickStyle(mobile, false)}>
-          {event.rsvpLabel ?? "RSVP"}
-        </span>
-      );
+      return <span style={buildRsvpBrickStyle(mobile, false)}>{event.rsvpLabel ?? "RSVP"}</span>;
     }
     // Row is a div (because detailHref forces no row-anchor), so the brick
     // owns the click.
@@ -571,33 +541,26 @@ export function ChlorineEventRow({
           <span>
             {event.lineup
               .map((lineupEntry) =>
-                typeof lineupEntry === "string"
-                  ? lineupEntry
-                  : lineupEntry.label,
+                typeof lineupEntry === "string" ? lineupEntry : lineupEntry.label,
               )
               .join(" · ")}
           </span>
         ) : (
           event.lineup.map((lineupEntry, lineupIndex) => {
             const normalizedLineupEntry =
-              typeof lineupEntry === "string"
-                ? { label: lineupEntry }
-                : lineupEntry;
+              typeof lineupEntry === "string" ? { label: lineupEntry } : lineupEntry;
             const labelWithBadges = (
               <>
                 <span>{normalizedLineupEntry.label}</span>
                 {normalizedLineupEntry.descriptorBadges?.length ? (
-                  <ChlorineLineupBadges
-                    badges={normalizedLineupEntry.descriptorBadges}
-                  />
+                  <ChlorineLineupBadges badges={normalizedLineupEntry.descriptorBadges} />
                 ) : null}
               </>
             );
             // Lineup entries become real `<a>`s only when (a) an href is
             // provided AND (b) the row itself is NOT already wrapped in an
             // anchor — otherwise we'd nest `<a>` inside `<a>`.
-            const canRenderLineupAnchor =
-              Boolean(normalizedLineupEntry.href) && !rowIsLink;
+            const canRenderLineupAnchor = Boolean(normalizedLineupEntry.href) && !rowIsLink;
             return canRenderLineupAnchor ? (
               <ChlorineLineupAnchor
                 key={`${normalizedLineupEntry.label}-${lineupIndex}`}
@@ -606,9 +569,7 @@ export function ChlorineEventRow({
                 {labelWithBadges}
               </ChlorineLineupAnchor>
             ) : (
-              <div key={`${normalizedLineupEntry.label}-${lineupIndex}`}>
-                {labelWithBadges}
-              </div>
+              <div key={`${normalizedLineupEntry.label}-${lineupIndex}`}>{labelWithBadges}</div>
             );
           })
         )}
@@ -716,15 +677,11 @@ function ChlorineLineupAnchor({ href, children }: ChlorineLineupAnchorProps) {
   );
 }
 
-export function buildRsvpBrickStyle(
-  mobile: boolean,
-  disabled: boolean,
-): CSSProperties {
+export function buildRsvpBrickStyle(mobile: boolean, disabled: boolean): CSSProperties {
   return {
     background: "var(--tt-fg)",
     color: "var(--tt-bg)",
-    fontFamily:
-      'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+    fontFamily: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
     fontSize: mobile ? 11 : 12,
     fontWeight: 700,
     letterSpacing: "0.08em",

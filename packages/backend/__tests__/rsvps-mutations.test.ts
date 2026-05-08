@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 
 describe("RSVP Management Mutations", () => {
   describe("updateTicketStatus mutation", () => {
@@ -60,7 +60,7 @@ describe("RSVP Management Mutations", () => {
         listKey: "general",
       };
 
-      const updateTicketStatusLogic = (rsvp: typeof mockRsvp, status: string) => {
+      const updateTicketStatusLogic = (_rsvp: typeof mockRsvp, status: string) => {
         if (status === "not-issued") {
           return null; // Delete redemption
         }
@@ -157,10 +157,7 @@ describe("RSVP Management Mutations", () => {
         ticketStatus: "redeemed",
       };
 
-      const updateTicketStatusLogic = (
-        rsvp: typeof mockRsvp,
-        status: string,
-      ) => {
+      const updateTicketStatusLogic = (rsvp: typeof mockRsvp, status: string) => {
         if (rsvp.status === "pending" && rsvp.ticketStatus === "redeemed") {
           throw new Error("Cannot remove a redeemed ticket from a pending RSVP");
         }
@@ -204,7 +201,7 @@ describe("RSVP Management Mutations", () => {
       const updateRsvpCompleteLogic = (
         rsvp: typeof mockRsvp,
         approvalStatus: string,
-        ticketStatus?: string
+        ticketStatus?: string,
       ) => {
         const updatedRsvp = { ...rsvp, status: approvalStatus };
         let redemption = null;
@@ -303,10 +300,7 @@ describe("RSVP Management Mutations", () => {
         listKey: "general",
       };
 
-      const updateRsvpCompleteLogic = (
-        rsvp: typeof mockRsvp,
-        approvalStatus: string,
-      ) => {
+      const updateRsvpCompleteLogic = (rsvp: typeof mockRsvp, approvalStatus: string) => {
         if (approvalStatus === "pending") {
           return {
             rsvp: {
@@ -336,10 +330,7 @@ describe("RSVP Management Mutations", () => {
         listKey: "general",
       };
 
-      const updateRsvpCompleteLogic = (
-        rsvp: typeof mockRsvp,
-        approvalStatus: string,
-      ) => {
+      const updateRsvpCompleteLogic = (rsvp: typeof mockRsvp, approvalStatus: string) => {
         if (rsvp.status === "attending" && approvalStatus === "pending") {
           throw new Error("Cannot move an attending RSVP back to pending");
         }
@@ -362,10 +353,7 @@ describe("RSVP Management Mutations", () => {
         listKey: "general",
       };
 
-      const updateRsvpCompleteLogic = (
-        rsvp: typeof mockRsvp,
-        approvalStatus: string,
-      ) => {
+      const updateRsvpCompleteLogic = (rsvp: typeof mockRsvp, approvalStatus: string) => {
         if (approvalStatus === "pending" && rsvp.ticketStatus === "redeemed") {
           throw new Error("Cannot move an RSVP with a redeemed ticket back to pending");
         }
@@ -390,7 +378,7 @@ describe("RSVP Management Mutations", () => {
       const recordApprovalLogic = (
         rsvp: typeof mockRsvp,
         approvalStatus: string,
-        decidedBy: string
+        decidedBy: string,
       ) => {
         return {
           eventId: rsvp.eventId,
@@ -563,7 +551,7 @@ describe("RSVP Management Mutations", () => {
       const bulkUpdateListKeyLogic = (updates: typeof emptyUpdates) => {
         const results = { success: 0, failed: 0, errors: [] as string[] };
 
-        for (const update of updates) {
+        for (const _update of updates) {
           // This loop won't execute for empty array
           results.success++;
         }
@@ -704,7 +692,10 @@ describe("RSVP Management Mutations", () => {
         status: "pending",
       };
 
-      const handleApprovalLogic = (rsvp: typeof mockRsvp, status: "approved" | "denied" | "pending") => {
+      const handleApprovalLogic = (
+        _rsvp: typeof mockRsvp,
+        status: "approved" | "denied" | "pending",
+      ) => {
         if (status === "approved") {
           return {
             rsvpUpdated: true,
@@ -746,7 +737,7 @@ describe("RSVP Management Mutations", () => {
       };
 
       const handleApprovalLogic = (
-        rsvp: typeof mockRsvp,
+        _rsvp: typeof mockRsvp,
         status: "approved" | "denied" | "pending",
       ) => {
         if (status === "pending") {
@@ -883,7 +874,10 @@ describe("RSVP Management Mutations", () => {
         status: "approved",
       };
 
-      const handleTicketStatusLogic = (rsvp: typeof mockRsvp, status: "issued" | "not-issued" | "disabled") => {
+      const handleTicketStatusLogic = (
+        rsvp: typeof mockRsvp,
+        status: "issued" | "not-issued" | "disabled",
+      ) => {
         if (rsvp.status === "denied") {
           throw new Error("Cannot modify ticket for denied RSVP");
         }
@@ -976,12 +970,15 @@ describe("RSVP Management Mutations", () => {
     });
 
     it("should handle empty updates array gracefully", () => {
-      const emptyUpdates: Array<{ rsvpId: string; ticketStatus: "issued" | "not-issued" | "disabled" }> = [];
+      const emptyUpdates: Array<{
+        rsvpId: string;
+        ticketStatus: "issued" | "not-issued" | "disabled";
+      }> = [];
 
       const bulkUpdateTicketStatusLogic = (updates: typeof emptyUpdates) => {
         const results = { success: 0, failed: 0, errors: [] as string[] };
 
-        for (const update of updates) {
+        for (const _update of updates) {
           results.success++;
         }
 
@@ -1160,7 +1157,7 @@ describe("RSVP Management Mutations", () => {
       const bulkDeleteRsvpsLogic = (rsvpIds: string[]) => {
         const results = { success: 0, failed: 0, errors: [] as string[] };
 
-        for (const rsvpId of rsvpIds) {
+        for (const _rsvpId of rsvpIds) {
           // This loop won't execute for empty array
           results.success++;
         }

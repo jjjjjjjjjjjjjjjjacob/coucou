@@ -1,31 +1,21 @@
 "use client";
 
-import type { ReactNode } from "react";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
 import { useAuth, useOrganizationList, useUser } from "@clerk/nextjs";
-import { useAction, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
+import { useAction, useQuery } from "convex/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import {
   buildWorkspaceLoginPath,
   getCoucouOrganizationSlug,
   isCoucouWorkspaceSlug,
 } from "@/lib/workspace-config";
-import { Spinner } from "@/components/ui/spinner";
-import { Button } from "@/components/ui/button";
-import {
-  hasWorkspaceReadAccess,
-  hasWorkspaceWriteAccess,
-} from "@/lib/workspace-roles";
+import { hasWorkspaceReadAccess, hasWorkspaceWriteAccess } from "@/lib/workspace-roles";
 
 type WorkspaceAccessKind = "host" | "door" | "read" | "write" | "admin";
 
@@ -49,9 +39,7 @@ export interface WorkspaceAccessState {
 interface WorkspaceAccessGateProps {
   workspaceSlug: string;
   accessKind: WorkspaceAccessKind;
-  children:
-    | ReactNode
-    | ((workspaceAccessState: WorkspaceAccessState) => ReactNode);
+  children: ReactNode | ((workspaceAccessState: WorkspaceAccessState) => ReactNode);
 }
 
 interface BasicOrganizationMembership {
@@ -98,41 +86,30 @@ export function WorkspaceAccessGate({
   children,
 }: WorkspaceAccessGateProps) {
   const pathname = usePathname();
-  const {
-    isLoaded: isAuthLoaded,
-    isSignedIn,
-    orgId,
-    orgSlug,
-  } = useAuth();
+  const { isLoaded: isAuthLoaded, isSignedIn, orgId, orgSlug } = useAuth();
   const { isLoaded: isUserLoaded, user } = useUser();
   const { userMemberships, setActive } = useOrganizationList({
     userMemberships: { infinite: true },
   });
-  const [activationErrorMessage, setActivationErrorMessage] = useState<
+  const [activationErrorMessage, setActivationErrorMessage] = useState<string | null>(null);
+  const [isActivatingOrganization, setIsActivatingOrganization] = useState(false);
+  const [membershipVerificationErrorMessage, setMembershipVerificationErrorMessage] = useState<
     string | null
   >(null);
-  const [isActivatingOrganization, setIsActivatingOrganization] =
-    useState(false);
-  const [membershipVerificationErrorMessage, setMembershipVerificationErrorMessage] =
-    useState<string | null>(null);
   const [isVerifyingMembership, setIsVerifyingMembership] = useState(false);
-  const [
-    verifiedMembershipOrganizationId,
-    setVerifiedMembershipOrganizationId,
-  ] = useState<string | null>(null);
-  const [workspaceBootstrapErrorMessage, setWorkspaceBootstrapErrorMessage] =
-    useState<string | null>(null);
-  const [isBootstrappingWorkspace, setIsBootstrappingWorkspace] =
-    useState(false);
-  const [completedWorkspaceBootstrapKey, setCompletedWorkspaceBootstrapKey] =
-    useState<string | null>(null);
-  const workspaceBootstrapInFlightKeyRef = useRef<string | null>(null);
-  const membershipVerificationInFlightOrganizationIdRef = useRef<
+  const [verifiedMembershipOrganizationId, setVerifiedMembershipOrganizationId] = useState<
     string | null
   >(null);
-  const workspaceSwitchToastIdentifierRef = useRef<string | number | null>(
-    null,
-  );
+  const [workspaceBootstrapErrorMessage, setWorkspaceBootstrapErrorMessage] = useState<
+    string | null
+  >(null);
+  const [isBootstrappingWorkspace, setIsBootstrappingWorkspace] = useState(false);
+  const [completedWorkspaceBootstrapKey, setCompletedWorkspaceBootstrapKey] = useState<
+    string | null
+  >(null);
+  const workspaceBootstrapInFlightKeyRef = useRef<string | null>(null);
+  const membershipVerificationInFlightOrganizationIdRef = useRef<string | null>(null);
+  const workspaceSwitchToastIdentifierRef = useRef<string | number | null>(null);
   const workspaceSwitchToastWorkspaceRef = useRef<string | null>(null);
   const activationErrorToastMessageRef = useRef<string | null>(null);
 
@@ -147,10 +124,7 @@ export function WorkspaceAccessGate({
   });
   const normalizedWorkspaceSlug = workspaceSlug.toLowerCase();
   const memberships = useMemo(() => {
-    const membershipByOrganizationId = new Map<
-      string,
-      BasicOrganizationMembership
-    >();
+    const membershipByOrganizationId = new Map<string, BasicOrganizationMembership>();
     for (const membership of userMemberships?.data ?? []) {
       membershipByOrganizationId.set(membership.organization.id, membership);
     }
@@ -165,13 +139,10 @@ export function WorkspaceAccessGate({
   const hasCoucouPlatformAccess =
     orgSlug?.toLowerCase() === coucouOrganizationSlug ||
     memberships.some(
-      (membership) =>
-        membership.organization.slug?.toLowerCase() === coucouOrganizationSlug,
+      (membership) => membership.organization.slug?.toLowerCase() === coucouOrganizationSlug,
     );
   const workspaceConfiguration =
-    workspace &&
-    !isCoucouWorkspaceSlug(workspace.slug) &&
-    workspace.kind !== "admin"
+    workspace && !isCoucouWorkspaceSlug(workspace.slug) && workspace.kind !== "admin"
       ? {
           workspaceSlug: workspace.slug,
           siteKey: workspace.sites?.[0]?.siteKey ?? workspace.slug,
@@ -189,18 +160,12 @@ export function WorkspaceAccessGate({
       ) {
         return true;
       }
-      return (
-        membership.organization.slug?.toLowerCase() === normalizedWorkspaceSlug
-      );
+      return membership.organization.slug?.toLowerCase() === normalizedWorkspaceSlug;
     }) ?? null;
   const targetOrganizationId =
-    workspaceConfiguration?.clerkOrganizationId ||
-    targetMembership?.organization.id ||
-    "";
+    workspaceConfiguration?.clerkOrganizationId || targetMembership?.organization.id || "";
   const workspaceBrandName =
-    workspaceConfiguration?.brandName ??
-    targetMembership?.organization.name ??
-    workspaceSlug;
+    workspaceConfiguration?.brandName ?? targetMembership?.organization.name ?? workspaceSlug;
   const needsWorkspaceBootstrap =
     Boolean(targetMembership) &&
     (!workspaceConfiguration ||
@@ -211,8 +176,7 @@ export function WorkspaceAccessGate({
     ? `${workspaceSlug}:${targetMembership.organization.id}`
     : null;
   const shouldBootstrapWorkspace =
-    needsWorkspaceBootstrap &&
-    workspaceBootstrapKey !== completedWorkspaceBootstrapKey;
+    needsWorkspaceBootstrap && workspaceBootstrapKey !== completedWorkspaceBootstrapKey;
   const isWorkspaceSwitching =
     Boolean(targetMembership) &&
     Boolean(targetOrganizationId) &&
@@ -247,10 +211,7 @@ export function WorkspaceAccessGate({
         if (!isCurrent) {
           return;
         }
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Unable to activate organization.";
+        const message = error instanceof Error ? error.message : "Unable to activate organization.";
         setActivationErrorMessage(message);
       })
       .finally(() => {
@@ -295,9 +256,7 @@ export function WorkspaceAccessGate({
         setVerifiedMembershipOrganizationId(targetMembership.organization.id);
       })
       .catch((error: unknown) => {
-        setWorkspaceBootstrapErrorMessage(
-          getErrorMessage(error, "Unable to prepare workspace."),
-        );
+        setWorkspaceBootstrapErrorMessage(getErrorMessage(error, "Unable to prepare workspace."));
       })
       .finally(() => {
         if (workspaceBootstrapInFlightKeyRef.current === workspaceBootstrapKey) {
@@ -320,15 +279,13 @@ export function WorkspaceAccessGate({
       shouldBootstrapWorkspace ||
       isBootstrappingWorkspace ||
       verifiedMembershipOrganizationId === targetOrganizationId ||
-      membershipVerificationInFlightOrganizationIdRef.current ===
-        targetOrganizationId ||
+      membershipVerificationInFlightOrganizationIdRef.current === targetOrganizationId ||
       membershipVerificationErrorMessage
     ) {
       return;
     }
 
-    membershipVerificationInFlightOrganizationIdRef.current =
-      targetOrganizationId;
+    membershipVerificationInFlightOrganizationIdRef.current = targetOrganizationId;
     setIsVerifyingMembership(true);
     setMembershipVerificationErrorMessage(null);
     ensureOrganizationMembership({
@@ -345,10 +302,7 @@ export function WorkspaceAccessGate({
         );
       })
       .finally(() => {
-        if (
-          membershipVerificationInFlightOrganizationIdRef.current ===
-          targetOrganizationId
-        ) {
+        if (membershipVerificationInFlightOrganizationIdRef.current === targetOrganizationId) {
           membershipVerificationInFlightOrganizationIdRef.current = null;
           setIsVerifyingMembership(false);
         }
@@ -431,23 +385,15 @@ export function WorkspaceAccessGate({
   if (!isSignedIn) {
     return (
       <main className="mx-auto max-w-3xl space-y-4 p-6">
-        <h1 className="text-xl font-semibold">
-          Sign in to access {workspaceBrandName}
-        </h1>
+        <h1 className="text-xl font-semibold">Sign in to access {workspaceBrandName}</h1>
         <Button asChild>
-          <Link href={buildWorkspaceLoginPath(workspaceSlug, pathname)}>
-            Sign in with Coucou
-          </Link>
+          <Link href={buildWorkspaceLoginPath(workspaceSlug, pathname)}>Sign in with Coucou</Link>
         </Button>
       </main>
     );
   }
 
-  if (
-    userMemberships === undefined &&
-    memberships.length === 0 &&
-    !hasCoucouPlatformAccess
-  ) {
+  if (userMemberships === undefined && memberships.length === 0 && !hasCoucouPlatformAccess) {
     return (
       <main className="flex min-h-[50vh] items-center justify-center p-6 text-primary">
         <Spinner />
@@ -484,38 +430,25 @@ export function WorkspaceAccessGate({
   ) {
     return (
       <main className="mx-auto max-w-3xl space-y-2 p-6">
-        <h1 className="text-xl font-semibold">
-          {getAccessLabel(accessKind)} access required
-        </h1>
+        <h1 className="text-xl font-semibold">{getAccessLabel(accessKind)} access required</h1>
         <p className="text-sm text-foreground/70">
-          Your {workspaceBrandName} role does not include this
-          workspace area.
+          Your {workspaceBrandName} role does not include this workspace area.
         </p>
       </main>
     );
   }
 
-  if (
-    workspaceBootstrapErrorMessage ||
-    shouldBootstrapWorkspace ||
-    isBootstrappingWorkspace
-  ) {
+  if (workspaceBootstrapErrorMessage || shouldBootstrapWorkspace || isBootstrappingWorkspace) {
     return (
       <main className="mx-auto flex min-h-[50vh] max-w-3xl flex-col items-center justify-center gap-3 p-6 text-center">
         {workspaceBootstrapErrorMessage ? (
           <>
-            <h1 className="text-xl font-semibold">
-              Could not open workspace
-            </h1>
-            <p className="text-sm text-foreground/70">
-              {workspaceBootstrapErrorMessage}
-            </p>
+            <h1 className="text-xl font-semibold">Could not open workspace</h1>
+            <p className="text-sm text-foreground/70">{workspaceBootstrapErrorMessage}</p>
           </>
         ) : (
           <>
-            <p className="text-sm text-foreground/70">
-              Preparing {workspaceBrandName}...
-            </p>
+            <p className="text-sm text-foreground/70">Preparing {workspaceBrandName}...</p>
           </>
         )}
       </main>
@@ -532,17 +465,11 @@ export function WorkspaceAccessGate({
       <main className="mx-auto flex min-h-[50vh] max-w-3xl flex-col items-center justify-center gap-3 p-6 text-center">
         {membershipVerificationErrorMessage ? (
           <>
-            <h1 className="text-xl font-semibold">
-              Could not verify workspace access
-            </h1>
-            <p className="text-sm text-foreground/70">
-              {membershipVerificationErrorMessage}
-            </p>
+            <h1 className="text-xl font-semibold">Could not verify workspace access</h1>
+            <p className="text-sm text-foreground/70">{membershipVerificationErrorMessage}</p>
           </>
         ) : (
-          <p className="text-sm text-foreground/70">
-            Verifying {workspaceBrandName} access...
-          </p>
+          <p className="text-sm text-foreground/70">Verifying {workspaceBrandName} access...</p>
         )}
       </main>
     );
@@ -554,27 +481,19 @@ export function WorkspaceAccessGate({
     workspaceBrandName,
     primaryDomain: workspaceConfiguration?.primaryDomain ?? null,
     clerkOrganizationSlug:
-      workspaceConfiguration?.clerkOrganizationSlug ??
-      targetMembership?.organization.slug ??
-      null,
+      workspaceConfiguration?.clerkOrganizationSlug ?? targetMembership?.organization.slug ?? null,
     membershipRole: hasCoucouSuperadminWorkspaceAccess
       ? "org:admin"
-      : targetMembership?.role ?? "org:admin",
-    clerkOrganizationId:
-      targetOrganizationId || workspaceConfiguration?.clerkOrganizationId || "",
+      : (targetMembership?.role ?? "org:admin"),
+    clerkOrganizationId: targetOrganizationId || workspaceConfiguration?.clerkOrganizationId || "",
     queryArgs: {
       siteKey: workspaceConfiguration?.siteKey ?? workspaceSlug,
       workspaceSlug: workspaceConfiguration?.workspaceSlug ?? workspaceSlug,
     },
-    canRead:
-      hasCoucouSuperadminWorkspaceAccess ||
-      hasWorkspaceReadAccess(targetMembership?.role),
-    canWrite:
-      hasCoucouSuperadminWorkspaceAccess ||
-      hasWorkspaceWriteAccess(targetMembership?.role),
+    canRead: hasCoucouSuperadminWorkspaceAccess || hasWorkspaceReadAccess(targetMembership?.role),
+    canWrite: hasCoucouSuperadminWorkspaceAccess || hasWorkspaceWriteAccess(targetMembership?.role),
     canUseDoor:
-      hasCoucouSuperadminWorkspaceAccess ||
-      hasWorkspaceReadAccess(targetMembership?.role),
+      hasCoucouSuperadminWorkspaceAccess || hasWorkspaceReadAccess(targetMembership?.role),
   };
 
   return (

@@ -1,20 +1,16 @@
-import { action, internalMutation, mutation, query } from "./functions";
+import { createClerkClient } from "@clerk/backend";
 import { v } from "convex/values";
-import { writeAuditEntry } from "./audit";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { createClerkClient } from "@clerk/backend";
+import { writeAuditEntry } from "./audit";
+import { action, internalMutation, mutation, query } from "./functions";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
 import {
   normalizeTenantWorkspaceSlug,
   upsertTenantWorkspaceRecordForClerkOrganization,
 } from "./lib/workspaceRecords";
 
-const statusValidator = v.union(
-  v.literal("pending"),
-  v.literal("accepted"),
-  v.literal("denied"),
-);
+const statusValidator = v.union(v.literal("pending"), v.literal("accepted"), v.literal("denied"));
 
 export const submitApplication = mutation({
   args: {
@@ -78,9 +74,7 @@ export const listPaginated = query({
     const cursorIndex = cursor ? parseInt(cursor, 10) : 0;
     const page = filtered.slice(cursorIndex, cursorIndex + pageSize);
     const nextCursor =
-      cursorIndex + pageSize < filtered.length
-        ? String(cursorIndex + pageSize)
-        : null;
+      cursorIndex + pageSize < filtered.length ? String(cursorIndex + pageSize) : null;
 
     return {
       page,
@@ -130,14 +124,13 @@ export const acceptApplicationInDatabase = internalMutation({
     }
 
     const now = Date.now();
-    const { workspaceId } =
-      await upsertTenantWorkspaceRecordForClerkOrganization(ctx, {
-        slug,
-        name: application.name,
-        primaryDomain,
-        clerkOrganizationId,
-        clerkOrganizationSlug,
-      });
+    const { workspaceId } = await upsertTenantWorkspaceRecordForClerkOrganization(ctx, {
+      slug,
+      name: application.name,
+      primaryDomain,
+      clerkOrganizationId,
+      clerkOrganizationSlug,
+    });
 
     await ctx.db.patch(id, {
       status: "accepted",
@@ -228,19 +221,16 @@ export const acceptApplication = action({
       },
     });
 
-    return await ctx.runMutation(
-      internal.tenantApplications.acceptApplicationInDatabase,
-      {
-        id,
-        slug: normalizedSlug,
-        primaryDomain,
-        tenantAdminEmail: normalizedTenantAdminEmail,
-        clerkOrganizationId: organization.id,
-        clerkOrganizationSlug: organization.slug,
-        clerkInvitationId: invitation.id,
-        decidedByClerkUserId: identity.subject,
-      },
-    );
+    return await ctx.runMutation(internal.tenantApplications.acceptApplicationInDatabase, {
+      id,
+      slug: normalizedSlug,
+      primaryDomain,
+      tenantAdminEmail: normalizedTenantAdminEmail,
+      clerkOrganizationId: organization.id,
+      clerkOrganizationSlug: organization.slug,
+      clerkInvitationId: invitation.id,
+      decidedByClerkUserId: identity.subject,
+    });
   },
 });
 

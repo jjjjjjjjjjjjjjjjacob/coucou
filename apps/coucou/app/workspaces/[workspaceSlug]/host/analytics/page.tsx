@@ -1,19 +1,19 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart";
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  MessageSquare,
+  TicketCheck,
+  TrendingUp,
+  UserCheck,
+  XCircle,
+} from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -28,21 +28,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  CalendarDays,
-  Users,
-  TrendingUp,
-  TicketCheck,
-  Clock,
-  UserCheck,
-  MessageSquare,
-  CheckCircle2,
-  XCircle,
-} from "lucide-react";
-import { Select, SelectOption } from "@/components/ui/select";
-import { useState } from "react";
-import { useAuth } from "@clerk/nextjs";
-import { convexQuery } from "@convex-dev/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 export default function AnalyticsPage() {
@@ -112,9 +99,7 @@ export default function AnalyticsPage() {
     {
       name: "Not Issued",
       value:
-        dashboardStats.totalRsvps -
-        dashboardStats.redeemedTickets -
-        dashboardStats.issuedTickets,
+        dashboardStats.totalRsvps - dashboardStats.redeemedTickets - dashboardStats.issuedTickets,
       color: "hsl(var(--chart-3))",
     },
   ].filter((item) => item.value > 0);
@@ -193,18 +178,13 @@ export default function AnalyticsPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Conversion Rate
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Conversion Rate</CardTitle>
             <UserCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {dashboardStats.totalRsvps > 0
-                ? Math.round(
-                    (dashboardStats.approvedRsvps / dashboardStats.totalRsvps) *
-                      100,
-                  )
+                ? Math.round((dashboardStats.approvedRsvps / dashboardStats.totalRsvps) * 100)
                 : 0}
               %
             </div>
@@ -214,22 +194,16 @@ export default function AnalyticsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Avg RSVPs/Event
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Avg RSVPs/Event</CardTitle>
             <CalendarDays className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {dashboardStats.totalEvents > 0
-                ? Math.round(
-                    dashboardStats.totalRsvps / dashboardStats.totalEvents,
-                  )
+                ? Math.round(dashboardStats.totalRsvps / dashboardStats.totalEvents)
                 : 0}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Average guest interest
-            </p>
+            <p className="text-xs text-muted-foreground">Average guest interest</p>
           </CardContent>
         </Card>
 
@@ -243,8 +217,7 @@ export default function AnalyticsPage() {
               {dashboardStats.issuedTickets + dashboardStats.redeemedTickets > 0
                 ? Math.round(
                     (dashboardStats.redeemedTickets /
-                      (dashboardStats.issuedTickets +
-                        dashboardStats.redeemedTickets)) *
+                      (dashboardStats.issuedTickets + dashboardStats.redeemedTickets)) *
                       100,
                   )
                 : 0}
@@ -256,15 +229,11 @@ export default function AnalyticsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Recent Activity
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Recent Activity</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardStats.recentRsvps}
-            </div>
+            <div className="text-2xl font-bold">{dashboardStats.recentRsvps}</div>
             <p className="text-xs text-muted-foreground">RSVPs this month</p>
           </CardContent>
         </Card>
@@ -280,9 +249,7 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{smsStats.successRate}%</div>
-              <p className="text-xs text-muted-foreground">
-                Messages successfully sent
-              </p>
+              <p className="text-xs text-muted-foreground">Messages successfully sent</p>
             </CardContent>
           </Card>
 
@@ -293,9 +260,7 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{smsStats.totalSms}</div>
-              <p className="text-xs text-muted-foreground">
-                All time messages sent
-              </p>
+              <p className="text-xs text-muted-foreground">All time messages sent</p>
             </CardContent>
           </Card>
 
@@ -306,9 +271,7 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{smsStats.failedSms}</div>
-              <p className="text-xs text-muted-foreground">
-                Messages that failed to send
-              </p>
+              <p className="text-xs text-muted-foreground">Messages that failed to send</p>
             </CardContent>
           </Card>
 
@@ -331,9 +294,7 @@ export default function AnalyticsPage() {
         <Card>
           <CardHeader>
             <CardTitle>RSVP Status Distribution</CardTitle>
-            <CardDescription>
-              Breakdown of approval status across all events
-            </CardDescription>
+            <CardDescription>Breakdown of approval status across all events</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -343,9 +304,7 @@ export default function AnalyticsPage() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) =>
-                    `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-                  }
+                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                   outerRadius={80}
                   dataKey="value"
                 >
@@ -364,9 +323,7 @@ export default function AnalyticsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Ticket Status Distribution</CardTitle>
-            <CardDescription>
-              Current status of all issued tickets
-            </CardDescription>
+            <CardDescription>Current status of all issued tickets</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -376,9 +333,7 @@ export default function AnalyticsPage() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) =>
-                    `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-                  }
+                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                   outerRadius={80}
                   dataKey="value"
                 >
@@ -398,9 +353,7 @@ export default function AnalyticsPage() {
       <Card>
         <CardHeader>
           <CardTitle>RSVP Trends Over Time</CardTitle>
-          <CardDescription>
-            Daily RSVP submissions over the last 30 days
-          </CardDescription>
+          <CardDescription>Daily RSVP submissions over the last 30 days</CardDescription>
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig}>
@@ -420,11 +373,7 @@ export default function AnalyticsPage() {
                 tickMargin={8}
                 interval="preserveStartEnd"
               />
-              <YAxis
-                domain={[0, "dataMax"]}
-                tickLine={false}
-                axisLine={false}
-              />
+              <YAxis domain={[0, "dataMax"]} tickLine={false} axisLine={false} />
               <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
               <Area
                 dataKey="rsvps"
@@ -443,9 +392,7 @@ export default function AnalyticsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Event Performance Comparison</CardTitle>
-          <CardDescription>
-            Compare RSVP metrics across your recent events
-          </CardDescription>
+          <CardDescription>Compare RSVP metrics across your recent events</CardDescription>
         </CardHeader>
         <CardContent>
           <ChartContainer config={eventChartConfig}>
@@ -467,11 +414,7 @@ export default function AnalyticsPage() {
                 textAnchor="end"
                 height={80}
               />
-              <YAxis
-                domain={[0, "dataMax"]}
-                tickLine={false}
-                axisLine={false}
-              />
+              <YAxis domain={[0, "dataMax"]} tickLine={false} axisLine={false} />
               <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
               <Bar
                 dataKey="totalRsvps"
@@ -516,9 +459,7 @@ export default function AnalyticsPage() {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) =>
-                        `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-                      }
+                      label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                       outerRadius={80}
                       dataKey="value"
                     >
@@ -537,9 +478,7 @@ export default function AnalyticsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>SMS Trends Over Time</CardTitle>
-                <CardDescription>
-                  Daily SMS sent/failed over the last 30 days
-                </CardDescription>
+                <CardDescription>Daily SMS sent/failed over the last 30 days</CardDescription>
               </CardHeader>
               <CardContent>
                 <ChartContainer config={smsChartConfig}>
@@ -559,11 +498,7 @@ export default function AnalyticsPage() {
                       tickMargin={8}
                       interval="preserveStartEnd"
                     />
-                    <YAxis
-                      domain={[0, "dataMax"]}
-                      tickLine={false}
-                      axisLine={false}
-                    />
+                    <YAxis domain={[0, "dataMax"]} tickLine={false} axisLine={false} />
                     <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
                     <Area
                       dataKey="sent"

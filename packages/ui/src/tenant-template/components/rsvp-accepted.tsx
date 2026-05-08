@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { usePreset } from "../use-preset";
 import { useMobile } from "../use-mobile";
-import { TenantShell } from "./tenant-shell";
+import { usePreset } from "../use-preset";
 import { Eyebrow } from "./primitives/eyebrow";
+import { TenantShell } from "./tenant-shell";
 
 export interface RsvpAcceptedProps {
   /**
@@ -56,7 +56,6 @@ export function RsvpAccepted({
   children,
   heading,
   eyebrow,
-  footerContact,
 }: RsvpAcceptedProps) {
   const { preset, presetKey } = usePreset();
   const isMobile = useMobile();

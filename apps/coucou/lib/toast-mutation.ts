@@ -10,17 +10,11 @@ interface ToastMutationMessages<Result> {
   error?: string | ((error: unknown) => string);
 }
 
-function resolveToastMessage<Result>(
-  message: ToastMessage<Result>,
-  result: Result,
-): string {
+function resolveToastMessage<Result>(message: ToastMessage<Result>, result: Result): string {
   return typeof message === "function" ? message(result) : message;
 }
 
-export function getToastErrorMessage(
-  error: unknown,
-  fallback = "Something went wrong.",
-): string {
+export function getToastErrorMessage(error: unknown, fallback = "Something went wrong."): string {
   return error instanceof Error ? error.message : fallback;
 }
 
@@ -40,7 +34,7 @@ export async function runMutationWithToast<Result>(
     const errorMessage =
       typeof messages.error === "function"
         ? messages.error(error)
-        : messages.error ?? getToastErrorMessage(error);
+        : (messages.error ?? getToastErrorMessage(error));
     toast.error(errorMessage, { id: toastIdentifier });
     throw error;
   }

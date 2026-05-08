@@ -8,7 +8,6 @@ export function passwordMatchesCredential(
 ): boolean {
   if (!storedPassword) return false;
   return (
-    normalizeCredentialPassword(candidatePassword) ===
-    normalizeCredentialPassword(storedPassword)
+    normalizeCredentialPassword(candidatePassword) === normalizeCredentialPassword(storedPassword)
   );
 }

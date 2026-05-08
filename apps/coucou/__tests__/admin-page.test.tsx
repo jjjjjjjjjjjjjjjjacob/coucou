@@ -1,6 +1,5 @@
-import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "bun:test";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import CoucouAdminPage from "../app/admin/page";
 
 interface AdminPageTestGlobal {
@@ -43,9 +42,7 @@ describe("CoucouAdminPage", () => {
   });
 
   it("opens tenant dashboards from Tenancies rows", async () => {
-    getAdminPageTestGlobal().__setConvexQueryResponse?.(
-      createTenanciesQueryResponse(),
-    );
+    getAdminPageTestGlobal().__setConvexQueryResponse?.(createTenanciesQueryResponse());
 
     render(<CoucouAdminPage />);
 

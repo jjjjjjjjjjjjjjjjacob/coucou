@@ -1,24 +1,16 @@
 "use client";
 
-import React, { use, useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { convexQuery } from "@convex-dev/react-query";
+import { RsvpDenied, TenantButton, TenantTemplateProvider } from "@coucou/ui/tenant-template";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { use, useCallback, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { siteConfiguration } from "@/lib/site";
-import {
-  RsvpDenied,
-  TenantButton,
-  TenantTemplateProvider,
-} from "@coucou/ui/tenant-template";
 
-export default function DeniedPage({
-  params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
+export default function DeniedPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = use(params);
   const router = useRouter();
   const [newPassword, setNewPassword] = useState("");
@@ -57,22 +49,18 @@ export default function DeniedPage({
   }
 
   return (
-    <TenantTemplateProvider
-      siteConfigurationPreset={siteConfiguration.preset}
-      event={event}
-    >
+    <TenantTemplateProvider siteConfigurationPreset={siteConfiguration.preset} event={event}>
       <RsvpDenied
         description={
           status?.listKey ? (
             <>
-              Unfortunately, your RSVP for{" "}
-              <strong>{status.listKey}</strong> was not approved. If you have
-              access to another list, try that password below.
+              Unfortunately, your RSVP for <strong>{status.listKey}</strong> was not approved. If
+              you have access to another list, try that password below.
             </>
           ) : (
             <>
-              We could not place you on this list. If you have access to
-              another list, try that password below.
+              We could not place you on this list. If you have access to another list, try that
+              password below.
             </>
           )
         }
@@ -108,10 +96,7 @@ export default function DeniedPage({
               >
                 {isLoading ? "Trying…" : "Try again"}
               </TenantButton>
-              <TenantButton
-                type="button"
-                onClick={() => router.push(`/events/${eventId}`)}
-              >
+              <TenantButton type="button" onClick={() => router.push(`/events/${eventId}`)}>
                 Back to event
               </TenantButton>
             </div>

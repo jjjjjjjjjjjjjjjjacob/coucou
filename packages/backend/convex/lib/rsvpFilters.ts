@@ -2,20 +2,16 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import {
   ALL_RAW_RSVP_STATUSES,
+  type ApprovalFilter,
   getRawStatusesForApprovalFilter,
   matchesApprovalFilter,
-  type ApprovalFilter,
   type RawRsvpStatus,
 } from "./rsvpStatus";
 
 export const validRsvpStatuses = ALL_RAW_RSVP_STATUSES;
 export type ValidRsvpStatus = RawRsvpStatus;
 
-export type TicketStatusFilter =
-  | "not-issued"
-  | "issued"
-  | "disabled"
-  | "redeemed";
+export type TicketStatusFilter = "not-issued" | "issued" | "disabled" | "redeemed";
 
 export type CollectedRsvpFilterOptions = {
   approvalFilter?: ApprovalFilter;
@@ -31,10 +27,7 @@ export type MatchingRsvpFilterOptions = {
   ticketStatusFilter?: TicketStatusFilter | null;
 };
 
-type FilterableRsvpRecord = Pick<
-  Doc<"rsvps">,
-  "listKey" | "ticketStatus" | "status"
->;
+type FilterableRsvpRecord = Pick<Doc<"rsvps">, "listKey" | "ticketStatus" | "status">;
 
 export function normalizeTicketStatusFilter(
   redemptionFilter: string | undefined,
@@ -64,9 +57,7 @@ export function matchesTicketStatusFilter(
   return normalizedTicketStatus === ticketStatusFilter;
 }
 
-export function applyCollectedRsvpFilters<
-  RsvpRecord extends FilterableRsvpRecord,
->(
+export function applyCollectedRsvpFilters<RsvpRecord extends FilterableRsvpRecord>(
   rsvps: RsvpRecord[],
   {
     approvalFilter = "all",
@@ -156,9 +147,7 @@ export async function collectRsvpsMatchingFilters(
   }
 
   if (listFilter !== "all") {
-    eventQuery = eventQuery.filter((query) =>
-      query.eq(query.field("listKey"), listFilter),
-    );
+    eventQuery = eventQuery.filter((query) => query.eq(query.field("listKey"), listFilter));
   }
 
   return applyCollectedRsvpFilters(await eventQuery.collect(), {

@@ -16,9 +16,7 @@ function normalizeAllowedRedirectOrigin(origin: string): string | null {
   }
 }
 
-function buildAllowedRedirectOriginSet(
-  allowedRedirectOrigins: readonly string[],
-): Set<string> {
+function buildAllowedRedirectOriginSet(allowedRedirectOrigins: readonly string[]): Set<string> {
   return new Set(
     allowedRedirectOrigins
       .map(normalizeAllowedRedirectOrigin)
@@ -32,10 +30,7 @@ export function toAdminPath(pathname: string): string {
   }
 
   if (pathname.startsWith(`${LEGACY_HOST_DASHBOARD_PATH_PREFIX}/`)) {
-    return pathname.replace(
-      LEGACY_HOST_DASHBOARD_PATH_PREFIX,
-      ORGANIZER_DASHBOARD_PATH_PREFIX,
-    );
+    return pathname.replace(LEGACY_HOST_DASHBOARD_PATH_PREFIX, ORGANIZER_DASHBOARD_PATH_PREFIX);
   }
 
   return pathname;
@@ -59,10 +54,7 @@ function normalizeSafeInternalPath(value: string | null | undefined): string | n
 
   try {
     const parsedUrl = new URL(trimmedValue, INTERNAL_URL_ORIGIN);
-    if (
-      parsedUrl.origin !== INTERNAL_URL_ORIGIN ||
-      isAuthenticationPath(parsedUrl.pathname)
-    ) {
+    if (parsedUrl.origin !== INTERNAL_URL_ORIGIN || isAuthenticationPath(parsedUrl.pathname)) {
       return null;
     }
 
@@ -87,9 +79,7 @@ function normalizeSafeExternalUrl(
       return null;
     }
 
-    const allowedRedirectOriginSet = buildAllowedRedirectOriginSet(
-      allowedRedirectOrigins,
-    );
+    const allowedRedirectOriginSet = buildAllowedRedirectOriginSet(allowedRedirectOrigins);
     if (!allowedRedirectOriginSet.has(parsedUrl.origin)) {
       return null;
     }
@@ -108,8 +98,7 @@ export function resolveSafeRedirectPath(
   redirectPath: string | null | undefined,
   fallbackPath = ROOT_REDIRECT_PATH,
 ): string {
-  const safeFallbackPath =
-    normalizeSafeInternalPath(fallbackPath) ?? ROOT_REDIRECT_PATH;
+  const safeFallbackPath = normalizeSafeInternalPath(fallbackPath) ?? ROOT_REDIRECT_PATH;
 
   return normalizeSafeInternalPath(redirectPath) ?? safeFallbackPath;
 }

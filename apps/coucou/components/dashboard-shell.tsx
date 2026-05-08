@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
 import { useUser } from "@clerk/nextjs";
 import { AdminShell } from "@coucou/ui/admin";
+import { type ReactNode, useEffect } from "react";
 import { CoucouLogoWordmark } from "@/components/coucou-logo";
 import { DashboardSidebar } from "@/components/dashboard-sidebar";
 

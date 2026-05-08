@@ -1,11 +1,10 @@
 "use client";
 
+import type { DynamicOptionsLoadingProps } from "next/dynamic";
 import Image from "next/image";
-import React from "react";
 import type { CSSProperties } from "react";
 import { useEventBranding } from "@/contexts/event-branding-context";
 import { cn } from "@/lib/utils";
-import { DynamicOptionsLoadingProps } from "next/dynamic";
 
 export interface DojoPomodoreIconProps extends DynamicOptionsLoadingProps {
   size?: number;
@@ -23,10 +22,7 @@ export default function DojoPomodoreIconClient({
 }: DojoPomodoreIconProps) {
   const { branding } = useEventBranding();
   const iconSource = branding?.iconUrl ?? "/icon-144x144.png";
-  const mergedClassName = cn(
-    "will-change-transform",
-    className,
-  );
+  const mergedClassName = cn("will-change-transform", className);
   const composedFilter =
     style?.filter && style.filter.length > 0
       ? `${ICON_GLOW_FILTER} ${style.filter}`

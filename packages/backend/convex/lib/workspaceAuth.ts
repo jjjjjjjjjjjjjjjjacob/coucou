@@ -2,10 +2,7 @@ import type { UserIdentity } from "convex/server";
 import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "../_generated/server";
-import {
-  getCoucouOrganizationSlug,
-  requireCoucouPlatformMember,
-} from "./platformAuth";
+import { getCoucouOrganizationSlug, requireCoucouPlatformMember } from "./platformAuth";
 
 type WorkspaceCapability = "host" | "door" | "admin" | "read";
 
@@ -40,10 +37,7 @@ interface WorkspaceDatabaseReader {
   db: QueryCtx["db"];
 }
 
-function getStringClaim(
-  identity: UserIdentity,
-  keys: string[],
-): string | null {
+function getStringClaim(identity: UserIdentity, keys: string[]): string | null {
   const identityRecord = identity as unknown as Record<string, unknown>;
 
   for (const key of keys) {
@@ -57,32 +51,18 @@ function getStringClaim(
 }
 
 function getIdentityOrganizationId(identity: UserIdentity): string | null {
-  return getStringClaim(identity, [
-    "orgId",
-    "org_id",
-    "organizationId",
-    "organization_id",
-  ]);
+  return getStringClaim(identity, ["orgId", "org_id", "organizationId", "organization_id"]);
 }
 
 function getIdentityRole(identity: UserIdentity): string | null {
   return getStringClaim(identity, ["role", "orgRole", "org_role"]);
 }
 
-export function roleHasWorkspaceWriteAccess(
-  role: string | null | undefined,
-): boolean {
-  return (
-    role === "org:admin" ||
-    role === "admin" ||
-    role === "org:host" ||
-    role === "host"
-  );
+export function roleHasWorkspaceWriteAccess(role: string | null | undefined): boolean {
+  return role === "org:admin" || role === "admin" || role === "org:host" || role === "host";
 }
 
-export function roleHasWorkspaceReadAccess(
-  role: string | null | undefined,
-): boolean {
+export function roleHasWorkspaceReadAccess(role: string | null | undefined): boolean {
   return (
     roleHasWorkspaceWriteAccess(role) ||
     role === "org:member" ||
@@ -107,10 +87,7 @@ function roleHasCapability(
   return false;
 }
 
-function identityHasCapability(
-  identity: UserIdentity,
-  capability: WorkspaceCapability,
-): boolean {
+function identityHasCapability(identity: UserIdentity, capability: WorkspaceCapability): boolean {
   return roleHasCapability(getIdentityRole(identity), capability);
 }
 
@@ -122,9 +99,7 @@ async function getStoredOrganizationMembershipRole(
   if (ctx.db) {
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", clerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
       .filter((queryBuilder) =>
         queryBuilder.eq(queryBuilder.field("organizationId"), organizationId),
       )
@@ -137,8 +112,7 @@ async function getStoredOrganizationMembershipRole(
       clerkUserId,
     })) as StoredOrganizationMembership[];
     const membership = memberships.find(
-      (storedMembership) =>
-        storedMembership.organizationId === organizationId,
+      (storedMembership) => storedMembership.organizationId === organizationId,
     );
     return membership?.role ?? null;
   }
@@ -161,9 +135,7 @@ async function getSiteKeyForWorkspace(
 ): Promise<string | null> {
   const workspaceSites = await ctx.db
     .query("workspaceSites")
-    .withIndex("by_workspace", (queryBuilder) =>
-      queryBuilder.eq("workspaceId", workspaceId),
-    )
+    .withIndex("by_workspace", (queryBuilder) => queryBuilder.eq("workspaceId", workspaceId))
     .collect();
 
   return workspaceSites[0]?.siteKey ?? null;
@@ -179,9 +151,7 @@ export async function resolveWorkspaceAuthScopeFromDatabase(
   if (workspaceSlug) {
     workspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", workspaceSlug),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", workspaceSlug))
       .unique();
   }
 
@@ -189,9 +159,7 @@ export async function resolveWorkspaceAuthScopeFromDatabase(
   if (!workspace && siteKey) {
     const workspaceSite = await ctx.db
       .query("workspaceSites")
-      .withIndex("by_siteKey", (queryBuilder) =>
-        queryBuilder.eq("siteKey", siteKey),
-      )
+      .withIndex("by_siteKey", (queryBuilder) => queryBuilder.eq("siteKey", siteKey))
       .unique();
 
     if (workspaceSite) {
@@ -202,9 +170,7 @@ export async function resolveWorkspaceAuthScopeFromDatabase(
   if (!workspace && siteKey) {
     workspace = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (queryBuilder) =>
-        queryBuilder.eq("slug", siteKey),
-      )
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", siteKey))
       .unique();
   }
 
@@ -223,8 +189,7 @@ export async function resolveWorkspaceAuthScopeFromDatabase(
 
   return {
     workspaceId: workspace._id,
-    siteKey:
-      scope.siteKey ?? (await getSiteKeyForWorkspace(ctx, workspace._id)),
+    siteKey: scope.siteKey ?? (await getSiteKeyForWorkspace(ctx, workspace._id)),
     workspaceSlug: workspace.slug,
     brandName: workspace.name,
     clerkOrganizationId: workspace.clerkOrganizationId ?? "",
@@ -241,10 +206,7 @@ async function resolveWorkspaceAuthScope(
     workspaceSlug: scope.workspaceSlug ?? undefined,
   };
   const resolvedScope = ctx.db
-    ? await resolveWorkspaceAuthScopeFromDatabase(
-        { db: ctx.db },
-        scope,
-      )
+    ? await resolveWorkspaceAuthScopeFromDatabase({ db: ctx.db }, scope)
     : ctx.runQuery
       ? await ctx.runQuery(api.workspaces.getWorkspaceAuthScope, queryScope)
       : null;
@@ -254,9 +216,7 @@ async function resolveWorkspaceAuthScope(
   }
 
   if (!resolvedScope.clerkOrganizationId) {
-    throw new Error(
-      `Clerk organization ID not configured for ${resolvedScope.workspaceSlug}`,
-    );
+    throw new Error(`Clerk organization ID not configured for ${resolvedScope.workspaceSlug}`);
   }
 
   return resolvedScope;
@@ -273,8 +233,7 @@ export async function requireWorkspaceCapabilityForResolvedScope(
   }
 
   const activeOrganizationId = getIdentityOrganizationId(identity);
-  const activeOrganizationMatches =
-    activeOrganizationId === resolvedScope.clerkOrganizationId;
+  const activeOrganizationMatches = activeOrganizationId === resolvedScope.clerkOrganizationId;
   if (activeOrganizationMatches && identityHasCapability(identity, capability)) {
     return resolvedScope;
   }
@@ -313,11 +272,7 @@ async function requireWorkspaceCapability(
   capability: WorkspaceCapability,
 ): Promise<ResolvedWorkspaceAuthScope> {
   const resolvedScope = await resolveWorkspaceAuthScope(ctx, scope);
-  return await requireWorkspaceCapabilityForResolvedScope(
-    ctx,
-    resolvedScope,
-    capability,
-  );
+  return await requireWorkspaceCapabilityForResolvedScope(ctx, resolvedScope, capability);
 }
 
 export async function requireWorkspaceHost(

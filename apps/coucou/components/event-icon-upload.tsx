@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { StorageImageUpload } from "@/components/flyer-upload";
 
 interface EventIconUploadProps {
@@ -8,10 +7,7 @@ interface EventIconUploadProps {
   onChange?: (storageId: string | null) => void;
 }
 
-export function EventIconUpload({
-  value,
-  onChange,
-}: EventIconUploadProps) {
+export function EventIconUpload({ value, onChange }: EventIconUploadProps) {
   return (
     <StorageImageUpload
       value={value}

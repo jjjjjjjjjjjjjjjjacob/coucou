@@ -18,12 +18,7 @@ export interface MetaRowProps {
  * Two-column hairline-bordered key/value row used across the tenant template.
  * Key is small-caps eyebrow on the left; value flows on the right.
  */
-export function MetaRow({
-  label,
-  children,
-  labelWidth = 100,
-  alignRight = false,
-}: MetaRowProps) {
+export function MetaRow({ label, children, labelWidth = 100, alignRight = false }: MetaRowProps) {
   return (
     <div
       className="grid items-baseline border-b py-3.5 text-[14px]"
@@ -38,10 +33,7 @@ export function MetaRow({
       >
         {label}
       </span>
-      <span
-        className={alignRight ? "text-right" : ""}
-        style={{ color: "var(--tt-fg)" }}
-      >
+      <span className={alignRight ? "text-right" : ""} style={{ color: "var(--tt-fg)" }}>
         {children}
       </span>
     </div>

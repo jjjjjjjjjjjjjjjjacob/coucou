@@ -17,15 +17,11 @@ describe("workspace login branding helpers", () => {
   });
 
   it("extracts an event id from relative redirects", () => {
-    expect(
-      extractEventIdFromRedirectUrl("/events/event_123/ticket?source=menu"),
-    ).toBe("event_123");
+    expect(extractEventIdFromRedirectUrl("/events/event_123/ticket?source=menu")).toBe("event_123");
   });
 
   it("normalizes workspace domains to origins", () => {
-    expect(normalizeDomainOrigin("dojopomodoro.club")).toBe(
-      "https://dojopomodoro.club",
-    );
+    expect(normalizeDomainOrigin("dojopomodoro.club")).toBe("https://dojopomodoro.club");
     expect(normalizeDomainOrigin("https://dojopomodoro.club/path")).toBe(
       "https://dojopomodoro.club",
     );

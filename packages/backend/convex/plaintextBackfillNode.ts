@@ -1,11 +1,11 @@
 "use node";
 
-import { action } from "./functions";
 import { v } from "convex/values";
-import { api } from "./_generated/api";
 import crypto from "crypto";
-import { requireCoucouPlatformMember } from "./lib/platformAuth";
+import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { action } from "./functions";
+import { requireCoucouPlatformMember } from "./lib/platformAuth";
 
 type EncryptedValue = {
   ivB64: string;
@@ -47,19 +47,13 @@ type ProfilePhoneBackfillUpdate = {
   phone: string;
 };
 
-function decryptAes256Gcm(
-  encryptedValue: EncryptedValue,
-  key: Buffer,
-): string {
+function decryptAes256Gcm(encryptedValue: EncryptedValue, key: Buffer): string {
   const iv = Buffer.from(encryptedValue.ivB64, "base64");
   const ciphertext = Buffer.from(encryptedValue.ctB64, "base64");
   const authTag = Buffer.from(encryptedValue.tagB64, "base64");
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(authTag);
-  const plaintext = Buffer.concat([
-    decipher.update(ciphertext),
-    decipher.final(),
-  ]);
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return plaintext.toString("utf8");
 }
 
@@ -84,27 +78,20 @@ export const backfillEventPasswordsFromEncrypted = action({
     credentialEncryptionKey: v.string(),
     batchSize: v.optional(v.number()),
   },
-  handler: async (
-    ctx,
-    { credentialEncryptionKey, batchSize },
-  ): Promise<BackfillResult> => {
+  handler: async (ctx, { credentialEncryptionKey, batchSize }): Promise<BackfillResult> => {
     await requireCoucouPlatformMember(ctx);
 
-    const { candidates, unrecoverableCount } =
-      (await ctx.runQuery(
-        api.plaintextBackfill.listEventPasswordBackfillCandidates,
-        { batchSize },
-      )) as EventPasswordBackfillCandidateResult;
+    const { candidates, unrecoverableCount } = (await ctx.runQuery(
+      api.plaintextBackfill.listEventPasswordBackfillCandidates,
+      { batchSize },
+    )) as EventPasswordBackfillCandidateResult;
     if (unrecoverableCount > 0) {
       throw new Error(
         `${unrecoverableCount} list credentials are missing both plaintext and encrypted passwords`,
       );
     }
 
-    const key = decodeHexKey(
-      credentialEncryptionKey,
-      "credentialEncryptionKey",
-    );
+    const key = decodeHexKey(credentialEncryptionKey, "credentialEncryptionKey");
     const updates: EventPasswordBackfillUpdate[] = candidates.map((candidate) => ({
       credentialId: candidate.credentialId,
       password: decryptAes256Gcm(candidate.encryptedPassword, key),
@@ -114,10 +101,7 @@ export const backfillEventPasswordsFromEncrypted = action({
       return { updated: 0 };
     }
 
-    return await ctx.runMutation(
-      api.plaintextBackfill.applyEventPasswordBackfill,
-      { updates },
-    );
+    return await ctx.runMutation(api.plaintextBackfill.applyEventPasswordBackfill, { updates });
   },
 });
 
@@ -126,17 +110,13 @@ export const backfillProfilePhonesFromEncrypted = action({
     phoneEncryptionKey: v.string(),
     batchSize: v.optional(v.number()),
   },
-  handler: async (
-    ctx,
-    { phoneEncryptionKey, batchSize },
-  ): Promise<BackfillResult> => {
+  handler: async (ctx, { phoneEncryptionKey, batchSize }): Promise<BackfillResult> => {
     await requireCoucouPlatformMember(ctx);
 
-    const { candidates } =
-      (await ctx.runQuery(
-        api.plaintextBackfill.listProfilePhoneBackfillCandidates,
-        { batchSize },
-      )) as ProfilePhoneBackfillCandidateResult;
+    const { candidates } = (await ctx.runQuery(
+      api.plaintextBackfill.listProfilePhoneBackfillCandidates,
+      { batchSize },
+    )) as ProfilePhoneBackfillCandidateResult;
     const key = decodeBase64Key(phoneEncryptionKey, "phoneEncryptionKey");
     const updates: ProfilePhoneBackfillUpdate[] = candidates.map((candidate) => ({
       clerkUserId: candidate.clerkUserId,
@@ -147,9 +127,6 @@ export const backfillProfilePhonesFromEncrypted = action({
       return { updated: 0 };
     }
 
-    return await ctx.runMutation(
-      api.plaintextBackfill.applyProfilePhoneBackfill,
-      { updates },
-    );
+    return await ctx.runMutation(api.plaintextBackfill.applyProfilePhoneBackfill, { updates });
   },
 });

@@ -1,4 +1,4 @@
-import React from 'react'
+import type React from "react";
 
 // Mock Next.js router
 export const mockUseRouter = () => ({
@@ -8,51 +8,55 @@ export const mockUseRouter = () => ({
   back: () => {},
   forward: () => {},
   refresh: () => {},
-  pathname: '/',
+  pathname: "/",
   query: {},
-  asPath: '/',
-})
+  asPath: "/",
+});
 
 export const mockUseSearchParams = () => ({
   get: (key: string) => {
-    if (key === 'password') return 'test123'
-    if (key === 'eventId') return 'event_123'
-    return null
+    if (key === "password") return "test123";
+    if (key === "eventId") return "event_123";
+    return null;
   },
   has: () => false,
   getAll: () => [],
   keys: () => [],
   values: () => [],
   entries: () => [],
-  toString: () => '',
-})
+  toString: () => "",
+});
 
 export const mockUseParams = () => ({
-  eventId: 'event_123',
-  code: 'abc123',
-})
+  eventId: "event_123",
+  code: "abc123",
+});
 
 // Mock Next.js Link component
 export const MockLink = ({
   children,
   href,
   ...props
-}: {
-  children: React.ReactNode
-  href: string
-  [key: string]: any
+}: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+  children: React.ReactNode;
+  href: string;
 }) => (
   <a href={href} {...props}>
     {children}
   </a>
-)
+);
 
 // Mock Next.js use() hook
-export const mockUse = (promise: any) => {
-  if (promise && typeof promise.then === 'function') {
+export const mockUse = (promise: unknown) => {
+  if (
+    promise &&
+    typeof promise === "object" &&
+    "then" in promise &&
+    typeof promise.then === "function"
+  ) {
     // If it's a promise, return resolved value
-    return { eventId: 'event_123', code: 'abc123' }
+    return { eventId: "event_123", code: "abc123" };
   }
   // If it's already resolved (like params), return it
-  return promise || { eventId: 'event_123', code: 'abc123' }
-}
+  return promise || { eventId: "event_123", code: "abc123" };
+};

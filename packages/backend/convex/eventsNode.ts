@@ -1,34 +1,34 @@
 "use node";
-import { action } from "./_generated/server";
-import type { ActionCtx } from "./_generated/server";
-import { v } from "convex/values";
-import { api } from "./_generated/api";
-import {
-  ValidationError,
-  DuplicateError,
-  type EventPatch,
-  type ListCredentialPatch,
-  type CredentialData,
-} from "./lib/types";
-import type { Id } from "./_generated/dataModel";
 import { sanitizeOptionalApprovalMessage } from "@coucou/sdk/shared/approval-messages";
 import type { WorkspaceEventDefaults } from "@coucou/sdk/shared/primary-fields";
-import { requireWorkspaceHost } from "./lib/workspaceAuth";
+import { v } from "convex/values";
+import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
+import { action } from "./_generated/server";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
 import {
+  type EventActInput,
+  type EventStatus,
   eventActValidator,
   eventLifecycleValidator,
   eventStatusValidator,
   sanitizeOptionalEventActs,
   sanitizeOptionalEventDescription,
-  type EventActInput,
-  type EventStatus,
 } from "./lib/eventMetadata";
 import {
   primaryFieldConfigFromWorkspaceDefaults,
   primaryFieldConfigValidator,
   sanitizePrimaryFieldConfig,
 } from "./lib/primaryFields";
+import {
+  type CredentialData,
+  DuplicateError,
+  type EventPatch,
+  type ListCredentialPatch,
+  ValidationError,
+} from "./lib/types";
+import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 const HEX_COLOR_PATTERN = /^#(?:[0-9A-Fa-f]{6})$/;
 
@@ -62,20 +62,14 @@ function normalizeOptionalHexColor(
   if (!input) return undefined;
   const trimmedInput = input.trim();
   if (trimmedInput.length === 0) return undefined;
-  const prefixedInput = trimmedInput.startsWith("#")
-    ? trimmedInput
-    : `#${trimmedInput}`;
+  const prefixedInput = trimmedInput.startsWith("#") ? trimmedInput : `#${trimmedInput}`;
   if (!HEX_COLOR_PATTERN.test(prefixedInput)) {
-    throw new ValidationError(
-      `${validationLabel} must be a 6-digit hex color (e.g. #FF0000)`,
-    );
+    throw new ValidationError(`${validationLabel} must be a 6-digit hex color (e.g. #FF0000)`);
   }
   return `#${prefixedInput.slice(1).toUpperCase()}`;
 }
 
-function validateLocalPasswordUniqueness(
-  candidates: EventPasswordCandidate[],
-): void {
+function validateLocalPasswordUniqueness(candidates: EventPasswordCandidate[]): void {
   const normalizedPasswords = new Set<string>();
 
   for (const candidate of candidates) {
@@ -99,16 +93,12 @@ async function ensureActiveEventPasswordsAreUnique(
 
   for (const candidate of options.candidates) {
     if (!candidate.password.trim()) continue;
-    const matchingCredentials = await ctx.runQuery(
-      api.credentials.getByPassword,
-      { password: candidate.password },
-    );
+    const matchingCredentials = await ctx.runQuery(api.credentials.getByPassword, {
+      password: candidate.password,
+    });
 
     for (const matchingCredential of matchingCredentials) {
-      if (
-        candidate.credentialId &&
-        matchingCredential._id === candidate.credentialId
-      ) {
+      if (candidate.credentialId && matchingCredential._id === candidate.credentialId) {
         continue;
       }
       if (options.eventId && matchingCredential.eventId === options.eventId) {
@@ -119,9 +109,7 @@ async function ensureActiveEventPasswordsAreUnique(
         eventId: matchingCredential.eventId,
       });
       if (matchingEvent?.status === "active") {
-        throw new DuplicateError(
-          "Password already in use by an active event",
-        );
+        throw new DuplicateError("Password already in use by an active event");
       }
     }
   }
@@ -152,17 +140,17 @@ function buildFinalPasswordCandidates(
   );
 
   return lists.flatMap((list) => {
-      const currentCredential = list.id ? existingById.get(list.id) : undefined;
-      const password = list.password?.trim() || currentCredential?.password?.trim();
-      if (!password) return [];
+    const currentCredential = list.id ? existingById.get(list.id) : undefined;
+    const password = list.password?.trim() || currentCredential?.password?.trim();
+    if (!password) return [];
 
-      const candidate: EventPasswordCandidate = {
-        credentialId: currentCredential?._id,
-        listKey: list.listKey,
-        password,
-      };
-      return [candidate];
-    });
+    const candidate: EventPasswordCandidate = {
+      credentialId: currentCredential?._id,
+      listKey: list.listKey,
+      password,
+    };
+    return [candidate];
+  });
 }
 
 export const create = action({
@@ -228,12 +216,8 @@ export const create = action({
     });
 
     const now = Date.now();
-    if (args.eventDate < now)
-      throw new Error("Event date must be in the future");
-    if (
-      args.eventEndDate !== undefined &&
-      args.eventEndDate <= args.eventDate
-    ) {
+    if (args.eventDate < now) throw new Error("Event date must be in the future");
+    if (args.eventEndDate !== undefined && args.eventEndDate <= args.eventDate) {
       throw new Error("Event end must be after the event start");
     }
 
@@ -258,13 +242,7 @@ export const create = action({
     }
 
     const derivedCredentials: CredentialData[] = args.lists.map(
-      ({
-        listKey,
-        password,
-        generateQR,
-        sendQrOnApproval,
-        approvalMessage,
-      }) => {
+      ({ listKey, password, generateQR, sendQrOnApproval, approvalMessage }) => {
         const trimmedPassword = password.trim();
         const hasPassword = trimmedPassword.length > 0;
         return {
@@ -280,12 +258,11 @@ export const create = action({
       },
     );
 
-    const workspaceDefaults =
-      args.workspaceSlug
-        ? ((await ctx.runQuery(api.workspaces.getWorkspaceBySlug, {
-            slug: args.workspaceSlug,
-          })) as WorkspaceDefaultsSource | null)
-        : null;
+    const workspaceDefaults = args.workspaceSlug
+      ? ((await ctx.runQuery(api.workspaces.getWorkspaceBySlug, {
+          slug: args.workspaceSlug,
+        })) as WorkspaceDefaultsSource | null)
+      : null;
     const workspaceEventDefaults = workspaceDefaults?.eventDefaults;
     const normalizedThemeBackgroundColor = normalizeOptionalHexColor(
       args.themeBackgroundColor ?? workspaceEventDefaults?.themeBackgroundColor,
@@ -298,41 +275,28 @@ export const create = action({
     const primaryFieldConfig =
       sanitizePrimaryFieldConfig(args.primaryFieldConfig) ??
       primaryFieldConfigFromWorkspaceDefaults(workspaceEventDefaults);
-    const trimmedGuestPortalLinkLabel =
-      args.guestPortalLinkLabel?.trim() ?? "";
-    const trimmedGuestPortalLinkUrl =
-      args.guestPortalLinkUrl?.trim() ?? "";
+    const trimmedGuestPortalLinkLabel = args.guestPortalLinkLabel?.trim() ?? "";
+    const trimmedGuestPortalLinkUrl = args.guestPortalLinkUrl?.trim() ?? "";
     const hasGuestPortalLinkLabel = trimmedGuestPortalLinkLabel.length > 0;
     const hasGuestPortalLinkUrl = trimmedGuestPortalLinkUrl.length > 0;
 
     if (hasGuestPortalLinkLabel && !hasGuestPortalLinkUrl) {
-      throw new ValidationError(
-        "Guest experience link URL is required when a label is provided",
-      );
+      throw new ValidationError("Guest experience link URL is required when a label is provided");
     }
     if (hasGuestPortalLinkUrl && !hasGuestPortalLinkLabel) {
-      throw new ValidationError(
-        "Guest experience link label is required when a URL is provided",
-      );
+      throw new ValidationError("Guest experience link label is required when a URL is provided");
     }
 
     let normalizedGuestPortalLinkUrl: string | undefined;
     if (hasGuestPortalLinkUrl) {
       try {
         const parsedUrl = new URL(trimmedGuestPortalLinkUrl);
-        if (
-          parsedUrl.protocol !== "http:" &&
-          parsedUrl.protocol !== "https:"
-        ) {
-          throw new ValidationError(
-            "Guest experience link must use http or https",
-          );
+        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+          throw new ValidationError("Guest experience link must use http or https");
         }
         normalizedGuestPortalLinkUrl = parsedUrl.toString();
-      } catch (error) {
-        throw new ValidationError(
-          "Guest experience link must be a valid URL",
-        );
+      } catch (_error) {
+        throw new ValidationError("Guest experience link must be a valid URL");
       }
     }
     const normalizedGuestPortalLinkLabel = hasGuestPortalLinkLabel
@@ -449,19 +413,15 @@ export const update = action({
 
     if (patch?.eventDate !== undefined || patch?.eventEndDate !== undefined) {
       const targetEventDate = patch.eventDate ?? currentEvent.eventDate;
-      const targetEventEndDate =
-        patch.eventEndDate ?? currentEvent.eventEndDate ?? targetEventDate;
+      const targetEventEndDate = patch.eventEndDate ?? currentEvent.eventEndDate ?? targetEventDate;
       if (targetEventEndDate <= targetEventDate) {
         throw new ValidationError("Event end must be after the event start");
       }
     }
 
-    const targetStatus = (patch?.status ??
-      currentEvent.status ??
-      "inactive") as EventStatus;
+    const targetStatus = (patch?.status ?? currentEvent.status ?? "inactive") as EventStatus;
     const shouldValidateActivePasswords =
-      targetStatus === "active" &&
-      (patch?.status === "active" || lists !== undefined);
+      targetStatus === "active" && (patch?.status === "active" || lists !== undefined);
     const existingCredentials =
       lists || shouldValidateActivePasswords
         ? ((await ctx.runQuery(api.credentials.getHostCredsForEvent, {
@@ -482,13 +442,10 @@ export const update = action({
     if (patch && Object.keys(patch).length > 0) {
       const sanitizedPatch: EventPatch = { ...patch };
       if (patch.description !== undefined) {
-        sanitizedPatch.description =
-          sanitizeOptionalEventDescription(patch.description) ?? "";
+        sanitizedPatch.description = sanitizeOptionalEventDescription(patch.description) ?? "";
       }
       if (patch.acts !== undefined) {
-        sanitizedPatch.acts = sanitizeOptionalEventActs(
-          patch.acts as EventActInput[],
-        ) ?? [];
+        sanitizedPatch.acts = sanitizeOptionalEventActs(patch.acts as EventActInput[]) ?? [];
       }
       if (patch.themeBackgroundColor !== undefined) {
         sanitizedPatch.themeBackgroundColor = normalizeOptionalHexColor(
@@ -503,32 +460,21 @@ export const update = action({
         );
       }
       if (patch.approvalMessage !== undefined) {
-        sanitizedPatch.approvalMessage = sanitizeOptionalApprovalMessage(
-          patch.approvalMessage,
-        );
+        sanitizedPatch.approvalMessage = sanitizeOptionalApprovalMessage(patch.approvalMessage);
       }
       if (patch.qrCodeColor !== undefined) {
-        sanitizedPatch.qrCodeColor = normalizeOptionalHexColor(
-          patch.qrCodeColor,
-          "QR code color",
-        );
+        sanitizedPatch.qrCodeColor = normalizeOptionalHexColor(patch.qrCodeColor, "QR code color");
       }
       if (patch.customIconStorageId !== undefined) {
         sanitizedPatch.customIconStorageId = patch.customIconStorageId ?? null;
       }
       if (patch.primaryFieldConfig !== undefined) {
-        sanitizedPatch.primaryFieldConfig = sanitizePrimaryFieldConfig(
-          patch.primaryFieldConfig,
-        );
+        sanitizedPatch.primaryFieldConfig = sanitizePrimaryFieldConfig(patch.primaryFieldConfig);
       }
       if (patch.guestPortalImageStorageId !== undefined) {
-        sanitizedPatch.guestPortalImageStorageId =
-          patch.guestPortalImageStorageId ?? undefined;
+        sanitizedPatch.guestPortalImageStorageId = patch.guestPortalImageStorageId ?? undefined;
       }
-      if (
-        patch.guestPortalLinkLabel !== undefined ||
-        patch.guestPortalLinkUrl !== undefined
-      ) {
+      if (patch.guestPortalLinkLabel !== undefined || patch.guestPortalLinkUrl !== undefined) {
         const trimmedLinkLabel = (patch.guestPortalLinkLabel ?? "").trim();
         const trimmedLinkUrl = (patch.guestPortalLinkUrl ?? "").trim();
         const hasLabel = trimmedLinkLabel.length > 0;
@@ -549,25 +495,16 @@ export const update = action({
         if (hasUrl) {
           try {
             const parsedUrl = new URL(trimmedLinkUrl);
-            if (
-              parsedUrl.protocol !== "http:" &&
-              parsedUrl.protocol !== "https:"
-            ) {
-              throw new ValidationError(
-                "Guest experience link must use http or https",
-              );
+            if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+              throw new ValidationError("Guest experience link must use http or https");
             }
             normalizedLinkUrl = parsedUrl.toString();
-          } catch (error) {
-            throw new ValidationError(
-              "Guest experience link must be a valid URL",
-            );
+          } catch (_error) {
+            throw new ValidationError("Guest experience link must be a valid URL");
           }
         }
 
-        sanitizedPatch.guestPortalLinkLabel = hasLabel
-          ? trimmedLinkLabel
-          : undefined;
+        sanitizedPatch.guestPortalLinkLabel = hasLabel ? trimmedLinkLabel : undefined;
         sanitizedPatch.guestPortalLinkUrl = normalizedLinkUrl;
       }
       await ctx.runMutation(api.events.update, {
@@ -581,10 +518,7 @@ export const update = action({
     if (!lists) return { ok: true as const };
 
     const existingById = new Map<Id<"listCredentials">, HostCredentialData>(
-      existingCredentials.map((credential) => [
-        credential._id,
-        credential,
-      ]),
+      existingCredentials.map((credential) => [credential._id, credential]),
     );
 
     // For deletions: any existing not present in incoming by id
@@ -608,9 +542,7 @@ export const update = action({
       const nextGenerateQrCodeEnabled = list.generateQR ?? false;
       const nextDefersQrDelivery = list.defersQrDelivery;
       const nextSendQrOnApproval = list.sendQrOnApproval;
-      const nextApprovalMessage = sanitizeOptionalApprovalMessage(
-        list.approvalMessage,
-      );
+      const nextApprovalMessage = sanitizeOptionalApprovalMessage(list.approvalMessage);
       const credentialPatch: ListCredentialPatch = {};
 
       if (currentCredential) {
@@ -619,9 +551,7 @@ export const update = action({
         }
         if (wantsPasswordUpdate) {
           if (trimmedPassword.length > 0) {
-            const passwordNormalized = normalizeCredentialPassword(
-              trimmedPassword,
-            );
+            const passwordNormalized = normalizeCredentialPassword(trimmedPassword);
             credentialPatch.password = trimmedPassword;
             credentialPatch.passwordNormalized = passwordNormalized;
           } else if (currentCredential.password) {
@@ -629,8 +559,7 @@ export const update = action({
             credentialPatch.passwordNormalized = "";
           }
         }
-        const currentGenerateQrCodeEnabled =
-          currentCredential.generateQR ?? false;
+        const currentGenerateQrCodeEnabled = currentCredential.generateQR ?? false;
         if (nextGenerateQrCodeEnabled !== currentGenerateQrCodeEnabled) {
           credentialPatch.generateQR = nextGenerateQrCodeEnabled;
         }

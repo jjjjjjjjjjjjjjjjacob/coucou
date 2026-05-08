@@ -1,9 +1,9 @@
 import { createClerkClient } from "@clerk/backend";
 import { v } from "convex/values";
-import { action } from "./functions";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
+import { action } from "./functions";
 import {
   getCoucouOrganizationSlug,
   getIdentityOrganizationId,
@@ -20,17 +20,12 @@ async function getStoredOrganizationMembership(
   clerkUserId: string,
   organizationId: string,
 ): Promise<StoredOrganizationMembership | null> {
-  const storedMemberships = (await ctx.runQuery(
-    api.orgMemberships.listForUser,
-    {
-      clerkUserId,
-    },
-  )) as StoredOrganizationMembership[];
+  const storedMemberships = (await ctx.runQuery(api.orgMemberships.listForUser, {
+    clerkUserId,
+  })) as StoredOrganizationMembership[];
 
   return (
-    storedMemberships.find(
-      (membership) => membership.organizationId === organizationId,
-    ) ?? null
+    storedMemberships.find((membership) => membership.organizationId === organizationId) ?? null
   );
 }
 
@@ -44,12 +39,11 @@ async function fetchClerkOrganizationMembershipRole(
   }
 
   const clerk = createClerkClient({ secretKey: clerkSecretKey });
-  const membershipList =
-    await clerk.organizations.getOrganizationMembershipList({
-      organizationId: clerkOrganizationId,
-      userId: [clerkUserId],
-      limit: 1,
-    });
+  const membershipList = await clerk.organizations.getOrganizationMembershipList({
+    organizationId: clerkOrganizationId,
+    userId: [clerkUserId],
+    limit: 1,
+  });
   const clerkMembership = membershipList.data[0] ?? null;
   if (!clerkMembership) {
     throw new Error("Forbidden: organization membership required");
@@ -77,9 +71,7 @@ async function ensureVerifiedOrganizationMembership(
 
   const activeOrganizationId = getIdentityOrganizationId(identity);
   const activeOrganizationRole =
-    activeOrganizationId === clerkOrganizationId
-      ? getIdentityOrganizationRole(identity)
-      : null;
+    activeOrganizationId === clerkOrganizationId ? getIdentityOrganizationRole(identity) : null;
   const storedMembership = await getStoredOrganizationMembership(
     ctx,
     identity.subject,
@@ -88,10 +80,7 @@ async function ensureVerifiedOrganizationMembership(
   const verifiedMembershipRole =
     activeOrganizationRole ??
     storedMembership?.role ??
-    (await fetchClerkOrganizationMembershipRole(
-      clerkOrganizationId,
-      identity.subject,
-    ));
+    (await fetchClerkOrganizationMembershipRole(clerkOrganizationId, identity.subject));
 
   if (storedMembership?.role !== verifiedMembershipRole) {
     await ctx.runMutation(api.orgMemberships.upsertMembership, {
@@ -103,14 +92,11 @@ async function ensureVerifiedOrganizationMembership(
 
   const normalizedOrganizationSlug = organizationSlug?.trim().toLowerCase();
   if (normalizedOrganizationSlug === getCoucouOrganizationSlug()) {
-    await ctx.runMutation(
-      internal.workspaces.upsertCoucouAdminWorkspaceForClerkOrganization,
-      {
-        name: organizationName ?? "Coucou",
-        clerkOrganizationId,
-        clerkOrganizationSlug: normalizedOrganizationSlug,
-      },
-    );
+    await ctx.runMutation(internal.workspaces.upsertCoucouAdminWorkspaceForClerkOrganization, {
+      name: organizationName ?? "Coucou",
+      clerkOrganizationId,
+      clerkOrganizationSlug: normalizedOrganizationSlug,
+    });
   }
 
   return verifiedMembershipRole;
@@ -153,14 +139,11 @@ export const ensureTenantWorkspaceForOrganizationMembership = action({
       organizationSlug: clerkOrganizationSlug,
     });
 
-    return await ctx.runMutation(
-      internal.workspaces.ensureTenantWorkspaceInDatabase,
-      {
-        slug,
-        name,
-        clerkOrganizationId,
-        clerkOrganizationSlug,
-      },
-    );
+    return await ctx.runMutation(internal.workspaces.ensureTenantWorkspaceInDatabase, {
+      slug,
+      name,
+      clerkOrganizationId,
+      clerkOrganizationSlug,
+    });
   },
 });

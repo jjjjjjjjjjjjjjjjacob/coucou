@@ -33,10 +33,7 @@ export function AttentionRow({ kind, label, timestamp }: AttentionRowProps) {
       </span>
       <span style={{ color: "var(--tt-fg)" }}>{label}</span>
       {timestamp ? (
-        <span
-          className="text-right"
-          style={{ color: "var(--tt-fg-dim)" }}
-        >
+        <span className="text-right" style={{ color: "var(--tt-fg-dim)" }}>
           {timestamp}
         </span>
       ) : (

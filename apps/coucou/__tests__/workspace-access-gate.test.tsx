@@ -1,6 +1,5 @@
-import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "bun:test";
+import { render, screen, waitFor } from "@testing-library/react";
 import { WorkspaceAccessGate } from "../components/workspace-access-gate";
 
 interface WorkspaceAccessGateTestGlobal {
@@ -33,8 +32,7 @@ interface WorkspaceAccessGateTestGlobal {
   __getClerkSetActiveCalls?: () => Array<{ organization: string }>;
 }
 
-function getWorkspaceAccessGateTestGlobal(): typeof globalThis &
-  WorkspaceAccessGateTestGlobal {
+function getWorkspaceAccessGateTestGlobal(): typeof globalThis & WorkspaceAccessGateTestGlobal {
   return globalThis as typeof globalThis & WorkspaceAccessGateTestGlobal;
 }
 
@@ -72,9 +70,7 @@ describe("WorkspaceAccessGate", () => {
     await waitFor(() => {
       expect(screen.getByText("Workspace loaded")).toBeTruthy();
     });
-    expect(
-      getWorkspaceAccessGateTestGlobal().__getToastTestCalls?.(),
-    ).toEqual([]);
+    expect(getWorkspaceAccessGateTestGlobal().__getToastTestCalls?.()).toEqual([]);
   });
 
   it("uses a toast while the target organization is switching", async () => {
@@ -113,13 +109,11 @@ describe("WorkspaceAccessGate", () => {
       expect(screen.getByText("Workspace loaded")).toBeTruthy();
     });
     expect(screen.queryByText("Opening Dojo Pomodoro...")).toBeNull();
-    expect(
-      getWorkspaceAccessGateTestGlobal().__getClerkSetActiveCalls?.(),
-    ).toEqual([{ organization: "org_dojo" }]);
+    expect(getWorkspaceAccessGateTestGlobal().__getClerkSetActiveCalls?.()).toEqual([
+      { organization: "org_dojo" },
+    ]);
     await waitFor(() => {
-      expect(
-        getWorkspaceAccessGateTestGlobal().__getToastTestCalls?.(),
-      ).toContainEqual({
+      expect(getWorkspaceAccessGateTestGlobal().__getToastTestCalls?.()).toContainEqual({
         kind: "loading",
         message: "Switching workspace to Dojo Pomodoro...",
         id: "toast_1",
@@ -168,8 +162,6 @@ describe("WorkspaceAccessGate", () => {
       expect(screen.getByText("Workspace loaded")).toBeTruthy();
     });
     expect(screen.getByText("write")).toBeTruthy();
-    expect(
-      getWorkspaceAccessGateTestGlobal().__getClerkSetActiveCalls?.(),
-    ).toEqual([]);
+    expect(getWorkspaceAccessGateTestGlobal().__getClerkSetActiveCalls?.()).toEqual([]);
   });
 });
