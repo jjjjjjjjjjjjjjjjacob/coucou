@@ -5,12 +5,19 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
+import { REFERRAL_QUERY_PARAM } from "@coucou/sdk/shared/event-routes";
 import { CHLORINE_PHASE_SPLIT_MS, RsvpPending } from "@coucou/ui/tenant-template";
 import { useMutation, useQuery } from "convex/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  buildPathWithPreservedQuery,
+  buildPathWithQueryString,
+  buildQueryStringWithRsvpStep,
+  parseRsvpStepQueryValue,
+} from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import type { ApplicationError, Event } from "@/lib/types";
 import { RsvpAcceptedForm, type RsvpCollectedArgs } from "./rsvp-accepted-form";
@@ -21,31 +28,36 @@ const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localh
 );
 
 export default function RsvpPage({ params }: { params: Promise<{ eventId: string }> }) {
-  const { eventId } = use(params);
+  const { eventId: eventRouteId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isSignedIn, isLoaded } = useAuth();
 
-  const event = useQuery(api.events.get, {
-    eventId: eventId as Id<"events">,
+  const event = useQuery(api.events.getByRouteId, {
+    eventRouteId,
     siteKey: siteConfiguration.siteKey,
   });
+  const canonicalEventId = event?._id;
 
-  const status = useQuery(api.rsvps.statusForUserEvent, {
-    eventId: eventId as Id<"events">,
+  const status = useQuery(api.rsvps.statusForUserEventByRouteId, {
+    eventRouteId,
     siteKey: siteConfiguration.siteKey,
   });
 
   const submitRsvp = useMutation(api.rsvps.submitRequest);
 
-  const hasNoPasswordList = useQuery(api.events.hasNoPasswordList, {
-    eventId: eventId as Id<"events">,
-  });
-  const hasPasswordList = useQuery(api.events.hasPasswordList, {
-    eventId: eventId as Id<"events">,
-  });
+  const hasNoPasswordList = useQuery(
+    api.events.hasNoPasswordList,
+    canonicalEventId ? { eventId: canonicalEventId as Id<"events"> } : "skip",
+  );
+  const hasPasswordList = useQuery(
+    api.events.hasPasswordList,
+    canonicalEventId ? { eventId: canonicalEventId as Id<"events"> } : "skip",
+  );
 
   const queryParamPassword = (searchParams?.get("password") ?? "").trim();
+  const currentRsvpStep = parseRsvpStepQueryValue(searchParams?.get("step"));
+  const rsvpQueryString = buildQueryStringWithRsvpStep(searchParams, currentRsvpStep);
   const eventIsOpenForRsvp = event ? isEventOpenForRsvp(event) : false;
 
   // Auto-redirect to the right post-submission surface if the user already
@@ -55,18 +67,24 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
   useEffect(() => {
     if (!status?.status) return;
     if (status.status === "approved" || status.status === "attending") {
-      router.replace(`/events/${eventId}/ticket`);
+      router.replace(
+        buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"]),
+      );
       return;
     }
     if (status.status === "denied") {
-      router.replace(`/events/${eventId}/denied`);
+      router.replace(
+        buildPathWithPreservedQuery(`/events/${eventRouteId}/denied`, searchParams, ["step"]),
+      );
       return;
     }
     if (status.status === "pending") {
-      router.replace(`/events/${eventId}/status`);
+      router.replace(
+        buildPathWithPreservedQuery(`/events/${eventRouteId}/status`, searchParams, ["step"]),
+      );
       return;
     }
-  }, [status, eventId, router]);
+  }, [status, eventRouteId, router, searchParams]);
 
   // Sign-in gate. The satellite never serves its own auth surface — bounce
   // unauthenticated visitors to the chlorine-branded phone-auth page hosted
@@ -80,11 +98,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
     if (!isLoaded) return;
     if (isSignedIn) return;
     if (typeof window === "undefined") return;
-    const intendedPath = `/events/${eventId}/rsvp${
-      queryParamPassword
-        ? `?${new URLSearchParams({ password: queryParamPassword }).toString()}`
-        : ""
-    }`;
+    const intendedPath = buildPathWithQueryString(`/events/${eventRouteId}/rsvp`, rsvpQueryString);
     // Anchor the return URL at the *live* origin so the user lands back
     // on the same satellite they came from (localhost during dev,
     // clubchlorine.party in prod). Hard-coding `siteConfiguration.domain`
@@ -102,7 +116,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
     return () => {
       window.clearTimeout(redirectTimeoutId);
     };
-  }, [isLoaded, isSignedIn, eventId, queryParamPassword]);
+  }, [isLoaded, isSignedIn, eventRouteId, rsvpQueryString]);
 
   const handleInfoCollected = useCallback(
     async (args: RsvpCollectedArgs) => {
@@ -112,22 +126,29 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
         return;
       }
       try {
+        if (!canonicalEventId) {
+          toast.error("Event not found");
+          return;
+        }
         const { resolvedListKey, ...submissionArgs } = args;
         await submitRsvp({
-          eventId: eventId as Id<"events">,
+          eventId: canonicalEventId as Id<"events">,
           siteKey: siteConfiguration.siteKey,
           listKey: resolvedListKey,
+          referralCode: searchParams?.get(REFERRAL_QUERY_PARAM) ?? undefined,
           ...submissionArgs,
         });
         toast.success("RSVP submitted");
-        router.replace(`/events/${eventId}/status`);
+        router.replace(
+          buildPathWithPreservedQuery(`/events/${eventRouteId}/status`, searchParams, ["step"]),
+        );
       } catch (error: unknown) {
         const errorDetails = error as ApplicationError | Error;
         const errorMessage = errorDetails?.message || "Failed to submit request";
         toast.error("Request failed", { description: errorMessage });
       }
     },
-    [eventIsOpenForRsvp, submitRsvp, eventId, router],
+    [eventIsOpenForRsvp, submitRsvp, canonicalEventId, eventRouteId, router, searchParams],
   );
 
   if (!event || !isLoaded || (!isSignedIn && isLoaded) || (isSignedIn && status === undefined)) {
@@ -152,7 +173,8 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
 
   return (
     <RsvpAcceptedForm
-      eventId={eventId as Id<"events">}
+      eventId={canonicalEventId as Id<"events">}
+      eventRouteId={eventRouteId}
       event={event as Event}
       submitMode="collect"
       submitLabel="Submit Request"

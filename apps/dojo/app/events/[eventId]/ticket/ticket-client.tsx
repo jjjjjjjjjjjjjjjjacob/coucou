@@ -15,6 +15,7 @@ import { Check, Download } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
+import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { formatEventTitleInline, hasEventSecondaryTitle } from "@/lib/event-display";
@@ -121,16 +122,12 @@ function downloadQRCodeAsImage(
 }
 
 interface TicketClientPageProps {
-  eventId: string;
-  eventPreload: Preloaded<typeof api.events.get>;
-  statusPreload: Preloaded<typeof api.rsvps.statusForUserEvent>;
+  eventRouteId: string;
+  eventPreload: Preloaded<typeof api.events.getByRouteId>;
+  statusPreload: Preloaded<typeof api.rsvps.statusForUserEventByRouteId>;
 }
 
-export default function TicketClientPage({
-  eventId,
-  eventPreload,
-  statusPreload,
-}: TicketClientPageProps) {
+export default function TicketClientPage({ eventPreload, statusPreload }: TicketClientPageProps) {
   const { isLoaded: isClerkLoaded, isSignedIn } = useAuth();
   const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
     useConvexAuth();
@@ -138,12 +135,13 @@ export default function TicketClientPage({
 
   const event = usePreloadedQuery(eventPreload);
   const status = usePreloadedQuery(statusPreload);
+  const canonicalEventId = event?._id;
 
   const myRedemptionQuery = useConvexQuery(
     api.redemptions.forCurrentUserEvent,
-    canLoadAuthenticatedTicketData
+    canLoadAuthenticatedTicketData && canonicalEventId
       ? {
-          eventId: eventId as Id<"events">,
+          eventId: canonicalEventId as Id<"events">,
           siteKey: siteConfiguration.siteKey,
         }
       : "skip",
@@ -183,11 +181,12 @@ export default function TicketClientPage({
       status?.status === "approved" &&
       !acceptRsvp.isPending &&
       !celebrate &&
-      canLoadAuthenticatedTicketData
+      canLoadAuthenticatedTicketData &&
+      canonicalEventId
     ) {
       acceptRsvp.mutate(
         {
-          eventId: eventId as Id<"events">,
+          eventId: canonicalEventId as Id<"events">,
           siteKey: siteConfiguration.siteKey,
         },
         {
@@ -209,7 +208,7 @@ export default function TicketClientPage({
   }, [
     event?.name,
     status?.status,
-    eventId,
+    canonicalEventId,
     acceptRsvp.isPending,
     celebrate,
     canLoadAuthenticatedTicketData,
@@ -431,6 +430,17 @@ export default function TicketClientPage({
         <div className="w-full max-w-2xl space-y-6 text-center animate-in fade-in">
           {renderEventHeader()}
           <section className="space-y-3">{renderStatusContent()}</section>
+          <div className="flex justify-center">
+            <div className="flex flex-col items-center gap-2 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500">
+              <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                Invite friends
+              </span>
+              <EventReferralShareButton event={event} variant="prominent" />
+              <span className="text-[12px] text-muted-foreground/80">
+                Tap to copy your referral link
+              </span>
+            </div>
+          </div>
           {(guestPortalImageUrl || shouldShowGuestLink) && (
             <section className="space-y-3 rounded-lg border border-primary/15 bg-card/70 p-4">
               {guestPortalImageUrl && (

@@ -1,6 +1,5 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { api } from "@convex/_generated/api";
-import type { Id } from "@convex/_generated/dataModel";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { preloadQuery } from "convex/nextjs";
 import { headers } from "next/headers";
@@ -28,7 +27,7 @@ export default async function TicketServerPage({
   params: Promise<{ eventId: string }>;
 }) {
   const resolvedParams = await Promise.resolve(params);
-  const { eventId } = resolvedParams;
+  const { eventId: eventRouteId } = resolvedParams;
 
   // Get the current user
   const user = await currentUser();
@@ -43,25 +42,29 @@ export default async function TicketServerPage({
       buildTenantPrimarySignInUrl({
         primaryBaseUrl: coucouBaseUrl,
         siteConfiguration,
-        redirectUrl: buildSatelliteReturnUrl(satelliteOrigin, `/events/${eventId}/ticket`),
+        redirectUrl: buildSatelliteReturnUrl(satelliteOrigin, `/events/${eventRouteId}/ticket`),
       }),
     );
   }
 
   // Pre-load event data on the server
-  const eventPreload = await preloadQuery(api.events.get, {
-    eventId: eventId as Id<"events">,
+  const eventPreload = await preloadQuery(api.events.getByRouteId, {
+    eventRouteId,
     siteKey: siteConfiguration.siteKey,
   });
 
   // Pre-load RSVP status for the current user
-  const statusPreload = await preloadQuery(api.rsvps.statusForUserEvent, {
-    eventId: eventId as Id<"events">,
+  const statusPreload = await preloadQuery(api.rsvps.statusForUserEventByRouteId, {
+    eventRouteId,
     siteKey: siteConfiguration.siteKey,
   });
 
   // Pass the preloaded data to the client component
   return (
-    <TicketClientPage eventId={eventId} eventPreload={eventPreload} statusPreload={statusPreload} />
+    <TicketClientPage
+      eventRouteId={eventRouteId}
+      eventPreload={eventPreload}
+      statusPreload={statusPreload}
+    />
   );
 }

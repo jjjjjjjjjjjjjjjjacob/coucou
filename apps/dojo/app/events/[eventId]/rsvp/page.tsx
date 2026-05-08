@@ -2,6 +2,7 @@
 import { UserProfile, useClerk, useUser } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { REFERRAL_QUERY_PARAM } from "@coucou/sdk/shared/event-routes";
 import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { QrCode, ToggleLeft } from "lucide-react";
@@ -49,20 +50,21 @@ import {
 } from "@/lib/types";
 
 export default function RsvpPage({ params }: { params: Promise<{ eventId: string }> }) {
-  const { eventId } = use(params);
+  const { eventId: eventRouteId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useUser();
   const { openUserProfile } = useClerk();
 
-  const status = useQuery(api.rsvps.statusForUserEvent, {
-    eventId: eventId as Id<"events">,
+  const status = useQuery(api.rsvps.statusForUserEventByRouteId, {
+    eventRouteId,
     siteKey: siteConfiguration.siteKey,
   });
-  const event = useQuery(api.events.get, {
-    eventId: eventId as Id<"events">,
+  const event = useQuery(api.events.getByRouteId, {
+    eventRouteId,
     siteKey: siteConfiguration.siteKey,
   });
+  const canonicalEventId = event?._id;
   const userDoc = useQuery(
     api.users.getByClerkUser,
     user?.id ? { clerkUserId: user.id } : "skip",
@@ -73,9 +75,9 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
   ) as Array<{ platformKey: string; handle: string }> | undefined;
   const myRedemption = useQuery(
     api.redemptions.forCurrentUserEvent,
-    status?.status === "approved" || status?.status === "attending"
+    canonicalEventId && (status?.status === "approved" || status?.status === "attending")
       ? {
-          eventId: eventId as Id<"events">,
+          eventId: canonicalEventId as Id<"events">,
           siteKey: siteConfiguration.siteKey,
         }
       : "skip",
@@ -144,9 +146,10 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
     let cancelled = false;
     const run = async () => {
       try {
+        if (!canonicalEventId) return;
         setChecking(true);
         const res = await resolve({
-          eventId: eventId as Id<"events">,
+          eventId: canonicalEventId as Id<"events">,
           password: password ?? "",
           siteKey: siteConfiguration.siteKey,
         });
@@ -156,7 +159,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
           } else if (password) {
             setMessage("Invalid password for this event.");
           } else {
-            router.replace(`/events/${eventId}`);
+            router.replace(`/events/${eventRouteId}`);
           }
         }
       } catch (error: unknown) {
@@ -170,7 +173,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
     return () => {
       cancelled = true;
     };
-  }, [password, eventId, resolve, router]);
+  }, [password, canonicalEventId, eventRouteId, resolve, router]);
 
   // Prefill from existing RSVP data and Clerk profile
   useEffect(() => {
@@ -432,8 +435,12 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
         }
       }
 
+      if (!canonicalEventId) {
+        setMessage("Event not found.");
+        return;
+      }
       await submitRsvp({
-        eventId: eventId as Id<"events">,
+        eventId: canonicalEventId as Id<"events">,
         siteKey: siteConfiguration.siteKey,
         listKey,
         note: note || undefined,
@@ -450,10 +457,16 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
           .filter((profile) => profile.handle.length > 0),
         invitedByName:
           event?.primaryFieldConfig?.invitedBy?.enabled === true ? invitedByName.trim() : undefined,
+        referralCode: searchParams?.get(REFERRAL_QUERY_PARAM) ?? undefined,
       });
 
       toast.success("RSVP submitted");
-      router.replace(`/events/${eventId}/status`);
+      const statusSearchParams = new URLSearchParams(searchParams?.toString());
+      statusSearchParams.delete("password");
+      const statusQueryString = statusSearchParams.toString();
+      router.replace(
+        `/events/${eventRouteId}/status${statusQueryString ? `?${statusQueryString}` : ""}`,
+      );
     } catch (error: unknown) {
       const errorDetails = error as ApplicationError | Error;
       const message = errorDetails?.message || "Failed to submit request";

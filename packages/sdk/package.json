@@ -15,6 +15,7 @@
     "./shared/approval-messages": "./src/shared/approval-messages.ts",
     "./shared/event-availability": "./src/shared/event-availability.ts",
     "./shared/event-branding": "./src/shared/event-branding.ts",
+    "./shared/event-routes": "./src/shared/event-routes.ts",
     "./shared/primary-fields": "./src/shared/primary-fields.ts",
     "./shared/qr-code-colors": "./src/shared/qr-code-colors.ts",
     "./theming": "./src/theming/index.ts",

@@ -166,6 +166,15 @@ function useShouldRender(): boolean {
   return shouldRender;
 }
 
+export function shouldExpandDevColorTweakPanelInitially(search: string): boolean {
+  const queryParameters = new URLSearchParams(search);
+  return (
+    queryParameters.get("tweak") !== null ||
+    queryParameters.get("bg") !== null ||
+    queryParameters.get("fg") !== null
+  );
+}
+
 export function DevColorTweakPanel() {
   const shouldRender = useShouldRender();
   const [colorState, setColorState] = useState<ColorTweakState>(() => ({
@@ -173,10 +182,16 @@ export function DevColorTweakPanel() {
     foreground: CHLORINE_DEFAULT.fg,
     enabled: false,
   }));
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [backgroundHexInput, setBackgroundHexInput] = useState(CHLORINE_DEFAULT.bg);
   const [foregroundHexInput, setForegroundHexInput] = useState(CHLORINE_DEFAULT.fg);
   const initialPersistLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!shouldExpandDevColorTweakPanelInitially(window.location.search)) return;
+    setIsExpanded(true);
+  }, []);
 
   // Hydrate from localStorage once on mount.
   useEffect(() => {

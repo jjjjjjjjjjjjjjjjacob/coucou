@@ -1,5 +1,4 @@
 import { api } from "@convex/_generated/api";
-import type { Id } from "@convex/_generated/dataModel";
 import { fetchQuery } from "convex/nextjs";
 import type React from "react";
 import { EventThemeProvider } from "@/components/event-theme-provider";
@@ -12,9 +11,9 @@ export default async function EventLayout({
   children: React.ReactNode;
   params: Promise<{ eventId: string }>;
 }) {
-  const { eventId } = await params;
-  const event = await fetchQuery(api.events.get, {
-    eventId: eventId as Id<"events">,
+  const { eventId: eventRouteId } = await params;
+  const event = await fetchQuery(api.events.getByRouteId, {
+    eventRouteId,
   }).catch((error) => {
     console.error("Failed to load event theme", error);
     return null;

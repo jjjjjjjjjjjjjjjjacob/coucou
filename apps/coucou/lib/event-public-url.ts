@@ -1,3 +1,8 @@
+import {
+  buildPublicEventUrl as buildSitePublicEventUrl,
+  getEventRouteId,
+  type PublicEventRouteRecord,
+} from "@coucou/sdk/shared/event-routes";
 import { type SiteKey, siteConfigurations } from "@coucou/sdk/site-config";
 
 type WorkspaceSite = {
@@ -19,24 +24,62 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
-export function buildPublicEventUrl(workspace: PublicUrlWorkspace, eventId: string): string | null {
+type PublicEventIdentifier = string | PublicEventRouteRecord;
+
+interface PublicEventUrlOptions {
+  currentOrigin?: string | null;
+  vercelEnvironment?: string | null;
+}
+
+function resolvePublicEventRouteId(event: PublicEventIdentifier): string {
+  return typeof event === "string" ? event : getEventRouteId(event);
+}
+
+function isSiteKey(value: string): value is SiteKey {
+  return value in siteConfigurations;
+}
+
+function resolveClientWorkspaceSite(workspace: PublicUrlWorkspace): WorkspaceSite | null {
+  const sites = workspace?.sites ?? [];
+  for (const site of sites) {
+    if (isSiteKey(site.siteKey) && siteConfigurations[site.siteKey].appKind === "client") {
+      return site;
+    }
+    if (!isSiteKey(site.siteKey) && site.appKind !== "admin") {
+      return site;
+    }
+  }
+  return null;
+}
+
+export function buildPublicEventUrl(
+  workspace: PublicUrlWorkspace,
+  event: PublicEventIdentifier,
+  options: PublicEventUrlOptions = {},
+): string | null {
   if (!workspace) return null;
+  const eventRouteId = resolvePublicEventRouteId(event);
+  const clientWorkspaceSite = resolveClientWorkspaceSite(workspace);
+  const clientSiteKey = clientWorkspaceSite?.siteKey;
+
+  if (clientSiteKey && isSiteKey(clientSiteKey)) {
+    return buildSitePublicEventUrl({
+      event: { _id: eventRouteId },
+      siteConfiguration: siteConfigurations[clientSiteKey],
+      currentOrigin: options.currentOrigin,
+      domain: workspace.primaryDomain ?? clientWorkspaceSite?.domain ?? null,
+      vercelEnvironment: options.vercelEnvironment,
+    });
+  }
 
   if (workspace.primaryDomain) {
     const url = trimTrailingSlash(ensureProtocol(workspace.primaryDomain));
-    return `${url}/events/${eventId}`;
+    return `${url}/events/${eventRouteId}`;
   }
 
-  const sites = workspace.sites ?? [];
-  for (const site of sites) {
-    const configuration = siteConfigurations[site.siteKey as SiteKey] ?? undefined;
-    if (configuration?.appKind === "client" && configuration.domain) {
-      return `${trimTrailingSlash(configuration.domain)}/events/${eventId}`;
-    }
-    if (site.domain && site.appKind !== "admin") {
-      const url = trimTrailingSlash(ensureProtocol(site.domain));
-      return `${url}/events/${eventId}`;
-    }
+  if (clientWorkspaceSite?.domain) {
+    const url = trimTrailingSlash(ensureProtocol(clientWorkspaceSite.domain));
+    return `${url}/events/${eventRouteId}`;
   }
 
   return null;

@@ -1,7 +1,7 @@
 "use client";
 
 import { OTPInput, type SlotProps } from "input-otp";
-import { useCallback } from "react";
+import { type FocusEvent, useCallback, useEffect, useRef } from "react";
 import { usePresetOptional } from "../tenant-template/use-preset";
 import { combineClassNames } from "./internal-utils";
 
@@ -12,6 +12,21 @@ interface OtpInputProps {
   disabled?: boolean;
   error?: string | null;
   maxLength?: number;
+}
+
+export function shouldShowOtpFakeCaret({
+  hasFakeCaret,
+  disabled,
+}: {
+  hasFakeCaret: boolean;
+  disabled?: boolean;
+}): boolean {
+  return hasFakeCaret && disabled !== true;
+}
+
+function getBlurCapableElement(value: EventTarget | null): HTMLElement | null {
+  const possibleElement = value as { blur?: unknown } | null;
+  return typeof possibleElement?.blur === "function" ? (value as HTMLElement) : null;
 }
 
 /**
@@ -28,6 +43,24 @@ export function OtpInput({
   error,
   maxLength = 6,
 }: OtpInputProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const lastFocusedElementRef = useRef<HTMLElement | null>(null);
+
+  const handleFocusCapture = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    lastFocusedElementRef.current = getBlurCapableElement(event.target);
+  }, []);
+
+  useEffect(() => {
+    if (!disabled) return;
+    const lastFocusedElement = lastFocusedElementRef.current;
+    lastFocusedElement?.blur();
+
+    const activeElement = getBlurCapableElement(document.activeElement);
+    if (!activeElement || activeElement === lastFocusedElement) return;
+    if (!containerRef.current?.contains(activeElement)) return;
+    activeElement.blur();
+  }, [disabled]);
+
   const handleComplete = useCallback(
     (code: string) => {
       if (code.length === maxLength) {
@@ -38,7 +71,11 @@ export function OtpInput({
   );
 
   return (
-    <div className="flex w-full flex-col items-center gap-4">
+    <div
+      ref={containerRef}
+      className="flex w-full flex-col items-center gap-4"
+      onFocusCapture={handleFocusCapture}
+    >
       <OTPInput
         value={value}
         onChange={onChange}
@@ -50,7 +87,12 @@ export function OtpInput({
         render={({ slots }) => (
           <>
             {slots.map((slot, index) => (
-              <Slot key={`otp-slot-${index}`} {...slot} hasError={Boolean(error)} />
+              <Slot
+                key={`otp-slot-${index}`}
+                {...slot}
+                hideCaret={disabled === true}
+                hasError={Boolean(error)}
+              />
             ))}
           </>
         )}
@@ -67,9 +109,10 @@ export function OtpInput({
 
 interface SlotComponentProps extends SlotProps {
   hasError?: boolean;
+  hideCaret?: boolean;
 }
 
-function Slot({ char, isActive, hasFakeCaret, hasError }: SlotComponentProps) {
+function Slot({ char, isActive, hasFakeCaret, hasError, hideCaret }: SlotComponentProps) {
   const { presetKey } = usePresetOptional();
   const isDojo = presetKey === "dojo";
 
@@ -108,7 +151,7 @@ function Slot({ char, isActive, hasFakeCaret, hasError }: SlotComponentProps) {
       style={slotStyle}
     >
       {char}
-      {hasFakeCaret ? (
+      {shouldShowOtpFakeCaret({ hasFakeCaret, disabled: hideCaret }) ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="h-6 w-px animate-pulse" style={{ background: "var(--tt-fg)" }} />
         </div>

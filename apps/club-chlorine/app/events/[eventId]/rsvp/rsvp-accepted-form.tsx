@@ -7,8 +7,8 @@ import { TenantButton } from "@coucou/ui/tenant-template";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { CheckCircle2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Path, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { GuestInfoFields, NoteForHostsField } from "@/components/guest-info-form";
@@ -28,6 +28,15 @@ import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { validateRequiredPrimaryFields, validateRequiredWithFirstName } from "@/lib/mini-zod";
+import {
+  buildEventDetailPathWithPreservedQuery,
+  buildPathWithPreservedQuery,
+  buildPathWithQueryString,
+  buildQueryStringWithRsvpStep,
+  getRsvpStepQueryValue,
+  parseRsvpStepQueryValue,
+  type RsvpStepNumber,
+} from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
 import type {
@@ -35,6 +44,7 @@ import type {
   ClerkUser,
   CustomField,
   Event,
+  RSVP,
   RSVPFormData,
   User,
 } from "@/lib/types";
@@ -65,8 +75,19 @@ export type RsvpCollectedArgs = {
   resolvedListKey: string;
 };
 
+interface CurrentUserRsvpFormStatus {
+  listKey?: string;
+  status?: RSVP["status"];
+  customFieldValues?: Record<string, string>;
+  socialProfiles?: Array<{ platformKey: string; handle: string }>;
+  invitedByName?: string;
+  smsConsent?: boolean;
+  smsConsentIpAddress?: string;
+}
+
 interface RsvpAcceptedFormProps {
   eventId: Id<"events">;
+  eventRouteId?: string;
   event: Event;
   listKey?: string;
   submitMode?: "submit" | "collect";
@@ -91,6 +112,7 @@ interface RsvpAcceptedFormProps {
 
 export function RsvpAcceptedForm({
   eventId,
+  eventRouteId,
   event,
   listKey,
   submitMode = "submit",
@@ -101,13 +123,16 @@ export function RsvpAcceptedForm({
   initialPassword = "",
 }: RsvpAcceptedFormProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const publicEventRouteId = eventRouteId ?? eventId;
   const { user } = useUser();
   const { openUserProfile } = useClerk();
 
   const status = useQuery(api.rsvps.statusForUserEvent, {
     eventId,
     siteKey: siteConfiguration.siteKey,
-  });
+  }) as CurrentUserRsvpFormStatus | null | undefined;
   const userDoc = useQuery(
     api.users.getByClerkUser,
     user?.id ? { clerkUserId: user.id } : "skip",
@@ -126,7 +151,9 @@ export function RsvpAcceptedForm({
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<RsvpStepNumber>(() =>
+    parseRsvpStepQueryValue(searchParams?.get("step")),
+  );
   const [accessPassword, setAccessPassword] = useState<string>(initialPassword);
   const debouncedAccessPassword = useDebounce(accessPassword, 300);
   const [resolvedListKey, setResolvedListKey] = useState<string | null>(null);
@@ -162,6 +189,26 @@ export function RsvpAcceptedForm({
   const submitRsvp = useMutation(api.rsvps.submitRequest);
   const updateProfileMeta = useMutation(api.users.updateProfileMeta);
   const resolveListByPassword = useAction(api.credentialsNode.resolveListByPassword);
+
+  const replaceStepInUrl = useCallback(
+    (nextStep: RsvpStepNumber) => {
+      const queryString = buildQueryStringWithRsvpStep(searchParams, nextStep);
+      const rsvpPathname = pathname ?? `/events/${publicEventRouteId}/rsvp`;
+      router.replace(buildPathWithQueryString(rsvpPathname, queryString), { scroll: false });
+    },
+    [pathname, publicEventRouteId, router, searchParams],
+  );
+
+  const stepQueryValue = searchParams?.get("step");
+
+  useEffect(() => {
+    const parsedStep = parseRsvpStepQueryValue(stepQueryValue);
+    setStep((currentStep) => (currentStep === parsedStep ? currentStep : parsedStep));
+
+    if (stepQueryValue !== getRsvpStepQueryValue(parsedStep)) {
+      replaceStepInUrl(parsedStep);
+    }
+  }, [replaceStepInUrl, stepQueryValue]);
 
   useEffect(() => {
     const trimmed = debouncedAccessPassword.trim();
@@ -531,7 +578,9 @@ export function RsvpAcceptedForm({
       });
 
       toast.success("RSVP submitted");
-      router.replace(`/events/${eventId}/status`);
+      router.replace(
+        buildPathWithPreservedQuery(`/events/${publicEventRouteId}/status`, searchParams, ["step"]),
+      );
     } catch (error: unknown) {
       const errorDetails = error as ApplicationError | Error;
       const errorMessage = errorDetails?.message || "Failed to submit request";
@@ -557,7 +606,10 @@ export function RsvpAcceptedForm({
 
   const goBack = () => {
     setMessage("");
-    setStep((current) => (current > 1 ? ((current - 1) as 1 | 2) : current));
+    if (step <= 1) return;
+    const previousStep = (step - 1) as RsvpStepNumber;
+    setStep(previousStep);
+    replaceStepInUrl(previousStep);
   };
 
   const goNext = async () => {
@@ -579,6 +631,7 @@ export function RsvpAcceptedForm({
         return;
       }
       setStep(2);
+      replaceStepInUrl(2);
       return;
     }
     if (step === 2) {
@@ -653,6 +706,7 @@ export function RsvpAcceptedForm({
         return;
       }
       setStep(3);
+      replaceStepInUrl(3);
     }
   };
 
@@ -857,7 +911,7 @@ export function RsvpAcceptedForm({
               </button>
             ) : (
               <Link
-                href="/"
+                href={buildEventDetailPathWithPreservedQuery(publicEventRouteId, searchParams)}
                 className="text-[12px] underline underline-offset-4"
                 style={{ color: "var(--tt-fg-dim)" }}
               >

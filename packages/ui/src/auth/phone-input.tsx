@@ -94,7 +94,7 @@ export function PhoneInput({
           disabled={disabled || isLoading}
           autoFocus
           aria-label="Phone number"
-          className="flex-1 bg-transparent px-3 py-3 text-[15px] focus:outline-none disabled:cursor-not-allowed"
+          className="flex-1 bg-transparent px-3 py-3 text-[16px] focus:outline-none disabled:cursor-not-allowed sm:text-[15px]"
           style={{
             color: "var(--tt-fg)",
             fontFamily: "var(--tt-text)",

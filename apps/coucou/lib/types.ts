@@ -16,6 +16,7 @@ export interface User {
   firstName?: string;
   lastName?: string;
   imageUrl?: string;
+  referralCode?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -84,6 +85,7 @@ export interface EventAct {
 
 export interface Event {
   _id: Id<"events">;
+  shortId?: string;
   name: string;
   secondaryTitle?: string;
   description?: string;
@@ -156,6 +158,10 @@ export interface RSVP {
   invitedByNormalizedName?: string;
   invitedBySocialPlatformKey?: string;
   invitedBySocialHandle?: string;
+  referralCode?: string;
+  referrerUserId?: Id<"users">;
+  referrerClerkUserId?: string;
+  referredByName?: string;
   status: "pending" | "approved" | "denied" | "attending";
   createdAt: number;
   updatedAt: number;
@@ -239,6 +245,8 @@ export interface UserEventSharing {
     handle: string;
   }>;
   invitedByName?: string;
+  referralCode?: string;
+  referredByName?: string;
 }
 
 export interface RecentActivityEntry {
@@ -276,6 +284,10 @@ export interface HostRsvp {
   invitedByNormalizedName?: string;
   invitedBySocialPlatformKey?: string;
   invitedBySocialHandle?: string;
+  referralCode?: string;
+  referrerUserId?: Id<"users">;
+  referrerClerkUserId?: string;
+  referredByName?: string;
   redemptionStatus: "none" | "issued" | "redeemed" | "disabled";
   redemptionCode?: string;
   createdAt: number;

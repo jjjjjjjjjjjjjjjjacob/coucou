@@ -1,5 +1,4 @@
 import { api } from "@convex/_generated/api";
-import type { Id } from "@convex/_generated/dataModel";
 import { fetchQuery } from "convex/nextjs";
 import type { Metadata } from "next";
 import { formatEventDisplayName } from "@/lib/event-display";
@@ -10,11 +9,11 @@ type Props = {
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { eventId } = await params;
+  const { eventId: eventRouteId } = await params;
 
   try {
-    const event = await fetchQuery(api.events.get, {
-      eventId: eventId as Id<"events">,
+    const event = await fetchQuery(api.events.getByRouteId, {
+      eventRouteId,
     });
 
     if (!event) {
@@ -84,7 +83,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       openGraph: {
         title,
         description,
-        url: `https://dojopomodoro.club/events/${eventId}`,
+        url: `https://dojopomodoro.club/events/${eventRouteId}`,
         siteName: "Dojo Pomodoro",
         images: [
           {

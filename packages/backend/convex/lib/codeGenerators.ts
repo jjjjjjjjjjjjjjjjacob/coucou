@@ -36,3 +36,13 @@ export function generateRedemptionCode(): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   return generateRandomCode(8, alphabet);
 }
+
+export function generateEventShortId(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return generateRandomCode(7, alphabet).toLowerCase();
+}
+
+export function generateReferralCode(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return generateRandomCode(8, alphabet);
+}

@@ -15,6 +15,7 @@ type ExportRsvpRow = {
   attendees: number;
   note: string;
   invitedByName: string;
+  referredByName: string;
   socialProfiles: Record<string, string>;
   customFieldValues: Record<string, string>;
   phoneNumber: string;
@@ -157,6 +158,7 @@ export const exportRsvpsCsv = action({
         attendees: rsvp.attendees ?? 1,
         note: rsvp.note || "",
         invitedByName: rsvp.invitedByName ?? "",
+        referredByName: rsvp.referredByName ?? "",
         socialProfiles: socialProfilesByRsvpId.get(rsvp._id) ?? {},
         customFieldValues: rsvp.customFieldValues ?? {},
         phoneNumber,
@@ -205,6 +207,7 @@ export const exportRsvpsCsv = action({
       if (includeInvitedBy) {
         headerRow.push(event.primaryFieldConfig?.invitedBy?.label ?? "Invited By");
       }
+      headerRow.push("Referred By");
       headerRow.push(...socialPlatforms.map((platform) => platform.label));
       if (includeAttendees) headerRow.push("Attendees");
       if (includeNote) headerRow.push("Note");
@@ -216,6 +219,7 @@ export const exportRsvpsCsv = action({
         const row: string[] = [rsvp.name];
         if (includePhone) row.push(rsvp.phoneNumber);
         if (includeInvitedBy) row.push(rsvp.invitedByName);
+        row.push(rsvp.referredByName);
         row.push(
           ...socialPlatforms.map((platform) => rsvp.socialProfiles[platform.platformKey] ?? ""),
         );

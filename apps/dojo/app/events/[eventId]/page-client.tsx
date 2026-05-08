@@ -6,6 +6,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,13 +22,14 @@ import { Spinner } from "@/components/ui/spinner";
 import { hasEventSecondaryTitle } from "@/lib/event-display";
 
 export default function EventPageClient({ params }: { params: Promise<{ eventId: string }> }) {
-  const { eventId } = use(params);
+  const { eventId: eventRouteId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isSignedIn } = useAuth();
 
-  const eventQuery = useQuery(convexQuery(api.events.get, { eventId: eventId as Id<"events"> }));
+  const eventQuery = useQuery(convexQuery(api.events.getByRouteId, { eventRouteId }));
   const event = eventQuery.data;
+  const canonicalEventId = event?._id;
 
   const queryParamPassword = searchParams?.get("password") || "";
   const [password, setPassword] = useState("");
@@ -42,9 +44,10 @@ export default function EventPageClient({ params }: { params: Promise<{ eventId:
   }, [queryParamPassword, password]);
 
   const hasNoPasswordListQuery = useQuery(
-    convexQuery(api.events.hasNoPasswordList, {
-      eventId: eventId as Id<"events">,
-    }),
+    convexQuery(
+      api.events.hasNoPasswordList,
+      canonicalEventId ? { eventId: canonicalEventId as Id<"events"> } : "skip",
+    ),
   );
   const hasNoPasswordList = Boolean(hasNoPasswordListQuery.data);
 
@@ -57,19 +60,23 @@ export default function EventPageClient({ params }: { params: Promise<{ eventId:
     setMessage("");
     setIsLoading(true);
 
-    const searchParameters = new URLSearchParams(
-      passwordValue ? { password: passwordValue } : {},
-    ).toString();
-    const queryString = searchParameters ? `?${searchParameters}` : "";
+    const searchParameters = new URLSearchParams(searchParams?.toString());
+    if (passwordValue) {
+      searchParameters.set("password", passwordValue);
+    } else {
+      searchParameters.delete("password");
+    }
+    const searchParameterString = searchParameters.toString();
+    const queryString = searchParameterString ? `?${searchParameterString}` : "";
 
     if (isSignedIn) {
-      router.push(`/events/${eventId}/rsvp${queryString}`);
+      router.push(`/events/${eventRouteId}/rsvp${queryString}`);
     } else {
-      const requestUrl = `/events/${eventId}/rsvp${queryString}`;
+      const requestUrl = `/events/${eventRouteId}/rsvp${queryString}`;
       router.push(`/sign-in?redirect_url=${encodeURIComponent(requestUrl)}`);
     }
     setIsLoading(false);
-  }, [password, isSignedIn, eventId, router, hasNoPasswordList]);
+  }, [password, isSignedIn, eventRouteId, router, hasNoPasswordList, searchParams]);
 
   const dateText = useMemo(() => {
     const timestamp = event?.eventDate;
@@ -145,6 +152,11 @@ export default function EventPageClient({ params }: { params: Promise<{ eventId:
                 <DialogFooter />
               </DialogContent>
             </Dialog>
+            {isSignedIn && event ? (
+              <div className="mt-3 flex justify-center">
+                <EventReferralShareButton event={event} />
+              </div>
+            ) : null}
           </div>
         </header>
       )}

@@ -1,9 +1,9 @@
 import type { ClerkMiddlewareOptions } from "@clerk/nextjs/server";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { api } from "@convex/_generated/api";
-import type { Id } from "@convex/_generated/dataModel";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
+import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
 import { fetchQuery } from "convex/nextjs";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -109,7 +109,7 @@ export default clerkMiddleware(async (auth, req) => {
         siteKey: siteConfiguration.siteKey,
       });
       if (featuredEvent?._id) {
-        const redirectUrl = new URL(`/events/${featuredEvent._id}`, req.url);
+        const redirectUrl = new URL(`/events/${getEventRouteId(featuredEvent)}`, req.url);
         return NextResponse.redirect(redirectUrl);
       }
     } catch (error) {
@@ -142,9 +142,8 @@ export default clerkMiddleware(async (auth, req) => {
       // For other subpaths, redirect to main event page
       if (!isMainEventPage) {
         const redirectUrl = new URL(`/events/${eventRoute.eventId}`, req.url);
-        const password = searchParams.get("password");
-        if (password) {
-          redirectUrl.searchParams.set("password", password);
+        for (const [queryKey, queryValue] of searchParams.entries()) {
+          redirectUrl.searchParams.append(queryKey, queryValue);
         }
         return NextResponse.redirect(redirectUrl);
       }
@@ -154,9 +153,10 @@ export default clerkMiddleware(async (auth, req) => {
     // For authenticated users, check RSVP status and route accordingly
     try {
       // Get RSVP status for this user and event
-      const status = await fetchQuery(api.rsvps.statusForUserEventServer, {
-        eventId: eventRoute.eventId as Id<"events">,
+      const status = await fetchQuery(api.rsvps.statusForUserEventServerByRouteId, {
+        eventRouteId: eventRoute.eventId,
         clerkUserId: userId,
+        siteKey: siteConfiguration.siteKey,
       });
 
       // Get password from search params
@@ -192,9 +192,9 @@ export default clerkMiddleware(async (auth, req) => {
       // Redirect if not on the correct page
       if (pathname !== correctPath) {
         const redirectUrl = new URL(correctPath, req.url);
-        // Preserve password parameter if it exists
-        if (password) {
-          redirectUrl.searchParams.set("password", password);
+        // Preserve password, referral, and any other route state.
+        for (const [queryKey, queryValue] of searchParams.entries()) {
+          redirectUrl.searchParams.append(queryKey, queryValue);
         }
         return NextResponse.redirect(redirectUrl);
       }

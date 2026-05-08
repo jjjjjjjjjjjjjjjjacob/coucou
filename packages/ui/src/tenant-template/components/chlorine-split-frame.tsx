@@ -53,6 +53,35 @@ export interface LandingViewport extends ViewportDimensions {
   hasMeasuredViewport: boolean;
 }
 
+export interface LandingViewportMeasurementInput {
+  elementWidth: number;
+  elementHeight: number;
+  viewportWidth?: number;
+  viewportHeight?: number;
+}
+
+function resolvePositiveDimension(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+export function resolveLandingViewportDimensions({
+  elementWidth,
+  elementHeight,
+  viewportWidth,
+  viewportHeight,
+}: LandingViewportMeasurementInput): ViewportDimensions {
+  return {
+    width: resolvePositiveDimension(
+      elementWidth,
+      resolvePositiveDimension(viewportWidth, FALLBACK_VIEWPORT_DIMENSIONS.width),
+    ),
+    height: resolvePositiveDimension(
+      viewportHeight,
+      resolvePositiveDimension(elementHeight, FALLBACK_VIEWPORT_DIMENSIONS.height),
+    ),
+  };
+}
+
 export function useLandingViewport(
   landingElementRef: RefObject<HTMLDivElement | null>,
   forceMobile?: boolean,
@@ -71,23 +100,32 @@ export function useLandingViewport(
 
     const measureLandingElement = () => {
       const landingElementRect = landingElement.getBoundingClientRect();
+      const visualViewport = window.visualViewport;
+      const measuredViewport = resolveLandingViewportDimensions({
+        elementWidth: landingElementRect.width,
+        elementHeight: landingElementRect.height,
+        viewportWidth: visualViewport?.width ?? window.innerWidth,
+        viewportHeight: visualViewport?.height ?? window.innerHeight,
+      });
       setViewportState({
-        width: landingElementRect.width,
-        height: landingElementRect.height,
+        ...measuredViewport,
         hasMeasuredViewport: true,
       });
     };
 
     measureLandingElement();
 
+    const visualViewport = window.visualViewport;
     const resizeObserver =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measureLandingElement);
     resizeObserver?.observe(landingElement);
     window.addEventListener("resize", measureLandingElement);
+    visualViewport?.addEventListener("resize", measureLandingElement);
 
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", measureLandingElement);
+      visualViewport?.removeEventListener("resize", measureLandingElement);
     };
   }, [landingElementRef]);
 

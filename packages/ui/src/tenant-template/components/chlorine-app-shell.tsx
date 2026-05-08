@@ -55,6 +55,8 @@ export interface ChlorineAppShellProps {
   contactEmail?: string;
   /** Footer right text. Defaults to the current year. */
   yearLabel?: string;
+  /** Extra vertical padding after the shell's first viewport section. */
+  postViewportBottomPaddingPx?: number;
   /** Force the mobile breakpoint regardless of viewport width. */
   mobile?: boolean;
   /**
@@ -104,6 +106,7 @@ export function ChlorineAppShell({
   tagline = "",
   contactEmail = "",
   yearLabel = "2026",
+  postViewportBottomPaddingPx = 0,
   mobile: forceMobile,
   contentMaxWidthPx,
   wordmarkHref = "/",
@@ -117,8 +120,8 @@ export function ChlorineAppShell({
 
   // The intro (centered → split → content) only plays when mounting into
   // the expanded landing layout for the first time in this module instance.
-  // Direct collapsed mounts (e.g. someone hits /events/[id] on a fresh
-  // tab) skip the intro entirely and just appear at the collapsed target.
+  // Direct collapsed mounts (e.g. someone hits /events/[id]/ticket on a
+  // fresh tab) skip the intro and just appear at the collapsed target.
   const initialModeRef = useRef(mode);
   const shouldSkipIntro =
     skipAnimation || introHasPlayedInThisModuleInstance || initialModeRef.current === "collapsed";
@@ -184,6 +187,10 @@ export function ChlorineAppShell({
   const isExpanded = mode === "expanded";
   const forceCollapsed = mode === "collapsed";
   const hasTagline = isExpanded && tagline.length > 0;
+  const hasContactEmail = contactEmail.length > 0;
+  const hasYearLabel = yearLabel.length > 0;
+  const shouldRenderFooter = hasContactEmail || hasYearLabel;
+  const resolvedPostViewportBottomPadding = Math.max(0, postViewportBottomPaddingPx);
 
   // Vertical reserves keep page content clear of the wordmark anchors.
   // Expanded: top reserve sized to the top-anchored CLUB+swimmer block,
@@ -208,126 +215,143 @@ export function ChlorineAppShell({
 
   const shellInner = (
     <div
-      ref={shellElementRef}
       data-shell-mode={mode}
       style={{
-        position: "relative",
         width: "100%",
-        minHeight: "100dvh",
         background: "var(--tt-bg)",
         color: "var(--tt-fg)",
         fontFamily: "var(--tt-text)",
-        display: "flex",
-        flexDirection: "column",
       }}
     >
-      {hasTagline ? (
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            padding: isMobile ? "20px 24px" : "28px 40px",
-            display: "flex",
-            justifyContent: "flex-end",
-            alignItems: "center",
-            zIndex: 10,
-            opacity: phase >= 1 ? 1 : 0,
-            transition: "opacity 800ms ease 200ms",
-          }}
-        >
-          <span
+      <div
+        ref={shellElementRef}
+        style={{
+          position: "relative",
+          width: "100%",
+          minHeight: "100dvh",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {hasTagline ? (
+          <div
             style={{
-              color: "var(--tt-fg-dim)",
-              fontSize: 12,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              padding: isMobile ? "20px 24px" : "28px 40px",
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              zIndex: 10,
+              opacity: phase >= 1 ? 1 : 0,
+              transition: "opacity 800ms ease 200ms",
             }}
           >
-            {tagline}
-          </span>
-        </div>
-      ) : null}
+            <span
+              style={{
+                color: "var(--tt-fg-dim)",
+                fontSize: 12,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              {tagline}
+            </span>
+          </div>
+        ) : null}
 
-      <ChlorineComposedLogo
-        phase={phase}
-        hasEnabledIntroTransitions={hasEnabledIntroTransitions}
-        hasStartedIntroColor={hasStartedIntroColor}
-        landingViewport={landingViewport}
-        forceCollapsed={forceCollapsed}
-        wordmarkHref={wordmarkHref}
-        linkComponent={linkComponent}
-        wordmarkLinkLabel="Club Chlorine — home"
-      />
+        <ChlorineComposedLogo
+          phase={phase}
+          hasEnabledIntroTransitions={hasEnabledIntroTransitions}
+          hasStartedIntroColor={hasStartedIntroColor}
+          landingViewport={landingViewport}
+          forceCollapsed={forceCollapsed}
+          wordmarkHref={wordmarkHref}
+          linkComponent={linkComponent}
+          wordmarkLinkLabel="Club Chlorine — home"
+        />
 
-      {topRightSlot ? (
+        {topRightSlot ? (
+          <div
+            style={{
+              position: "absolute",
+              top: isMobile ? 12 : 20,
+              right: isMobile ? 12 : 20,
+              zIndex: 20,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            {topRightSlot}
+          </div>
+        ) : null}
+
+        <div style={{ height: topReserve, flexShrink: 0 }} aria-hidden />
+
         <div
           style={{
-            position: "absolute",
-            top: isMobile ? 12 : 20,
-            right: isMobile ? 12 : 20,
-            zIndex: 20,
+            flex: "1 0 auto",
+            minHeight: 0,
+            padding: `0 ${horizontalPadding}px`,
+            zIndex: 5,
             display: "flex",
-            alignItems: "center",
-            gap: 8,
+            alignItems: "safe center",
+            justifyContent: "center",
+            opacity: phase >= 2 ? 1 : 0,
+            transition: "opacity 700ms ease 200ms",
           }}
         >
-          {topRightSlot}
+          <div
+            style={{
+              width: "100%",
+              maxWidth: contentMaxWidthPx,
+            }}
+          >
+            {children}
+          </div>
         </div>
-      ) : null}
 
-      <div style={{ height: topReserve, flexShrink: 0 }} aria-hidden />
+        {bottomReserve > 0 ? (
+          <div style={{ height: bottomReserve, flexShrink: 0 }} aria-hidden />
+        ) : null}
 
-      <div
-        style={{
-          flex: "1 0 auto",
-          minHeight: 0,
-          padding: `0 ${horizontalPadding}px`,
-          zIndex: 5,
-          display: "flex",
-          alignItems: "safe center",
-          justifyContent: "center",
-          opacity: phase >= 2 ? 1 : 0,
-          transition: "opacity 700ms ease 200ms",
-        }}
-      >
-        <div
-          style={{
-            width: "100%",
-            maxWidth: contentMaxWidthPx,
-          }}
-        >
-          {children}
-        </div>
+        {shouldRenderFooter ? (
+          <div
+            style={{
+              position: "absolute",
+              bottom: isMobile ? 8 : 12,
+              left: 0,
+              right: 0,
+              padding: isMobile ? "0 24px" : "0 40px",
+              display: "flex",
+              justifyContent:
+                hasContactEmail && hasYearLabel
+                  ? "space-between"
+                  : hasContactEmail
+                    ? "flex-start"
+                    : "flex-end",
+              fontSize: 10,
+              color: "var(--tt-fg-mute)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              zIndex: 10,
+              opacity: phase >= 2 ? 1 : 0,
+              transition: "opacity 800ms ease 600ms",
+              pointerEvents: "none",
+            }}
+          >
+            {hasContactEmail ? <span style={{ pointerEvents: "auto" }}>{contactEmail}</span> : null}
+            {hasYearLabel ? <span style={{ pointerEvents: "auto" }}>{yearLabel}</span> : null}
+          </div>
+        ) : null}
       </div>
 
-      {bottomReserve > 0 ? (
-        <div style={{ height: bottomReserve, flexShrink: 0 }} aria-hidden />
+      {resolvedPostViewportBottomPadding > 0 ? (
+        <div style={{ height: resolvedPostViewportBottomPadding }} aria-hidden />
       ) : null}
-
-      <div
-        style={{
-          position: "absolute",
-          bottom: isMobile ? 8 : 12,
-          left: 0,
-          right: 0,
-          padding: isMobile ? "0 24px" : "0 40px",
-          display: "flex",
-          justifyContent: contactEmail ? "space-between" : "flex-end",
-          fontSize: 10,
-          color: "var(--tt-fg-mute)",
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          zIndex: 10,
-          opacity: phase >= 2 ? 1 : 0,
-          transition: "opacity 800ms ease 600ms",
-          pointerEvents: "none",
-        }}
-      >
-        {contactEmail ? <span style={{ pointerEvents: "auto" }}>{contactEmail}</span> : null}
-        <span style={{ pointerEvents: "auto" }}>{yearLabel}</span>
-      </div>
     </div>
   );
 

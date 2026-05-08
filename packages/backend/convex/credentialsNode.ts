@@ -1,5 +1,6 @@
 "use node";
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
+import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { action } from "./_generated/server";
@@ -35,7 +36,9 @@ export const resolveEventByPassword = action({
   handler: async (
     ctx,
     { password, siteKey },
-  ): Promise<{ ok: true; eventId: string; listKey: string } | { ok: false }> => {
+  ): Promise<
+    { ok: true; eventId: string; eventRouteId: string; listKey: string } | { ok: false }
+  > => {
     const credentials = await ctx.runQuery(api.credentials.getByPassword, {
       password,
     });
@@ -51,6 +54,7 @@ export const resolveEventByPassword = action({
         return {
           ok: true as const,
           eventId: credential.eventId,
+          eventRouteId: getEventRouteId(event),
           listKey: credential.listKey,
         };
       }
@@ -67,6 +71,7 @@ export const resolveEventByPassword = action({
         return {
           ok: true as const,
           eventId: credential.eventId,
+          eventRouteId: getEventRouteId(event),
           listKey: credential.listKey,
         };
       }

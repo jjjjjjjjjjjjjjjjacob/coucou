@@ -9,19 +9,34 @@ import { useQuery } from "@tanstack/react-query";
 import { useQuery as useConvexQuery, useMutation } from "convex/react";
 import { CheckCircle2, CircleDashed } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
+import {
+  buildEventDetailPathWithPreservedQuery,
+  buildPathWithPreservedQuery,
+} from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import type { Event as ClubEvent, RSVP } from "@/lib/types";
+
+interface CurrentUserEventStatus {
+  rsvpId?: Id<"rsvps">;
+  listKey?: string;
+  status?: RSVP["status"];
+  smsConsent?: boolean;
+  smsConsentIpAddress?: string;
+}
 
 export default function StatusPage({ params }: { params: Promise<{ eventId: string }> }) {
-  const { eventId } = use(params);
+  const { eventId: eventRouteId } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isSignedIn, isLoaded } = useAuth();
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
   const [isUpdatingSmsPreference, setIsUpdatingSmsPreference] = useState(false);
@@ -29,24 +44,24 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
 
   const statusQuery = useQuery(
     convexQuery(
-      api.rsvps.statusForUserEvent,
+      api.rsvps.statusForUserEventByRouteId,
       isLoaded && isSignedIn
         ? {
-            eventId: eventId as Id<"events">,
+            eventRouteId,
             siteKey: siteConfiguration.siteKey,
           }
         : "skip",
     ),
   );
   const eventQuery = useQuery(
-    convexQuery(api.events.get, {
-      eventId: eventId as Id<"events">,
+    convexQuery(api.events.getByRouteId, {
+      eventRouteId,
       siteKey: siteConfiguration.siteKey,
     }),
   );
 
-  const status = statusQuery.data;
-  const event = eventQuery.data;
+  const status = statusQuery.data as CurrentUserEventStatus | null | undefined;
+  const event = eventQuery.data as ClubEvent | null | undefined;
 
   const smsSenderDisplayName = useMemo(
     () =>
@@ -83,12 +98,16 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
   useEffect(() => {
     if (!status) return;
     if (status.status === "approved" || status.status === "attending") {
-      router.replace(`/events/${eventId}/ticket`);
+      router.replace(
+        buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"]),
+      );
     }
     if (status.status === "denied") {
-      router.replace(`/events/${eventId}/denied`);
+      router.replace(
+        buildPathWithPreservedQuery(`/events/${eventRouteId}/denied`, searchParams, ["step"]),
+      );
     }
-  }, [status, eventId, router]);
+  }, [status, eventRouteId, router, searchParams]);
 
   const handleSmsPreferenceChange = async (desiredSmsConsent: boolean) => {
     if (!status?.rsvpId) return;
@@ -150,7 +169,10 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
         <RsvpPending
           eyebrow="Status"
           eyebrowTrailing={
-            <EyebrowPill href={`/events/${eventId}`} linkComponent={Link}>
+            <EyebrowPill
+              href={buildEventDetailPathWithPreservedQuery(eventRouteId, searchParams)}
+              linkComponent={Link}
+            >
               ← Back to event
             </EyebrowPill>
           }
@@ -170,7 +192,10 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
       <RsvpPending
         noShell
         eyebrowTrailing={
-          <EyebrowPill href={`/events/${eventId}`} linkComponent={Link}>
+          <EyebrowPill
+            href={buildEventDetailPathWithPreservedQuery(eventRouteId, searchParams)}
+            linkComponent={Link}
+          >
             ← Back to event
           </EyebrowPill>
         }
@@ -222,6 +247,13 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
                 )}
               </section>
             )}
+
+            <section className="flex w-full flex-col items-start gap-3">
+              <p className="text-sm font-medium" style={{ color: "var(--tt-fg)" }}>
+                Share to move up in the waitlist.
+              </p>
+              <EventReferralShareButton event={event} variant="prominent" className="h-auto p-3" />
+            </section>
 
             <div className="flex flex-col gap-3">
               {status.smsConsent ? (

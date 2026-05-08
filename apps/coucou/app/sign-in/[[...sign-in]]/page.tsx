@@ -49,11 +49,11 @@ function mapEventToThemedEvent(event: {
   };
 }
 
-async function loadEventForTheme(eventId: string | null): Promise<ThemedEvent | null> {
-  if (!eventId) return null;
+async function loadEventForTheme(eventRouteId: string | null): Promise<ThemedEvent | null> {
+  if (!eventRouteId) return null;
   try {
-    const event = await fetchQuery(api.events.get, {
-      eventId: eventId as Id<"events">,
+    const event = await fetchQuery(api.events.getByRouteId, {
+      eventRouteId,
     });
     if (!event) return null;
     return mapEventToThemedEvent(event);

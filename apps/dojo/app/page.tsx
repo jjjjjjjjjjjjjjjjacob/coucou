@@ -33,12 +33,12 @@ export default function Home() {
         password: normalizedPassword,
         siteKey: siteConfiguration.siteKey,
       });
-      if (res?.ok && res.eventId) {
+      if (res?.ok && res.eventRouteId) {
         // Pass the code along in search params to the event page
         const searchParams = new URLSearchParams({
           password: normalizedPassword,
         }).toString();
-        router.push(`/events/${res.eventId}?${searchParams}`);
+        router.push(`/events/${res.eventRouteId}?${searchParams}`);
       } else {
         setMessage("No active event matches that password.");
       }

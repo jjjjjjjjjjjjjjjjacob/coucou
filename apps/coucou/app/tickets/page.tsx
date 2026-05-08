@@ -1,5 +1,6 @@
 "use client";
 import { api } from "@convex/_generated/api";
+import { buildEventPath } from "@coucou/sdk/shared/event-routes";
 import { useQuery } from "convex/react";
 import { AlertCircle, Calendar, Clock, MapPin, QrCode } from "lucide-react";
 import Link from "next/link";
@@ -160,13 +161,13 @@ function TicketCard({ ticket }: { ticket: UserTicket }) {
 
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
-          <Link href={`/events/${event._id}`}>
+          <Link href={buildEventPath(event)}>
             <Button variant="outline" size="sm">
               View Event
             </Button>
           </Link>
           {hasValidTicket && (
-            <Link href={`/events/${event._id}/ticket`}>
+            <Link href={buildEventPath(event, "ticket")}>
               <Button size="sm" className="flex items-center gap-1">
                 <QrCode className="h-4 w-4" />
                 View Ticket

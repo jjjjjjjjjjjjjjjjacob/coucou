@@ -1,20 +1,32 @@
 "use client";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
-import type { Id } from "@convex/_generated/dataModel";
 import { isEventOpenForRsvp, resolveEventRsvpCutoff } from "@coucou/sdk/shared/event-availability";
+import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
 import { ChlorineEventRow, type ChlorineLandingEvent, useMobile } from "@coucou/ui/tenant-template";
 import { useQuery } from "convex/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type React from "react";
 import { use, useMemo } from "react";
+import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Spinner } from "@/components/ui/spinner";
 import { getPublicEventActs } from "@/lib/event-lineup";
+import {
+  buildEventDetailPathWithPreservedQuery,
+  buildPathWithPreservedQuery,
+  buildRsvpPathWithStep,
+} from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
+import type { Event as ClubEvent, RSVP } from "@/lib/types";
 
 interface EventPageClientProps {
   params: Promise<{ eventId: string }>;
 }
+
+type UserEventRsvpStatus = {
+  status?: RSVP["status"];
+} | null;
 
 function formatLandingDate(timestamp: number, timezone?: string): string {
   const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -78,25 +90,22 @@ const monoBodyStyle: React.CSSProperties = {
 };
 
 export default function EventPageClient({ params }: EventPageClientProps) {
-  const { eventId } = use(params);
+  const { eventId: eventRouteId } = use(params);
   const searchParams = useSearchParams();
-  const queryParamPassword = searchParams?.get("password") ?? "";
-  const passwordSearch = queryParamPassword
-    ? `?${new URLSearchParams({ password: queryParamPassword }).toString()}`
-    : "";
+  const { isSignedIn } = useAuth();
 
   const isMobile = useMobile();
   const allEvents = useQuery(api.events.listAll, {
     siteKey: siteConfiguration.siteKey,
-  });
-  const focusedEvent = useQuery(api.events.get, {
-    eventId: eventId as Id<"events">,
+  }) as ClubEvent[] | undefined;
+  const focusedEvent = useQuery(api.events.getByRouteId, {
+    eventRouteId,
     siteKey: siteConfiguration.siteKey,
-  });
-  const focusedEventStatus = useQuery(api.rsvps.statusForUserEvent, {
-    eventId: eventId as Id<"events">,
+  }) as ClubEvent | null | undefined;
+  const focusedEventStatus = useQuery(api.rsvps.statusForUserEventByRouteId, {
+    eventRouteId,
     siteKey: siteConfiguration.siteKey,
-  });
+  }) as UserEventRsvpStatus | undefined;
 
   const orderedEvents = useMemo(() => {
     if (!allEvents) return [];
@@ -107,8 +116,12 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   }, [allEvents]);
 
   const focusedEventInList = useMemo(() => {
-    return orderedEvents.find((event) => event._id === eventId) ?? null;
-  }, [orderedEvents, eventId]);
+    return (
+      orderedEvents.find(
+        (event) => event._id === focusedEvent?._id || getEventRouteId(event) === eventRouteId,
+      ) ?? null
+    );
+  }, [orderedEvents, focusedEvent?._id, eventRouteId]);
 
   // The focused event may have already passed (cutoff in the past). When
   // that happens it won't be in `orderedEvents`; we still want to render
@@ -141,7 +154,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   }
 
   const focusedEventIsOpen = isEventOpenForRsvp(resolvedFocusedEvent);
-  const focusedRsvpFormHref = `/events/${resolvedFocusedEvent._id}/rsvp${passwordSearch}`;
+  const focusedRsvpFormHref = buildRsvpPathWithStep(eventRouteId, searchParams, 1);
 
   // When the user already has an RSVP, replace the standard "RSVP" brick
   // with a contextual one that jumps straight to their existing status or
@@ -154,9 +167,9 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     focusedRsvpStatus === "denied";
   const focusedExistingRsvpHref =
     focusedRsvpStatus === "approved" || focusedRsvpStatus === "attending"
-      ? `/events/${resolvedFocusedEvent._id}/ticket`
+      ? buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"])
       : focusedRsvpStatus === "pending" || focusedRsvpStatus === "denied"
-        ? `/events/${resolvedFocusedEvent._id}/status`
+        ? buildPathWithPreservedQuery(`/events/${eventRouteId}/status`, searchParams, ["step"])
         : null;
   const focusedBrickHref = focusedExistingRsvpHref ?? focusedRsvpFormHref;
   const focusedBrickLabel =
@@ -237,7 +250,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   if (!focusedEventInList && resolvedFocusedEvent) {
     allRows.push({
       landingEvent: {
-        id: resolvedFocusedEvent._id,
+        id: eventRouteId,
         date: formatLandingDate(resolvedFocusedEvent.eventDate, resolvedFocusedEvent.eventTimezone),
         lineup: getPublicEventActs(resolvedFocusedEvent).map((act) => ({
           label: act.displayName,
@@ -258,10 +271,11 @@ export default function EventPageClient({ params }: EventPageClientProps) {
 
   for (const event of orderedEvents) {
     const eventIsOpen = isEventOpenForRsvp(event);
-    const isFocused = event._id === eventId;
+    const eventRouteIdentifier = getEventRouteId(event);
+    const isFocused = event._id === resolvedFocusedEvent._id;
     allRows.push({
       landingEvent: {
-        id: event._id,
+        id: eventRouteIdentifier,
         date: formatLandingDate(event.eventDate, event.eventTimezone),
         lineup: getPublicEventActs(event).map((act) => ({
           label: act.displayName,
@@ -271,7 +285,9 @@ export default function EventPageClient({ params }: EventPageClientProps) {
           // nest anchors inside their detailHref wrap.
           href: isFocused ? act.socialUrl : undefined,
         })),
-        rsvpHref: isFocused ? focusedBrickHref : `/events/${event._id}/rsvp`,
+        rsvpHref: isFocused
+          ? focusedBrickHref
+          : buildRsvpPathWithStep(eventRouteIdentifier, searchParams, 1),
         rsvpLabel: isFocused ? focusedBrickLabel : eventIsOpen ? "RSVP" : "CLOSED",
         rsvpDisabled: isFocused ? focusedBrickDisabled : !eventIsOpen,
       },
@@ -292,7 +308,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
               }}
             >
               <Link
-                href="/"
+                href={buildPathWithPreservedQuery("/", searchParams, ["step"])}
                 style={{
                   fontFamily:
                     'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
@@ -315,7 +331,16 @@ export default function EventPageClient({ params }: EventPageClientProps) {
             delayMs={index * 90}
             linkComponent={Link}
             variant={row.isFocused ? "expanded" : "minimized"}
-            detailHref={row.isFocused ? undefined : `/events/${row.landingEvent.id}`}
+            detailHref={
+              row.isFocused
+                ? undefined
+                : buildEventDetailPathWithPreservedQuery(row.landingEvent.id, searchParams)
+            }
+            bottomRightSlot={
+              row.isFocused && isSignedIn ? (
+                <EventReferralShareButton event={resolvedFocusedEvent} showLabel={false} />
+              ) : undefined
+            }
             expandedContent={row.isFocused ? expandedContent : undefined}
           />
         </div>

@@ -405,6 +405,10 @@ export interface ChlorineEventRowProps {
    * as the date / title.
    */
   topRightSlot?: ReactNode;
+  /**
+   * Optional content rendered in column 3 below the RSVP brick.
+   */
+  bottomRightSlot?: ReactNode;
 }
 
 export function ChlorineEventRow({
@@ -417,6 +421,7 @@ export function ChlorineEventRow({
   detailHref,
   expandedContent,
   topRightSlot,
+  bottomRightSlot,
 }: ChlorineEventRowProps) {
   const isMinimized = variant === "minimized";
   const isExpanded = variant === "expanded";
@@ -601,6 +606,7 @@ export function ChlorineEventRow({
           <>
             {topRightSlot}
             {renderBrick()}
+            {bottomRightSlot}
             {renderDetailsLink()}
           </>
         )}

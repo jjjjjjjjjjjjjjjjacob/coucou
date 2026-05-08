@@ -2,7 +2,7 @@
 import { api } from "@convex/_generated/api";
 import { resolveEventEndTimestamp } from "@convex/lib/eventTiming";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { CheckCircle, Edit, ExternalLink, MoreHorizontal, Trash2 } from "lucide-react";
+import { CheckCircle, Edit, EyeOff, MoreHorizontal, Share, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -29,6 +29,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatEventTitleInline } from "@/lib/event-display";
+import {
+  getEventLifecycleActionLabel,
+  runEventLifecycleAction,
+} from "@/lib/event-lifecycle-actions";
 import { buildPublicEventUrl } from "@/lib/event-public-url";
 import type { Event } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
@@ -74,24 +78,28 @@ export default function EventCardClient({
   const isPast = !isDraft && endTimestamp > 0 && endTimestamp < now;
   const badgeLabel = isDraft ? "Draft" : isPast ? "Past" : "Published";
   const badgeVariant: "outline" | "success" = isDraft || isPast ? "outline" : "success";
-  const publicEventUrl = buildPublicEventUrl(workspace ?? null, event._id);
+  const publicEventUrl = buildPublicEventUrl(workspace ?? null, event, {
+    currentOrigin: typeof window !== "undefined" ? window.location.origin : null,
+    vercelEnvironment: process.env.NEXT_PUBLIC_VERCEL_ENV,
+  });
+  const lifecycleActionLabel = getEventLifecycleActionLabel(isDraft);
 
   const togglePublish = async () => {
-    if (!workspaceScope) return;
     try {
-      if (isDraft) {
-        await publishEvent({
-          eventId: event._id,
-          ...workspaceScope.queryArgs,
-        });
+      const lifecycleActionResult = await runEventLifecycleAction({
+        eventId: event._id,
+        isDraft,
+        workspaceScope,
+        publishEvent,
+        unpublishEvent,
+      });
+      if (lifecycleActionResult === "published") {
         toast.success("Event published");
-      } else {
-        await unpublishEvent({
-          eventId: event._id,
-          ...workspaceScope.queryArgs,
-        });
+      }
+      if (lifecycleActionResult === "unpublished") {
         toast.success("Event unpublished");
       }
+      if (lifecycleActionResult === "skipped") return;
       router.refresh();
     } catch (error: unknown) {
       toast.error((error as Error).message || "Failed to update lifecycle");
@@ -171,9 +179,6 @@ export default function EventCardClient({
               <Button variant="outline" size="sm" onClick={() => router.push(rsvpsPath)}>
                 RSVPs
               </Button>
-              <Button variant="outline" size="sm" onClick={togglePublish}>
-                {isDraft ? "Publish" : "Unpublish"}
-              </Button>
               {showSendQrCodesButton && (
                 <Button
                   variant="outline"
@@ -187,11 +192,11 @@ export default function EventCardClient({
             </div>
 
             <div className="flex gap-2">
-              <ShareEventPopover eventId={event._id}>
+              <ShareEventPopover eventId={event._id} eventUrl={publicEventUrl}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" size="sm" className="aspect-square">
-                      <ExternalLink className="h-4 w-4" />
+                    <Button variant="outline" size="sm" className="aspect-square rounded-full">
+                      <Share className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -201,11 +206,24 @@ export default function EventCardClient({
               </ShareEventPopover>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" aria-label="Open event actions">
                     <MoreHorizontal className="h-6 w-6" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void togglePublish();
+                    }}
+                  >
+                    {isDraft ? (
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                    ) : (
+                      <EyeOff className="mr-2 h-4 w-4" />
+                    )}
+                    {lifecycleActionLabel}
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={async (e) => {
                       e.preventDefault();

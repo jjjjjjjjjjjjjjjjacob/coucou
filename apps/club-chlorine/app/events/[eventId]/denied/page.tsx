@@ -1,44 +1,54 @@
 "use client";
 
 import { api } from "@convex/_generated/api";
-import type { Id } from "@convex/_generated/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { RsvpDenied, TenantButton, TenantTemplateProvider } from "@coucou/ui/tenant-template";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  buildEventDetailPathWithPreservedQuery,
+  buildRsvpPathWithStep,
+} from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
+import type { Event as ClubEvent } from "@/lib/types";
+
+interface DeniedRsvpStatus {
+  listKey?: string;
+}
 
 export default function DeniedPage({ params }: { params: Promise<{ eventId: string }> }) {
-  const { eventId } = use(params);
+  const { eventId: eventRouteId } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [newPassword, setNewPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const eventQuery = useQuery(
-    convexQuery(api.events.get, {
-      eventId: eventId as Id<"events">,
+    convexQuery(api.events.getByRouteId, {
+      eventRouteId,
       siteKey: siteConfiguration.siteKey,
     }),
   );
   const statusQuery = useQuery(
-    convexQuery(api.rsvps.statusForUserEvent, {
-      eventId: eventId as Id<"events">,
+    convexQuery(api.rsvps.statusForUserEventByRouteId, {
+      eventRouteId,
       siteKey: siteConfiguration.siteKey,
     }),
   );
 
-  const event = eventQuery.data;
-  const status = statusQuery.data;
+  const event = eventQuery.data as ClubEvent | null | undefined;
+  const status = statusQuery.data as DeniedRsvpStatus | null | undefined;
 
   const handleTryNewPassword = useCallback(() => {
     const trimmed = newPassword.trim();
     if (!trimmed) return;
     setIsLoading(true);
-    const searchParams = new URLSearchParams({ password: trimmed }).toString();
-    router.push(`/events/${eventId}/rsvp?${searchParams}`);
-  }, [newPassword, eventId, router]);
+    const nextSearchParams = new URLSearchParams(searchParams?.toString());
+    nextSearchParams.set("password", trimmed);
+    router.push(buildRsvpPathWithStep(eventRouteId, nextSearchParams, 1));
+  }, [newPassword, eventRouteId, router, searchParams]);
 
   if (eventQuery.isLoading || !event) {
     return (
@@ -96,7 +106,12 @@ export default function DeniedPage({ params }: { params: Promise<{ eventId: stri
               >
                 {isLoading ? "Trying…" : "Try again"}
               </TenantButton>
-              <TenantButton type="button" onClick={() => router.push(`/events/${eventId}`)}>
+              <TenantButton
+                type="button"
+                onClick={() =>
+                  router.push(buildEventDetailPathWithPreservedQuery(eventRouteId, searchParams))
+                }
+              >
                 Back to event
               </TenantButton>
             </div>

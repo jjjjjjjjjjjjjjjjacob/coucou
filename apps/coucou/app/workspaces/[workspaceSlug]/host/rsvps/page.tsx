@@ -282,6 +282,7 @@ export default function RsvpsPage() {
       "attendees",
       "smsConsent",
       ...(currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true ? ["invitedByName"] : []),
+      "referredByName",
       "noteForHosts",
       "createdAt",
       "approvalStatus",
@@ -306,6 +307,7 @@ export default function RsvpsPage() {
       "attendees",
       "smsConsent",
       ...(currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true ? ["invitedByName"] : []),
+      "referredByName",
       "createdAt",
       "approvalStatus",
       "ticketStatus",
@@ -817,6 +819,23 @@ export default function RsvpsPage() {
             } satisfies ColumnDef<HostRsvp>,
           ]
         : []),
+      {
+        id: "referredByName",
+        header: "Referred By",
+        accessorKey: "referredByName",
+        enableResizing: true,
+        size: 150,
+        minSize: 100,
+        maxSize: 260,
+        cell: ({ row }) => {
+          const referredByName =
+            row.original.referredByName?.trim() || row.original.referralCode?.trim();
+          if (!referredByName) {
+            return <span className="text-sm text-muted-foreground">—</span>;
+          }
+          return <span className="text-sm truncate max-w-32">{referredByName}</span>;
+        },
+      },
       ...socialProfileColumns,
       {
         id: "noteForHosts",
@@ -2154,6 +2173,7 @@ export default function RsvpsPage() {
         listKey: "List",
         attendees: "Attendees",
         smsConsent: "SMS Consent",
+        referredByName: "Referred By",
         noteForHosts: "Note for Hosts",
         createdAt: "Created",
         approvalStatus: "Approval",
@@ -2574,6 +2594,7 @@ export default function RsvpsPage() {
           {currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true && (
             <SelectOption value="invitedByName">Invited By</SelectOption>
           )}
+          <SelectOption value="referredByName">Referred By</SelectOption>
           {currentEvent?.primaryFieldConfig?.socialPlatforms?.map((platform) => (
             <SelectOption
               key={`sort-${platform.platformKey}`}

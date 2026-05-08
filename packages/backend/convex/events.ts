@@ -1,9 +1,10 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { mutation, query } from "./functions";
+import { generateEventShortId } from "./lib/codeGenerators";
 import {
   primaryFieldConfigFromWorkspaceDefaults,
   primaryFieldConfigHasEffectiveContent,
@@ -53,6 +54,55 @@ import {
 
 // Node crypto-based creation is handled in eventsNode.ts (action).
 // This module contains only queries/mutations compatible with the standard runtime.
+
+const EVENT_SHORT_ID_MAX_ATTEMPTS = 20;
+
+function normalizeEventShortId(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+async function generateUniqueEventShortId(ctx: MutationCtx): Promise<string> {
+  for (let attemptNumber = 0; attemptNumber < EVENT_SHORT_ID_MAX_ATTEMPTS; attemptNumber++) {
+    const shortId = generateEventShortId();
+    const existingEvent = await ctx.db
+      .query("events")
+      .withIndex("by_shortId", (queryBuilder) => queryBuilder.eq("shortId", shortId))
+      .first();
+    if (!existingEvent) {
+      return shortId;
+    }
+  }
+
+  throw new Error("Unable to generate a unique event short link");
+}
+
+async function getEventByRouteId(
+  ctx: QueryCtx,
+  eventRouteId: string,
+  scope: { siteKey?: string; workspaceSlug?: string },
+): Promise<Doc<"events"> | null> {
+  const normalizedShortId = normalizeEventShortId(eventRouteId);
+  if (normalizedShortId) {
+    const eventByShortId = await ctx.db
+      .query("events")
+      .withIndex("by_shortId", (queryBuilder) => queryBuilder.eq("shortId", normalizedShortId))
+      .first();
+    if (eventMatchesSiteScope(eventByShortId, scope)) {
+      return eventByShortId;
+    }
+  }
+
+  try {
+    const eventByDocumentId = await ctx.db.get(eventRouteId as Id<"events">);
+    if (eventMatchesSiteScope(eventByDocumentId, scope)) {
+      return eventByDocumentId;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
 
 export const insertWithCreds = mutation({
   args: {
@@ -115,10 +165,12 @@ export const insertWithCreds = mutation({
     });
 
     const now = Date.now();
+    const shortId = await generateUniqueEventShortId(ctx);
     if (args.eventDate < now) throw new Error("Event date must be in the future");
     const eventId = await ctx.db.insert("events", {
       workspaceSlug: args.workspaceSlug,
       siteKey: args.siteKey,
+      shortId,
       name: args.name,
       secondaryTitle: args.secondaryTitle,
       description: args.description,
@@ -174,9 +226,11 @@ export const createDraft = mutation({
     });
 
     const now = Date.now();
+    const shortId = await generateUniqueEventShortId(ctx);
     const eventId = await ctx.db.insert("events", {
       workspaceSlug: args.workspaceSlug,
       siteKey: args.siteKey,
+      shortId,
       name: args.name?.trim() || "Untitled event",
       location: "",
       eventDate: 0,
@@ -684,6 +738,58 @@ export const get = query({
     const event = await ctx.db.get(eventId);
     if (!eventMatchesSiteScope(event, { siteKey, workspaceSlug })) return null;
     return await applyWorkspacePrimaryFieldFallback(ctx, event);
+  },
+});
+
+export const getByRouteId = query({
+  args: {
+    eventRouteId: v.string(),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, { eventRouteId, siteKey, workspaceSlug }) => {
+    const event = await getEventByRouteId(ctx, eventRouteId, { siteKey, workspaceSlug });
+    return await applyWorkspacePrimaryFieldFallback(ctx, event);
+  },
+});
+
+export const resolveRouteId = query({
+  args: {
+    eventRouteId: v.string(),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, { eventRouteId, siteKey, workspaceSlug }) => {
+    const event = await getEventByRouteId(ctx, eventRouteId, { siteKey, workspaceSlug });
+    if (!event) return null;
+    return {
+      eventId: event._id,
+      shortId: event.shortId,
+    };
+  },
+});
+
+export const ensureShortId = mutation({
+  args: {
+    eventId: v.id("events"),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, { eventId, siteKey, workspaceSlug }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+
+    const event = await ensureEventInSiteScope(ctx, eventId, { siteKey, workspaceSlug });
+    if (event.shortId?.trim()) {
+      return { eventId, shortId: event.shortId };
+    }
+
+    const shortId = await generateUniqueEventShortId(ctx);
+    await ctx.db.patch(eventId, {
+      shortId,
+      updatedAt: Date.now(),
+    });
+    return { eventId, shortId };
   },
 });
 

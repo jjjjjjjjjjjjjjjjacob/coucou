@@ -179,13 +179,11 @@ export function Ticket({
             >
               Show this at the door.
             </div>
-            {actions ? (
-              <div className="mt-2 flex flex-wrap justify-center gap-4">{actions}</div>
-            ) : null}
           </>
         ) : (
           noQrSlot
         )}
+        {actions ? <div className="mt-2 flex flex-wrap justify-center gap-4">{actions}</div> : null}
       </div>
 
       {details && details.length > 0 ? (

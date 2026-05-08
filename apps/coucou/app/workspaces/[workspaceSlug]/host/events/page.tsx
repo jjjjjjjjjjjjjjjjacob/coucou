@@ -6,11 +6,12 @@ import { useMutation, useQuery } from "convex/react";
 import {
   CheckCircle,
   Edit,
-  ExternalLink,
+  EyeOff,
   Grid,
   List,
   MoreHorizontal,
   Search,
+  Share,
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -41,6 +42,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatEventTitleInline } from "@/lib/event-display";
+import {
+  getEventLifecycleActionLabel,
+  runEventLifecycleAction,
+} from "@/lib/event-lifecycle-actions";
+import { buildPublicEventUrl } from "@/lib/event-public-url";
 import type { Event } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { formatEventDateTime } from "@/lib/utils";
@@ -231,6 +237,10 @@ function EventListItem({ event }: { event: Event }) {
   const workspaceScope = useWorkspaceScope();
   const rsvpsPath = useWorkspaceOperationPath("host", `rsvps?eventId=${event._id}`);
   const editDraftPath = useWorkspaceOperationPath("host", `new?draftId=${event._id}`);
+  const workspace = useQuery(
+    api.workspaces.getWorkspaceBySlug,
+    workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
+  );
   const [showEditDialog, setShowEditDialog] = useState(false);
   const removeEvent = useMutation(api.events.remove);
   const setFeaturedEvent = useMutation(api.events.setFeaturedEvent);
@@ -252,27 +262,44 @@ function EventListItem({ event }: { event: Event }) {
     : isPast
       ? "outline"
       : "success";
+  const publicEventUrl = buildPublicEventUrl(workspace ?? null, event, {
+    currentOrigin: typeof window !== "undefined" ? window.location.origin : null,
+    vercelEnvironment: process.env.NEXT_PUBLIC_VERCEL_ENV,
+  });
+  const lifecycleActionLabel = getEventLifecycleActionLabel(isDraft);
 
   const togglePublish = async () => {
-    if (!workspaceScope) return;
     try {
-      if (isDraft) {
-        await publishEvent({
-          eventId: event._id,
-          ...workspaceScope.queryArgs,
-        });
+      const lifecycleActionResult = await runEventLifecycleAction({
+        eventId: event._id,
+        isDraft,
+        workspaceScope,
+        publishEvent,
+        unpublishEvent,
+      });
+      if (lifecycleActionResult === "published") {
         toast.success("Event published");
-      } else {
-        await unpublishEvent({
-          eventId: event._id,
-          ...workspaceScope.queryArgs,
-        });
+      }
+      if (lifecycleActionResult === "unpublished") {
         toast.success("Event unpublished");
       }
+      if (lifecycleActionResult === "skipped") return;
       router.refresh();
     } catch (error: unknown) {
       toast.error((error as Error).message || "Failed to update lifecycle");
     }
+  };
+
+  const handleViewClick = () => {
+    if (isDraft) {
+      router.push(editDraftPath);
+      return;
+    }
+    if (publicEventUrl) {
+      window.open(publicEventUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    router.push(`/events/${event._id}`);
   };
 
   return (
@@ -297,26 +324,17 @@ function EventListItem({ event }: { event: Event }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {isDraft ? (
-            <Button variant="outline" size="sm" onClick={() => router.push(editDraftPath)}>
-              Continue editing
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => router.push(`/events/${event._id}`)}>
-              View
-            </Button>
-          )}
+          <Button variant="outline" size="sm" onClick={handleViewClick}>
+            {isDraft ? "Continue editing" : "View"}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => router.push(rsvpsPath)}>
             RSVPs
           </Button>
-          <Button variant="outline" size="sm" onClick={togglePublish}>
-            {isDraft ? "Publish" : "Unpublish"}
-          </Button>
-          <ShareEventPopover eventId={event._id}>
+          <ShareEventPopover eventId={event._id} eventUrl={publicEventUrl}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <ExternalLink className="h-4 w-4" />
+                <Button variant="outline" size="sm" className="rounded-full">
+                  <Share className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -327,11 +345,24 @@ function EventListItem({ event }: { event: Event }) {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" aria-label="Open event actions">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  void togglePublish();
+                }}
+              >
+                {isDraft ? (
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                ) : (
+                  <EyeOff className="mr-2 h-4 w-4" />
+                )}
+                {lifecycleActionLabel}
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={async (e) => {
                   e.preventDefault();

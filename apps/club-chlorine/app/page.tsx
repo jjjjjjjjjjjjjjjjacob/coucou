@@ -4,12 +4,20 @@ import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { isEventOpenForRsvp, resolveEventRsvpCutoff } from "@coucou/sdk/shared/event-availability";
+import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
 import { ChlorineEventRow, type ChlorineLandingEvent, useMobile } from "@coucou/ui/tenant-template";
 import { useQuery } from "convex/react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { getPublicEventActs } from "@/lib/event-lineup";
+import {
+  buildEventDetailPathWithPreservedQuery,
+  buildPathWithPreservedQuery,
+  buildRsvpPathWithStep,
+} from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
+import type { Event as ClubEvent } from "@/lib/types";
 
 function formatLandingDate(timestamp: number, timezone?: string): string {
   const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -26,7 +34,8 @@ function formatLandingDate(timestamp: number, timezone?: string): string {
 }
 
 interface LandingRowSeed {
-  id: Id<"events">;
+  eventId: Id<"events">;
+  routeId: string;
   date: string;
   lineup: ChlorineLandingEvent["lineup"];
   isOpenForRsvp: boolean;
@@ -35,7 +44,7 @@ interface LandingRowSeed {
 export default function Home() {
   const allEvents = useQuery(api.events.listAll, {
     siteKey: siteConfiguration.siteKey,
-  });
+  }) as ClubEvent[] | undefined;
 
   const landingRowSeeds = useMemo<LandingRowSeed[]>(() => {
     if (!allEvents) return [];
@@ -44,7 +53,8 @@ export default function Home() {
       .filter((event) => resolveEventRsvpCutoff(event) >= now)
       .sort((firstEvent, secondEvent) => firstEvent.eventDate - secondEvent.eventDate)
       .map((event) => ({
-        id: event._id,
+        eventId: event._id,
+        routeId: getEventRouteId(event),
         date: formatLandingDate(event.eventDate, event.eventTimezone),
         lineup: getPublicEventActs(event).map((act) => ({
           label: act.displayName,
@@ -81,7 +91,12 @@ export default function Home() {
   return (
     <div>
       {landingRowSeeds.map((rowSeed, index) => (
-        <HomeEventRow key={rowSeed.id} rowSeed={rowSeed} mobile={isMobile} delayMs={index * 140} />
+        <HomeEventRow
+          key={rowSeed.eventId}
+          rowSeed={rowSeed}
+          mobile={isMobile}
+          delayMs={index * 140}
+        />
       ))}
     </div>
   );
@@ -102,9 +117,12 @@ interface HomeEventRowProps {
  */
 function HomeEventRow({ rowSeed, mobile, delayMs }: HomeEventRowProps) {
   const { isSignedIn, isLoaded } = useAuth();
+  const searchParams = useSearchParams();
   const rsvpStatus = useQuery(
     api.rsvps.statusForUserEvent,
-    isLoaded && isSignedIn ? { eventId: rowSeed.id, siteKey: siteConfiguration.siteKey } : "skip",
+    isLoaded && isSignedIn
+      ? { eventId: rowSeed.eventId, siteKey: siteConfiguration.siteKey }
+      : "skip",
   );
 
   const status = rsvpStatus?.status;
@@ -112,11 +130,11 @@ function HomeEventRow({ rowSeed, mobile, delayMs }: HomeEventRowProps) {
     status === "pending" || status === "approved" || status === "attending" || status === "denied";
   const existingRsvpHref =
     status === "approved" || status === "attending"
-      ? `/events/${rowSeed.id}/ticket`
+      ? buildPathWithPreservedQuery(`/events/${rowSeed.routeId}/ticket`, searchParams, ["step"])
       : status === "pending" || status === "denied"
-        ? `/events/${rowSeed.id}/status`
+        ? buildPathWithPreservedQuery(`/events/${rowSeed.routeId}/status`, searchParams, ["step"])
         : null;
-  const brickHref = existingRsvpHref ?? `/events/${rowSeed.id}/rsvp`;
+  const brickHref = existingRsvpHref ?? buildRsvpPathWithStep(rowSeed.routeId, searchParams, 1);
   const brickLabel =
     status === "approved" || status === "attending"
       ? "TICKET"
@@ -130,7 +148,7 @@ function HomeEventRow({ rowSeed, mobile, delayMs }: HomeEventRowProps) {
   const brickDisabled = hasRsvp ? false : !rowSeed.isOpenForRsvp;
 
   const event: ChlorineLandingEvent = {
-    id: rowSeed.id,
+    id: rowSeed.routeId,
     date: rowSeed.date,
     lineup: rowSeed.lineup,
     rsvpHref: brickHref,
@@ -145,7 +163,7 @@ function HomeEventRow({ rowSeed, mobile, delayMs }: HomeEventRowProps) {
       visible
       delayMs={delayMs}
       linkComponent={Link}
-      detailHref={`/events/${rowSeed.id}`}
+      detailHref={buildEventDetailPathWithPreservedQuery(rowSeed.routeId, searchParams)}
     />
   );
 }

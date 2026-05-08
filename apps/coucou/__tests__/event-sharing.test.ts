@@ -1,0 +1,99 @@
+import { afterEach, describe, expect, it } from "bun:test";
+import { buildReferralUrl } from "@coucou/sdk/shared/event-routes";
+import {
+  copyTextToClipboard,
+  resolveShareEventBaseUrl,
+  resolveShareEventUrlWithRouteId,
+} from "../components/share-event-popover";
+import { buildPublicEventUrl } from "../lib/event-public-url";
+
+describe("event sharing", () => {
+  const originalClipboard = navigator.clipboard;
+  const originalExecCommand = document.execCommand;
+
+  afterEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: originalClipboard,
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: originalExecCommand,
+    });
+  });
+
+  it("uses the resolved public tenant URL instead of the dashboard origin", () => {
+    const publicEventUrl = buildPublicEventUrl(
+      {
+        primaryDomain: "clubchlorine.party",
+      },
+      { _id: "event_123", shortId: "abc1234" },
+    );
+
+    expect(publicEventUrl).toBe("https://clubchlorine.party/events/abc1234");
+    expect(
+      resolveShareEventBaseUrl({
+        eventId: "event_123",
+        eventUrl: publicEventUrl,
+        origin: "https://coucou.events",
+      }),
+    ).toBe("https://clubchlorine.party/events/abc1234");
+  });
+
+  it("uses local client origins when sharing from a local coucou dashboard", () => {
+    const publicEventUrl = buildPublicEventUrl(
+      {
+        primaryDomain: "clubchlorine.party",
+        sites: [{ siteKey: "club-chlorine", appKind: "client" }],
+      },
+      { _id: "event_123", shortId: "abc1234" },
+      { currentOrigin: "http://localhost:5680" },
+    );
+
+    expect(publicEventUrl).toBe("http://localhost:5679/events/abc1234");
+  });
+
+  it("uses dev client origins when sharing from a dev deployment", () => {
+    const publicEventUrl = buildPublicEventUrl(
+      {
+        primaryDomain: "clubchlorine.party",
+        sites: [{ siteKey: "club-chlorine", appKind: "client" }],
+      },
+      { _id: "event_123", shortId: "abc1234" },
+      { currentOrigin: "https://dev.coucou.events" },
+    );
+
+    expect(publicEventUrl).toBe("https://dev.clubchlorine.party/events/abc1234");
+  });
+
+  it("replaces a long event route id with a short event route id", () => {
+    expect(
+      resolveShareEventUrlWithRouteId("https://clubchlorine.party/events/event_123", "abc1234"),
+    ).toBe("https://clubchlorine.party/events/abc1234");
+  });
+
+  it("adds referral codes without dropping existing route state", () => {
+    expect(
+      buildReferralUrl("https://clubchlorine.party/events/abc1234?password=guest", "ABCD1234"),
+    ).toBe("https://clubchlorine.party/events/abc1234?password=guest&ref=ABCD1234");
+  });
+
+  it("falls back to document copy when navigator clipboard rejects", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("clipboard blocked");
+        },
+      },
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: (command: string) => command === "copy",
+    });
+
+    await expect(copyTextToClipboard("https://clubchlorine.party/events/event_123")).resolves.toBe(
+      true,
+    );
+  });
+});

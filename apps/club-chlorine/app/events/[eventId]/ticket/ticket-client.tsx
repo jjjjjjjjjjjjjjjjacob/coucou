@@ -14,12 +14,22 @@ import { useMutation } from "@tanstack/react-query";
 import { type Preloaded, useQuery as useConvexQuery, usePreloadedQuery } from "convex/react";
 import { Check, Download } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Spinner } from "@/components/ui/spinner";
 import { formatEventTitleInline, hasEventSecondaryTitle } from "@/lib/event-display";
+import {
+  buildEventDetailPathWithPreservedQuery,
+  buildPathWithPreservedQuery,
+} from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
+import {
+  getByNameTicketInstruction,
+  getTicketConfirmationToastDescription,
+  ticketCopyShouldMentionQr,
+} from "@/lib/ticket-copy";
 
 const QR_SVG_ID = "ticket-qr-svg";
 
@@ -83,29 +93,41 @@ function downloadQRCodeAsImage(
 }
 
 interface TicketClientPageProps {
-  eventId: string;
-  eventPreload: Preloaded<typeof api.events.get>;
-  statusPreload: Preloaded<typeof api.rsvps.statusForUserEvent>;
+  eventRouteId: string;
+  eventPreload: Preloaded<typeof api.events.getByRouteId>;
+  statusPreload: Preloaded<typeof api.rsvps.statusForUserEventByRouteId>;
 }
 
 export default function TicketClientPage({
-  eventId,
+  eventRouteId,
   eventPreload,
   statusPreload,
 }: TicketClientPageProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const event = usePreloadedQuery(eventPreload);
   const status = usePreloadedQuery(statusPreload);
+  const canonicalEventId = event?._id;
 
-  const myRedemption = useConvexQuery(api.redemptions.forCurrentUserEvent, {
-    eventId: eventId as Id<"events">,
-    siteKey: siteConfiguration.siteKey,
-  });
+  const myRedemption = useConvexQuery(
+    api.redemptions.forCurrentUserEvent,
+    canonicalEventId
+      ? {
+          eventId: canonicalEventId as Id<"events">,
+          siteKey: siteConfiguration.siteKey,
+        }
+      : "skip",
+  );
 
   const acceptRsvp = useMutation({
     mutationFn: useConvexMutation(api.rsvps.acceptRsvp),
   });
   const [hasCelebrated, setHasCelebrated] = useState(false);
+  const ticketCopyInput = {
+    generateQR: status?.generateQR,
+    redemptionCode: myRedemption?.code ?? null,
+  };
+  const shouldMentionQr = ticketCopyShouldMentionQr(ticketCopyInput);
 
   const eventDisplayName = formatEventTitleInline(event);
   const eventHasSecondaryTitle = hasEventSecondaryTitle(event);
@@ -145,25 +167,35 @@ export default function TicketClientPage({
   useEffect(() => {
     if (!status) return;
     if (status.status === "pending") {
-      router.replace(`/events/${eventId}/status`);
+      router.replace(
+        buildPathWithPreservedQuery(`/events/${eventRouteId}/status`, searchParams, ["step"]),
+      );
     }
     if (status.status === "denied") {
-      router.replace(`/events/${eventId}/denied`);
+      router.replace(
+        buildPathWithPreservedQuery(`/events/${eventRouteId}/denied`, searchParams, ["step"]),
+      );
     }
-  }, [status, eventId, router]);
+  }, [status, eventRouteId, router, searchParams]);
 
   // Trigger acceptRsvp once when an approval is observed.
   useEffect(() => {
-    if (event?.name && status?.status === "approved" && !acceptRsvp.isPending && !hasCelebrated) {
+    if (
+      event?.name &&
+      status?.status === "approved" &&
+      !acceptRsvp.isPending &&
+      !hasCelebrated &&
+      canonicalEventId
+    ) {
       acceptRsvp.mutate(
         {
-          eventId: eventId as Id<"events">,
+          eventId: canonicalEventId as Id<"events">,
           siteKey: siteConfiguration.siteKey,
         },
         {
           onSuccess: () => {
             toast.success(`You're confirmed for ${eventDisplayName} 🎉`, {
-              description: "Your QR code is now visible below.",
+              description: getTicketConfirmationToastDescription(ticketCopyInput),
             });
             setHasCelebrated(true);
           },
@@ -175,7 +207,14 @@ export default function TicketClientPage({
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [event?.name, status?.status, eventId, acceptRsvp.isPending, hasCelebrated]);
+  }, [
+    event?.name,
+    status?.status,
+    canonicalEventId,
+    acceptRsvp.isPending,
+    hasCelebrated,
+    shouldMentionQr,
+  ]);
 
   if (!event) {
     return (
@@ -187,10 +226,11 @@ export default function TicketClientPage({
   }
 
   // Loading the redemption when we know we should have one.
-  const expectingQr = status?.status === "approved" || status?.status === "attending";
-  const isLoadingRedemption = expectingQr && myRedemption === undefined;
+  const expectingTicket = status?.status === "approved" || status?.status === "attending";
+  const isLoadingRedemption = expectingTicket && myRedemption === undefined;
   const hasRedemption = Boolean(myRedemption?.code);
   const generatesQr = status?.generateQR !== false;
+  const showQr = generatesQr && hasRedemption;
 
   const qrValue =
     typeof window !== "undefined" && myRedemption?.code
@@ -219,7 +259,10 @@ export default function TicketClientPage({
           noShell
           eyebrow="Ticket"
           eyebrowTrailing={
-            <EyebrowPill href={`/events/${eventId}`} linkComponent={Link}>
+            <EyebrowPill
+              href={buildEventDetailPathWithPreservedQuery(eventRouteId, searchParams)}
+              linkComponent={Link}
+            >
               ← Back to event
             </EyebrowPill>
           }
@@ -232,13 +275,13 @@ export default function TicketClientPage({
           qrFgColor={qrForegroundColor}
           qrBgColor={qrBackgroundColor}
           qrSvgId={QR_SVG_ID}
-          showQr={generatesQr && hasRedemption}
+          showQr={showQr}
           noQrSlot={
             generatesQr ? (
               <div className="flex flex-col items-center gap-2">
                 <Spinner />
                 <div className="text-[12px]" style={{ color: "var(--tt-fg-dim)" }}>
-                  Generating your QR code…
+                  Preparing your ticket…
                 </div>
               </div>
             ) : (
@@ -254,26 +297,35 @@ export default function TicketClientPage({
                   className="text-[12px] text-center max-w-[280px]"
                   style={{ color: "var(--tt-fg-dim)" }}
                 >
-                  This list verifies guests by name at the door, not by QR.
+                  {getByNameTicketInstruction()}
                 </div>
               </div>
             )
           }
           actions={
-            generatesQr && hasRedemption ? (
-              <TenantButton
-                type="button"
-                onClick={() =>
-                  downloadQRCodeAsImage(QR_SVG_ID, qrFileName, {
-                    foregroundColor: qrForegroundColor,
-                    backgroundColor: qrBackgroundColor,
-                  })
-                }
-              >
-                <Download className="mr-2 h-3.5 w-3.5" />
-                Download
-              </TenantButton>
-            ) : null
+            <div className="flex flex-col items-center justify-center gap-4">
+              {showQr ? (
+                <TenantButton
+                  type="button"
+                  onClick={() =>
+                    downloadQRCodeAsImage(QR_SVG_ID, qrFileName, {
+                      foregroundColor: qrForegroundColor,
+                      backgroundColor: qrBackgroundColor,
+                    })
+                  }
+                >
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  Download
+                </TenantButton>
+              ) : null}
+              <div className="my-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-700">
+                <EventReferralShareButton
+                  event={event}
+                  variant="prominent"
+                  className="h-auto p-4 text-[15px]"
+                />
+              </div>
+            </div>
           }
           details={ticketDetails}
         />

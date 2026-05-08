@@ -1,9 +1,8 @@
 "use client";
 import { api } from "@convex/_generated/api";
-import type { Id } from "@convex/_generated/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,20 +10,21 @@ import { Spinner } from "@/components/ui/spinner";
 import { siteConfiguration } from "@/lib/site";
 
 export default function DeniedPage({ params }: { params: Promise<{ eventId: string }> }) {
-  const { eventId } = use(params);
+  const { eventId: eventRouteId } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [newPassword, setNewPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const eventQuery = useQuery(
-    convexQuery(api.events.get, {
-      eventId: eventId as Id<"events">,
+    convexQuery(api.events.getByRouteId, {
+      eventRouteId,
       siteKey: siteConfiguration.siteKey,
     }),
   );
   const statusQuery = useQuery(
-    convexQuery(api.rsvps.statusForUserEvent, {
-      eventId: eventId as Id<"events">,
+    convexQuery(api.rsvps.statusForUserEventByRouteId, {
+      eventRouteId,
       siteKey: siteConfiguration.siteKey,
     }),
   );
@@ -37,8 +37,10 @@ export default function DeniedPage({ params }: { params: Promise<{ eventId: stri
     if (!password) return;
 
     setIsLoading(true);
-    const searchParams = new URLSearchParams({ password }).toString();
-    router.push(`/events/${eventId}/rsvp?${searchParams}`);
+    const nextSearchParams = new URLSearchParams(searchParams?.toString());
+    nextSearchParams.set("password", password);
+    const queryString = nextSearchParams.toString();
+    router.push(`/events/${eventRouteId}/rsvp${queryString ? `?${queryString}` : ""}`);
   };
 
   if (eventQuery.isLoading || !event) {
@@ -108,7 +110,7 @@ export default function DeniedPage({ params }: { params: Promise<{ eventId: stri
 
           <Button
             variant="outline"
-            onClick={() => router.push(`/events/${eventId}`)}
+            onClick={() => router.push(`/events/${eventRouteId}`)}
             className="text-primary border-primary/20"
           >
             Back to Event

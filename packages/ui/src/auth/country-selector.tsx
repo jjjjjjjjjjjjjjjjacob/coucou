@@ -105,7 +105,7 @@ export function CountrySelector({ value, onChange, disabled }: CountrySelectorPr
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search countries…"
               autoFocus
-              className="w-full py-2 pl-9 pr-3 text-sm focus:outline-none"
+              className="w-full py-2 pl-9 pr-3 text-[16px] focus:outline-none sm:text-sm"
               style={{
                 color: preset.fg,
                 border: `1px solid ${preset.rule}`,

@@ -16,8 +16,8 @@ type LayoutParams = Promise<{ eventId: string }>;
 // fetchQuery doesn't memoize across them by default.
 const loadEventForLayout = cache(async (eventId: string) => {
   try {
-    return await fetchQuery(api.events.get, {
-      eventId: eventId as Id<"events">,
+    return await fetchQuery(api.events.getByRouteId, {
+      eventRouteId: eventId,
       siteKey: siteConfiguration.siteKey,
     });
   } catch (error) {

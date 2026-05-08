@@ -39,6 +39,58 @@ import {
 } from "./lib/workspaceAuth";
 import { eventMatchesTenantScope, resolveTenantWorkspaceScope } from "./lib/workspaceScope";
 
+function normalizeReferralCode(value: string | undefined): string | undefined {
+  const normalizedReferralCode = value?.trim().toUpperCase();
+  return normalizedReferralCode && normalizedReferralCode.length > 0
+    ? normalizedReferralCode.slice(0, 64)
+    : undefined;
+}
+
+function resolveReferralDisplayName(user: Doc<"users">): string {
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+  return fullName || user.metadata?.name || user.phone || user.clerkUserId || "Unknown user";
+}
+
+async function buildReferralPatch(
+  ctx: MutationCtx,
+  rawReferralCode: string | undefined,
+  currentClerkUserId: string,
+): Promise<
+  | {
+      referralCode: string;
+      referrerUserId?: Id<"users">;
+      referrerClerkUserId?: string;
+      referredByName?: string;
+    }
+  | undefined
+> {
+  const referralCode = normalizeReferralCode(rawReferralCode);
+  if (!referralCode) return undefined;
+
+  const referrer = await ctx.db
+    .query("users")
+    .withIndex("by_referralCode", (queryBuilder) => queryBuilder.eq("referralCode", referralCode))
+    .unique();
+
+  if (!referrer) {
+    return {
+      referralCode,
+      referrerUserId: undefined,
+      referrerClerkUserId: undefined,
+      referredByName: undefined,
+    };
+  }
+
+  if (referrer.clerkUserId === currentClerkUserId) return undefined;
+
+  return {
+    referralCode,
+    referrerUserId: referrer._id,
+    referrerClerkUserId: referrer.clerkUserId,
+    referredByName: resolveReferralDisplayName(referrer),
+  };
+}
+
 export const submitRequest = mutation({
   args: {
     eventId: v.id("events"),
@@ -55,6 +107,7 @@ export const submitRequest = mutation({
     customFields: v.optional(v.record(v.string(), v.string())),
     socialProfiles: v.optional(v.array(submittedSocialProfileValidator)),
     invitedByName: v.optional(v.string()),
+    referralCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Require authenticated user
@@ -94,6 +147,7 @@ export const submitRequest = mutation({
       primaryFieldConfig?.invitedBy?.enabled === true
         ? buildInvitedByPatch(args.invitedByName)
         : {};
+    const referralPatch = await buildReferralPatch(ctx, args.referralCode, clerkUserId);
 
     const sanitizedCustomFieldValues = args.customFields
       ? Object.fromEntries(
@@ -164,6 +218,7 @@ export const submitRequest = mutation({
             ? sanitizedCustomFieldValues
             : undefined,
         ...invitedByPatch,
+        ...(referralPatch ?? {}),
         status: "pending",
         createdAt: now,
         updatedAt: now,
@@ -219,6 +274,7 @@ export const submitRequest = mutation({
               : undefined
             : existing.customFieldValues,
         ...invitedByPatch,
+        ...(referralPatch ?? {}),
         // Reset to pending when re-requesting (unless already approved)
         status: existing.status === "approved" ? existing.status : "pending",
         updatedAt: now,
@@ -651,6 +707,10 @@ export const listForEvent = query({
       invitedByNormalizedName?: string;
       invitedBySocialPlatformKey?: string;
       invitedBySocialHandle?: string;
+      referralCode?: string;
+      referrerUserId?: Id<"users">;
+      referrerClerkUserId?: string;
+      referredByName?: string;
       redemptionStatus: "none" | "issued" | "redeemed" | "disabled";
       redemptionCode?: string;
       createdAt: number;
@@ -689,6 +749,10 @@ export const listForEvent = query({
           invitedByNormalizedName?: string;
           invitedBySocialPlatformKey?: string;
           invitedBySocialHandle?: string;
+          referralCode?: string;
+          referrerUserId?: Id<"users">;
+          referrerClerkUserId?: string;
+          referredByName?: string;
           redemptionStatus: "none" | "issued" | "redeemed" | "disabled";
           redemptionCode?: string;
           createdAt: number;
@@ -757,6 +821,10 @@ export const listForEvent = query({
             invitedByNormalizedName: r.invitedByNormalizedName,
             invitedBySocialPlatformKey: r.invitedBySocialPlatformKey,
             invitedBySocialHandle: r.invitedBySocialHandle,
+            referralCode: r.referralCode,
+            referrerUserId: r.referrerUserId,
+            referrerClerkUserId: r.referrerClerkUserId,
+            referredByName: r.referredByName,
             redemptionStatus,
             redemptionCode: redemption?.code,
             createdAt: r.createdAt,
@@ -926,6 +994,10 @@ type EnrichedRsvp = {
   invitedByNormalizedName?: string;
   invitedBySocialPlatformKey?: string;
   invitedBySocialHandle?: string;
+  referralCode?: string;
+  referrerUserId?: Id<"users">;
+  referrerClerkUserId?: string;
+  referredByName?: string;
   redemptionStatus: "none" | "issued" | "redeemed" | "disabled";
   redemptionCode?: string;
   createdAt: number;
@@ -1048,6 +1120,9 @@ export const listForEventPaginated = query({
             break;
           case "invitedByName":
             comparison = (a.invitedByName ?? "").localeCompare(b.invitedByName ?? "");
+            break;
+          case "referredByName":
+            comparison = (a.referredByName ?? "").localeCompare(b.referredByName ?? "");
             break;
           default:
             // Fallback to createdAt
@@ -1201,6 +1276,10 @@ export const listForEventPaginated = query({
         invitedByNormalizedName: rsvp.invitedByNormalizedName,
         invitedBySocialPlatformKey: rsvp.invitedBySocialPlatformKey,
         invitedBySocialHandle: rsvp.invitedBySocialHandle,
+        referralCode: rsvp.referralCode,
+        referrerUserId: rsvp.referrerUserId,
+        referrerClerkUserId: rsvp.referrerClerkUserId,
+        referredByName: rsvp.referredByName,
         redemptionStatus,
         redemptionCode: redemption?.code,
         createdAt: rsvp.createdAt,
@@ -1341,6 +1420,114 @@ export const statusForUserEventServer = query({
     const chosen = selectPrimaryRsvp(rsvps);
 
     const redemptionInfo = await resolveRedemption(ctx, eventId, clerkUserId, chosen);
+    const socialProfiles = await ctx.db
+      .query("rsvpSocialProfiles")
+      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", chosen._id))
+      .collect();
+
+    return {
+      rsvpId: chosen._id,
+      listKey: chosen.listKey,
+      status: sanitizeStatus(chosen.status),
+      shareContact: chosen.shareContact,
+      customFieldValues: chosen.customFieldValues ?? undefined,
+      socialProfiles: socialProfiles.map((profile) => ({
+        platformKey: profile.platformKey,
+        handle: profile.handle,
+      })),
+      invitedByName: chosen.invitedByName,
+      smsConsent: chosen.smsConsent ?? false,
+      redemption: redemptionInfo,
+    } as const;
+  },
+});
+
+export const statusForUserEventByRouteId = query({
+  args: {
+    eventRouteId: v.string(),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, { eventRouteId, siteKey, workspaceSlug }) => {
+    const resolvedEventRoute: { eventId: Id<"events">; shortId?: string } | null =
+      await ctx.runQuery(api.events.resolveRouteId, {
+        eventRouteId,
+        siteKey,
+        workspaceSlug,
+      });
+    if (!resolvedEventRoute) return null;
+
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const event = await getEventInSiteScope(ctx, resolvedEventRoute.eventId, { siteKey });
+    if (!event) return null;
+    const clerkUserId = identity.subject;
+    const rsvps = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event", (query) => query.eq("eventId", resolvedEventRoute.eventId))
+      .filter((query) => query.eq(query.field("clerkUserId"), clerkUserId))
+      .collect();
+    if (rsvps.length === 0) return null;
+
+    const chosen = selectPrimaryRsvp(rsvps);
+
+    const listCredential = await resolveListCredential(ctx, resolvedEventRoute.eventId, chosen);
+    const socialProfiles = await ctx.db
+      .query("rsvpSocialProfiles")
+      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", chosen._id))
+      .collect();
+
+    return {
+      rsvpId: chosen._id,
+      listKey: chosen.listKey,
+      status: sanitizeStatus(chosen.status),
+      shareContact: chosen.shareContact,
+      customFieldValues: chosen.customFieldValues ?? undefined,
+      socialProfiles: socialProfiles.map((profile) => ({
+        platformKey: profile.platformKey,
+        handle: profile.handle,
+      })),
+      invitedByName: chosen.invitedByName,
+      smsConsent: chosen.smsConsent ?? false,
+      smsConsentIpAddress: chosen.smsConsentIpAddress ?? undefined,
+      generateQR: listCredential?.generateQR ?? false,
+    } as const;
+  },
+});
+
+export const statusForUserEventServerByRouteId = query({
+  args: {
+    eventRouteId: v.string(),
+    clerkUserId: v.string(),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, { eventRouteId, clerkUserId, siteKey, workspaceSlug }) => {
+    const resolvedEventRoute: { eventId: Id<"events">; shortId?: string } | null =
+      await ctx.runQuery(api.events.resolveRouteId, {
+        eventRouteId,
+        siteKey,
+        workspaceSlug,
+      });
+    if (!resolvedEventRoute) return null;
+
+    const event = await getEventInSiteScope(ctx, resolvedEventRoute.eventId, { siteKey });
+    if (!event) return null;
+    const rsvps = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event", (query) => query.eq("eventId", resolvedEventRoute.eventId))
+      .filter((query) => query.eq(query.field("clerkUserId"), clerkUserId))
+      .collect();
+    if (rsvps.length === 0) return null;
+
+    const chosen = selectPrimaryRsvp(rsvps);
+
+    const redemptionInfo = await resolveRedemption(
+      ctx,
+      resolvedEventRoute.eventId,
+      clerkUserId,
+      chosen,
+    );
     const socialProfiles = await ctx.db
       .query("rsvpSocialProfiles")
       .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", chosen._id))

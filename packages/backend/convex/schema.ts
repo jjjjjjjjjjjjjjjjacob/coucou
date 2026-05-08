@@ -121,9 +121,12 @@ export default defineSchema({
     lastName: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
     metadata: v.optional(v.record(v.string(), v.string())),
+    referralCode: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_clerkUserId", ["clerkUserId"]),
+  })
+    .index("by_clerkUserId", ["clerkUserId"])
+    .index("by_referralCode", ["referralCode"]),
 
   orgMemberships: defineTable({
     clerkUserId: v.string(),
@@ -139,6 +142,7 @@ export default defineSchema({
   events: defineTable({
     workspaceSlug: v.optional(v.string()),
     siteKey: v.optional(v.string()),
+    shortId: v.optional(v.string()),
     name: v.string(),
     secondaryTitle: v.optional(v.string()),
     description: v.optional(v.string()),
@@ -195,6 +199,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_featured", ["isFeatured"]) // for quick featured event lookup
+    .index("by_shortId", ["shortId"])
     .index("by_date", ["eventDate"])
     .index("by_workspaceSlug", ["workspaceSlug"])
     .index("by_siteKey", ["siteKey"]),
@@ -256,6 +261,10 @@ export default defineSchema({
     invitedBySocialPlatformKey: v.optional(v.string()),
     invitedBySocialHandle: v.optional(v.string()),
     invitedByUserId: v.optional(v.id("users")),
+    referralCode: v.optional(v.string()),
+    referrerUserId: v.optional(v.id("users")),
+    referrerClerkUserId: v.optional(v.string()),
+    referredByName: v.optional(v.string()),
     status: v.string(), // 'pending' | 'approved' | 'denied' | 'attending
     createdAt: v.number(),
     updatedAt: v.number(),

@@ -2,9 +2,32 @@ import { createClerkClient } from "@clerk/backend";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { action, internalQuery, mutation, query } from "./functions";
+import { generateReferralCode } from "./lib/codeGenerators";
 import { requireWorkspaceAdmin } from "./lib/workspaceAuth";
+
+const REFERRAL_CODE_MAX_ATTEMPTS = 20;
+
+function normalizeReferralCode(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+async function generateUniqueReferralCode(ctx: MutationCtx): Promise<string> {
+  for (let attemptNumber = 0; attemptNumber < REFERRAL_CODE_MAX_ATTEMPTS; attemptNumber++) {
+    const referralCode = generateReferralCode();
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_referralCode", (queryBuilder) => queryBuilder.eq("referralCode", referralCode))
+      .first();
+    if (!existingUser) {
+      return referralCode;
+    }
+  }
+
+  throw new Error("Unable to generate a unique referral code");
+}
 
 export const getAll = query({
   args: {
@@ -143,6 +166,59 @@ export const getByClerkUser = query({
       .query("users")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
       .unique();
+  },
+});
+
+export const getByReferralCode = query({
+  args: { referralCode: v.string() },
+  handler: async (ctx, { referralCode }) => {
+    const normalizedReferralCode = normalizeReferralCode(referralCode);
+    if (!normalizedReferralCode) return null;
+    return await ctx.db
+      .query("users")
+      .withIndex("by_referralCode", (queryBuilder) =>
+        queryBuilder.eq("referralCode", normalizedReferralCode),
+      )
+      .unique();
+  },
+});
+
+export const ensureCurrentReferralCode = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+
+    const now = Date.now();
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", identity.subject),
+      )
+      .unique();
+
+    if (existingUser?.referralCode) {
+      return { referralCode: existingUser.referralCode };
+    }
+
+    const referralCode = await generateUniqueReferralCode(ctx);
+    if (existingUser) {
+      await ctx.db.patch(existingUser._id, {
+        referralCode,
+        updatedAt: now,
+      });
+      return { referralCode };
+    }
+
+    await ctx.db.insert("users", {
+      clerkUserId: identity.subject,
+      phone: identity.phoneNumber ?? undefined,
+      imageUrl: identity.pictureUrl ?? undefined,
+      referralCode,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { referralCode };
   },
 });
 

@@ -64,8 +64,8 @@ async function loadEventForTheme({
   if (!eventId) return null;
 
   try {
-    const event = await fetchQuery(api.events.get, {
-      eventId: eventId as Id<"events">,
+    const event = await fetchQuery(api.events.getByRouteId, {
+      eventRouteId: eventId,
       siteKey,
     });
     return event ? mapEventToThemedEvent(event) : null;
