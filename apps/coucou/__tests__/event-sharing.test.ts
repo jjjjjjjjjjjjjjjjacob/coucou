@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { buildReferralUrl } from "@coucou/sdk/shared/event-routes";
 import {
+  buildListShareUrl,
   copyTextToClipboard,
   resolveShareEventBaseUrl,
   resolveShareEventUrlWithRouteId,
@@ -78,6 +79,20 @@ describe("event sharing", () => {
     ).toBe("https://clubchlorine.party/events/abc1234?password=guest&ref=ABCD1234");
   });
 
+  it("adds list route state without dropping referral codes", () => {
+    const listShareUrl = buildListShareUrl(
+      "https://clubchlorine.party/events/abc1234?ref=ABCD1234",
+      {
+        listKey: "vip",
+        password: "guest",
+      },
+    );
+
+    expect(listShareUrl).toBe(
+      "https://clubchlorine.party/events/abc1234?ref=ABCD1234&list=vip&password=guest",
+    );
+  });
+
   it("falls back to document copy when navigator clipboard rejects", async () => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -92,8 +107,32 @@ describe("event sharing", () => {
       value: (command: string) => command === "copy",
     });
 
-    await expect(copyTextToClipboard("https://clubchlorine.party/events/event_123")).resolves.toBe(
-      true,
-    );
+    await expect(
+      copyTextToClipboard("https://clubchlorine.party/events/event_123"),
+    ).resolves.toEqual({
+      copied: true,
+    });
+  });
+
+  it("returns the copy failure reason when every clipboard path fails", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("clipboard blocked");
+        },
+      },
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => false,
+    });
+
+    await expect(
+      copyTextToClipboard("https://clubchlorine.party/events/event_123"),
+    ).resolves.toEqual({
+      copied: false,
+      errorMessage: "clipboard blocked",
+    });
   });
 });

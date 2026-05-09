@@ -40,7 +40,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectOption } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatEventTitleInline } from "@/lib/event-display";
 import {
   getEventLifecycleActionLabel,
@@ -266,6 +265,7 @@ function EventListItem({ event }: { event: Event }) {
     currentOrigin: typeof window !== "undefined" ? window.location.origin : null,
     vercelEnvironment: process.env.NEXT_PUBLIC_VERCEL_ENV,
   });
+  const canShareEvent = Boolean(publicEventUrl);
   const lifecycleActionLabel = getEventLifecycleActionLabel(isDraft);
 
   const togglePublish = async () => {
@@ -330,18 +330,28 @@ function EventListItem({ event }: { event: Event }) {
           <Button variant="outline" size="sm" onClick={() => router.push(rsvpsPath)}>
             RSVPs
           </Button>
-          <ShareEventPopover eventId={event._id} eventUrl={publicEventUrl}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" className="rounded-full">
-                  <Share className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Share</p>
-              </TooltipContent>
-            </Tooltip>
-          </ShareEventPopover>
+          {canShareEvent ? (
+            <ShareEventPopover
+              eventId={event._id}
+              eventUrl={publicEventUrl}
+              siteKey={workspaceScope?.siteKey}
+              workspaceSlug={workspaceScope?.workspaceSlug}
+            >
+              <Button variant="outline" size="sm" className="rounded-full" aria-label="Share event">
+                <Share className="h-4 w-4" />
+              </Button>
+            </ShareEventPopover>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              aria-label="Share event"
+              disabled
+            >
+              <Share className="h-4 w-4" />
+            </Button>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

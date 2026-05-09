@@ -27,7 +27,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatEventTitleInline } from "@/lib/event-display";
 import {
   getEventLifecycleActionLabel,
@@ -82,6 +81,7 @@ export default function EventCardClient({
     currentOrigin: typeof window !== "undefined" ? window.location.origin : null,
     vercelEnvironment: process.env.NEXT_PUBLIC_VERCEL_ENV,
   });
+  const canShareEvent = Boolean(publicEventUrl);
   const lifecycleActionLabel = getEventLifecycleActionLabel(isDraft);
 
   const togglePublish = async () => {
@@ -192,18 +192,33 @@ export default function EventCardClient({
             </div>
 
             <div className="flex gap-2">
-              <ShareEventPopover eventId={event._id} eventUrl={publicEventUrl}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" size="sm" className="aspect-square rounded-full">
-                      <Share className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Share</p>
-                  </TooltipContent>
-                </Tooltip>
-              </ShareEventPopover>
+              {canShareEvent ? (
+                <ShareEventPopover
+                  eventId={event._id}
+                  eventUrl={publicEventUrl}
+                  siteKey={workspaceScope?.siteKey}
+                  workspaceSlug={workspaceScope?.workspaceSlug}
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="aspect-square rounded-full"
+                    aria-label="Share event"
+                  >
+                    <Share className="h-4 w-4" />
+                  </Button>
+                </ShareEventPopover>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="aspect-square rounded-full"
+                  aria-label="Share event"
+                  disabled
+                >
+                  <Share className="h-4 w-4" />
+                </Button>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" aria-label="Open event actions">

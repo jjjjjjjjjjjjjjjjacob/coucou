@@ -31,6 +31,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
+import { ShareEventPopover } from "@/components/share-event-popover";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -86,6 +87,7 @@ import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useWorkspaceAccess } from "@/components/workspace-access-gate";
 import { formatEventTitleInline } from "@/lib/event-display";
+import { buildPublicEventUrl } from "@/lib/event-public-url";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import type { Event, HostRsvp, ListCredential } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
@@ -131,6 +133,10 @@ export default function RsvpsPage() {
   const workspaceAccess = useWorkspaceAccess();
   const isReadOnly = workspaceAccess?.canWrite === false;
   const rsvpsPath = useWorkspaceOperationPath("host", "rsvps");
+  const workspace = useQuery(
+    api.workspaces.getWorkspaceBySlug,
+    workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
+  );
 
   // Use Convex queries
   const events = useQuery(api.events.listAll, {
@@ -251,6 +257,19 @@ export default function RsvpsPage() {
       ? { eventId: eventId as Id<"events">, ...workspaceScope.queryArgs }
       : "skip",
   ) as Event | null | undefined;
+  const publicEventUrl = React.useMemo(() => {
+    if (!currentEvent) {
+      return null;
+    }
+
+    return buildPublicEventUrl(workspace ?? null, currentEvent, {
+      currentOrigin: typeof window !== "undefined" ? window.location.origin : null,
+      vercelEnvironment: process.env.NEXT_PUBLIC_VERCEL_ENV,
+    });
+  }, [currentEvent, workspace]);
+  const canShareCurrentEvent = Boolean(
+    currentEvent && (!workspaceScope || workspace !== undefined),
+  );
 
   const listCredentials = useQuery(
     api.credentials.getCredsForEvent,
@@ -2263,7 +2282,34 @@ export default function RsvpsPage() {
         <div className="flex flex-col gap-2 sm:gap-1">
           <div className="flex items-start justify-between gap-3 sm:block">
             <h2 className="text-3xl font-bold tracking-tight">RSVPs</h2>
-            <div className="flex sm:hidden">
+            <div className="flex items-center gap-2 sm:hidden">
+              {currentEvent && canShareCurrentEvent ? (
+                <ShareEventPopover
+                  eventId={currentEvent._id}
+                  eventUrl={publicEventUrl}
+                  siteKey={workspaceScope?.siteKey}
+                  workspaceSlug={workspaceScope?.workspaceSlug}
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="justify-center px-3"
+                    aria-label="Share event"
+                  >
+                    <Share className="h-4 w-4" />
+                  </Button>
+                </ShareEventPopover>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-center px-3"
+                  aria-label="Share event"
+                  disabled
+                >
+                  <Share className="h-4 w-4" />
+                </Button>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -2286,19 +2332,6 @@ export default function RsvpsPage() {
                   >
                     <Eye className="h-4 w-4 mr-2" />
                     View Event
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      if (eventId) {
-                        const url = `${window.location.origin}/events/${eventId}`;
-                        await navigator.clipboard.writeText(url);
-                        toast.success("Event link copied to clipboard");
-                      }
-                    }}
-                    disabled={!eventId}
-                  >
-                    <Share className="h-4 w-4 mr-2" />
-                    Share Event
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setExportOptionsOpen(true)} disabled={!eventId}>
                     <Download className="h-4 w-4 mr-2" />
@@ -2328,21 +2361,24 @@ export default function RsvpsPage() {
             <Eye className="h-4 w-4 mr-2" />
             View Event
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={async () => {
-              if (eventId) {
-                const url = `${window.location.origin}/events/${eventId}`;
-                await navigator.clipboard.writeText(url);
-                toast.success("Event link copied to clipboard");
-              }
-            }}
-            disabled={!eventId}
-          >
-            <Share className="h-4 w-4 mr-2" />
-            Share Event
-          </Button>
+          {currentEvent && canShareCurrentEvent ? (
+            <ShareEventPopover
+              eventId={currentEvent._id}
+              eventUrl={publicEventUrl}
+              siteKey={workspaceScope?.siteKey}
+              workspaceSlug={workspaceScope?.workspaceSlug}
+            >
+              <Button variant="outline" size="sm">
+                <Share className="h-4 w-4 mr-2" />
+                Share Event
+              </Button>
+            </ShareEventPopover>
+          ) : (
+            <Button variant="outline" size="sm" disabled>
+              <Share className="h-4 w-4 mr-2" />
+              Share Event
+            </Button>
+          )}
           <Popover open={exportOptionsOpen} onOpenChange={setExportOptionsOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm">
