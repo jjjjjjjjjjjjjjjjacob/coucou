@@ -212,12 +212,16 @@ export function ChlorineAppShell({
   );
   const topReserve = isExpanded ? (isMobile ? 110 : 180) : collapsedReserve;
   const bottomReserve = isExpanded ? (isMobile ? 100 : 160) : collapsedReserve;
+  const shellMinHeight =
+    isMobile && landingViewport.hasMeasuredViewport ? landingViewport.height : "100dvh";
 
   const shellInner = (
     <div
       data-shell-mode={mode}
       style={{
         width: "100%",
+        maxWidth: "100%",
+        overflowX: "hidden",
         background: "var(--tt-bg)",
         color: "var(--tt-fg)",
         fontFamily: "var(--tt-text)",
@@ -228,7 +232,9 @@ export function ChlorineAppShell({
         style={{
           position: "relative",
           width: "100%",
-          minHeight: "100dvh",
+          maxWidth: "100%",
+          minHeight: typeof shellMinHeight === "number" ? `${shellMinHeight}px` : shellMinHeight,
+          overflowX: "hidden",
           display: "flex",
           flexDirection: "column",
         }}
@@ -296,6 +302,9 @@ export function ChlorineAppShell({
             flex: "1 0 auto",
             minHeight: 0,
             padding: `0 ${horizontalPadding}px`,
+            boxSizing: "border-box",
+            maxWidth: "100%",
+            overflowX: "hidden",
             zIndex: 5,
             display: "flex",
             alignItems: "safe center",

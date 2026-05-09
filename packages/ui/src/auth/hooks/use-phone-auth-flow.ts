@@ -6,6 +6,7 @@ import { initialPhoneAuthState, type PhoneAuthError, type PhoneAuthState } from 
 import { digitsOnly, getClerkErrorCode, mapClerkErrorToPhoneAuth } from "../internal-utils";
 
 const RESEND_COOLDOWN_SECONDS = 30;
+const SESSION_ACTIVATION_FALLBACK_MS = 1200;
 
 interface UsePhoneAuthFlowOptions {
   onSuccess: () => void;
@@ -21,6 +22,88 @@ interface UsePhoneAuthFlowReturn {
   resendCode: () => Promise<void>;
   goBack: () => void;
   clearError: () => void;
+}
+
+interface SignUpCompletionState {
+  status: string | null;
+  missingFields?: readonly string[] | null;
+  unverifiedFields?: readonly string[] | null;
+}
+
+type SessionActivator = (params: { session: string }) => Promise<unknown>;
+
+function formatRequirementLabel(field: string): string {
+  switch (field) {
+    case "email_address":
+    case "emailAddress":
+      return "email address";
+    case "first_name":
+    case "firstName":
+      return "first name";
+    case "last_name":
+    case "lastName":
+      return "last name";
+    case "legal_accepted":
+    case "legalAccepted":
+      return "terms acceptance";
+    case "phone_number":
+    case "phoneNumber":
+      return "phone number";
+    default:
+      return field.replace(/_/g, " ");
+  }
+}
+
+function uniqueValues(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function isOnlyMissingLegalAcceptance(result: SignUpCompletionState): boolean {
+  const missingFields = result.missingFields ?? [];
+  return (
+    missingFields.length > 0 &&
+    missingFields.every((field) => field === "legal_accepted" || field === "legalAccepted")
+  );
+}
+
+function buildMissingSessionError(): PhoneAuthError {
+  return {
+    type: "unknown",
+    message: "We verified the code, but Clerk did not return a session. Please try again.",
+  };
+}
+
+function buildIncompleteSignInError(status: string | null): PhoneAuthError {
+  if (status === "needs_second_factor") {
+    return {
+      type: "unknown",
+      message: "This account needs another verification step. Contact support to finish signing in.",
+    };
+  }
+
+  return {
+    type: "unknown",
+    message: "We could not finish signing in. Please try again.",
+  };
+}
+
+function buildIncompleteSignUpError(result: SignUpCompletionState): PhoneAuthError {
+  const pendingFields = uniqueValues([
+    ...(result.missingFields ?? []),
+    ...(result.unverifiedFields ?? []),
+  ]);
+
+  if (pendingFields.length > 0) {
+    return {
+      type: "unknown",
+      message: `We still need ${pendingFields.map(formatRequirementLabel).join(", ")} to create this account. Contact support if this keeps happening.`,
+    };
+  }
+
+  return {
+    type: "unknown",
+    message: "We could not finish creating this account. Please try again.",
+  };
 }
 
 /**
@@ -46,12 +129,37 @@ export function usePhoneAuthFlow({
 
   const [state, setState] = useState<PhoneAuthState>(initialPhoneAuthState);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionActivationFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Latest onSuccess for the session-watching effect to call without stale closure.
   const onSuccessRef = useRef(onSuccess);
   onSuccessRef.current = onSuccess;
   // Whether we're waiting for Clerk to confirm the new session is live.
   const awaitingSessionRef = useRef(false);
+  const hasCompletedAuthenticationRef = useRef(false);
+
+  const clearSessionActivationFallback = useCallback(() => {
+    if (sessionActivationFallbackTimerRef.current) {
+      clearTimeout(sessionActivationFallbackTimerRef.current);
+      sessionActivationFallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const triggerSuccess = useCallback(() => {
+    if (hasCompletedAuthenticationRef.current) return;
+
+    hasCompletedAuthenticationRef.current = true;
+    awaitingSessionRef.current = false;
+    clearSessionActivationFallback();
+    onSuccessRef.current();
+  }, [clearSessionActivationFallback]);
+
+  const scheduleSessionActivationFallback = useCallback(() => {
+    clearSessionActivationFallback();
+    sessionActivationFallbackTimerRef.current = setTimeout(() => {
+      triggerSuccess();
+    }, SESSION_ACTIVATION_FALLBACK_MS);
+  }, [clearSessionActivationFallback, triggerSuccess]);
 
   // Don't fire onSuccess until both: (1) we've moved to "completing" and
   // (2) Clerk's useUser() reflects isSignedIn === true. Without this guard
@@ -59,18 +167,18 @@ export function usePhoneAuthFlow({
   // user back to the phone form.
   useEffect(() => {
     if (awaitingSessionRef.current && state.step === "completing" && isSignedIn) {
-      awaitingSessionRef.current = false;
-      onSuccessRef.current();
+      triggerSuccess();
     }
-  }, [state.step, isSignedIn]);
+  }, [state.step, isSignedIn, triggerSuccess]);
 
   useEffect(() => {
     return () => {
       if (cooldownTimerRef.current) {
         clearInterval(cooldownTimerRef.current);
       }
+      clearSessionActivationFallback();
     };
-  }, []);
+  }, [clearSessionActivationFallback]);
 
   const setPhone = useCallback((phone: string) => {
     setState((prev) => ({ ...prev, phoneNumber: phone, error: null }));
@@ -85,13 +193,26 @@ export function usePhoneAuthFlow({
   }, []);
 
   const goBack = useCallback(() => {
+    awaitingSessionRef.current = false;
+    hasCompletedAuthenticationRef.current = false;
+    clearSessionActivationFallback();
     setState((prev) => ({
       ...prev,
       step: "phone",
       error: null,
       authMode: null,
     }));
-  }, []);
+  }, [clearSessionActivationFallback]);
+
+  const completeSessionActivation = useCallback(
+    async (activateSession: SessionActivator, createdSessionId: string) => {
+      setState((prev) => ({ ...prev, step: "completing" }));
+      awaitingSessionRef.current = true;
+      await activateSession({ session: createdSessionId });
+      scheduleSessionActivationFallback();
+    },
+    [scheduleSessionActivationFallback],
+  );
 
   const startResendCooldown = useCallback(() => {
     setState((prev) => ({
@@ -123,6 +244,9 @@ export function usePhoneAuthFlow({
     if (!isSignInLoaded || !isSignUpLoaded || !signIn || !signUp) return;
 
     const fullPhone = `${state.countryCode}${digitsOnly(state.phoneNumber)}`;
+    awaitingSessionRef.current = false;
+    hasCompletedAuthenticationRef.current = false;
+    clearSessionActivationFallback();
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
@@ -141,7 +265,7 @@ export function usePhoneAuthFlow({
       const errorCode = getClerkErrorCode(signInError);
       if (errorCode === "form_identifier_not_found") {
         try {
-          await signUp.create({ phoneNumber: fullPhone });
+          await signUp.create({ phoneNumber: fullPhone, legalAccepted: true });
           await signUp.preparePhoneNumberVerification();
           setState((prev) => ({
             ...prev,
@@ -169,12 +293,22 @@ export function usePhoneAuthFlow({
     state.countryCode,
     state.phoneNumber,
     startResendCooldown,
+    clearSessionActivationFallback,
     onError,
   ]);
 
   const verifyCode = useCallback(
     async (code: string) => {
-      if (!isSignInLoaded || !isSignUpLoaded || !signIn || !signUp) return;
+      if (
+        !isSignInLoaded ||
+        !isSignUpLoaded ||
+        !signIn ||
+        !signUp ||
+        !setSignInActive ||
+        !setSignUpActive
+      ) {
+        return;
+      }
 
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
@@ -186,54 +320,34 @@ export function usePhoneAuthFlow({
           });
           if (result.status === "complete") {
             if (!result.createdSessionId) {
-              setState((prev) => ({
-                ...prev,
-                isLoading: false,
-                error: {
-                  type: "unknown",
-                  message: "Something went wrong. Please try again.",
-                },
-              }));
+              setState((prev) => ({ ...prev, isLoading: false, error: buildMissingSessionError() }));
               return;
             }
-            setState((prev) => ({ ...prev, step: "completing" }));
-            awaitingSessionRef.current = true;
-            await setSignInActive({ session: result.createdSessionId });
+            await completeSessionActivation(setSignInActive, result.createdSessionId);
           } else {
             setState((prev) => ({
               ...prev,
               isLoading: false,
-              error: {
-                type: "unknown",
-                message: "Additional verification required.",
-              },
+              error: buildIncompleteSignInError(result.status),
             }));
           }
         } else {
-          const result = await signUp.attemptPhoneNumberVerification({ code });
+          let result = await signUp.attemptPhoneNumberVerification({ code });
+          if (result.status === "missing_requirements" && isOnlyMissingLegalAcceptance(result)) {
+            result = await signUp.update({ legalAccepted: true });
+          }
+
           if (result.status === "complete") {
             if (!result.createdSessionId) {
-              setState((prev) => ({
-                ...prev,
-                isLoading: false,
-                error: {
-                  type: "unknown",
-                  message: "Something went wrong. Please try again.",
-                },
-              }));
+              setState((prev) => ({ ...prev, isLoading: false, error: buildMissingSessionError() }));
               return;
             }
-            setState((prev) => ({ ...prev, step: "completing" }));
-            awaitingSessionRef.current = true;
-            await setSignUpActive({ session: result.createdSessionId });
+            await completeSessionActivation(setSignUpActive, result.createdSessionId);
           } else {
             setState((prev) => ({
               ...prev,
               isLoading: false,
-              error: {
-                type: "unknown",
-                message: "Additional verification required.",
-              },
+              error: buildIncompleteSignUpError(result),
             }));
           }
         }
@@ -257,6 +371,7 @@ export function usePhoneAuthFlow({
       state.authMode,
       setSignInActive,
       setSignUpActive,
+      completeSessionActivation,
       onError,
     ],
   );

@@ -60,8 +60,17 @@ export interface LandingViewportMeasurementInput {
   viewportHeight?: number;
 }
 
+export interface StableLandingViewportMeasurementInput extends LandingViewportMeasurementInput {
+  previousViewport?: (ViewportDimensions & { hasMeasuredViewport: boolean }) | null;
+  forceMobile?: boolean;
+}
+
+const VIEWPORT_DIMENSION_CHANGE_EPSILON_PX = 1;
+
 function resolvePositiveDimension(value: number | undefined, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.round(value)
+    : fallback;
 }
 
 export function resolveLandingViewportDimensions({
@@ -79,6 +88,40 @@ export function resolveLandingViewportDimensions({
       viewportHeight,
       resolvePositiveDimension(elementHeight, FALLBACK_VIEWPORT_DIMENSIONS.height),
     ),
+  };
+}
+
+export function resolveStableLandingViewportDimensions({
+  elementWidth,
+  elementHeight,
+  viewportWidth,
+  viewportHeight,
+  previousViewport,
+  forceMobile,
+}: StableLandingViewportMeasurementInput): ViewportDimensions {
+  const measuredViewport = resolveLandingViewportDimensions({
+    elementWidth,
+    elementHeight,
+    viewportWidth,
+    viewportHeight,
+  });
+  const isMobileViewport = forceMobile ?? measuredViewport.width < CHLORINE_MOBILE_BREAKPOINT_PX;
+
+  if (!isMobileViewport || !previousViewport?.hasMeasuredViewport) {
+    return measuredViewport;
+  }
+
+  const hasWidthChanged =
+    Math.abs(measuredViewport.width - previousViewport.width) >
+    VIEWPORT_DIMENSION_CHANGE_EPSILON_PX;
+
+  if (hasWidthChanged) {
+    return measuredViewport;
+  }
+
+  return {
+    width: measuredViewport.width,
+    height: previousViewport.height,
   };
 }
 
@@ -101,15 +144,28 @@ export function useLandingViewport(
     const measureLandingElement = () => {
       const landingElementRect = landingElement.getBoundingClientRect();
       const visualViewport = window.visualViewport;
-      const measuredViewport = resolveLandingViewportDimensions({
-        elementWidth: landingElementRect.width,
-        elementHeight: landingElementRect.height,
-        viewportWidth: visualViewport?.width ?? window.innerWidth,
-        viewportHeight: visualViewport?.height ?? window.innerHeight,
-      });
-      setViewportState({
-        ...measuredViewport,
-        hasMeasuredViewport: true,
+      setViewportState((previousViewport) => {
+        const measuredViewport = resolveStableLandingViewportDimensions({
+          elementWidth: landingElementRect.width,
+          elementHeight: landingElementRect.height,
+          viewportWidth: window.innerWidth || visualViewport?.width,
+          viewportHeight: window.innerHeight || visualViewport?.height,
+          previousViewport,
+          forceMobile,
+        });
+
+        if (
+          previousViewport.hasMeasuredViewport &&
+          previousViewport.width === measuredViewport.width &&
+          previousViewport.height === measuredViewport.height
+        ) {
+          return previousViewport;
+        }
+
+        return {
+          ...measuredViewport,
+          hasMeasuredViewport: true,
+        };
       });
     };
 
@@ -127,7 +183,7 @@ export function useLandingViewport(
       window.removeEventListener("resize", measureLandingElement);
       visualViewport?.removeEventListener("resize", measureLandingElement);
     };
-  }, [landingElementRef]);
+  }, [landingElementRef, forceMobile]);
 
   const isMobile = forceMobile ?? viewportState.width < CHLORINE_MOBILE_BREAKPOINT_PX;
   const isShortDesktop = !isMobile && shouldUseShortDesktopLayout(viewportState, isMobile);

@@ -140,9 +140,13 @@
   }
   html {
     @apply bg-background;
+    max-width: 100%;
+    overflow-x: hidden;
   }
   body {
     @apply bg-background text-foreground;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 }
 

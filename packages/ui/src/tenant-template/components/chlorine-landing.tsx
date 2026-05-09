@@ -500,6 +500,11 @@ export function ChlorineEventRow({
         display: "grid",
         gridTemplateColumns: mobile ? "auto 1fr auto" : "120px 1fr 90px",
         gap: mobile ? 16 : 32,
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        overflowX: "hidden",
         padding: verticalPadding,
         alignItems: "baseline",
         opacity: visible ? 1 : 0,
@@ -532,6 +537,7 @@ export function ChlorineEventRow({
           textTransform: "uppercase",
           letterSpacing: "0.01em",
           minWidth: 0,
+          overflowWrap: "anywhere",
           ...(isMinimized
             ? {
                 fontSize: mobile ? 14 : 16,
