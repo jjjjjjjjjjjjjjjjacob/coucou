@@ -53,11 +53,6 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
-        source: "/events/:path*",
-        destination: "/admin",
-        permanent: false,
-      },
-      {
         source: "/redeem/:path*",
         destination: "/admin",
         permanent: false,

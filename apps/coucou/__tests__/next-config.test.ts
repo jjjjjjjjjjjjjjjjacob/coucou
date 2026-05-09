@@ -10,6 +10,13 @@ describe("Coucou route redirects", () => {
     expect(redirectSources).not.toContain("/account");
   });
 
+  it("does not redirect event routes to admin", async () => {
+    const redirects = await nextConfig.redirects?.();
+    const redirectSources = redirects?.map((redirect) => redirect.source) ?? [];
+
+    expect(redirectSources).not.toContain("/events/:path*");
+  });
+
   it("redirects legacy workspace host and door routes to dashboard routes", async () => {
     const redirects = await nextConfig.redirects?.();
 

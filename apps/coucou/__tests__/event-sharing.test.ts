@@ -3,6 +3,7 @@ import { buildReferralUrl } from "@coucou/sdk/shared/event-routes";
 import {
   buildListShareUrl,
   copyTextToClipboard,
+  resolvePreparedShareEventBaseUrl,
   resolveShareEventBaseUrl,
   resolveShareEventUrlWithRouteId,
 } from "../components/share-event-popover";
@@ -41,6 +42,16 @@ describe("event sharing", () => {
     ).toBe("https://clubchlorine.party/events/abc1234");
   });
 
+  it("falls back to the Club Chlorine production event URL when workspace data is unavailable", () => {
+    expect(
+      resolveShareEventBaseUrl({
+        eventId: "event_123",
+        origin: "https://coucou.events",
+        siteKey: "club-chlorine",
+      }),
+    ).toBe("https://clubchlorine.party/events/event_123");
+  });
+
   it("uses local client origins when sharing from a local coucou dashboard", () => {
     const publicEventUrl = buildPublicEventUrl(
       {
@@ -52,6 +63,16 @@ describe("event sharing", () => {
     );
 
     expect(publicEventUrl).toBe("http://localhost:5679/events/abc1234");
+  });
+
+  it("falls back to the local Club Chlorine event URL from a local coucou dashboard", () => {
+    expect(
+      resolveShareEventBaseUrl({
+        eventId: "event_123",
+        origin: "http://localhost:5680",
+        siteKey: "club-chlorine",
+      }),
+    ).toBe("http://localhost:5679/events/event_123");
   });
 
   it("uses dev client origins when sharing from a dev deployment", () => {
@@ -71,6 +92,30 @@ describe("event sharing", () => {
     expect(
       resolveShareEventUrlWithRouteId("https://clubchlorine.party/events/event_123", "abc1234"),
     ).toBe("https://clubchlorine.party/events/abc1234");
+  });
+
+  it("prefers a short event route id when one is available", () => {
+    expect(
+      resolvePreparedShareEventBaseUrl({
+        fallbackBaseUrl: "https://clubchlorine.party/events/event_123",
+        shortEventRouteId: "abc1234",
+      }),
+    ).toEqual({
+      baseUrl: "https://clubchlorine.party/events/abc1234",
+      linkKind: "short",
+    });
+  });
+
+  it("falls back to a long event route id when a short id is unavailable", () => {
+    expect(
+      resolvePreparedShareEventBaseUrl({
+        fallbackBaseUrl: "https://clubchlorine.party/events/event_123",
+        shortEventRouteId: null,
+      }),
+    ).toEqual({
+      baseUrl: "https://clubchlorine.party/events/event_123",
+      linkKind: "long",
+    });
   });
 
   it("adds referral codes without dropping existing route state", () => {

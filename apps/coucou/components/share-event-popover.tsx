@@ -2,7 +2,8 @@
 
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { buildReferralUrl } from "@coucou/sdk/shared/event-routes";
+import { buildPublicEventUrl, buildReferralUrl } from "@coucou/sdk/shared/event-routes";
+import { type SiteKey, siteConfigurations } from "@coucou/sdk/site-config";
 import { useAction, useMutation } from "convex/react";
 import { Check, Copy } from "lucide-react";
 import type React from "react";
@@ -29,6 +30,8 @@ type ShareCopyTarget =
   | { type: "list"; index: number }
   | { type: "listReferral"; index: number };
 
+type PreparedShareLinkKind = "short" | "long";
+
 interface ClipboardCopyResult {
   copied: boolean;
   errorMessage?: string;
@@ -46,18 +49,40 @@ function getErrorMessage(error: unknown): string | undefined {
   return error instanceof Error ? error.message : undefined;
 }
 
+function isClientSiteKey(value: string | undefined): value is SiteKey {
+  return Boolean(
+    value &&
+      value in siteConfigurations &&
+      siteConfigurations[value as SiteKey].appKind === "client",
+  );
+}
+
 export function resolveShareEventBaseUrl({
   eventId,
   eventUrl,
   origin,
+  siteKey,
+  vercelEnvironment,
 }: {
   eventId: string;
   eventUrl?: string | null;
   origin?: string | null;
+  siteKey?: string | null;
+  vercelEnvironment?: string | null;
 }): string {
   const trimmedEventUrl = eventUrl?.trim();
   if (trimmedEventUrl) {
     return trimmedEventUrl.replace(/\/+$/, "");
+  }
+
+  const clientSiteKey = siteKey ?? undefined;
+  if (isClientSiteKey(clientSiteKey)) {
+    return buildPublicEventUrl({
+      event: { _id: eventId },
+      siteConfiguration: siteConfigurations[clientSiteKey],
+      currentOrigin: origin,
+      vercelEnvironment,
+    });
   }
 
   if (origin) {
@@ -77,6 +102,24 @@ export function resolveShareEventUrlWithRouteId(baseUrl: string, eventRouteId: s
     parsedUrl.pathname = parsedUrl.pathname.replace(/\/events\/[^/]+/, `/events/${eventRouteId}`);
     return `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
   }
+}
+
+export function resolvePreparedShareEventBaseUrl({
+  fallbackBaseUrl,
+  shortEventRouteId,
+}: {
+  fallbackBaseUrl: string;
+  shortEventRouteId?: string | null;
+}): { baseUrl: string; linkKind: PreparedShareLinkKind } {
+  const trimmedShortEventRouteId = shortEventRouteId?.trim();
+  if (!trimmedShortEventRouteId) {
+    return { baseUrl: fallbackBaseUrl, linkKind: "long" };
+  }
+
+  return {
+    baseUrl: resolveShareEventUrlWithRouteId(fallbackBaseUrl, trimmedShortEventRouteId),
+    linkKind: "short",
+  };
 }
 
 export function buildListShareUrl(
@@ -170,7 +213,9 @@ export function ShareEventPopover({
   const [loading, setLoading] = useState(false);
   const [credentialLoadErrorMessage, setCredentialLoadErrorMessage] = useState<string | null>(null);
   const [isPreparingShareLinks, setIsPreparingShareLinks] = useState(false);
-  const [preparedShortBaseUrl, setPreparedShortBaseUrl] = useState<string | null>(null);
+  const [preparedShareBaseUrl, setPreparedShareBaseUrl] = useState<string | null>(null);
+  const [preparedShareLinkKind, setPreparedShareLinkKind] =
+    useState<PreparedShareLinkKind>("short");
   const [preparedReferralCode, setPreparedReferralCode] = useState<string | null>(null);
   const [sharePreparationErrorMessage, setSharePreparationErrorMessage] = useState<string | null>(
     null,
@@ -210,23 +255,30 @@ export function ShareEventPopover({
     eventId,
     eventUrl,
     origin: typeof window !== "undefined" ? window.location.origin : null,
+    siteKey,
+    vercelEnvironment: process.env.NEXT_PUBLIC_VERCEL_ENV,
   });
 
-  const resolvePreparedShortBaseUrl = useCallback(async () => {
-    if (!eventUrl?.trim() && (siteKey || workspaceSlug)) {
-      throw new Error("Public event URL is not ready yet. Try again in a moment.");
-    }
-
+  const resolvePreferredShareBaseUrl = useCallback(async () => {
     try {
       const result = await ensureEventShortId({ eventId, siteKey, workspaceSlug });
-      if (!result.shortId.trim()) {
-        throw new Error("The event short link service returned an empty short ID.");
-      }
-      return resolveShareEventUrlWithRouteId(baseUrl, result.shortId);
+      return {
+        ...resolvePreparedShareEventBaseUrl({
+          fallbackBaseUrl: baseUrl,
+          shortEventRouteId: result.shortId,
+        }),
+        warningMessage: null,
+      };
     } catch (error) {
-      throw new Error(getErrorMessage(error) ?? "Failed to create a short event link.");
+      const shortLinkErrorMessage =
+        getErrorMessage(error) ?? "Failed to create a short event link.";
+      return {
+        baseUrl,
+        linkKind: "long" as const,
+        warningMessage: `Short links unavailable; copying full event links instead. ${shortLinkErrorMessage}`,
+      };
     }
-  }, [baseUrl, eventId, eventUrl, ensureEventShortId, siteKey, workspaceSlug]);
+  }, [baseUrl, eventId, ensureEventShortId, siteKey, workspaceSlug]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -237,36 +289,35 @@ export function ShareEventPopover({
 
     async function prepareShareLinks() {
       setIsPreparingShareLinks(true);
-      setPreparedShortBaseUrl(null);
+      setPreparedShareBaseUrl(null);
+      setPreparedShareLinkKind("short");
       setPreparedReferralCode(null);
       setSharePreparationErrorMessage(null);
 
+      const preferredBaseUrlResult = await resolvePreferredShareBaseUrl();
+      if (isCancelled) {
+        return;
+      }
+
+      setPreparedShareBaseUrl(preferredBaseUrlResult.baseUrl);
+      setPreparedShareLinkKind(preferredBaseUrlResult.linkKind);
+      setSharePreparationErrorMessage(preferredBaseUrlResult.warningMessage);
+
       try {
-        const shortBaseUrl = await resolvePreparedShortBaseUrl();
-        if (isCancelled) {
-          return;
-        }
-
-        setPreparedShortBaseUrl(shortBaseUrl);
-
-        try {
-          const { referralCode } = await ensureCurrentReferralCode({});
-          if (!isCancelled) {
-            setPreparedReferralCode(referralCode);
-          }
-        } catch (error) {
-          console.warn("Failed to prepare referral code for share links.", error);
-          if (!isCancelled) {
-            setSharePreparationErrorMessage(
-              `Referral links unavailable: ${getErrorMessage(error) ?? "Failed to create referral code."}`,
-            );
-          }
+        const { referralCode } = await ensureCurrentReferralCode({});
+        if (!isCancelled) {
+          setPreparedReferralCode(referralCode);
         }
       } catch (error) {
-        console.warn("Failed to prepare admin share links.", error);
+        console.warn("Failed to prepare referral code for share links.", error);
         if (!isCancelled) {
           setSharePreparationErrorMessage(
-            getErrorMessage(error) ?? "Failed to prepare share links.",
+            [
+              preferredBaseUrlResult.warningMessage,
+              `Referral links unavailable: ${getErrorMessage(error) ?? "Failed to create referral code."}`,
+            ]
+              .filter(Boolean)
+              .join(" "),
           );
         }
       } finally {
@@ -281,7 +332,7 @@ export function ShareEventPopover({
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, resolvePreparedShortBaseUrl, ensureCurrentReferralCode]);
+  }, [isOpen, resolvePreferredShareBaseUrl, ensureCurrentReferralCode]);
 
   const copyToClipboard = async (text: string, target: ShareCopyTarget) => {
     const copyResult = await copyTextToClipboard(text);
@@ -319,47 +370,49 @@ export function ShareEventPopover({
   };
 
   const copyBasicLink = async () => {
-    if (!preparedShortBaseUrl) {
-      reportUnpreparedLink("Short link");
+    if (!preparedShareBaseUrl) {
+      reportUnpreparedLink("Event link");
       return;
     }
 
-    await copyToClipboard(preparedShortBaseUrl, "basic");
+    await copyToClipboard(preparedShareBaseUrl, "basic");
   };
 
   const copyReferralLink = async () => {
-    if (!preparedShortBaseUrl || !preparedReferralCode) {
+    if (!preparedShareBaseUrl || !preparedReferralCode) {
       reportUnpreparedLink("Referral link");
       return;
     }
 
-    await copyToClipboard(buildReferralUrl(preparedShortBaseUrl, preparedReferralCode), "referral");
+    await copyToClipboard(buildReferralUrl(preparedShareBaseUrl, preparedReferralCode), "referral");
   };
 
   const copyListLink = async (credential: StoredCredentialPassword, index: number) => {
-    if (!preparedShortBaseUrl) {
+    if (!preparedShareBaseUrl) {
       reportUnpreparedLink("List link");
       return;
     }
 
-    await copyToClipboard(buildListShareUrl(preparedShortBaseUrl, credential), {
+    await copyToClipboard(buildListShareUrl(preparedShareBaseUrl, credential), {
       type: "list",
       index,
     });
   };
 
   const copyListReferralLink = async (credential: StoredCredentialPassword, index: number) => {
-    if (!preparedShortBaseUrl || !preparedReferralCode) {
+    if (!preparedShareBaseUrl || !preparedReferralCode) {
       reportUnpreparedLink("List referral link");
       return;
     }
 
-    const shortListUrl = buildListShareUrl(preparedShortBaseUrl, credential);
-    await copyToClipboard(buildReferralUrl(shortListUrl, preparedReferralCode), {
+    const listShareUrl = buildListShareUrl(preparedShareBaseUrl, credential);
+    await copyToClipboard(buildReferralUrl(listShareUrl, preparedReferralCode), {
       type: "listReferral",
       index,
     });
   };
+
+  const preparedShareLinkLabel = preparedShareLinkKind === "short" ? "Short link" : "Full link";
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -381,14 +434,16 @@ export function ShareEventPopover({
           {/* Basic link without password */}
           <div className="flex items-center justify-between gap-2 p-2 rounded border bg-muted/20">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-muted-foreground">Short link (no referral)</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                {preparedShareLinkLabel} (no referral)
+              </p>
             </div>
             <Button
               variant="outline"
               size="sm"
               className="shrink-0"
               onClick={copyBasicLink}
-              disabled={isPreparingShareLinks || !preparedShortBaseUrl}
+              disabled={isPreparingShareLinks || !preparedShareBaseUrl}
             >
               {copiedBasic ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             </Button>
@@ -396,14 +451,16 @@ export function ShareEventPopover({
 
           <div className="flex items-center justify-between gap-2 p-2 rounded border bg-muted/20">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-muted-foreground">Short referral link</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                {preparedShareLinkLabel} referral link
+              </p>
             </div>
             <Button
               variant="outline"
               size="sm"
               className="shrink-0"
               onClick={copyReferralLink}
-              disabled={isPreparingShareLinks || !preparedShortBaseUrl || !preparedReferralCode}
+              disabled={isPreparingShareLinks || !preparedShareBaseUrl || !preparedReferralCode}
             >
               {copiedReferral ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             </Button>
@@ -445,14 +502,16 @@ export function ShareEventPopover({
                         size="sm"
                         className="w-full gap-1"
                         onClick={() => copyListLink(credential, index)}
-                        disabled={isPreparingShareLinks || !preparedShortBaseUrl}
+                        disabled={isPreparingShareLinks || !preparedShareBaseUrl}
                       >
                         {copiedIndex === index ? (
                           <Check className="h-3 w-3" />
                         ) : (
                           <Copy className="h-3 w-3" />
                         )}
-                        <span className="text-xs">Short</span>
+                        <span className="text-xs">
+                          {preparedShareLinkKind === "short" ? "Short" : "Full"}
+                        </span>
                       </Button>
                       <Button
                         variant="outline"
@@ -460,7 +519,7 @@ export function ShareEventPopover({
                         className="w-full gap-1"
                         onClick={() => copyListReferralLink(credential, index)}
                         disabled={
-                          isPreparingShareLinks || !preparedShortBaseUrl || !preparedReferralCode
+                          isPreparingShareLinks || !preparedShareBaseUrl || !preparedReferralCode
                         }
                       >
                         {copiedReferralIndex === index ? (
