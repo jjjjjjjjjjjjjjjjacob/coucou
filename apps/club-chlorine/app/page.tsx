@@ -120,12 +120,7 @@ interface HomeEventRowProps {
  * the RSVP form. Each row owns its own RSVP-status subscription so the
  * homepage stays reactive without a batch query.
  */
-function HomeEventRow({
-  rowSeed,
-  mobile,
-  delayMs,
-  searchParams,
-}: HomeEventRowProps) {
+function HomeEventRow({ rowSeed, mobile, delayMs, searchParams }: HomeEventRowProps) {
   const { isSignedIn, isLoaded } = useAuth();
   const rsvpStatus = useQuery(
     api.rsvps.statusForUserEvent,

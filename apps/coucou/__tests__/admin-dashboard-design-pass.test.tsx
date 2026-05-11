@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { fireEvent, render, screen } from "@testing-library/react";
 import type { Id } from "@convex/_generated/dataModel";
+import { fireEvent, render, screen } from "@testing-library/react";
 import EventCardClient from "../app/workspaces/[workspaceSlug]/host/events/event-card-client";
 import { Select, SelectOption } from "../components/ui/select";
 import { HapticProvider } from "../contexts/haptic-context";

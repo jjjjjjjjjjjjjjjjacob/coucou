@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalQuery } from "./functions";
-import { resolveApprovalStatus, type ApprovalStatus } from "./lib/rsvpStatus";
+import { type ApprovalStatus, resolveApprovalStatus } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope } from "./lib/siteScope";
 
 export type ExportContext = {

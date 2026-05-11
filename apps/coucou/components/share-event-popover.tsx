@@ -6,9 +6,9 @@ import { buildPublicEventUrl, buildReferralUrl } from "@coucou/sdk/shared/event-
 import { type SiteKey, siteConfigurations } from "@coucou/sdk/site-config";
 import { useAction, useMutation } from "convex/react";
 import { Check, Copy } from "lucide-react";
+import posthog from "posthog-js";
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
-import posthog from "posthog-js";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

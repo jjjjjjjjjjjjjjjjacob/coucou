@@ -86,8 +86,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useWorkspaceAccess } from "@/components/workspace-access-gate";
-import { formatEventTitleInline } from "@/lib/event-display";
-import { buildPublicEventUrl } from "@/lib/event-public-url";
 import {
   areDashboardTableColumnIdsEqual,
   type DashboardTablePreference,
@@ -98,6 +96,8 @@ import {
   shouldHydrateDashboardTablePreferenceState,
   shouldResetHostRsvpsSavedTablePreference,
 } from "@/lib/dashboard-table-preferences";
+import { formatEventTitleInline } from "@/lib/event-display";
+import { buildPublicEventUrl } from "@/lib/event-public-url";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import {
   canToggleRsvpTableRowFromBodyCell,
@@ -3218,8 +3218,7 @@ export default function RsvpsPage() {
   const pendingDeletionCount = rsvpsPendingDeletion.length;
   const deletionMutationIsPending =
     deleteRsvpCompleteMutation.isPending || bulkDeleteRsvpsMutation.isPending;
-  const pendingDeletionTitle =
-    pendingDeletionCount > 1 ? "Delete Selected RSVPs" : "Delete RSVP";
+  const pendingDeletionTitle = pendingDeletionCount > 1 ? "Delete Selected RSVPs" : "Delete RSVP";
   const pendingDeletionGuestName =
     pendingDeletionCount === 1 && rsvpsPendingDeletion[0]
       ? getRsvpGuestName(rsvpsPendingDeletion[0])

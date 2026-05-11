@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
+import type { Id } from "@convex/_generated/dataModel";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
-import type { Id } from "@convex/_generated/dataModel";
 import { HapticProvider } from "@/contexts/haptic-context";
 import type { Event } from "@/lib/types";
 
@@ -116,7 +116,9 @@ describe("RSVP stepper", () => {
 
     const progress = screen.getByRole("navigation", { name: "RSVP progress" });
     expect(
-      within(progress).getByRole("button", { name: /3\s+Submit/i }).getAttribute("aria-current"),
+      within(progress)
+        .getByRole("button", { name: /3\s+Submit/i })
+        .getAttribute("aria-current"),
     ).toBe("step");
     expect(
       (within(progress).getByRole("button", { name: /1\s+You/i }) as HTMLButtonElement).disabled,
@@ -129,7 +131,9 @@ describe("RSVP stepper", () => {
 
     await waitFor(() => {
       expect(
-        within(progress).getByRole("button", { name: /1\s+You/i }).getAttribute("aria-current"),
+        within(progress)
+          .getByRole("button", { name: /1\s+You/i })
+          .getAttribute("aria-current"),
       ).toBe("step");
     });
     expect(routerReplaceCalls.at(-1)).toBe("/events/club/rsvp?step=info");
@@ -167,9 +171,7 @@ describe("RSVP stepper", () => {
     expect(signOutOptions?.redirectUrl).toContain(
       "http://localhost:5680/clients/club-chlorine/sign-in",
     );
-    const redirectUrl = new URL(signOutOptions?.redirectUrl ?? "").searchParams.get(
-      "redirect_url",
-    );
+    const redirectUrl = new URL(signOutOptions?.redirectUrl ?? "").searchParams.get("redirect_url");
     expect(redirectUrl).toContain("/events/club/rsvp?step=info");
     expect(redirectUrl).toContain("__clerk_synced=false");
   });

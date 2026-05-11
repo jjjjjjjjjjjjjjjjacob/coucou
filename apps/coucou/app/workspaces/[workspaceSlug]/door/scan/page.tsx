@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Html5Qrcode } from "html5-qrcode";
 import { Camera } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import posthog from "posthog-js";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import posthog from "posthog-js";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 export default function ScanPage() {

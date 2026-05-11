@@ -6,8 +6,8 @@ import {
   ALL_LEGACY_RSVP_STATUSES,
   type ApprovalFilter,
   getRawStatusesForApprovalFilter,
-  resolveApprovalStatus,
   type LegacyRsvpStatus,
+  resolveApprovalStatus,
 } from "./rsvpStatus";
 
 function getAggregateSortKey(rsvp: Doc<"rsvps">): [string, string, string] {

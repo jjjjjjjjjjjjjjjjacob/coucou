@@ -343,10 +343,7 @@ export function GuestInfoFields({
                   className="border border-primary/20 text-primary"
                 >
                   {Array.from({ length: maximumAttendees }, (_, attendeeIndex) => (
-                    <SelectOption
-                      key={attendeeIndex + 1}
-                      value={(attendeeIndex + 1).toString()}
-                    >
+                    <SelectOption key={attendeeIndex + 1} value={(attendeeIndex + 1).toString()}>
                       {attendeeIndex + 1}
                     </SelectOption>
                   ))}

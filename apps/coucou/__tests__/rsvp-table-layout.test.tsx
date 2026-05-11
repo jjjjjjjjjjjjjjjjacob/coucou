@@ -3,13 +3,13 @@ import { render, screen } from "@testing-library/react";
 import {
   canToggleRsvpTableRowFromBodyCell,
   getRsvpContextActionTargets,
-  getRsvpTableColumnSizing,
   getRsvpTableBodyCellClassName,
+  getRsvpTableColumnSizing,
   getRsvpTableDisplayWidth,
   getRsvpTableFillerColumnWidth,
-  RSVP_TABLE_COLUMN_MAX_WIDTH,
   RSVP_SELECT_COLUMN_SIZING,
   RSVP_TABLE_BODY_ALIGNMENT_GUTTER_CLASS,
+  RSVP_TABLE_COLUMN_MAX_WIDTH,
   RSVP_TABLE_RESIZE_HANDLE_TEST_ID,
   shouldRenderRsvpTableResizeHandle,
 } from "../lib/rsvp-table-layout";
