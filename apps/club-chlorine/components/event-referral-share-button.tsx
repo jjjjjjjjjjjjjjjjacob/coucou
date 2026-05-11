@@ -235,7 +235,7 @@ export function EventReferralShareButton({
       ? "rounded-full gap-2"
       : "size-8 gap-2";
   const iconClassName = "h-4 w-4";
-  const prominentLabel = isPreparing ? "Preparing…" : "Share with friends";
+  const prominentLabel = isPreparing ? "Preparing…" : "Share with your friends";
   const subtleLabel = isPreparing ? "Preparing…" : "Share";
 
   return (

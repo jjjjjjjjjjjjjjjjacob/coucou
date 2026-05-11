@@ -1,15 +1,16 @@
+import { normalizePrimaryFieldLookupText } from "@coucou/sdk/shared/primary-fields";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import {
-  ALL_RAW_RSVP_STATUSES,
+  ALL_APPROVAL_STATUSES,
   type ApprovalFilter,
   getRawStatusesForApprovalFilter,
   matchesApprovalFilter,
-  type RawRsvpStatus,
+  resolveApprovalStatus,
 } from "./rsvpStatus";
 
-export const validRsvpStatuses = ALL_RAW_RSVP_STATUSES;
-export type ValidRsvpStatus = RawRsvpStatus;
+export const validRsvpStatuses = ALL_APPROVAL_STATUSES;
+export type ValidRsvpStatus = (typeof ALL_APPROVAL_STATUSES)[number];
 
 export type TicketStatusFilter = "not-issued" | "issued" | "disabled" | "redeemed";
 
@@ -27,7 +28,40 @@ export type MatchingRsvpFilterOptions = {
   ticketStatusFilter?: TicketStatusFilter | null;
 };
 
-type FilterableRsvpRecord = Pick<Doc<"rsvps">, "listKey" | "ticketStatus" | "status">;
+type FilterableRsvpRecord = Pick<
+  Doc<"rsvps">,
+  "listKey" | "ticketStatus" | "status" | "approvalStatus"
+>;
+
+export function buildRsvpFuzzySearchTerms(searchText: string | undefined): string[] {
+  const rawSearchText = (searchText ?? "").trim();
+  const normalizedSearchText = normalizePrimaryFieldLookupText(rawSearchText);
+  const normalizedWithoutLeadingAt = normalizePrimaryFieldLookupText(
+    rawSearchText.replace(/^@+/, ""),
+  );
+  const searchTerms = [normalizedSearchText, normalizedWithoutLeadingAt].filter(
+    (searchTerm): searchTerm is string => searchTerm.length > 0,
+  );
+
+  return Array.from(new Set(searchTerms));
+}
+
+export function fieldValuesMatchRsvpFuzzySearchTerms(
+  fieldValues: Array<string | undefined>,
+  searchTerms: string[],
+): boolean {
+  if (searchTerms.length === 0) {
+    return true;
+  }
+
+  return fieldValues.some((fieldValue) => {
+    const normalizedFieldValue = normalizePrimaryFieldLookupText(fieldValue ?? "");
+    return (
+      normalizedFieldValue.length > 0 &&
+      searchTerms.some((searchTerm) => normalizedFieldValue.includes(searchTerm))
+    );
+  });
+}
 
 export function normalizeTicketStatusFilter(
   redemptionFilter: string | undefined,
@@ -66,7 +100,7 @@ export function applyCollectedRsvpFilters<RsvpRecord extends FilterableRsvpRecor
   }: CollectedRsvpFilterOptions,
 ): RsvpRecord[] {
   return rsvps.filter((rsvp) => {
-    if (!matchesApprovalFilter(rsvp.status, approvalFilter)) {
+    if (!matchesApprovalFilter(rsvp, approvalFilter)) {
       return false;
     }
 
@@ -156,3 +190,5 @@ export async function collectRsvpsMatchingFilters(
     ticketStatusFilter,
   });
 }
+
+export { resolveApprovalStatus };

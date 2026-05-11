@@ -80,8 +80,18 @@ export type EventPatch = Partial<
     | "qrCodeColor"
     | "defersQrDelivery"
     | "sendQrOnApproval"
+    | "attendanceQuestionEnabled"
   >
 >;
+
+export type EventUnsetField =
+  | "secondaryTitle"
+  | "productionCompany"
+  | "flyerStorageId"
+  | "guestPortalImageStorageId"
+  | "guestPortalLinkLabel"
+  | "guestPortalLinkUrl"
+  | "primaryFieldConfig";
 
 /**
  * List credential patch type

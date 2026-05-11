@@ -141,6 +141,8 @@
   --tt-fg: #e8e6e1;
   --tt-fg-dim: #8c8a85;
   --tt-fg-mute: #4a4845;
+  --tt-highlight: #1f1d1a;
+  --tt-highlight-strong: #2b2823;
   --tt-rule: rgba(232, 230, 225, 0.1);
   --tt-rule-strong: rgba(232, 230, 225, 0.18);
   --tt-text: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
@@ -153,11 +155,11 @@
   --popover-foreground: var(--tt-fg);
   --primary: var(--tt-fg);
   --primary-foreground: var(--tt-bg);
-  --secondary: var(--tt-bg-2);
+  --secondary: var(--tt-highlight);
   --secondary-foreground: var(--tt-fg);
-  --muted: var(--tt-bg-2);
+  --muted: var(--tt-highlight);
   --muted-foreground: var(--tt-fg-dim);
-  --accent: var(--tt-bg-2);
+  --accent: var(--tt-highlight);
   --accent-foreground: var(--tt-fg);
   --border: var(--tt-rule-strong);
   --input: var(--tt-rule-strong);
@@ -189,6 +191,8 @@ html.maison-dashboard-light .maison-app-surface {
   --tt-fg: #171412 !important;
   --tt-fg-dim: #6f6961 !important;
   --tt-fg-mute: #9a9288 !important;
+  --tt-highlight: #ece8df !important;
+  --tt-highlight-strong: #ded7c9 !important;
   --tt-rule: rgba(23, 20, 18, 0.1) !important;
   --tt-rule-strong: rgba(23, 20, 18, 0.18) !important;
 
@@ -200,11 +204,11 @@ html.maison-dashboard-light .maison-app-surface {
   --popover-foreground: var(--tt-fg) !important;
   --primary: var(--tt-fg) !important;
   --primary-foreground: var(--tt-bg) !important;
-  --secondary: var(--tt-bg-2) !important;
+  --secondary: var(--tt-highlight) !important;
   --secondary-foreground: var(--tt-fg) !important;
-  --muted: var(--tt-bg-2) !important;
+  --muted: var(--tt-highlight) !important;
   --muted-foreground: var(--tt-fg-dim) !important;
-  --accent: var(--tt-bg-2) !important;
+  --accent: var(--tt-highlight) !important;
   --accent-foreground: var(--tt-fg) !important;
   --border: var(--tt-rule-strong) !important;
   --input: var(--tt-rule-strong) !important;
@@ -254,8 +258,34 @@ html.maison-dashboard-light body.maison-app-surface {
 .maison-app-surface [data-slot="sidebar-menu-button"][data-active="true"],
 .maison-app-surface [data-slot="sidebar-menu-button"]:hover,
 .maison-app-surface [data-slot="sidebar-menu-button"][data-state="open"] {
-  background-color: var(--tt-bg-2) !important;
+  background-color: var(--tt-highlight) !important;
   color: var(--tt-fg);
+}
+
+.maison-app-surface [data-slot="dropdown-menu-item"]:focus,
+.maison-app-surface [data-slot="context-menu-item"]:focus {
+  background-color: var(--tt-highlight) !important;
+  color: var(--tt-fg) !important;
+}
+
+.maison-app-surface [data-slot="button"]:focus-visible,
+.maison-app-surface select:focus-visible,
+.maison-app-surface input:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-fg) 18%, transparent) !important;
+}
+
+.maison-app-surface tr[class*="bg-blue-50"] {
+  background-color: color-mix(in srgb, var(--tt-fg) 12%, var(--tt-bg)) !important;
+  border-color: var(--tt-rule-strong) !important;
+}
+
+.maison-app-surface tr[class*="bg-yellow-50"] {
+  background-color: color-mix(in srgb, #f1c76b 16%, var(--tt-bg)) !important;
+  border-color: color-mix(in srgb, #f1c76b 26%, var(--tt-rule-strong)) !important;
+}
+
+.maison-app-surface tr:hover {
+  background-color: color-mix(in srgb, var(--tt-fg) 6%, transparent);
 }
 
 .maison-app-surface [data-slot="sidebar-group-label"] {

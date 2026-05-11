@@ -58,10 +58,26 @@ const ghostButtonStyle: React.CSSProperties = {
   border: "1px solid var(--tt-fg)",
 };
 
+export type AttendanceStatusOption = "yes" | "no" | "maybe";
+
+const ATTENDANCE_STATUS_OPTIONS: AttendanceStatusOption[] = ["yes", "maybe", "no"];
+
+function getAttendanceStatusLabel(status: AttendanceStatusOption): string {
+  switch (status) {
+    case "yes":
+      return "Yes";
+    case "maybe":
+      return "Maybe";
+    case "no":
+      return "No";
+  }
+}
+
 export type RsvpCollectedArgs = {
   note?: string;
   shareContact: true;
   attendees: number;
+  attendanceStatus: AttendanceStatusOption;
   smsConsent: boolean;
   smsConsentIpAddress?: string;
   customFields: Record<string, string>;
@@ -81,6 +97,7 @@ interface CurrentUserRsvpFormStatus {
   customFieldValues?: Record<string, string>;
   socialProfiles?: Array<{ platformKey: string; handle: string }>;
   invitedByName?: string;
+  attendanceStatus?: AttendanceStatusOption;
   smsConsent?: boolean;
   smsConsentIpAddress?: string;
 }
@@ -91,6 +108,7 @@ interface RsvpAcceptedFormProps {
   event: Event;
   listKey?: string;
   submitMode?: "submit" | "collect";
+  formVariant?: "stepped" | "full";
   onCollect?: (args: RsvpCollectedArgs) => void | Promise<void>;
   submitLabel?: string;
   /**
@@ -116,6 +134,7 @@ export function RsvpAcceptedForm({
   event,
   listKey,
   submitMode = "submit",
+  formVariant = "stepped",
   onCollect,
   submitLabel = "Submit Request",
   hasNoPasswordList = false,
@@ -126,6 +145,7 @@ export function RsvpAcceptedForm({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const publicEventRouteId = eventRouteId ?? eventId;
+  const isFullForm = formVariant === "full";
   const { user } = useUser();
   const { openUserProfile } = useClerk();
 
@@ -149,10 +169,11 @@ export function RsvpAcceptedForm({
   const [socialProfiles, setSocialProfiles] = useState<Record<string, string>>({});
   const [invitedByName, setInvitedByName] = useState<string>("");
   const [note, setNote] = useState("");
+  const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatusOption>("yes");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState<RsvpStepNumber>(() =>
-    parseRsvpStepQueryValue(searchParams?.get("step")),
+    isFullForm ? 3 : parseRsvpStepQueryValue(searchParams?.get("step")),
   );
   const [accessPassword, setAccessPassword] = useState<string>(initialPassword);
   const debouncedAccessPassword = useDebounce(accessPassword, 300);
@@ -164,12 +185,9 @@ export function RsvpAcceptedForm({
   const [smsConsentEnabled, setSmsConsentEnabled] = useState<boolean>(false);
   const [hasInitializedSmsConsent, setHasInitializedSmsConsent] = useState<boolean>(false);
   const [smsConsentIpAddress, setSmsConsentIpAddress] = useState<string | undefined>(undefined);
-  const [hasConfirmedSmsOptIn, setHasConfirmedSmsOptIn] = useState<boolean>(false);
   const [hasAcknowledgedSmsOptOutPrompt, setHasAcknowledgedSmsOptOutPrompt] =
     useState<boolean>(false);
-  const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<"confirm" | "encourage" | null>(
-    null,
-  );
+  const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<"encourage" | null>(null);
 
   const smsSenderDisplayName = useMemo(
     () =>
@@ -192,23 +210,28 @@ export function RsvpAcceptedForm({
 
   const replaceStepInUrl = useCallback(
     (nextStep: RsvpStepNumber) => {
+      if (isFullForm) return;
       const queryString = buildQueryStringWithRsvpStep(searchParams, nextStep);
       const rsvpPathname = pathname ?? `/events/${publicEventRouteId}/rsvp`;
       router.replace(buildPathWithQueryString(rsvpPathname, queryString), { scroll: false });
     },
-    [pathname, publicEventRouteId, router, searchParams],
+    [isFullForm, pathname, publicEventRouteId, router, searchParams],
   );
 
   const stepQueryValue = searchParams?.get("step");
 
   useEffect(() => {
+    if (isFullForm) {
+      setStep(3);
+      return;
+    }
     const parsedStep = parseRsvpStepQueryValue(stepQueryValue);
     setStep((currentStep) => (currentStep === parsedStep ? currentStep : parsedStep));
 
     if (stepQueryValue !== getRsvpStepQueryValue(parsedStep)) {
       replaceStepInUrl(parsedStep);
     }
-  }, [replaceStepInUrl, stepQueryValue]);
+  }, [isFullForm, replaceStepInUrl, stepQueryValue]);
 
   useEffect(() => {
     const trimmed = debouncedAccessPassword.trim();
@@ -276,6 +299,7 @@ export function RsvpAcceptedForm({
       socialProfiles: {},
       invitedByName: "",
       attendees: 1,
+      attendanceStatus: "yes",
     },
   });
 
@@ -342,6 +366,9 @@ export function RsvpAcceptedForm({
     if (!invitedByName && status?.invitedByName) {
       setInvitedByName(status.invitedByName);
     }
+    if (status?.attendanceStatus) {
+      setAttendanceStatus(status.attendanceStatus);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     event?.customFields,
@@ -349,6 +376,7 @@ export function RsvpAcceptedForm({
     status?.customFieldValues,
     status?.socialProfiles,
     status?.invitedByName,
+    status?.attendanceStatus,
     userDoc?._id,
     user?.id,
     userSocialProfiles,
@@ -379,12 +407,17 @@ export function RsvpAcceptedForm({
       shouldValidate: false,
       shouldDirty: false,
     });
+    form.setValue("attendanceStatus", attendanceStatus, {
+      shouldValidate: false,
+      shouldDirty: false,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     name,
     firstName,
     lastName,
     invitedByName,
+    attendanceStatus,
     JSON.stringify(custom),
     JSON.stringify(socialProfiles),
   ]);
@@ -407,7 +440,6 @@ export function RsvpAcceptedForm({
       const isEnabled = checked === true;
       setSmsConsentEnabled(isEnabled);
       if (isEnabled) {
-        setHasConfirmedSmsOptIn(false);
         setHasAcknowledgedSmsOptOutPrompt(false);
         if (!smsConsentIpAddress) {
           const ipAddress = await fetchSmsConsentIpAddress();
@@ -416,14 +448,15 @@ export function RsvpAcceptedForm({
           }
         }
       } else {
-        setHasConfirmedSmsOptIn(false);
         setHasAcknowledgedSmsOptOutPrompt(false);
       }
     },
     [smsConsentIpAddress],
   );
 
-  const performSubmission = async () => {
+  const performSubmission = async (
+    options: { smsConsentOverride?: boolean; smsConsentIpAddressOverride?: string } = {},
+  ) => {
     try {
       setMessage("");
       const eventCustomFields: CustomField[] = event?.customFields ?? [];
@@ -534,8 +567,9 @@ export function RsvpAcceptedForm({
       );
       await upsertContact({ phone: phone || undefined });
 
-      let consentIpAddress = smsConsentIpAddress;
-      if (smsConsentEnabled && !consentIpAddress) {
+      const effectiveSmsConsentEnabled = options.smsConsentOverride ?? smsConsentEnabled;
+      let consentIpAddress = options.smsConsentIpAddressOverride ?? smsConsentIpAddress;
+      if (effectiveSmsConsentEnabled && !consentIpAddress) {
         consentIpAddress = await fetchSmsConsentIpAddress();
         if (consentIpAddress) {
           setSmsConsentIpAddress(consentIpAddress);
@@ -546,8 +580,10 @@ export function RsvpAcceptedForm({
         note: note || undefined,
         shareContact: true,
         attendees: form.getValues("attendees") || 1,
-        smsConsent: smsConsentEnabled,
-        smsConsentIpAddress: smsConsentEnabled && consentIpAddress ? consentIpAddress : undefined,
+        attendanceStatus: event.attendanceQuestionEnabled ? attendanceStatus : "yes",
+        smsConsent: effectiveSmsConsentEnabled,
+        smsConsentIpAddress:
+          effectiveSmsConsentEnabled && consentIpAddress ? consentIpAddress : undefined,
         customFields: filteredCustomFields,
         socialProfiles: (event.primaryFieldConfig?.socialPlatforms ?? [])
           .map((platform) => ({
@@ -592,12 +628,7 @@ export function RsvpAcceptedForm({
   };
 
   const onSubmit = async () => {
-    if (smsConsentEnabled) {
-      if (!hasConfirmedSmsOptIn) {
-        setSmsConsentDialogMode("confirm");
-        return;
-      }
-    } else if (!hasAcknowledgedSmsOptOutPrompt) {
+    if (!smsConsentEnabled && !hasAcknowledgedSmsOptOutPrompt) {
       setSmsConsentDialogMode("encourage");
       return;
     }
@@ -710,15 +741,21 @@ export function RsvpAcceptedForm({
     }
   };
 
-  const handleConfirmSmsOptIn = async () => {
-    setHasConfirmedSmsOptIn(true);
-    setSmsConsentDialogMode(null);
-    await performSubmission();
-  };
-
   const handleEncourageEnable = async () => {
-    await handleSmsConsentChange(true);
-    setSmsConsentDialogMode("confirm");
+    setSmsConsentEnabled(true);
+    setHasAcknowledgedSmsOptOutPrompt(false);
+    let consentIpAddress = smsConsentIpAddress;
+    if (!consentIpAddress) {
+      consentIpAddress = await fetchSmsConsentIpAddress();
+      if (consentIpAddress) {
+        setSmsConsentIpAddress(consentIpAddress);
+      }
+    }
+    setSmsConsentDialogMode(null);
+    await performSubmission({
+      smsConsentOverride: true,
+      smsConsentIpAddressOverride: consentIpAddress,
+    });
   };
 
   const handleEncourageContinue = async () => {
@@ -734,12 +771,10 @@ export function RsvpAcceptedForm({
       setHasInitializedSmsConsent(true);
     }
     if (status.smsConsent === true) {
-      setHasConfirmedSmsOptIn(true);
       setHasAcknowledgedSmsOptOutPrompt(false);
     }
     if (status.smsConsent === false) {
       setHasAcknowledgedSmsOptOutPrompt(true);
-      setHasConfirmedSmsOptIn(false);
     }
     if (typeof status.smsConsentIpAddress === "string" && status.smsConsentIpAddress.length > 0) {
       setSmsConsentIpAddress(status.smsConsentIpAddress);
@@ -748,18 +783,23 @@ export function RsvpAcceptedForm({
 
   const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (step < 3) {
+    if (!isFullForm && step < 3) {
       void goNext();
       return;
     }
     void form.handleSubmit(onSubmit)(event);
   };
 
+  const isFinalStep = isFullForm || step === 3;
+  const showGuestInfoFields = isFullForm || step !== 3;
+  const guestInfoStep = isFullForm ? undefined : step === 1 || step === 2 ? step : undefined;
+  const showSubmitButton = isFullForm || step === 3;
+
   return (
     <>
       <Form {...form}>
         <form onSubmit={handleFormSubmit} className="space-y-3">
-          {step !== 3 ? (
+          {showGuestInfoFields ? (
             <GuestInfoFields
               form={form}
               event={event}
@@ -778,12 +818,38 @@ export function RsvpAcceptedForm({
               phone={phone}
               openUserProfile={openUserProfile}
               isSignedIn={!!user}
-              step={step}
+              step={guestInfoStep}
             />
           ) : null}
 
-          {step === 3 ? (
+          {isFinalStep ? (
             <>
+              {event.attendanceQuestionEnabled ? (
+                <fieldset className="space-y-2 border border-primary/20 p-3">
+                  <legend className="px-1 text-sm font-medium text-primary">Attending?</legend>
+                  <div className="grid grid-cols-3 gap-2">
+                    {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => {
+                      const selected = attendanceStatus === attendanceStatusOption;
+                      return (
+                        <button
+                          key={attendanceStatusOption}
+                          type="button"
+                          onClick={() => setAttendanceStatus(attendanceStatusOption)}
+                          className="px-3 py-2 text-sm uppercase"
+                          style={{
+                            ...ghostButtonStyle,
+                            background: selected ? "var(--tt-fg)" : "transparent",
+                            color: selected ? "var(--tt-bg)" : "var(--tt-fg)",
+                          }}
+                        >
+                          {getAttendanceStatusLabel(attendanceStatusOption)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              ) : null}
+
               <NoteForHostsField note={note} setNote={setNote} />
 
               {hasPasswordList ? (
@@ -900,7 +966,7 @@ export function RsvpAcceptedForm({
           ) : null}
 
           <div className="flex items-center justify-between gap-3 pt-3">
-            {step > 1 ? (
+            {!isFullForm && step > 1 ? (
               <button
                 type="button"
                 onClick={goBack}
@@ -919,7 +985,7 @@ export function RsvpAcceptedForm({
               </Link>
             )}
 
-            {step < 3 ? (
+            {!showSubmitButton ? (
               <TenantButton type="submit" style={ghostButtonStyle}>
                 Continue
               </TenantButton>
@@ -953,41 +1019,6 @@ export function RsvpAcceptedForm({
           {message}
         </div>
       ) : null}
-
-      <AlertDialog
-        open={smsConsentDialogMode === "confirm"}
-        onOpenChange={(open) => {
-          if (!open) setSmsConsentDialogMode(null);
-        }}
-      >
-        <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-lg">Confirm SMS Updates</AlertDialogTitle>
-            <AlertDialogDescription className="text-[11px] leading-tight break-words">
-              RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-              {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply STOP
-              to cancel. Consent not required for purchase.{" "}
-              <a href="/terms" className="break-words underline">
-                Terms
-              </a>{" "}
-              &amp;{" "}
-              <a href="/privacy" className="break-words underline">
-                Privacy
-              </a>
-              .
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex flex-col sm:items-center sm:justify-center">
-            <AlertDialogAction
-              type="button"
-              onClick={handleConfirmSmsOptIn}
-              className="w-full sm:w-auto sm:order-2"
-            >
-              I Consent to SMS
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog
         open={smsConsentDialogMode === "encourage"}

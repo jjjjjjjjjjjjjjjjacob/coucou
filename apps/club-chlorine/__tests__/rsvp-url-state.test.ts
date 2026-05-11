@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildEventDetailPathWithPreservedQuery,
+  buildFullRsvpPath,
+  buildInfoRsvpPath,
   buildPathWithPreservedQuery,
   buildRsvpPathWithStep,
   parseRsvpStepQueryValue,
@@ -24,6 +26,30 @@ describe("RSVP URL state", () => {
 
     expect(buildRsvpPathWithStep("event_123", searchParams, 2)).toBe(
       "/events/event_123/rsvp?password=pool&list=vip&step=details",
+    );
+  });
+
+  it("builds full-form RSVP paths while dropping split-step state", () => {
+    const searchParams = new URLSearchParams({
+      password: "pool",
+      referral: "abc123",
+      step: "final",
+    });
+
+    expect(buildFullRsvpPath("event_123", searchParams)).toBe(
+      "/events/event_123/rsvp/full?password=pool&referral=abc123",
+    );
+  });
+
+  it("builds info-form RSVP paths while starting at the first split step", () => {
+    const searchParams = new URLSearchParams({
+      password: "pool",
+      referral: "abc123",
+      step: "final",
+    });
+
+    expect(buildInfoRsvpPath("event_123", searchParams)).toBe(
+      "/events/event_123/rsvp/info?password=pool&referral=abc123&step=info",
     );
   });
 

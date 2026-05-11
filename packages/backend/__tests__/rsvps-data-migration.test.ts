@@ -482,7 +482,7 @@ describe("RSVP Data Migration & Search Tests", () => {
         if (typeof guestSearch !== "string") throw new Error("guestSearch must be string");
 
         // Validate status filter
-        const validStatuses = ["all", "pending", "approved", "denied", "attending"];
+        const validStatuses = ["all", "pending", "approved", "denied"];
         if (statusFilter && !validStatuses.includes(statusFilter)) {
           throw new Error(`Invalid status filter: ${statusFilter}`);
         }

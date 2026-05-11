@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import posthog from "posthog-js";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 export default function ScanPage() {
@@ -68,6 +69,13 @@ export default function ScanPage() {
             return;
           }
           await redeem.mutateAsync({ code, ...workspaceScope.queryArgs });
+          posthog.capture("ticket_redeemed", {
+            code,
+            guest_name: status?.name,
+            list_key: status?.listKey,
+            method: "auto_scan",
+            workspace_slug: workspaceScope.workspaceSlug,
+          });
           setLastAction("redeemed");
           setAutoRedeemed(true);
           await statusQuery.refetch();
@@ -234,6 +242,12 @@ export default function ScanPage() {
                 return;
               }
               await unredeem.mutateAsync({ code, ...workspaceScope.queryArgs });
+              posthog.capture("ticket_unredeemed", {
+                code,
+                guest_name: status?.name,
+                list_key: status?.listKey,
+                workspace_slug: workspaceScope.workspaceSlug,
+              });
               setLastAction("unredeemed");
               setAutoRedeemed(false);
               await statusQuery.refetch();

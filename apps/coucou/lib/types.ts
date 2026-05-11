@@ -110,6 +110,7 @@ export interface Event {
   /** @deprecated Use `sendQrOnApproval`. */
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
+  attendanceQuestionEnabled?: boolean;
   customFields?: CustomField[];
   primaryFieldConfig?: PrimaryFieldConfig;
   themeBackgroundColor?: string;
@@ -163,6 +164,9 @@ export interface RSVP {
   referrerClerkUserId?: string;
   referredByName?: string;
   status: "pending" | "approved" | "denied" | "attending";
+  approvalStatus?: "pending" | "approved" | "denied";
+  attendanceStatus?: "yes" | "no" | "maybe";
+  ticketViewedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -268,6 +272,8 @@ export interface HostRsvp {
   note?: string;
   status: RSVP["status"];
   approvalStatus: "pending" | "approved" | "denied";
+  attendanceStatus: "yes" | "no" | "maybe";
+  ticketViewedAt?: number;
   ticketStatus: "not-issued" | "issued" | "disabled" | "redeemed";
   attendees?: number;
   contact?: {
@@ -396,6 +402,7 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   themeTextColor?: string;
   qrCodeColor?: string;
   sendQrOnApproval?: boolean;
+  attendanceQuestionEnabled?: boolean;
 }
 
 export interface EventFormData extends BaseEventFormValues {
@@ -412,6 +419,7 @@ export interface RSVPFormData extends Record<string, unknown> {
   socialProfiles?: Record<string, string>;
   invitedByName?: string;
   attendees?: number;
+  attendanceStatus?: "yes" | "no" | "maybe";
 }
 
 export interface ListCredentialInput {
@@ -436,6 +444,9 @@ export interface ApiResponse<T = unknown> {
 
 export interface RSVPStatusResponse {
   status?: "pending" | "approved" | "denied" | "attending";
+  approvalStatus?: "pending" | "approved" | "denied";
+  attendanceStatus?: "yes" | "no" | "maybe";
+  ticketViewedAt?: number;
   listKey?: string;
 }
 

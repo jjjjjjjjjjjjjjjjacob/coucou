@@ -119,8 +119,8 @@ export default function TicketClientPage({
       : "skip",
   );
 
-  const acceptRsvp = useMutation({
-    mutationFn: useConvexMutation(api.rsvps.acceptRsvp),
+  const markTicketViewed = useMutation({
+    mutationFn: useConvexMutation(api.rsvps.markTicketViewed),
   });
   const [hasCelebrated, setHasCelebrated] = useState(false);
   const ticketCopyInput = {
@@ -178,16 +178,17 @@ export default function TicketClientPage({
     }
   }, [status, eventRouteId, router, searchParams]);
 
-  // Trigger acceptRsvp once when an approval is observed.
+  // Record the first time an approved guest opens their ticket.
   useEffect(() => {
     if (
       event?.name &&
       status?.status === "approved" &&
-      !acceptRsvp.isPending &&
+      !status.ticketViewedAt &&
+      !markTicketViewed.isPending &&
       !hasCelebrated &&
       canonicalEventId
     ) {
-      acceptRsvp.mutate(
+      markTicketViewed.mutate(
         {
           eventId: canonicalEventId as Id<"events">,
           siteKey: siteConfiguration.siteKey,
@@ -200,8 +201,8 @@ export default function TicketClientPage({
             setHasCelebrated(true);
           },
           onError: (error) => {
-            console.error("Failed to accept RSVP:", error);
-            toast.error("Failed to confirm attendance. Please refresh.");
+            console.error("Failed to mark ticket viewed:", error);
+            toast.error("Failed to record ticket view. Please refresh.");
           },
         },
       );
@@ -210,8 +211,9 @@ export default function TicketClientPage({
   }, [
     event?.name,
     status?.status,
+    status?.ticketViewedAt,
     canonicalEventId,
-    acceptRsvp.isPending,
+    markTicketViewed.isPending,
     hasCelebrated,
     shouldMentionQr,
   ]);
@@ -226,7 +228,7 @@ export default function TicketClientPage({
   }
 
   // Loading the redemption when we know we should have one.
-  const expectingTicket = status?.status === "approved" || status?.status === "attending";
+  const expectingTicket = status?.status === "approved";
   const isLoadingRedemption = expectingTicket && myRedemption === undefined;
   const hasRedemption = Boolean(myRedemption?.code);
   const generatesQr = status?.generateQR !== false;

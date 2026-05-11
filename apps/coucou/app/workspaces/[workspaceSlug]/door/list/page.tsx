@@ -144,8 +144,6 @@ export default function GuestListPage() {
         return "bg-red-100 text-red-800 border-red-200";
       case "redeemed":
         return "bg-blue-100 text-blue-800 border-blue-200";
-      case "attending":
-        return "bg-purple-100 text-purple-800 border-purple-200";
       case "issued":
         return "bg-teal-100 text-teal-800 border-teal-200";
       default:
@@ -209,7 +207,6 @@ export default function GuestListPage() {
           <SelectOption value="pending">Pending</SelectOption>
           <SelectOption value="approved">Approved</SelectOption>
           <SelectOption value="denied">Denied</SelectOption>
-          <SelectOption value="attending">Attending</SelectOption>
           <SelectOption value="issued">Issued</SelectOption>
           <SelectOption value="redeemed">Redeemed</SelectOption>
         </Select>

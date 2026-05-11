@@ -3,14 +3,15 @@ import { components } from "../_generated/api";
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import {
-  ALL_RAW_RSVP_STATUSES,
+  ALL_LEGACY_RSVP_STATUSES,
   type ApprovalFilter,
   getRawStatusesForApprovalFilter,
-  type RawRsvpStatus,
+  resolveApprovalStatus,
+  type LegacyRsvpStatus,
 } from "./rsvpStatus";
 
 function getAggregateSortKey(rsvp: Doc<"rsvps">): [string, string, string] {
-  return [rsvp.eventId, rsvp.status || "pending", rsvp.listKey || "unknown"];
+  return [rsvp.eventId, resolveApprovalStatus(rsvp), rsvp.listKey || "unknown"];
 }
 
 // Aggregate for efficient RSVP counting with hierarchical key structure
@@ -64,7 +65,7 @@ export async function deleteRsvpFromAggregate(ctx: MutationCtx, rsvp: Doc<"rsvps
     listKey: rsvp.listKey,
     sortKey: getAggregateSortKey(rsvp),
   });
-  await rsvpAggregate.delete(ctx, rsvp);
+  await rsvpAggregate.deleteIfExists(ctx, rsvp);
 }
 
 // Test function to check if aggregate is working
@@ -122,7 +123,7 @@ export async function countRsvpsWithAggregate(
       };
       result = await rsvpAggregate.count(ctx, { namespace: undefined, bounds });
     } else {
-      const statusesToCount = approvalFilter === "all" ? ALL_RAW_RSVP_STATUSES : rawStatuses;
+      const statusesToCount = approvalFilter === "all" ? ALL_LEGACY_RSVP_STATUSES : rawStatuses;
 
       result = 0;
       for (const rawStatus of statusesToCount) {
@@ -175,8 +176,8 @@ export async function countRsvpsWithAggregate(
           }
 
           return query.or(
-            query.eq(query.field("status"), rawStatuses[0] as RawRsvpStatus),
-            query.eq(query.field("status"), rawStatuses[1] as RawRsvpStatus),
+            query.eq(query.field("status"), rawStatuses[0] as LegacyRsvpStatus),
+            query.eq(query.field("status"), rawStatuses[1] as LegacyRsvpStatus),
           );
         });
       }

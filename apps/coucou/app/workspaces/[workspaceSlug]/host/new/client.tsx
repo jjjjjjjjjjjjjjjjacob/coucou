@@ -1,6 +1,7 @@
 "use client";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import posthog from "posthog-js";
 import {
   getDefaultApprovalMessage,
   sanitizeOptionalApprovalMessage,
@@ -80,6 +81,7 @@ export default function NewEventClient() {
       themeBackgroundColor: EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
       themeTextColor: EVENT_THEME_DEFAULT_TEXT_COLOR,
       qrCodeColor: "#000000",
+      attendanceQuestionEnabled: false,
     },
   });
 
@@ -188,6 +190,7 @@ export default function NewEventClient() {
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
         status: values.status ?? "inactive",
+        attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
         lists: listsFiltered,
         customFields: customFields.map((field) => ({
           key: field.key.trim(),
@@ -203,10 +206,19 @@ export default function NewEventClient() {
         qrCodeColor: normalizeHexColorInput(values.qrCodeColor) || undefined,
         ...workspaceScope.queryArgs,
       });
+      posthog.capture("event_created", {
+        event_name: values.name.trim(),
+        event_location: values.location.trim(),
+        list_count: listsFiltered.length,
+        custom_field_count: customFields.length,
+        has_flyer: Boolean(values.flyerStorageId),
+        workspace_slug: workspaceScope.workspaceSlug,
+      });
       toast.success("Event created");
       router.replace(eventsPath);
     } catch (error: unknown) {
       const errorDetails = error as ApplicationError | Error;
+      posthog.captureException(error);
       toast.error(errorDetails?.message || "Failed to create event");
     }
   };
@@ -251,6 +263,24 @@ export default function NewEventClient() {
                 Leave a password blank for an open list — the first list with no password receives
                 RSVPs that skip the password step.
               </p>
+              <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+                <Checkbox
+                  checked={form.watch("attendanceQuestionEnabled") ?? false}
+                  onCheckedChange={(checked) =>
+                    form.setValue("attendanceQuestionEnabled", Boolean(checked), {
+                      shouldDirty: true,
+                    })
+                  }
+                  className="mt-0.5"
+                />
+                <span className="space-y-1">
+                  <span className="block text-sm font-medium">Ask attendance question</span>
+                  <span className="block text-xs text-muted-foreground">
+                    When on, guests choose Yes, No, or Maybe during RSVP. When off, new RSVPs
+                    default to Yes.
+                  </span>
+                </span>
+              </label>
               <div className="space-y-3">
                 {lists.map((list, idx) => (
                   <div key={idx} className="space-y-4 rounded-lg border bg-background p-4">

@@ -7,6 +7,7 @@ import { ChlorineEventRow, type ChlorineLandingEvent, useMobile } from "@coucou/
 import { useQuery } from "convex/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import posthog from "posthog-js";
 import type React from "react";
 import { use, useMemo } from "react";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
@@ -14,8 +15,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import {
   buildEventDetailPathWithPreservedQuery,
+  buildFullRsvpPath,
+  buildInfoRsvpPath,
   buildPathWithPreservedQuery,
-  buildRsvpPathWithStep,
 } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import type { Event as ClubEvent, RSVP } from "@/lib/types";
@@ -154,7 +156,12 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   }
 
   const focusedEventIsOpen = isEventOpenForRsvp(resolvedFocusedEvent);
-  const focusedRsvpFormHref = buildRsvpPathWithStep(eventRouteId, searchParams, 1);
+  let focusedRsvpFormHref: string;
+  if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
+    focusedRsvpFormHref = buildInfoRsvpPath(eventRouteId, searchParams);
+  } else {
+    focusedRsvpFormHref = buildFullRsvpPath(eventRouteId, searchParams);
+  }
 
   // When the user already has an RSVP, replace the standard "RSVP" brick
   // with a contextual one that jumps straight to their existing status or
@@ -163,17 +170,16 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   const focusedHasRsvp =
     focusedRsvpStatus === "pending" ||
     focusedRsvpStatus === "approved" ||
-    focusedRsvpStatus === "attending" ||
     focusedRsvpStatus === "denied";
   const focusedExistingRsvpHref =
-    focusedRsvpStatus === "approved" || focusedRsvpStatus === "attending"
+    focusedRsvpStatus === "approved"
       ? buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"])
       : focusedRsvpStatus === "pending" || focusedRsvpStatus === "denied"
         ? buildPathWithPreservedQuery(`/events/${eventRouteId}/status`, searchParams, ["step"])
         : null;
   const focusedBrickHref = focusedExistingRsvpHref ?? focusedRsvpFormHref;
   const focusedBrickLabel =
-    focusedRsvpStatus === "approved" || focusedRsvpStatus === "attending"
+    focusedRsvpStatus === "approved"
       ? "TICKET"
       : focusedRsvpStatus === "pending"
         ? "MY RSVP"
@@ -273,6 +279,12 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     const eventIsOpen = isEventOpenForRsvp(event);
     const eventRouteIdentifier = getEventRouteId(event);
     const isFocused = event._id === resolvedFocusedEvent._id;
+    let rsvpFormHref: string;
+    if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
+      rsvpFormHref = buildInfoRsvpPath(eventRouteIdentifier, searchParams);
+    } else {
+      rsvpFormHref = buildFullRsvpPath(eventRouteIdentifier, searchParams);
+    }
     allRows.push({
       landingEvent: {
         id: eventRouteIdentifier,
@@ -285,9 +297,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
           // nest anchors inside their detailHref wrap.
           href: isFocused ? act.socialUrl : undefined,
         })),
-        rsvpHref: isFocused
-          ? focusedBrickHref
-          : buildRsvpPathWithStep(eventRouteIdentifier, searchParams, 1),
+        rsvpHref: isFocused ? focusedBrickHref : rsvpFormHref,
         rsvpLabel: isFocused ? focusedBrickLabel : eventIsOpen ? "RSVP" : "CLOSED",
         rsvpDisabled: isFocused ? focusedBrickDisabled : !eventIsOpen,
       },

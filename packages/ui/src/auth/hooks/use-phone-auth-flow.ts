@@ -77,7 +77,8 @@ function buildIncompleteSignInError(status: string | null): PhoneAuthError {
   if (status === "needs_second_factor") {
     return {
       type: "unknown",
-      message: "This account needs another verification step. Contact support to finish signing in.",
+      message:
+        "This account needs another verification step. Contact support to finish signing in.",
     };
   }
 
@@ -320,7 +321,11 @@ export function usePhoneAuthFlow({
           });
           if (result.status === "complete") {
             if (!result.createdSessionId) {
-              setState((prev) => ({ ...prev, isLoading: false, error: buildMissingSessionError() }));
+              setState((prev) => ({
+                ...prev,
+                isLoading: false,
+                error: buildMissingSessionError(),
+              }));
               return;
             }
             await completeSessionActivation(setSignInActive, result.createdSessionId);
@@ -339,7 +344,11 @@ export function usePhoneAuthFlow({
 
           if (result.status === "complete") {
             if (!result.createdSessionId) {
-              setState((prev) => ({ ...prev, isLoading: false, error: buildMissingSessionError() }));
+              setState((prev) => ({
+                ...prev,
+                isLoading: false,
+                error: buildMissingSessionError(),
+              }));
               return;
             }
             await completeSessionActivation(setSignUpActive, result.createdSessionId);

@@ -80,6 +80,7 @@ export const applyApproval = mutation({
 
     await ctx.db.patch(rsvpId, {
       status: "approved",
+      approvalStatus: "approved",
       ticketStatus,
       updatedAt: now,
     });
@@ -191,6 +192,7 @@ export const approve = mutation({
 
     await ctx.db.patch(rsvpId, {
       status: "approved",
+      approvalStatus: "approved",
       ticketStatus,
       updatedAt: now,
     });
@@ -260,6 +262,7 @@ export const deny = mutation({
 
     await ctx.db.patch(rsvpId, {
       status: "denied",
+      approvalStatus: "denied",
       ticketStatus,
       updatedAt: now,
     });

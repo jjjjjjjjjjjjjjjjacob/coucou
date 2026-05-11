@@ -210,8 +210,11 @@ export function ChlorineAppShell({
     collapsedFloorPx,
     Math.ceil(collapsedWordmarkBottomPx) + collapsedBreathingRoomPx,
   );
-  const topReserve = isExpanded ? (isMobile ? 110 : 180) : collapsedReserve;
-  const bottomReserve = isExpanded ? (isMobile ? 100 : 160) : collapsedReserve;
+  // Keep the in-viewport reserves symmetrical. Extra breathing room after
+  // the landing screen stays bottom-only via postViewportBottomPaddingPx.
+  const expandedReserve = isMobile ? 100 : 160;
+  const topReserve = isExpanded ? expandedReserve : collapsedReserve;
+  const bottomReserve = isExpanded ? expandedReserve : collapsedReserve;
   const shellMinHeight =
     isMobile && landingViewport.hasMeasuredViewport ? landingViewport.height : "100dvh";
 

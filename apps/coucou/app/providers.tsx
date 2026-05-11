@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import type React from "react";
+import { PostHogUserIdentifier } from "@/components/posthog-user-identifier";
 import { Toaster } from "@/components/ui/sonner";
 import { EventBrandingProvider } from "@/contexts/event-branding-context";
 import { HapticProvider } from "@/contexts/haptic-context";
@@ -27,6 +28,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <HapticProvider>
           <EventBrandingProvider>
+            <PostHogUserIdentifier />
             {children}
             <Toaster position="top-center" />
           </EventBrandingProvider>

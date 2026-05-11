@@ -138,6 +138,19 @@ export default defineSchema({
     .index("by_user", ["clerkUserId"])
     .index("by_org", ["organizationId"]),
 
+  dashboardTablePreferences: defineTable({
+    clerkUserId: v.string(),
+    workspaceId: v.id("workspaces"),
+    tableKey: v.string(),
+    scopeKey: v.string(),
+    columnOrder: v.array(v.string()),
+    hiddenColumnIds: v.array(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_user_workspace_table_scope", ["clerkUserId", "workspaceId", "tableKey", "scopeKey"]),
+
   // Events & guest list credentials
   events: defineTable({
     workspaceSlug: v.optional(v.string()),
@@ -176,6 +189,11 @@ export default defineSchema({
      * `sendQrOnApproval` overrides this value when set.
      */
     sendQrOnApproval: v.optional(v.boolean()),
+    /**
+     * When enabled, RSVP forms ask guests whether they plan to attend.
+     * When disabled, new RSVPs default to attendanceStatus="yes".
+     */
+    attendanceQuestionEnabled: v.optional(v.boolean()),
     maxAttendees: v.optional(v.number()), // maximum attendees allowed per RSVP (default 1)
     customFields: v.optional(
       v.array(
@@ -265,7 +283,14 @@ export default defineSchema({
     referrerUserId: v.optional(v.id("users")),
     referrerClerkUserId: v.optional(v.string()),
     referredByName: v.optional(v.string()),
-    status: v.string(), // 'pending' | 'approved' | 'denied' | 'attending
+    /**
+     * @deprecated Approval-only compatibility field. New writes mirror
+     * `approvalStatus` here and never write "attending".
+     */
+    status: v.string(), // 'pending' | 'approved' | 'denied' | legacy 'attending'
+    approvalStatus: v.optional(v.string()), // 'pending' | 'approved' | 'denied'
+    attendanceStatus: v.optional(v.string()), // 'yes' | 'no' | 'maybe'
+    ticketViewedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -274,6 +299,8 @@ export default defineSchema({
     .index("by_event_user", ["eventId", "clerkUserId"])
     // NEW indexes for efficient filtering
     .index("by_event_status", ["eventId", "status"])
+    .index("by_event_approvalStatus", ["eventId", "approvalStatus"])
+    .index("by_event_attendanceStatus", ["eventId", "attendanceStatus"])
     .index("by_event_ticketStatus", ["eventId", "ticketStatus"])
     .index("by_event_status_ticketStatus", ["eventId", "status", "ticketStatus"])
     .index("by_event_invitedBy", ["eventId", "invitedByNormalizedName"])

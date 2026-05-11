@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { mutation, query } from "./functions";
 import { generateEventShortId } from "./lib/codeGenerators";
+import { applyEventUnsetFields } from "./lib/eventPatch";
 import {
   primaryFieldConfigFromWorkspaceDefaults,
   primaryFieldConfigHasEffectiveContent,
@@ -56,6 +57,16 @@ import {
 // This module contains only queries/mutations compatible with the standard runtime.
 
 const EVENT_SHORT_ID_MAX_ATTEMPTS = 20;
+
+const eventUnsetFieldValidator = v.union(
+  v.literal("secondaryTitle"),
+  v.literal("productionCompany"),
+  v.literal("flyerStorageId"),
+  v.literal("guestPortalImageStorageId"),
+  v.literal("guestPortalLinkLabel"),
+  v.literal("guestPortalLinkUrl"),
+  v.literal("primaryFieldConfig"),
+);
 
 function normalizeEventShortId(value: string): string {
   return value.trim().toLowerCase();
@@ -146,6 +157,7 @@ export const insertWithCreds = mutation({
     qrCodeColor: v.optional(v.string()),
     defersQrDelivery: v.optional(v.boolean()),
     sendQrOnApproval: v.optional(v.boolean()),
+    attendanceQuestionEnabled: v.optional(v.boolean()),
     creds: v.array(
       v.object({
         listKey: v.string(),
@@ -192,6 +204,7 @@ export const insertWithCreds = mutation({
       publishedAt: now,
       defersQrDelivery: args.defersQrDelivery,
       sendQrOnApproval: args.sendQrOnApproval,
+      attendanceQuestionEnabled: args.attendanceQuestionEnabled,
       maxAttendees: args.maxAttendees,
       customFields: args.customFields,
       primaryFieldConfig: args.primaryFieldConfig,
@@ -376,6 +389,7 @@ export const update = mutation({
     publishedAt: v.optional(v.number()),
     defersQrDelivery: v.optional(v.boolean()),
     sendQrOnApproval: v.optional(v.boolean()),
+    attendanceQuestionEnabled: v.optional(v.boolean()),
     isFeatured: v.optional(v.boolean()),
     customFields: v.optional(
       v.array(
@@ -396,6 +410,7 @@ export const update = mutation({
     approvalMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()),
     customIconStorageId: v.optional(v.union(v.id("_storage"), v.null())),
+    unsetFields: v.optional(v.array(eventUnsetFieldValidator)),
   },
   handler: async (ctx, args) => {
     await requireWorkspaceHost(ctx, {
@@ -466,6 +481,7 @@ export const update = mutation({
       "publishedAt",
       "defersQrDelivery",
       "sendQrOnApproval",
+      "attendanceQuestionEnabled",
       "isFeatured",
       "customFields",
       "primaryFieldConfig",
@@ -480,7 +496,7 @@ export const update = mutation({
         (patch as Record<string, unknown>)[fieldKey] = args[fieldKey];
       }
     }
-    await ctx.db.patch(args.eventId, patch);
+    await ctx.db.patch(args.eventId, applyEventUnsetFields(patch, args.unsetFields));
 
     // If custom field keys were renamed, update all RSVPs for this event
     if (keyMappings && Object.keys(keyMappings).length > 0) {

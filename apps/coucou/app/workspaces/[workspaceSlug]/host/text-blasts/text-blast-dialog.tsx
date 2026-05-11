@@ -4,6 +4,7 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { Eye, MessageSquare, Save, Search, Send, Users, X } from "lucide-react";
+import posthog from "posthog-js";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -36,7 +37,7 @@ import { Select, SelectOption } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { formatEventTitleInline } from "@/lib/event-display";
-import type { RecipientFilterState } from "@/lib/text-blast-filters";
+import type { RecipientApprovalStatus, RecipientFilterState } from "@/lib/text-blast-filters";
 import {
   DEFAULT_STATUS_FILTER,
   decodeRecipientFilter,
@@ -45,7 +46,7 @@ import {
   isRecipientFilterConfigured,
   RECIPIENT_STATUS_LABELS,
 } from "@/lib/text-blast-filters";
-import type { Event, RSVP, TextBlast } from "@/lib/types";
+import type { Event, TextBlast } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 interface TextBlastDialogProps {
@@ -369,6 +370,13 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           includeQrCodes: formData.includeQrCodes,
           ...workspaceScope.queryArgs,
         });
+        posthog.capture("text_blast_draft_saved", {
+          blast_name: formData.name,
+          target_lists: formData.targetLists,
+          recipient_filter_type: formData.recipientFilter.type,
+          is_edit: true,
+          workspace_slug: workspaceScope.workspaceSlug,
+        });
         toast.success("Text blast updated successfully");
       } else {
         if (!formData.eventId) {
@@ -384,10 +392,19 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           includeQrCodes: formData.includeQrCodes,
           ...workspaceScope.queryArgs,
         });
+        posthog.capture("text_blast_draft_saved", {
+          blast_name: formData.name,
+          event_id: formData.eventId,
+          target_lists: formData.targetLists,
+          recipient_filter_type: formData.recipientFilter.type,
+          is_edit: false,
+          workspace_slug: workspaceScope.workspaceSlug,
+        });
         toast.success("Text blast draft saved successfully");
       }
       onClose();
     } catch (error: unknown) {
+      posthog.captureException(error);
       toast.error(error instanceof Error ? error.message : "Failed to save text blast");
     }
   };
@@ -438,12 +455,24 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       }
 
       if (result.success) {
+        posthog.capture("text_blast_sent", {
+          blast_name: formData.name,
+          event_id: formData.eventId,
+          event_name: selectedEvent?.name,
+          target_lists: formData.targetLists,
+          recipient_count: result.sentCount ?? 0,
+          recipient_filter_type: formData.recipientFilter.type,
+          include_qr_codes: formData.includeQrCodes,
+          is_test_send: formData.selectedRsvpIds.length > 0,
+          workspace_slug: workspaceScope.workspaceSlug,
+        });
         toast.success(`Text blast sent successfully! ${result.sentCount ?? 0} messages delivered.`);
       } else {
         toast.error(result.message || "Failed to send text blast");
       }
       onClose();
     } catch (error: unknown) {
+      posthog.captureException(error);
       toast.error(error instanceof Error ? error.message : "Failed to send text blast");
     } finally {
       setIsSending(false);
@@ -558,7 +587,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                   handleRecipientFilterTypeChange(value as RecipientFilterState["type"])
                 }
               >
-                <SelectOption value="all">All Approved/Attending</SelectOption>
+                <SelectOption value="all">All Approved</SelectOption>
                 <SelectOption value="approved_no_approval_sms">
                   Approved but No Approval SMS Sent
                 </SelectOption>
@@ -591,7 +620,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                       ...prev,
                       recipientFilter: {
                         type: "status",
-                        status: value as RSVP["status"],
+                        status: value as RecipientApprovalStatus,
                       },
                     }))
                   }

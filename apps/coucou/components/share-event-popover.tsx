@@ -8,6 +8,7 @@ import { useAction, useMutation } from "convex/react";
 import { Check, Copy } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
+import posthog from "posthog-js";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -346,6 +347,20 @@ export function ShareEventPopover({
       });
       return false;
     }
+    const linkType =
+      target === "basic"
+        ? "basic"
+        : target === "referral"
+          ? "referral"
+          : target.type === "list"
+            ? "list"
+            : "list_referral";
+    posthog.capture("event_link_copied", {
+      event_id: eventId,
+      link_type: linkType,
+      link_kind: preparedShareLinkKind,
+      workspace_slug: workspaceSlug,
+    });
     if (target === "basic") {
       setCopiedBasic(true);
       setTimeout(() => setCopiedBasic(false), 2000);

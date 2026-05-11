@@ -75,6 +75,15 @@ export function buildRsvpPathWithStep(
   return buildPathWithQueryString(`/events/${eventId}/rsvp`, queryString);
 }
 
+export function buildFullRsvpPath(eventId: string, source: QueryStringSource): string {
+  return buildPathWithPreservedQuery(`/events/${eventId}/rsvp/full`, source, ["step"]);
+}
+
+export function buildInfoRsvpPath(eventId: string, source: QueryStringSource): string {
+  const queryString = buildQueryStringWithRsvpStep(source, 1);
+  return buildPathWithQueryString(`/events/${eventId}/rsvp/info`, queryString);
+}
+
 export function buildEventDetailPathWithPreservedQuery(
   eventId: string,
   source: QueryStringSource,

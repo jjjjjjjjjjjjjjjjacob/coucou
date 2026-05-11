@@ -202,6 +202,7 @@ export default function EventCreateWizard() {
       themeBackgroundColor: EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
       themeTextColor: EVENT_THEME_DEFAULT_TEXT_COLOR,
       qrCodeColor: "#000000",
+      attendanceQuestionEnabled: false,
     },
     mode: "onTouched",
   });
@@ -323,6 +324,7 @@ export default function EventCreateWizard() {
       themeBackgroundColor: draftEvent.themeBackgroundColor ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
       themeTextColor: draftEvent.themeTextColor ?? EVENT_THEME_DEFAULT_TEXT_COLOR,
       qrCodeColor: draftEvent.qrCodeColor ?? "#000000",
+      attendanceQuestionEnabled: draftEvent.attendanceQuestionEnabled ?? false,
     });
 
     if (draftEvent.acts && draftEvent.acts.length > 0) {
@@ -490,6 +492,7 @@ export default function EventCreateWizard() {
         ? undefined
         : draftToPrimaryFieldConfig(primaryFieldConfigDraft),
       sendQrOnApproval,
+      attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
     };
     if (startTimestamp !== undefined) patch.eventDate = startTimestamp;
 
@@ -658,6 +661,7 @@ export default function EventCreateWizard() {
         maxAttendees: values.maxAttendees,
         status: values.status ?? "inactive",
         sendQrOnApproval,
+        attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
         lists: listsFiltered,
         customFields: customFields.map((field) => ({
           key: field.key.trim(),
@@ -814,6 +818,12 @@ export default function EventCreateWizard() {
               <StepLists
                 sendQrOnApproval={sendQrOnApproval}
                 onSendQrOnApprovalChange={setSendQrOnApproval}
+                attendanceQuestionEnabled={form.watch("attendanceQuestionEnabled") ?? false}
+                onAttendanceQuestionEnabledChange={(value) =>
+                  form.setValue("attendanceQuestionEnabled", value, {
+                    shouldDirty: true,
+                  })
+                }
                 lists={lists}
                 setLists={setLists}
                 defaultApprovalMessage={defaultApprovalMessage}
@@ -1395,12 +1405,16 @@ function StepLists({
   defaultApprovalMessage,
   sendQrOnApproval,
   onSendQrOnApprovalChange,
+  attendanceQuestionEnabled,
+  onAttendanceQuestionEnabledChange,
 }: {
   lists: ListRow[];
   setLists: React.Dispatch<React.SetStateAction<ListRow[]>>;
   defaultApprovalMessage: string;
   sendQrOnApproval: boolean;
   onSendQrOnApprovalChange: (value: boolean) => void;
+  attendanceQuestionEnabled: boolean;
+  onAttendanceQuestionEnabledChange: (value: boolean) => void;
 }) {
   const update = <Key extends keyof ListRow>(index: number, key: Key, value: ListRow[Key]) =>
     setLists((current) =>
@@ -1443,6 +1457,20 @@ function StepLists({
           <span className="block text-xs text-muted-foreground">
             When on, approval texts include the QR code immediately. Default off — most hosts send a
             manual blast closer to the event.
+          </span>
+        </span>
+      </label>
+      <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+        <Checkbox
+          checked={attendanceQuestionEnabled}
+          onCheckedChange={(checked) => onAttendanceQuestionEnabledChange(Boolean(checked))}
+          className="mt-0.5"
+        />
+        <span className="space-y-1">
+          <span className="block text-sm font-medium">Ask attendance question</span>
+          <span className="block text-xs text-muted-foreground">
+            When on, guests choose Yes, No, or Maybe during RSVP. When off, new RSVPs default to
+            Yes.
           </span>
         </span>
       </label>
@@ -1639,6 +1667,11 @@ function StepReview({
       stepIndex: 5,
       key: "Lists",
       value: filteredLists.length ? filteredLists.map((list) => list.listKey).join(", ") : "—",
+    },
+    {
+      stepIndex: 5,
+      key: "Attendance",
+      value: values.attendanceQuestionEnabled ? "Ask Yes / No / Maybe" : "Default Yes",
     },
     {
       stepIndex: 6,

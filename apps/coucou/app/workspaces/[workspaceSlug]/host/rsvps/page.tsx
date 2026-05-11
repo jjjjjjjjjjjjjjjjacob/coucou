@@ -14,7 +14,7 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useMutation as useConvexReactMutation, useQuery } from "convex/react";
 import {
   Columns,
   Copy,
@@ -88,7 +88,28 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useWorkspaceAccess } from "@/components/workspace-access-gate";
 import { formatEventTitleInline } from "@/lib/event-display";
 import { buildPublicEventUrl } from "@/lib/event-public-url";
+import {
+  areDashboardTableColumnIdsEqual,
+  type DashboardTablePreference,
+  getDefaultVisibleHostRsvpsTableColumnIds,
+  HOST_RSVPS_TABLE_KEY,
+  mergeDashboardTablePreferenceState,
+  serializeDashboardTablePreferenceState,
+  shouldHydrateDashboardTablePreferenceState,
+  shouldResetHostRsvpsSavedTablePreference,
+} from "@/lib/dashboard-table-preferences";
 import { useDebounce } from "@/lib/hooks/use-debounce";
+import {
+  canToggleRsvpTableRowFromBodyCell,
+  getRsvpContextActionTargets,
+  getRsvpTableBodyCellClassName,
+  getRsvpTableColumnSizing,
+  getRsvpTableDisplayWidth,
+  getRsvpTableFillerColumnWidth,
+  RSVP_SELECT_COLUMN_SIZING,
+  RSVP_TABLE_RESIZE_HANDLE_TEST_ID,
+  shouldRenderRsvpTableResizeHandle,
+} from "@/lib/rsvp-table-layout";
 import type { Event, HostRsvp, ListCredential } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { cn, ensureAbsoluteUrl, sanitizeFieldValue } from "@/lib/utils";
@@ -101,6 +122,7 @@ type PaginatedHostRsvpResult = {
 
 type ApprovalStatusOption = "pending" | "approved" | "denied";
 type ApprovalFilterOption = "all" | ApprovalStatusOption;
+type AttendanceStatusOption = "yes" | "no" | "maybe";
 type TicketStatusOption = "issued" | "not-issued" | "disabled";
 type TicketDisplayStatus = TicketStatusOption | "redeemed";
 type UpdateRsvpCompleteInput = {
@@ -110,7 +132,7 @@ type UpdateRsvpCompleteInput = {
   approvalStatus?: ApprovalStatusOption;
   ticketStatus?: TicketStatusOption;
 };
-type ExportableApprovalStatusOption = "pending" | "approved" | "denied" | "attending";
+type ExportableApprovalStatusOption = "pending" | "approved" | "denied";
 
 const hasStringAccessorKey = <TData extends RowData>(
   columnDefinition: ColumnDef<TData>,
@@ -119,12 +141,72 @@ const hasStringAccessorKey = <TData extends RowData>(
   return typeof candidateAccessorKey === "string";
 };
 
-const EXPORT_STATUS_OPTIONS: ExportableApprovalStatusOption[] = [
-  "pending",
-  "approved",
-  "denied",
-  "attending",
-];
+const EXPORT_STATUS_OPTIONS: ExportableApprovalStatusOption[] = ["pending", "approved", "denied"];
+const APPROVAL_STATUS_OPTIONS: ApprovalStatusOption[] = ["pending", "approved", "denied"];
+const ATTENDANCE_STATUS_OPTIONS: AttendanceStatusOption[] = ["yes", "maybe", "no"];
+const TICKET_STATUS_OPTIONS: TicketStatusOption[] = ["not-issued", "issued", "disabled"];
+
+function getApprovalStatusLabel(status: ApprovalStatusOption): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function getAttendanceStatusLabel(status: AttendanceStatusOption): string {
+  switch (status) {
+    case "yes":
+      return "Yes";
+    case "maybe":
+      return "Maybe";
+    case "no":
+      return "No";
+  }
+}
+
+function getAttendanceStatusClassName(status: AttendanceStatusOption): string {
+  switch (status) {
+    case "yes":
+      return "text-green-700 border-green-200 bg-green-50 hover:bg-green-10 hover:text-green-700";
+    case "maybe":
+      return "text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-10 hover:text-amber-700";
+    case "no":
+      return "text-red-700 border-red-200 bg-red-50 hover:bg-red-10 hover:text-red-700";
+  }
+}
+
+function getTicketStatusLabel(status: TicketDisplayStatus): string {
+  switch (status) {
+    case "issued":
+      return "Issued";
+    case "redeemed":
+      return "Redeemed";
+    case "disabled":
+      return "Disabled";
+    case "not-issued":
+    default:
+      return "None";
+  }
+}
+
+function formatTicketViewedTimestamp(timestamp: number): string {
+  const date = new Date(timestamp);
+  return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+function normalizeTicketStatus(status: HostRsvp["redemptionStatus"]): TicketDisplayStatus {
+  if (status === "none") {
+    return "not-issued";
+  }
+  return status;
+}
+
+function coerceTicketStatusOption(status: TicketDisplayStatus): TicketStatusOption | undefined {
+  if (status === "redeemed") {
+    return undefined;
+  }
+  return status;
+}
 
 export default function RsvpsPage() {
   const router = useRouter();
@@ -184,10 +266,6 @@ export default function RsvpsPage() {
   const [listFilter, setListFilter] = React.useState<string>("all");
   const [redemptionFilter, setRedemptionFilter] = React.useState<string>("all");
   const [socialPlatformFilter, setSocialPlatformFilter] = React.useState<string>("all");
-  const [socialSearch, setSocialSearch] = React.useState("");
-  const debouncedSocialSearch = useDebounce(socialSearch, 250);
-  const [invitedBySearch, setInvitedBySearch] = React.useState("");
-  const debouncedInvitedBySearch = useDebounce(invitedBySearch, 250);
   const [sortBy, setSortBy] = React.useState<string>("createdAt");
   const [sortOrder, setSortOrder] = React.useState<"asc" | "desc">("desc");
 
@@ -203,8 +281,6 @@ export default function RsvpsPage() {
     listFilter,
     redemptionFilter,
     socialPlatformFilter,
-    debouncedSocialSearch,
-    debouncedInvitedBySearch,
     sortBy,
     sortOrder,
   ]);
@@ -222,8 +298,6 @@ export default function RsvpsPage() {
           listFilter,
           redemptionFilter,
           socialPlatformFilter,
-          socialSearch: debouncedSocialSearch,
-          invitedBySearch: debouncedInvitedBySearch,
           sortBy,
           sortOrder,
         }
@@ -242,8 +316,6 @@ export default function RsvpsPage() {
           listFilter,
           redemptionFilter,
           socialPlatformFilter,
-          socialSearch: debouncedSocialSearch,
-          invitedBySearch: debouncedInvitedBySearch,
         }
       : "skip",
   ) as number | undefined;
@@ -270,6 +342,17 @@ export default function RsvpsPage() {
   const canShareCurrentEvent = Boolean(
     currentEvent && (!workspaceScope || workspace !== undefined),
   );
+  const currentEventSocialPlatforms = React.useMemo(
+    () => currentEvent?.primaryFieldConfig?.socialPlatforms ?? [],
+    [currentEvent?.primaryFieldConfig?.socialPlatforms],
+  );
+  const shouldShowSocialPlatformFilter = currentEventSocialPlatforms.length > 1;
+
+  React.useEffect(() => {
+    if (!shouldShowSocialPlatformFilter && socialPlatformFilter !== "all") {
+      setSocialPlatformFilter("all");
+    }
+  }, [shouldShowSocialPlatformFilter, socialPlatformFilter]);
 
   const listCredentials = useQuery(
     api.credentials.getCredsForEvent,
@@ -288,67 +371,88 @@ export default function RsvpsPage() {
   const [includePhone, setIncludePhone] = React.useState(true);
   const [isExportingCsv, setIsExportingCsv] = React.useState(false);
   const runExportRsvpsCsv = useAction(api.exports.exportRsvpsCsv);
+  const savedDashboardTablePreference = useQuery(
+    api.dashboardPreferences.getCurrentUserTablePreference,
+    eventId && workspaceScope
+      ? {
+          ...workspaceScope.queryArgs,
+          tableKey: HOST_RSVPS_TABLE_KEY,
+          scopeKey: eventId,
+        }
+      : "skip",
+  ) as DashboardTablePreference | null | undefined;
+  const saveDashboardTablePreference = useConvexReactMutation(
+    api.dashboardPreferences.upsertCurrentUserTablePreference,
+  );
 
   // Column visibility state
   const [columnVisibilityOpen, setColumnVisibilityOpen] = React.useState(false);
 
   // Get all available column IDs (static + dynamic custom fields)
   const getAllAvailableColumnIds = React.useCallback((): string[] => {
-    const staticColumnIds = [
-      ...(isReadOnly ? [] : ["select"]),
-      "guest",
-      "listKey",
-      "attendees",
-      "smsConsent",
-      ...(currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true ? ["invitedByName"] : []),
-      "referredByName",
-      "noteForHosts",
-      "createdAt",
-      "approvalStatus",
-      "ticketStatus",
-      ...(isReadOnly ? [] : ["actions"]),
-    ];
+    const socialFieldColumnIds = currentEventSocialPlatforms.map(
+      (platform) => `social_${platform.platformKey}`,
+    );
     const customFieldColumnIds =
-      currentEvent?.customFields?.map((field) => `custom_${field.key}`) || [];
-    const socialFieldColumnIds =
-      currentEvent?.primaryFieldConfig?.socialPlatforms?.map(
-        (platform) => `social_${platform.platformKey}`,
-      ) || [];
-    return [...staticColumnIds, ...socialFieldColumnIds, ...customFieldColumnIds];
-  }, [currentEvent?.customFields, currentEvent?.primaryFieldConfig, isReadOnly]);
+      currentEvent?.customFields?.map((field) => `custom_${field.key}`) ?? [];
 
-  // Initialize visible columns: all except "noteForHosts"
-  const [visibleColumns, setVisibleColumns] = React.useState<Set<string>>(() => {
-    const allColumnIds = [
+    return [
       ...(isReadOnly ? [] : ["select"]),
       "guest",
       "listKey",
-      "attendees",
-      "smsConsent",
+      ...socialFieldColumnIds,
       ...(currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true ? ["invitedByName"] : []),
+      "approvalStatus",
+      "attendanceStatus",
       "referredByName",
       "createdAt",
-      "approvalStatus",
+      "attendees",
+      "smsConsent",
       "ticketStatus",
+      "ticketViewedAt",
+      "noteForHosts",
+      ...customFieldColumnIds,
       ...(isReadOnly ? [] : ["actions"]),
     ];
-    return new Set(allColumnIds);
-  });
+  }, [
+    currentEvent?.customFields,
+    currentEvent?.primaryFieldConfig?.invitedBy?.enabled,
+    currentEventSocialPlatforms,
+    isReadOnly,
+  ]);
+
+  const allAvailableColumnIds = React.useMemo(
+    () => getAllAvailableColumnIds(),
+    [getAllAvailableColumnIds],
+  );
+  const forcedHiddenColumnIds = React.useMemo(
+    () => (isReadOnly ? ["select", "actions"] : []),
+    [isReadOnly],
+  );
+  const defaultVisibleColumnIds = React.useMemo(
+    () => getDefaultVisibleHostRsvpsTableColumnIds(allAvailableColumnIds, forcedHiddenColumnIds),
+    [allAvailableColumnIds, forcedHiddenColumnIds],
+  );
+  const [visibleColumns, setVisibleColumns] = React.useState<Set<string>>(
+    () => new Set(defaultVisibleColumnIds),
+  );
+  const hasPendingLocalDashboardTablePreferenceEditRef = React.useRef(false);
 
   // Convert visibleColumns Set to columnVisibility object for TanStack Table
   const columnVisibility = React.useMemo(() => {
     const visibility: Record<string, boolean> = {};
-    getAllAvailableColumnIds().forEach((columnId) => {
+    allAvailableColumnIds.forEach((columnId) => {
       visibility[columnId] =
         visibleColumns.has(columnId) &&
         (!isReadOnly || (columnId !== "select" && columnId !== "actions"));
     });
     return visibility;
-  }, [visibleColumns, getAllAvailableColumnIds, isReadOnly]);
+  }, [allAvailableColumnIds, visibleColumns, isReadOnly]);
 
   // Handle column visibility changes from TanStack Table
   const handleColumnVisibilityChange = React.useCallback(
     (updater: VisibilityState | ((old: VisibilityState) => VisibilityState)) => {
+      hasPendingLocalDashboardTablePreferenceEditRef.current = true;
       setVisibleColumns((prevVisibleColumns) => {
         const newVisibility = typeof updater === "function" ? updater(columnVisibility) : updater;
         const newVisibleColumns = new Set(prevVisibleColumns);
@@ -368,36 +472,6 @@ export default function RsvpsPage() {
     [columnVisibility],
   );
 
-  // Update visible columns when custom fields change
-  React.useEffect(() => {
-    setVisibleColumns((previousVisibleColumns) => {
-      const allColumnIds = getAllAvailableColumnIds();
-      const updatedVisibleColumns = new Set(previousVisibleColumns);
-
-      // Add new custom field columns (they'll be visible by default)
-      allColumnIds.forEach((columnId) => {
-        if (columnId.startsWith("custom_")) {
-          updatedVisibleColumns.add(columnId);
-        }
-        if (columnId.startsWith("social_") || columnId === "invitedByName") {
-          updatedVisibleColumns.add(columnId);
-        }
-      });
-
-      // Remove columns that no longer exist
-      Array.from(updatedVisibleColumns).forEach((columnId) => {
-        if (
-          !allColumnIds.includes(columnId) ||
-          (isReadOnly && (columnId === "select" || columnId === "actions"))
-        ) {
-          updatedVisibleColumns.delete(columnId);
-        }
-      });
-
-      return updatedVisibleColumns;
-    });
-  }, [getAllAvailableColumnIds, isReadOnly]);
-
   React.useEffect(() => {
     if (listCredentials && selectedListsForExport.length === 0) {
       setSelectedListsForExport(listCredentials.map((cred) => cred.listKey) || []);
@@ -411,6 +485,9 @@ export default function RsvpsPage() {
   const updateRsvpListKeyMutation = useMutation({
     mutationFn: useConvexMutation(api.rsvps.updateRsvpListKey),
   });
+  const updateAttendanceStatusMutation = useMutation({
+    mutationFn: useConvexMutation(api.rsvps.updateAttendanceStatus),
+  });
   const deleteRsvpCompleteMutation = useMutation({
     mutationFn: useConvexMutation(api.rsvps.deleteRsvpComplete),
   });
@@ -421,6 +498,9 @@ export default function RsvpsPage() {
   });
   const bulkUpdateApprovalMutation = useMutation({
     mutationFn: useConvexMutation(api.rsvps.bulkUpdateApproval),
+  });
+  const bulkUpdateAttendanceStatusMutation = useMutation({
+    mutationFn: useConvexMutation(api.rsvps.bulkUpdateAttendanceStatus),
   });
   const bulkUpdateTicketStatusMutation = useMutation({
     mutationFn: useConvexMutation(api.rsvps.bulkUpdateTicketStatus),
@@ -448,6 +528,7 @@ export default function RsvpsPage() {
     status?: string;
     listKey?: string;
   } | null>(null);
+  const [rsvpsPendingDeletion, setRsvpsPendingDeletion] = React.useState<HostRsvp[]>([]);
 
   // Selection state management (basic state only)
   const [selectedRows, setSelectedRows] = React.useState<Set<string>>(new Set());
@@ -458,18 +539,24 @@ export default function RsvpsPage() {
   const [loadingApprovalUpdates, setLoadingApprovalUpdates] = React.useState<Set<string>>(
     new Set(),
   );
+  const [loadingAttendanceUpdates, setLoadingAttendanceUpdates] = React.useState<Set<string>>(
+    new Set(),
+  );
   const [loadingTicketUpdates, setLoadingTicketUpdates] = React.useState<Set<string>>(new Set());
 
   // Monitor loading states for overall feedback
   React.useEffect(() => {
     const totalLoading =
-      loadingListUpdates.size + loadingApprovalUpdates.size + loadingTicketUpdates.size;
+      loadingListUpdates.size +
+      loadingApprovalUpdates.size +
+      loadingAttendanceUpdates.size +
+      loadingTicketUpdates.size;
 
     if (totalLoading > 0) {
       // Could add a persistent loading indicator here if needed
       // For now, the individual toasts and spinners provide sufficient feedback
     }
-  }, [loadingListUpdates, loadingApprovalUpdates, loadingTicketUpdates]);
+  }, [loadingListUpdates, loadingApprovalUpdates, loadingAttendanceUpdates, loadingTicketUpdates]);
 
   // Normalize a field key for shared field lookup
   const normalizeFieldKey = (key: string): string => {
@@ -479,149 +566,463 @@ export default function RsvpsPage() {
       .trim();
   };
 
-  const normalizeTicketStatus = (status: HostRsvp["redemptionStatus"]): TicketDisplayStatus => {
-    if (status === "none") {
-      return "not-issued";
-    }
-    return status;
-  };
-
-  const coerceTicketStatusOption = (
-    status: TicketDisplayStatus,
-  ): TicketStatusOption | undefined => {
-    if (status === "redeemed") {
-      return undefined;
-    }
-    return status;
-  };
-
-  const canEditTicketForRsvp = (rsvp: HostRsvp): boolean => {
+  const canEditTicketForRsvp = React.useCallback((rsvp: HostRsvp): boolean => {
     return rsvp.approvalStatus === "approved";
-  };
+  }, []);
+
+  const getRsvpGuestName = React.useCallback((rsvp: HostRsvp): string => {
+    const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
+    return displayName || rsvp.contact?.email || rsvp.contact?.phone || "Guest";
+  }, []);
+
+  const openRsvpQrCode = React.useCallback((rsvp: HostRsvp) => {
+    const currentTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
+    const redemptionCode = rsvp.redemptionCode;
+    if (!redemptionCode) {
+      return;
+    }
+
+    const url = `${window.location.origin}/redeem/${redemptionCode}`;
+    setQr({
+      code: redemptionCode,
+      url,
+      status: currentTicketStatus,
+      listKey: rsvp.listKey,
+    });
+    setShowQR(true);
+  }, []);
+
+  const canShowRsvpQrCode = React.useCallback((rsvp: HostRsvp): boolean => {
+    const currentTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
+    return (
+      (currentTicketStatus === "issued" || currentTicketStatus === "redeemed") &&
+      Boolean(rsvp.redemptionCode)
+    );
+  }, []);
+
+  const handleSingleListKeyChange = React.useCallback(
+    (rsvp: HostRsvp, newListKey: string) => {
+      if (isReadOnly || newListKey === rsvp.listKey) {
+        return;
+      }
+      if (!workspaceScope) {
+        toast.error("Workspace scope is required to update RSVPs");
+        return;
+      }
+
+      const guestName = getRsvpGuestName(rsvp);
+      setLoadingListUpdates((previousLoadingListUpdates) =>
+        new Set(previousLoadingListUpdates).add(rsvp.id),
+      );
+      toast.info(`Updating ${guestName}'s list...`);
+
+      updateRsvpListKeyMutation.mutate(
+        {
+          rsvpId: rsvp.id,
+          listKey: newListKey,
+          ...workspaceScope.queryArgs,
+        },
+        {
+          onSuccess: () => {
+            toast.success(`Changed ${guestName}'s list to '${newListKey.toUpperCase()}'`);
+            setLoadingListUpdates((previousLoadingListUpdates) => {
+              const nextLoadingListUpdates = new Set(previousLoadingListUpdates);
+              nextLoadingListUpdates.delete(rsvp.id);
+              return nextLoadingListUpdates;
+            });
+          },
+          onError: (error) => {
+            toast.error(`Failed to update ${guestName}'s list: ${(error as Error).message}`);
+            setLoadingListUpdates((previousLoadingListUpdates) => {
+              const nextLoadingListUpdates = new Set(previousLoadingListUpdates);
+              nextLoadingListUpdates.delete(rsvp.id);
+              return nextLoadingListUpdates;
+            });
+          },
+        },
+      );
+    },
+    [getRsvpGuestName, isReadOnly, updateRsvpListKeyMutation, workspaceScope],
+  );
+
+  const handleSingleApprovalChange = React.useCallback(
+    (rsvp: HostRsvp, newStatus: ApprovalStatusOption) => {
+      if (isReadOnly || newStatus === rsvp.approvalStatus) {
+        return;
+      }
+      if (newStatus === "pending" && rsvp.redemptionStatus === "redeemed") {
+        return;
+      }
+      if (!workspaceScope) {
+        toast.error("Workspace scope is required to update RSVPs");
+        return;
+      }
+
+      const guestName = getRsvpGuestName(rsvp);
+      setLoadingApprovalUpdates((previousLoadingApprovalUpdates) =>
+        new Set(previousLoadingApprovalUpdates).add(rsvp.id),
+      );
+      toast.info(`Updating ${guestName}'s approval status...`);
+
+      updateRsvpCompleteMutation.mutate(
+        {
+          rsvpId: rsvp.id,
+          approvalStatus: newStatus,
+          ...workspaceScope.queryArgs,
+        },
+        {
+          onSuccess: () => {
+            toast.success(`Changed ${guestName}'s RSVP to '${getApprovalStatusLabel(newStatus)}'`);
+            setLoadingApprovalUpdates((previousLoadingApprovalUpdates) => {
+              const nextLoadingApprovalUpdates = new Set(previousLoadingApprovalUpdates);
+              nextLoadingApprovalUpdates.delete(rsvp.id);
+              return nextLoadingApprovalUpdates;
+            });
+          },
+          onError: (error) => {
+            toast.error(
+              `Failed to update ${guestName}'s approval status: ${(error as Error).message}`,
+            );
+            setLoadingApprovalUpdates((previousLoadingApprovalUpdates) => {
+              const nextLoadingApprovalUpdates = new Set(previousLoadingApprovalUpdates);
+              nextLoadingApprovalUpdates.delete(rsvp.id);
+              return nextLoadingApprovalUpdates;
+            });
+          },
+        },
+      );
+    },
+    [getRsvpGuestName, isReadOnly, updateRsvpCompleteMutation, workspaceScope],
+  );
+
+  const handleSingleAttendanceStatusChange = React.useCallback(
+    (rsvp: HostRsvp, newStatus: AttendanceStatusOption) => {
+      if (isReadOnly || newStatus === rsvp.attendanceStatus) {
+        return;
+      }
+      if (!workspaceScope) {
+        toast.error("Workspace scope is required to update RSVPs");
+        return;
+      }
+
+      const guestName = getRsvpGuestName(rsvp);
+      setLoadingAttendanceUpdates((previousLoadingAttendanceUpdates) =>
+        new Set(previousLoadingAttendanceUpdates).add(rsvp.id),
+      );
+      toast.info(`Updating ${guestName}'s attendance...`);
+
+      updateAttendanceStatusMutation.mutate(
+        {
+          rsvpId: rsvp.id,
+          attendanceStatus: newStatus,
+          ...workspaceScope.queryArgs,
+        },
+        {
+          onSuccess: () => {
+            toast.success(
+              `Changed ${guestName}'s attendance to '${getAttendanceStatusLabel(newStatus)}'`,
+            );
+            setLoadingAttendanceUpdates((previousLoadingAttendanceUpdates) => {
+              const nextLoadingAttendanceUpdates = new Set(previousLoadingAttendanceUpdates);
+              nextLoadingAttendanceUpdates.delete(rsvp.id);
+              return nextLoadingAttendanceUpdates;
+            });
+          },
+          onError: (error) => {
+            toast.error(`Failed to update ${guestName}'s attendance: ${(error as Error).message}`);
+            setLoadingAttendanceUpdates((previousLoadingAttendanceUpdates) => {
+              const nextLoadingAttendanceUpdates = new Set(previousLoadingAttendanceUpdates);
+              nextLoadingAttendanceUpdates.delete(rsvp.id);
+              return nextLoadingAttendanceUpdates;
+            });
+          },
+        },
+      );
+    },
+    [getRsvpGuestName, isReadOnly, updateAttendanceStatusMutation, workspaceScope],
+  );
+
+  const handleSingleTicketStatusChange = React.useCallback(
+    (rsvp: HostRsvp, newStatus: TicketStatusOption) => {
+      const currentTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
+      if (isReadOnly || !canEditTicketForRsvp(rsvp)) {
+        return;
+      }
+      if (currentTicketStatus === "redeemed" || newStatus === currentTicketStatus) {
+        return;
+      }
+      if (!workspaceScope) {
+        toast.error("Workspace scope is required to update RSVPs");
+        return;
+      }
+
+      const guestName = getRsvpGuestName(rsvp);
+      setLoadingTicketUpdates((previousLoadingTicketUpdates) =>
+        new Set(previousLoadingTicketUpdates).add(rsvp.id),
+      );
+      toast.info(`Updating ${guestName}'s ticket status...`);
+
+      updateRsvpCompleteMutation.mutate(
+        {
+          rsvpId: rsvp.id,
+          ticketStatus: newStatus,
+          ...workspaceScope.queryArgs,
+        },
+        {
+          onSuccess: () => {
+            toast.success(`Changed ${guestName}'s ticket to '${getTicketStatusLabel(newStatus)}'`);
+            setLoadingTicketUpdates((previousLoadingTicketUpdates) => {
+              const nextLoadingTicketUpdates = new Set(previousLoadingTicketUpdates);
+              nextLoadingTicketUpdates.delete(rsvp.id);
+              return nextLoadingTicketUpdates;
+            });
+          },
+          onError: (error) => {
+            toast.error(
+              `Failed to update ${guestName}'s ticket status: ${(error as Error).message}`,
+            );
+            setLoadingTicketUpdates((previousLoadingTicketUpdates) => {
+              const nextLoadingTicketUpdates = new Set(previousLoadingTicketUpdates);
+              nextLoadingTicketUpdates.delete(rsvp.id);
+              return nextLoadingTicketUpdates;
+            });
+          },
+        },
+      );
+    },
+    [
+      canEditTicketForRsvp,
+      getRsvpGuestName,
+      isReadOnly,
+      updateRsvpCompleteMutation,
+      workspaceScope,
+    ],
+  );
+
+  const deleteRsvps = React.useCallback(
+    async (targetRsvps: HostRsvp[]) => {
+      const uniqueTargetRsvps = Array.from(
+        new Map(targetRsvps.map((targetRsvp) => [targetRsvp.id, targetRsvp])).values(),
+      );
+      if (uniqueTargetRsvps.length === 0) {
+        return;
+      }
+
+      if (!workspaceScope) {
+        toast.error("Workspace scope is required to delete RSVPs");
+        return;
+      }
+
+      const targetRsvpIds = uniqueTargetRsvps.map((targetRsvp) => targetRsvp.id);
+
+      if (uniqueTargetRsvps.length === 1) {
+        const [targetRsvp] = uniqueTargetRsvps;
+        if (!targetRsvp) {
+          return;
+        }
+
+        const guestName = getRsvpGuestName(targetRsvp);
+        await deleteRsvpCompleteMutation.mutateAsync({
+          rsvpId: targetRsvp.id,
+          ...workspaceScope.queryArgs,
+        });
+        setPendingChanges((previousPendingChanges) => {
+          const updatedPendingChanges = { ...previousPendingChanges };
+          delete updatedPendingChanges[targetRsvp.id];
+          return updatedPendingChanges;
+        });
+        setSelectedRows((previousSelectedRows) => {
+          const nextSelectedRows = new Set(previousSelectedRows);
+          nextSelectedRows.delete(targetRsvp.id);
+          return nextSelectedRows;
+        });
+        toast.success(`Deleted ${guestName}'s RSVP`);
+        return;
+      }
+
+      const result = await bulkDeleteRsvpsMutation.mutateAsync({
+        rsvpIds: targetRsvpIds,
+        ...workspaceScope.queryArgs,
+      });
+
+      setPendingChanges((previousPendingChanges) => {
+        const updatedPendingChanges = { ...previousPendingChanges };
+        for (const targetRsvpId of targetRsvpIds) {
+          delete updatedPendingChanges[targetRsvpId];
+        }
+        return updatedPendingChanges;
+      });
+      setSelectedRows((previousSelectedRows) => {
+        const nextSelectedRows = new Set(previousSelectedRows);
+        for (const targetRsvpId of targetRsvpIds) {
+          nextSelectedRows.delete(targetRsvpId);
+        }
+        return nextSelectedRows;
+      });
+
+      if (result.failed > 0) {
+        toast.warning(
+          `Deleted ${result.success} of ${uniqueTargetRsvps.length} RSVPs. ${result.failed} failed: ${result.errors.join(", ")}`,
+        );
+        return;
+      }
+
+      toast.success(`Deleted ${uniqueTargetRsvps.length} RSVPs`);
+    },
+    [bulkDeleteRsvpsMutation, deleteRsvpCompleteMutation, getRsvpGuestName, workspaceScope],
+  );
+
+  const handleConfirmPendingDelete = React.useCallback(async () => {
+    const targetRsvps = rsvpsPendingDeletion;
+    if (targetRsvps.length === 0) {
+      return;
+    }
+    if (!workspaceScope) {
+      toast.error("Workspace scope is required to delete RSVPs");
+      return;
+    }
+
+    try {
+      await deleteRsvps(targetRsvps);
+      setRsvpsPendingDeletion([]);
+    } catch (error) {
+      const [firstTargetRsvp] = targetRsvps;
+      const fallbackLabel =
+        targetRsvps.length === 1 && firstTargetRsvp
+          ? `${getRsvpGuestName(firstTargetRsvp)}'s RSVP`
+          : `${targetRsvps.length} RSVPs`;
+      toast.error(`Failed to delete ${fallbackLabel}: ${(error as Error).message}`);
+    }
+  }, [deleteRsvps, getRsvpGuestName, rsvpsPendingDeletion, workspaceScope]);
 
   // Generate dynamic custom field columns
   const customFieldColumns = React.useMemo<ColumnDef<HostRsvp>[]>(() => {
     if (!currentEvent?.customFields) return [];
 
-    return currentEvent.customFields.map((field) => ({
-      id: `custom_${field.key}`,
-      header: field.label.replace(/:\s*$/, "").trim(), // Remove trailing colon and spaces
-      enableResizing: true,
-      size: 150,
-      minSize: 100,
-      maxSize: 300,
-      accessorFn: (row: HostRsvp) => {
-        if (!row.customFieldValues) return "";
+    return currentEvent.customFields.map((field) => {
+      const fieldLabel = field.label.replace(/:\s*$/, "").trim();
 
-        // Try exact match first
-        if (row.customFieldValues[field.key]) {
-          return row.customFieldValues[field.key] ?? "";
-        }
+      return {
+        id: `custom_${field.key}`,
+        header: fieldLabel, // Remove trailing colon and spaces
+        ...getRsvpTableColumnSizing({
+          label: fieldLabel,
+          minContentWidth: 128,
+          preferredSize: 180,
+        }),
+        accessorFn: (row: HostRsvp) => {
+          if (!row.customFieldValues) return "";
 
-        // Try normalized key
-        const normalizedKey = normalizeFieldKey(field.key);
-
-        // Check all stored keys for a normalized match
-        for (const [metaKey, metaValue] of Object.entries(row.customFieldValues)) {
-          if (normalizeFieldKey(metaKey) === normalizedKey) {
-            return metaValue;
+          // Try exact match first
+          if (row.customFieldValues[field.key]) {
+            return row.customFieldValues[field.key] ?? "";
           }
-        }
 
-        return "";
-      },
-      cell: ({ getValue }) => {
-        const rawValue = (getValue() as string | undefined) ?? "";
-        const hasPrependUrl = !!field.prependUrl;
-        const isCopyEnabled = field.copyEnabled;
+          // Try normalized key
+          const normalizedKey = normalizeFieldKey(field.key);
 
-        const handleCopyClick = async () => {
-          if (!rawValue || rawValue === "-") return;
-
-          try {
-            await navigator.clipboard.writeText(rawValue);
-            toast.success(`Copied: ${rawValue}`);
-          } catch (_err) {
-            toast.error("Failed to copy to clipboard");
+          // Check all stored keys for a normalized match
+          for (const [metaKey, metaValue] of Object.entries(row.customFieldValues)) {
+            if (normalizeFieldKey(metaKey) === normalizedKey) {
+              return metaValue;
+            }
           }
-        };
 
-        const handleCopyFullUrl = async (fullUrl: string) => {
-          try {
-            await navigator.clipboard.writeText(fullUrl);
-            toast.success(`Copied URL: ${fullUrl}`);
-          } catch (_err) {
-            toast.error("Failed to copy URL to clipboard");
-          }
-        };
+          return "";
+        },
+        cell: ({ getValue }) => {
+          const rawValue = (getValue() as string | undefined) ?? "";
+          const hasPrependUrl = !!field.prependUrl;
+          const isCopyEnabled = field.copyEnabled;
 
-        // Handle fields with prependUrl
-        if (hasPrependUrl && rawValue && rawValue !== "-") {
-          const sanitizedValue = sanitizeFieldValue(rawValue, field.key);
-          const fullUrl = ensureAbsoluteUrl(`${field.prependUrl}${sanitizedValue}`);
+          const handleCopyClick = async () => {
+            if (!rawValue || rawValue === "-") return;
 
-          return (
-            <ContextMenu>
-              <ContextMenuTrigger asChild>
-                <div
-                  className="flex items-center gap-1 cursor-pointer group hover:bg-muted/50 rounded px-2 py-1 -mx-2 -my-1"
-                  onClick={(e) => {
-                    e.stopPropagation(); // Prevent row selection
-                    window.open(fullUrl, "_blank", "noopener,noreferrer");
-                  }}
-                >
-                  <span className="truncate max-w-32 group-hover:underline">{rawValue}</span>
-                  <ExternalLink className="h-3 w-3 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem
-                  onClick={() => window.open(fullUrl, "_blank", "noopener,noreferrer")}
-                >
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Open in new tab
-                </ContextMenuItem>
-                {isCopyEnabled && (
-                  <ContextMenuItem onClick={handleCopyClick}>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copy value
+            try {
+              await navigator.clipboard.writeText(rawValue);
+              toast.success(`Copied: ${rawValue}`);
+            } catch (_err) {
+              toast.error("Failed to copy to clipboard");
+            }
+          };
+
+          const handleCopyFullUrl = async (fullUrl: string) => {
+            try {
+              await navigator.clipboard.writeText(fullUrl);
+              toast.success(`Copied URL: ${fullUrl}`);
+            } catch (_err) {
+              toast.error("Failed to copy URL to clipboard");
+            }
+          };
+
+          // Handle fields with prependUrl
+          if (hasPrependUrl && rawValue && rawValue !== "-") {
+            const sanitizedValue = sanitizeFieldValue(rawValue, field.key);
+            const fullUrl = ensureAbsoluteUrl(`${field.prependUrl}${sanitizedValue}`);
+
+            return (
+              <ContextMenu>
+                <ContextMenuTrigger asChild>
+                  <div
+                    className="flex items-center gap-1 cursor-pointer group hover:bg-muted/50 rounded px-2 py-1 -mx-2 -my-1"
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent row selection
+                      window.open(fullUrl, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    <span className="truncate max-w-32 group-hover:underline">{rawValue}</span>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                  </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem
+                    onClick={() => window.open(fullUrl, "_blank", "noopener,noreferrer")}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Open in new tab
                   </ContextMenuItem>
+                  {isCopyEnabled && (
+                    <ContextMenuItem onClick={handleCopyClick}>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy value
+                    </ContextMenuItem>
+                  )}
+                  <ContextMenuItem onClick={() => handleCopyFullUrl(fullUrl)}>
+                    <Link className="h-4 w-4 mr-2" />
+                    Copy full URL
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+            );
+          }
+
+          // Handle regular copy-enabled fields
+          if (isCopyEnabled && rawValue && rawValue !== "-") {
+            return (
+              <div
+                className={cn(
+                  "flex items-center justify-between w-full group cursor-pointer transition-colors duration-150 rounded px-2 py-1 -mx-2 -my-1",
                 )}
-                <ContextMenuItem onClick={() => handleCopyFullUrl(fullUrl)}>
-                  <Link className="h-4 w-4 mr-2" />
-                  Copy full URL
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          );
-        }
+                onClick={handleCopyClick}
+              >
+                <span className="truncate max-w-32">{rawValue}</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100 bg-muted transition-opacity duration-150 ml-2 flex-shrink-0" />
+                  </TooltipTrigger>
+                  <TooltipContent align="center" variant="secondary" className="py-1 px-2 z-10">
+                    copy
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            );
+          }
 
-        // Handle regular copy-enabled fields
-        if (isCopyEnabled && rawValue && rawValue !== "-") {
-          return (
-            <div
-              className={cn(
-                "flex items-center justify-between w-full group cursor-pointer transition-colors duration-150 rounded px-2 py-1 -mx-2 -my-1",
-              )}
-              onClick={handleCopyClick}
-            >
-              <span className="truncate max-w-32">{rawValue}</span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100 bg-muted transition-opacity duration-150 ml-2 flex-shrink-0" />
-                </TooltipTrigger>
-                <TooltipContent align="center" variant="secondary" className="py-1 px-2 z-10">
-                  copy
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          );
-        }
-
-        // Handle regular fields without special functionality
-        return <span className="truncate max-w-32">{rawValue || "-"}</span>;
-      },
-    }));
+          // Handle regular fields without special functionality
+          return <span className="truncate max-w-32">{rawValue || "-"}</span>;
+        },
+      };
+    });
   }, [currentEvent?.customFields]);
 
   const socialProfileColumns = React.useMemo<ColumnDef<HostRsvp>[]>(() => {
@@ -629,10 +1030,11 @@ export default function RsvpsPage() {
     return socialPlatforms.map((platform) => ({
       id: `social_${platform.platformKey}`,
       header: platform.label,
-      enableResizing: true,
-      size: 150,
-      minSize: 100,
-      maxSize: 260,
+      ...getRsvpTableColumnSizing({
+        label: platform.label,
+        minContentWidth: 112,
+        preferredSize: 150,
+      }),
       accessorFn: (rsvp: HostRsvp): string =>
         rsvp.socialProfiles.find((profile) => profile.platformKey === platform.platformKey)
           ?.handle ?? "",
@@ -667,10 +1069,11 @@ export default function RsvpsPage() {
       {
         id: "guest",
         header: "Guest",
-        enableResizing: true,
-        size: 150,
-        minSize: 100,
-        maxSize: 300,
+        ...getRsvpTableColumnSizing({
+          label: "Guest",
+          minContentWidth: 128,
+          preferredSize: 170,
+        }),
         accessorFn: (rsvp: HostRsvp) => {
           const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
           return displayName || rsvp.contact?.email || rsvp.contact?.phone || "(no contact)";
@@ -687,10 +1090,11 @@ export default function RsvpsPage() {
         id: "listKey",
         header: "List",
         accessorKey: "listKey",
-        enableResizing: true,
-        size: 80,
-        minSize: 60,
-        maxSize: 150,
+        ...getRsvpTableColumnSizing({
+          label: "List",
+          minContentWidth: 56,
+          preferredSize: 96,
+        }),
         cell: ({ row }) => {
           const rsvp = row.original;
           const currentListKey = rsvp.listKey;
@@ -698,52 +1102,6 @@ export default function RsvpsPage() {
 
           // Use shared loading state for this row
           const isUpdatingList = loadingListUpdates.has(rsvp.id);
-
-          const handleListKeyChange = async (newListKey: string) => {
-            if (newListKey === currentListKey) return;
-            if (!workspaceScope) {
-              toast.error("Workspace scope is required to update RSVPs");
-              return;
-            }
-
-            // Get guest name for toast
-            const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
-            const guestName = displayName || rsvp.contact?.email || rsvp.contact?.phone || "Guest";
-
-            // Add to loading state
-            setLoadingListUpdates((prev) => new Set(prev).add(rsvp.id));
-
-            // Show updating toast for single update
-            toast.info(`Updating ${guestName}'s list...`);
-
-            updateRsvpListKeyMutation.mutate(
-              {
-                rsvpId: rsvp.id,
-                listKey: newListKey,
-                ...workspaceScope.queryArgs,
-              },
-              {
-                onSuccess: () => {
-                  toast.success(`Changed ${guestName}'s list to '${newListKey.toUpperCase()}'`);
-                  // Remove from loading state
-                  setLoadingListUpdates((prev) => {
-                    const next = new Set(prev);
-                    next.delete(rsvp.id);
-                    return next;
-                  });
-                },
-                onError: (error) => {
-                  toast.error(`Failed to update ${guestName}'s list: ` + (error as Error).message);
-                  // Remove from loading state
-                  setLoadingListUpdates((prev) => {
-                    const next = new Set(prev);
-                    next.delete(rsvp.id);
-                    return next;
-                  });
-                },
-              },
-            );
-          };
 
           if (isReadOnly || availableListKeys.length <= 1) {
             // If only one list or no lists, show as text
@@ -764,7 +1122,10 @@ export default function RsvpsPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                <DropdownMenuRadioGroup value={currentListKey} onValueChange={handleListKeyChange}>
+                <DropdownMenuRadioGroup
+                  value={currentListKey}
+                  onValueChange={(newListKey) => handleSingleListKeyChange(rsvp, newListKey)}
+                >
                   {availableListKeys.map((listKey) => (
                     <DropdownMenuRadioItem key={listKey} value={listKey}>
                       {listKey.toUpperCase()}
@@ -780,10 +1141,11 @@ export default function RsvpsPage() {
         id: "attendees",
         header: "Attendees",
         accessorFn: (rsvp: HostRsvp): number => rsvp.attendees ?? 1,
-        enableResizing: true,
-        size: 90,
-        minSize: 70,
-        maxSize: 120,
+        ...getRsvpTableColumnSizing({
+          label: "Attendees",
+          minContentWidth: 56,
+          preferredSize: 124,
+        }),
         cell: ({ row }) => {
           const attendees = row.original.attendees ?? 1;
           return <span className="text-sm">{attendees}</span>;
@@ -792,10 +1154,11 @@ export default function RsvpsPage() {
       {
         id: "smsConsent",
         header: "SMS Consent",
-        enableResizing: true,
-        size: 120,
-        minSize: 100,
-        maxSize: 150,
+        ...getRsvpTableColumnSizing({
+          label: "SMS Consent",
+          minContentWidth: 72,
+          preferredSize: 136,
+        }),
         accessorFn: (rsvp: HostRsvp): string => {
           return rsvp.smsConsent === true ? "Yes" : rsvp.smsConsent === false ? "No" : "—";
         },
@@ -824,10 +1187,11 @@ export default function RsvpsPage() {
               id: "invitedByName",
               header: currentEvent.primaryFieldConfig.invitedBy.label ?? "Invited By",
               accessorKey: "invitedByName",
-              enableResizing: true,
-              size: 150,
-              minSize: 100,
-              maxSize: 260,
+              ...getRsvpTableColumnSizing({
+                label: currentEvent.primaryFieldConfig.invitedBy.label ?? "Invited By",
+                minContentWidth: 112,
+                preferredSize: 160,
+              }),
               cell: ({ row }) => {
                 const invitedByName = row.original.invitedByName?.trim();
                 if (!invitedByName) {
@@ -842,10 +1206,11 @@ export default function RsvpsPage() {
         id: "referredByName",
         header: "Referred By",
         accessorKey: "referredByName",
-        enableResizing: true,
-        size: 150,
-        minSize: 100,
-        maxSize: 260,
+        ...getRsvpTableColumnSizing({
+          label: "Referred By",
+          minContentWidth: 112,
+          preferredSize: 160,
+        }),
         cell: ({ row }) => {
           const referredByName =
             row.original.referredByName?.trim() || row.original.referralCode?.trim();
@@ -860,10 +1225,11 @@ export default function RsvpsPage() {
         id: "noteForHosts",
         header: "Note for Hosts",
         accessorKey: "note",
-        enableResizing: true,
-        size: 200,
-        minSize: 150,
-        maxSize: 400,
+        ...getRsvpTableColumnSizing({
+          label: "Note for Hosts",
+          minContentWidth: 160,
+          preferredSize: 220,
+        }),
         cell: ({ row }) => {
           const noteForHosts = row.original.note?.trim();
           if (!noteForHosts) {
@@ -888,10 +1254,11 @@ export default function RsvpsPage() {
         id: "createdAt",
         header: "Created",
         accessorKey: "createdAt",
-        enableResizing: true,
-        size: 120,
-        minSize: 100,
-        maxSize: 150,
+        ...getRsvpTableColumnSizing({
+          label: "Created",
+          minContentWidth: 104,
+          preferredSize: 128,
+        }),
         cell: ({ row }) => {
           const timestamp = row.original.createdAt;
           const date = new Date(timestamp);
@@ -914,67 +1281,18 @@ export default function RsvpsPage() {
         id: "approvalStatus",
         header: "Approval",
         accessorKey: "approvalStatus",
-        enableResizing: true,
-        size: 110,
-        minSize: 90,
-        maxSize: 150,
+        ...getRsvpTableColumnSizing({
+          label: "Approval",
+          minContentWidth: 112,
+          preferredSize: 150,
+        }),
         cell: ({ row }) => {
           const rsvp = row.original;
           const originalApprovalStatus = rsvp.approvalStatus;
           const currentApprovalStatus = originalApprovalStatus;
-          const isAttendingRsvp = rsvp.status === "attending";
 
           // Use shared loading state for this row
           const isUpdatingApproval = loadingApprovalUpdates.has(rsvp.id);
-
-          const handleStatusChange = async (newStatus: ApprovalStatusOption) => {
-            if (newStatus === originalApprovalStatus) return;
-            if (!workspaceScope) {
-              toast.error("Workspace scope is required to update RSVPs");
-              return;
-            }
-
-            // Get guest name for toast
-            const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
-            const guestName = displayName || rsvp.contact?.email || rsvp.contact?.phone || "Guest";
-
-            // Add to loading state
-            setLoadingApprovalUpdates((prev) => new Set(prev).add(rsvp.id));
-
-            // Show updating toast for single update
-            toast.info(`Updating ${guestName}'s approval status...`);
-
-            updateRsvpCompleteMutation.mutate(
-              {
-                rsvpId: rsvp.id,
-                approvalStatus: newStatus,
-                ...workspaceScope.queryArgs,
-              },
-              {
-                onSuccess: () => {
-                  const statusText = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
-                  toast.success(`Changed ${guestName}'s RSVP to '${statusText}'`);
-                  // Remove from loading state
-                  setLoadingApprovalUpdates((prev) => {
-                    const next = new Set(prev);
-                    next.delete(rsvp.id);
-                    return next;
-                  });
-                },
-                onError: (error) => {
-                  toast.error(
-                    `Failed to update ${guestName}'s approval status: ` + (error as Error).message,
-                  );
-                  // Remove from loading state
-                  setLoadingApprovalUpdates((prev) => {
-                    const next = new Set(prev);
-                    next.delete(rsvp.id);
-                    return next;
-                  });
-                },
-              },
-            );
-          };
 
           const getStatusColor = (currentStatus: ApprovalStatusOption): string => {
             switch (currentStatus) {
@@ -991,7 +1309,7 @@ export default function RsvpsPage() {
           if (isReadOnly) {
             return (
               <Badge variant="secondary" className="text-xs">
-                {currentApprovalStatus.charAt(0).toUpperCase() + currentApprovalStatus.slice(1)}
+                {getApprovalStatusLabel(currentApprovalStatus)}
               </Badge>
             );
           }
@@ -1006,18 +1324,19 @@ export default function RsvpsPage() {
                   disabled={isUpdatingApproval}
                 >
                   {isUpdatingApproval && <Spinner className="mr-1 h-3 w-3" />}
-                  {!isUpdatingApproval &&
-                    currentApprovalStatus.charAt(0).toUpperCase() + currentApprovalStatus.slice(1)}
+                  {!isUpdatingApproval && getApprovalStatusLabel(currentApprovalStatus)}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
                 <DropdownMenuRadioGroup
                   value={currentApprovalStatus}
-                  onValueChange={(value) => handleStatusChange(value as ApprovalStatusOption)}
+                  onValueChange={(value) =>
+                    handleSingleApprovalChange(rsvp, value as ApprovalStatusOption)
+                  }
                 >
                   <DropdownMenuRadioItem
                     value="pending"
-                    disabled={isAttendingRsvp || rsvp.redemptionStatus === "redeemed"}
+                    disabled={rsvp.redemptionStatus === "redeemed"}
                   >
                     <span className="text-amber-700">Pending</span>
                   </DropdownMenuRadioItem>
@@ -1029,9 +1348,75 @@ export default function RsvpsPage() {
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
-              {isAttendingRsvp && (
-                <div className="mt-1 text-[11px] text-muted-foreground">Attending</div>
-              )}
+            </DropdownMenu>
+          );
+        },
+      },
+      {
+        id: "attendanceStatus",
+        header: "Attendance",
+        accessorKey: "attendanceStatus",
+        ...getRsvpTableColumnSizing({
+          label: "Attendance",
+          minContentWidth: 88,
+          preferredSize: 136,
+        }),
+        cell: ({ row }) => {
+          const rsvp = row.original;
+          const currentAttendanceStatus = rsvp.attendanceStatus;
+          const isUpdatingAttendance = loadingAttendanceUpdates.has(rsvp.id);
+
+          if (isReadOnly) {
+            return (
+              <Badge
+                variant="secondary"
+                className={cn("text-xs", getAttendanceStatusClassName(currentAttendanceStatus))}
+              >
+                {getAttendanceStatusLabel(currentAttendanceStatus)}
+              </Badge>
+            );
+          }
+
+          return (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex w-16" asChild>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className={cn(getAttendanceStatusClassName(currentAttendanceStatus))}
+                  disabled={isUpdatingAttendance}
+                >
+                  {isUpdatingAttendance && <Spinner className="mr-1 h-3 w-3" />}
+                  {!isUpdatingAttendance && getAttendanceStatusLabel(currentAttendanceStatus)}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuRadioGroup
+                  value={currentAttendanceStatus}
+                  onValueChange={(value) =>
+                    handleSingleAttendanceStatusChange(rsvp, value as AttendanceStatusOption)
+                  }
+                >
+                  {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => (
+                    <DropdownMenuRadioItem
+                      key={attendanceStatusOption}
+                      value={attendanceStatusOption}
+                    >
+                      <span
+                        className={
+                          attendanceStatusOption === "yes"
+                            ? "text-green-700"
+                            : attendanceStatusOption === "maybe"
+                              ? "text-amber-700"
+                              : "text-red-700"
+                        }
+                      >
+                        {getAttendanceStatusLabel(attendanceStatusOption)}
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
             </DropdownMenu>
           );
         },
@@ -1040,10 +1425,11 @@ export default function RsvpsPage() {
         id: "ticketStatus",
         header: "Ticket",
         accessorFn: (rsvp: HostRsvp) => rsvp.redemptionStatus,
-        enableResizing: true,
-        size: 110,
-        minSize: 90,
-        maxSize: 150,
+        ...getRsvpTableColumnSizing({
+          label: "Ticket",
+          minContentWidth: 88,
+          preferredSize: 130,
+        }),
         cell: ({ row }) => {
           const rsvp = row.original;
           const originalTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
@@ -1053,57 +1439,6 @@ export default function RsvpsPage() {
 
           // Use shared loading state for this row
           const isUpdatingTicket = loadingTicketUpdates.has(rsvp.id);
-
-          const handleTicketStatusChange = async (newStatus: TicketStatusOption) => {
-            if (!ticketEditingIsAllowed) return;
-            if (isRedeemed) return; // Cannot change redeemed status
-            if (newStatus === originalTicketStatus) return;
-            if (!workspaceScope) {
-              toast.error("Workspace scope is required to update RSVPs");
-              return;
-            }
-
-            // Get guest name for toast
-            const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
-            const guestName = displayName || rsvp.contact?.email || rsvp.contact?.phone || "Guest";
-
-            // Add to loading state
-            setLoadingTicketUpdates((prev) => new Set(prev).add(rsvp.id));
-
-            // Show updating toast for single update
-            toast.info(`Updating ${guestName}'s ticket status...`);
-
-            updateRsvpCompleteMutation.mutate(
-              {
-                rsvpId: rsvp.id,
-                ticketStatus: newStatus,
-                ...workspaceScope.queryArgs,
-              },
-              {
-                onSuccess: () => {
-                  const statusText = getTicketStatusLabel(newStatus);
-                  toast.success(`Changed ${guestName}'s ticket to '${statusText}'`);
-                  // Remove from loading state
-                  setLoadingTicketUpdates((prev) => {
-                    const next = new Set(prev);
-                    next.delete(rsvp.id);
-                    return next;
-                  });
-                },
-                onError: (error) => {
-                  toast.error(
-                    `Failed to update ${guestName}'s ticket status: ` + (error as Error).message,
-                  );
-                  // Remove from loading state
-                  setLoadingTicketUpdates((prev) => {
-                    const next = new Set(prev);
-                    next.delete(rsvp.id);
-                    return next;
-                  });
-                },
-              },
-            );
-          };
 
           const getTicketStatusColor = (status: TicketDisplayStatus): string => {
             switch (status) {
@@ -1119,20 +1454,6 @@ export default function RsvpsPage() {
             }
           };
 
-          const getTicketStatusLabel = (status: TicketDisplayStatus): string => {
-            switch (status) {
-              case "issued":
-                return "Issued";
-              case "redeemed":
-                return "Redeemed";
-              case "disabled":
-                return "Disabled";
-              case "not-issued":
-              default:
-                return "None";
-            }
-          };
-
           if (isReadOnly) {
             const canViewQrCode =
               (currentTicketStatus === "issued" || currentTicketStatus === "redeemed") &&
@@ -1144,18 +1465,7 @@ export default function RsvpsPage() {
                 size="xs"
                 className={cn(getTicketStatusColor(currentTicketStatus))}
                 disabled={!canViewQrCode}
-                onClick={() => {
-                  const redemptionCode = rsvp.redemptionCode;
-                  if (!redemptionCode) return;
-                  const url = `${window.location.origin}/redeem/${redemptionCode}`;
-                  setQr({
-                    code: redemptionCode,
-                    url,
-                    status: currentTicketStatus,
-                    listKey: rsvp.listKey,
-                  });
-                  setShowQR(true);
-                }}
+                onClick={() => openRsvpQrCode(rsvp)}
               >
                 {getTicketStatusLabel(currentTicketStatus)}
               </Button>
@@ -1178,7 +1488,9 @@ export default function RsvpsPage() {
               <DropdownMenuContent>
                 <DropdownMenuRadioGroup
                   value={currentTicketStatus}
-                  onValueChange={(value) => handleTicketStatusChange(value as TicketStatusOption)}
+                  onValueChange={(value) =>
+                    handleSingleTicketStatusChange(rsvp, value as TicketStatusOption)
+                  }
                 >
                   <DropdownMenuRadioItem value="not-issued">
                     <span className="text-gray-700">None</span>
@@ -1194,20 +1506,7 @@ export default function RsvpsPage() {
                   rsvp.redemptionCode && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => {
-                          const redemptionCode = rsvp.redemptionCode;
-                          if (!redemptionCode) return;
-                          const url = `${window.location.origin}/redeem/${redemptionCode}`;
-                          setQr({
-                            code: redemptionCode,
-                            url,
-                            status: currentTicketStatus,
-                            listKey: rsvp.listKey,
-                          });
-                          setShowQR(true);
-                        }}
-                      >
+                      <DropdownMenuItem onClick={() => openRsvpQrCode(rsvp)}>
                         <QrCode className="w-4 h-4 mr-2" />
                         View QR Code
                       </DropdownMenuItem>
@@ -1219,12 +1518,45 @@ export default function RsvpsPage() {
         },
       },
       {
+        id: "ticketViewedAt",
+        header: "Ticket Viewed",
+        accessorKey: "ticketViewedAt",
+        ...getRsvpTableColumnSizing({
+          label: "Ticket Viewed",
+          minContentWidth: 104,
+          preferredSize: 148,
+        }),
+        cell: ({ row }) => {
+          const ticketViewedAt = row.original.ticketViewedAt;
+          if (ticketViewedAt === undefined) {
+            return (
+              <Badge variant="secondary" className="text-xs">
+                Not viewed
+              </Badge>
+            );
+          }
+
+          const formattedTicketViewedAt = formatTicketViewedTimestamp(ticketViewedAt);
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="success" className="text-xs cursor-default">
+                  Viewed
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent align="start">{formattedTicketViewedAt}</TooltipContent>
+            </Tooltip>
+          );
+        },
+      },
+      {
         id: "actions",
         header: "Action",
-        enableResizing: true,
-        size: 100,
-        minSize: 80,
-        maxSize: 150,
+        ...getRsvpTableColumnSizing({
+          label: "Action",
+          minContentWidth: 72,
+          preferredSize: 120,
+        }),
         cell: ({ row }) => {
           const rsvp = row.original;
           const changes = pendingChanges[rsvp.id];
@@ -1342,20 +1674,60 @@ export default function RsvpsPage() {
       },
     ];
 
-    return columns.filter((column) => !isReadOnly || column.id !== "actions");
+    const columnById = new Map(
+      columns
+        .filter(
+          (column): column is ColumnDef<HostRsvp> & { id: string } => typeof column.id === "string",
+        )
+        .map((column) => [column.id, column]),
+    );
+    const socialProfileColumnIds = socialProfileColumns
+      .map((column) => column.id)
+      .filter((columnId): columnId is string => typeof columnId === "string");
+    const customFieldColumnIds = customFieldColumns
+      .map((column) => column.id)
+      .filter((columnId): columnId is string => typeof columnId === "string");
+    const preferredColumnOrder = [
+      "guest",
+      "listKey",
+      ...socialProfileColumnIds,
+      ...(currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true ? ["invitedByName"] : []),
+      "approvalStatus",
+      "attendanceStatus",
+      "referredByName",
+      "createdAt",
+      "attendees",
+      "smsConsent",
+      "ticketStatus",
+      "ticketViewedAt",
+      "noteForHosts",
+      ...customFieldColumnIds,
+      "actions",
+    ];
+
+    return preferredColumnOrder
+      .map((columnId) => columnById.get(columnId))
+      .filter((column): column is ColumnDef<HostRsvp> & { id: string } => column !== undefined)
+      .filter((column) => !isReadOnly || column.id !== "actions");
   }, [
-    isReadOnly,
-    pendingChanges,
-    updateRsvpCompleteMutation,
-    deleteRsvpCompleteMutation,
-    updateRsvpListKeyMutation,
-    listCredentials,
-    currentEvent?.primaryFieldConfig,
-    socialProfileColumns,
+    canEditTicketForRsvp,
     customFieldColumns,
-    loadingListUpdates,
+    currentEvent?.primaryFieldConfig,
+    deleteRsvpCompleteMutation,
+    handleSingleApprovalChange,
+    handleSingleAttendanceStatusChange,
+    handleSingleListKeyChange,
+    handleSingleTicketStatusChange,
+    isReadOnly,
+    listCredentials,
     loadingApprovalUpdates,
+    loadingAttendanceUpdates,
+    loadingListUpdates,
     loadingTicketUpdates,
+    openRsvpQrCode,
+    pendingChanges,
+    socialProfileColumns,
+    updateRsvpCompleteMutation,
     workspaceScope,
   ]);
 
@@ -1377,8 +1749,6 @@ export default function RsvpsPage() {
     setListFilter("all");
     setRedemptionFilter("all");
     setSocialPlatformFilter("all");
-    setSocialSearch("");
-    setInvitedBySearch("");
     setSortBy("createdAt");
     setSortOrder("desc");
   };
@@ -1389,9 +1759,7 @@ export default function RsvpsPage() {
     approvalFilter !== "all" ||
     listFilter !== "all" ||
     redemptionFilter !== "all" ||
-    socialPlatformFilter !== "all" ||
-    socialSearch.trim() !== "" ||
-    invitedBySearch.trim() !== "";
+    (shouldShowSocialPlatformFilter && socialPlatformFilter !== "all");
 
   // Selection handlers (basic implementations, will be updated after table creation)
   const toggleSelectRow = React.useCallback(
@@ -1420,7 +1788,7 @@ export default function RsvpsPage() {
   // Clear selection when filters change or page changes
   React.useEffect(() => {
     setSelectedRows(new Set());
-  }, [debouncedGuest, approvalFilter, listFilter, redemptionFilter, cursor]);
+  }, [debouncedGuest, approvalFilter, listFilter, redemptionFilter, socialPlatformFilter, cursor]);
 
   // Calculate pagination info for cursor-based pagination
   const currentPage = cursorHistory.length + 1;
@@ -1571,6 +1939,62 @@ export default function RsvpsPage() {
     }
   };
 
+  const handleBulkAttendanceStatusChange = async (newStatus: AttendanceStatusOption) => {
+    if (isReadOnly) return;
+    if (!workspaceScope) {
+      toast.error("Workspace scope is required to update RSVPs");
+      return;
+    }
+    const selectedRsvps = rsvps.filter((rsvp) => selectedRows.has(rsvp.id));
+    const count = selectedRsvps.length;
+
+    if (count === 0) return;
+
+    setLoadingAttendanceUpdates((previousLoadingAttendanceUpdates) => {
+      const nextLoadingAttendanceUpdates = new Set(previousLoadingAttendanceUpdates);
+      selectedRsvps.forEach((rsvp) => nextLoadingAttendanceUpdates.add(rsvp.id));
+      return nextLoadingAttendanceUpdates;
+    });
+
+    toast.info(`Updating ${count} RSVPs...`);
+
+    const updates = selectedRsvps.map((rsvp) => ({
+      rsvpId: rsvp.id,
+      attendanceStatus: newStatus,
+    }));
+
+    try {
+      const result = await bulkUpdateAttendanceStatusMutation.mutateAsync({
+        updates,
+        ...workspaceScope.queryArgs,
+      });
+
+      if (result.failed > 0) {
+        toast.warning(
+          `Updated ${result.success} of ${count} RSVPs. ${result.failed} failed: ${result.errors.join(", ")}`,
+        );
+      } else {
+        toast.success(
+          `Changed attendance to '${getAttendanceStatusLabel(newStatus)}' for ${count} RSVPs`,
+        );
+      }
+
+      setSelectedRows(new Set());
+      setLoadingAttendanceUpdates((previousLoadingAttendanceUpdates) => {
+        const nextLoadingAttendanceUpdates = new Set(previousLoadingAttendanceUpdates);
+        selectedRsvps.forEach((rsvp) => nextLoadingAttendanceUpdates.delete(rsvp.id));
+        return nextLoadingAttendanceUpdates;
+      });
+    } catch (error) {
+      toast.error(`Failed to update attendance: ${(error as Error).message}`);
+      setLoadingAttendanceUpdates((previousLoadingAttendanceUpdates) => {
+        const nextLoadingAttendanceUpdates = new Set(previousLoadingAttendanceUpdates);
+        selectedRsvps.forEach((rsvp) => nextLoadingAttendanceUpdates.delete(rsvp.id));
+        return nextLoadingAttendanceUpdates;
+      });
+    }
+  };
+
   const handleBulkTicketStatusChange = async (newStatus: TicketStatusOption) => {
     if (isReadOnly) return;
     if (!workspaceScope) {
@@ -1657,33 +2081,9 @@ export default function RsvpsPage() {
 
   const handleBulkDelete = async () => {
     if (isReadOnly) return;
-    if (!workspaceScope) {
-      toast.error("Workspace scope is required to delete RSVPs");
-      return;
-    }
     const selectedRsvps = rsvps.filter((rsvp) => selectedRows.has(rsvp.id));
-    const count = selectedRsvps.length;
-
-    if (count === 0) return;
-
-    // Execute bulk deletion in single mutation
-    const rsvpIds = selectedRsvps.map((rsvp) => rsvp.id);
-
     try {
-      const result = await bulkDeleteRsvpsMutation.mutateAsync({
-        rsvpIds,
-        ...workspaceScope.queryArgs,
-      });
-
-      if (result.failed > 0) {
-        toast.warning(
-          `Deleted ${result.success} of ${count} RSVPs. ${result.failed} failed: ${result.errors.join(", ")}`,
-        );
-      } else {
-        toast.success(`Deleted ${count} RSVPs`);
-      }
-
-      setSelectedRows(new Set());
+      await deleteRsvps(selectedRsvps);
     } catch (error) {
       toast.error(`Failed to delete RSVPs: ${(error as Error).message}`);
     }
@@ -1698,10 +2098,7 @@ export default function RsvpsPage() {
             {
               id: "select",
               header: "Select",
-              enableResizing: false,
-              size: 60,
-              minSize: 50,
-              maxSize: 70,
+              ...RSVP_SELECT_COLUMN_SIZING,
               cell: ({ row }) => (
                 <Checkbox
                   checked={selectedRows.has(row.original.id)}
@@ -1731,10 +2128,82 @@ export default function RsvpsPage() {
       })
       .filter((identifier): identifier is string => identifier.length > 0);
   }, [initialCols]);
+  const computedInitialColumnIdentifierSignature = React.useMemo(
+    () => computedInitialColumnIdentifiers.join("\u001f"),
+    [computedInitialColumnIdentifiers],
+  );
+  const defaultVisibleColumnIdentifierSignature = React.useMemo(
+    () => defaultVisibleColumnIds.join("\u001f"),
+    [defaultVisibleColumnIds],
+  );
+  const forcedHiddenColumnIdentifierSignature = React.useMemo(
+    () => forcedHiddenColumnIds.join("\u001f"),
+    [forcedHiddenColumnIds],
+  );
+  const dashboardTableStructureSignature = React.useMemo(
+    () =>
+      [
+        eventId ?? "",
+        computedInitialColumnIdentifierSignature,
+        defaultVisibleColumnIdentifierSignature,
+        forcedHiddenColumnIdentifierSignature,
+      ].join("\u001e"),
+    [
+      computedInitialColumnIdentifierSignature,
+      defaultVisibleColumnIdentifierSignature,
+      eventId,
+      forcedHiddenColumnIdentifierSignature,
+    ],
+  );
+  const savedDashboardTablePreferenceSignature = React.useMemo(() => {
+    if (savedDashboardTablePreference === undefined) {
+      return "loading";
+    }
+    if (savedDashboardTablePreference === null) {
+      return "empty";
+    }
+    return serializeDashboardTablePreferenceState(
+      savedDashboardTablePreference.columnOrder,
+      savedDashboardTablePreference.hiddenColumnIds,
+    );
+  }, [savedDashboardTablePreference]);
+  const shouldResetSavedDashboardTablePreference = React.useMemo(() => {
+    if (!savedDashboardTablePreference) {
+      return false;
+    }
+
+    return shouldResetHostRsvpsSavedTablePreference({
+      availableColumnIds: computedInitialColumnIdentifiers,
+      defaultVisibleColumnIds,
+      savedColumnOrder: savedDashboardTablePreference.columnOrder,
+      hiddenColumnIds: savedDashboardTablePreference.hiddenColumnIds,
+      forcedHiddenColumnIds,
+    });
+  }, [
+    computedInitialColumnIdentifiers,
+    defaultVisibleColumnIds,
+    forcedHiddenColumnIds,
+    savedDashboardTablePreference,
+  ]);
 
   const [columnOrder, setColumnOrder] = React.useState<string[]>(
     () => computedInitialColumnIdentifiers,
   );
+  const lastSavedDashboardTablePreferenceSignatureRef = React.useRef<string | null>(null);
+  const hydratedDashboardTablePreferenceKeyRef = React.useRef<string | null>(null);
+  const previousDashboardTableStructureSignatureRef = React.useRef(
+    dashboardTableStructureSignature,
+  );
+
+  React.useEffect(() => {
+    if (previousDashboardTableStructureSignatureRef.current === dashboardTableStructureSignature) {
+      return;
+    }
+
+    previousDashboardTableStructureSignatureRef.current = dashboardTableStructureSignature;
+    hasPendingLocalDashboardTablePreferenceEditRef.current = false;
+    hydratedDashboardTablePreferenceKeyRef.current = null;
+  }, [dashboardTableStructureSignature]);
 
   React.useEffect(() => {
     setColumnOrder((previousColumnOrder) => {
@@ -1758,6 +2227,154 @@ export default function RsvpsPage() {
     });
   }, [computedInitialColumnIdentifiers]);
 
+  const dashboardTablePreferencePayload = React.useMemo(() => {
+    const normalizedColumnOrder = columnOrder.filter((columnId) =>
+      computedInitialColumnIdentifiers.includes(columnId),
+    );
+    const missingColumnIds = computedInitialColumnIdentifiers.filter(
+      (columnId) => !normalizedColumnOrder.includes(columnId),
+    );
+    const completeColumnOrder = [...normalizedColumnOrder, ...missingColumnIds];
+    const hiddenColumnIds = computedInitialColumnIdentifiers.filter(
+      (columnId) => !visibleColumns.has(columnId),
+    );
+
+    return {
+      columnOrder: completeColumnOrder,
+      hiddenColumnIds,
+      signature: serializeDashboardTablePreferenceState(completeColumnOrder, hiddenColumnIds),
+    };
+  }, [columnOrder, computedInitialColumnIdentifiers, visibleColumns]);
+
+  const handleColumnOrderChange = React.useCallback(
+    (updater: string[] | ((old: string[]) => string[])) => {
+      hasPendingLocalDashboardTablePreferenceEditRef.current = true;
+      setColumnOrder(updater);
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    if (
+      savedDashboardTablePreference === undefined ||
+      computedInitialColumnIdentifiers.length === 0
+    ) {
+      return;
+    }
+    if (
+      !shouldHydrateDashboardTablePreferenceState({
+        currentPreferenceSignature: dashboardTablePreferencePayload.signature,
+        savedPreferenceSignature: savedDashboardTablePreferenceSignature,
+        hasLocalPreferenceEdits: hasPendingLocalDashboardTablePreferenceEditRef.current,
+      })
+    ) {
+      return;
+    }
+    if (dashboardTablePreferencePayload.signature === savedDashboardTablePreferenceSignature) {
+      hasPendingLocalDashboardTablePreferenceEditRef.current = false;
+    }
+    const hydrationKey = [
+      dashboardTableStructureSignature,
+      savedDashboardTablePreferenceSignature,
+      shouldResetSavedDashboardTablePreference ? "reset" : "preserve",
+    ].join("\u001e");
+    if (hydratedDashboardTablePreferenceKeyRef.current === hydrationKey) {
+      return;
+    }
+    hydratedDashboardTablePreferenceKeyRef.current = hydrationKey;
+
+    const mergedPreferenceState = mergeDashboardTablePreferenceState({
+      availableColumnIds: computedInitialColumnIdentifiers,
+      defaultVisibleColumnIds,
+      savedColumnOrder: shouldResetSavedDashboardTablePreference
+        ? undefined
+        : savedDashboardTablePreference?.columnOrder,
+      hiddenColumnIds: shouldResetSavedDashboardTablePreference
+        ? undefined
+        : savedDashboardTablePreference?.hiddenColumnIds,
+      forcedHiddenColumnIds,
+    });
+
+    setColumnOrder((previousColumnOrder) =>
+      areDashboardTableColumnIdsEqual(previousColumnOrder, mergedPreferenceState.columnOrder)
+        ? previousColumnOrder
+        : mergedPreferenceState.columnOrder,
+    );
+    setVisibleColumns((previousVisibleColumns) => {
+      const previousVisibleColumnIds = computedInitialColumnIdentifiers.filter((columnId) =>
+        previousVisibleColumns.has(columnId),
+      );
+      if (
+        areDashboardTableColumnIdsEqual(
+          previousVisibleColumnIds,
+          mergedPreferenceState.visibleColumnIds,
+        )
+      ) {
+        return previousVisibleColumns;
+      }
+      return new Set(mergedPreferenceState.visibleColumnIds);
+    });
+    lastSavedDashboardTablePreferenceSignatureRef.current = shouldResetSavedDashboardTablePreference
+      ? savedDashboardTablePreferenceSignature
+      : serializeDashboardTablePreferenceState(
+          mergedPreferenceState.columnOrder,
+          mergedPreferenceState.hiddenColumnIds,
+        );
+    hasPendingLocalDashboardTablePreferenceEditRef.current = false;
+  }, [
+    dashboardTablePreferencePayload.signature,
+    dashboardTableStructureSignature,
+    computedInitialColumnIdentifierSignature,
+    computedInitialColumnIdentifiers,
+    defaultVisibleColumnIds,
+    forcedHiddenColumnIds,
+    savedDashboardTablePreference,
+    savedDashboardTablePreferenceSignature,
+    shouldResetSavedDashboardTablePreference,
+  ]);
+  const debouncedDashboardTablePreferencePayload = useDebounce(
+    dashboardTablePreferencePayload,
+    500,
+  );
+
+  React.useEffect(() => {
+    if (!workspaceScope || !eventId || savedDashboardTablePreference === undefined) {
+      return;
+    }
+    if (
+      debouncedDashboardTablePreferencePayload.signature !==
+      dashboardTablePreferencePayload.signature
+    ) {
+      return;
+    }
+    if (
+      lastSavedDashboardTablePreferenceSignatureRef.current ===
+      debouncedDashboardTablePreferencePayload.signature
+    ) {
+      return;
+    }
+
+    lastSavedDashboardTablePreferenceSignatureRef.current =
+      debouncedDashboardTablePreferencePayload.signature;
+    void saveDashboardTablePreference({
+      ...workspaceScope.queryArgs,
+      tableKey: HOST_RSVPS_TABLE_KEY,
+      scopeKey: eventId,
+      columnOrder: debouncedDashboardTablePreferencePayload.columnOrder,
+      hiddenColumnIds: debouncedDashboardTablePreferencePayload.hiddenColumnIds,
+    }).catch((error: unknown) => {
+      lastSavedDashboardTablePreferenceSignatureRef.current = null;
+      console.error("Failed to save RSVP table preferences", error);
+    });
+  }, [
+    dashboardTablePreferencePayload.signature,
+    debouncedDashboardTablePreferencePayload,
+    eventId,
+    saveDashboardTablePreference,
+    savedDashboardTablePreference,
+    workspaceScope,
+  ]);
+
   const table = useReactTable({
     data: rsvps,
     columns: initialCols,
@@ -1766,16 +2383,48 @@ export default function RsvpsPage() {
     manualSorting: true, // Enable manual sorting (server-side)
     enableSorting: false, // Disable column header sorting - use global sort dropdowns instead
     onSortingChange: setSorting,
-    onColumnOrderChange: setColumnOrder,
+    onColumnOrderChange: handleColumnOrderChange,
     onColumnSizingChange: setColumnSizing,
     onColumnVisibilityChange: handleColumnVisibilityChange,
-    enableColumnResizing: false,
+    enableColumnResizing: true,
+    columnResizeMode: "onChange",
     getCoreRowModel: getCoreRowModel(),
     // Don't use getSortedRowModel() since we're doing server-side sorting
     // getSortedRowModel: getSortedRowModel(),
   });
 
+  const [tableContainerElement, setTableContainerElement] = React.useState<HTMLDivElement | null>(
+    null,
+  );
+  const [tableContainerWidth, setTableContainerWidth] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!tableContainerElement) {
+      return;
+    }
+
+    const measureTableContainer = () => {
+      setTableContainerWidth(tableContainerElement.clientWidth);
+    };
+
+    measureTableContainer();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measureTableContainer);
+      return () => window.removeEventListener("resize", measureTableContainer);
+    }
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      const [entry] = entries;
+      setTableContainerWidth(entry?.contentRect.width ?? tableContainerElement.clientWidth);
+    });
+    resizeObserver.observe(tableContainerElement);
+
+    return () => resizeObserver.disconnect();
+  }, [tableContainerElement]);
+
   const [draggedColumnIdentifier, setDraggedColumnIdentifier] = React.useState<string | null>(null);
+  const draggedColumnIdentifierRef = React.useRef<string | null>(null);
   const [dragHoverDetails, setDragHoverDetails] = React.useState<{
     columnId: string;
     position: "before" | "after";
@@ -1848,12 +2497,16 @@ export default function RsvpsPage() {
 
       const headerElement = event.currentTarget;
       const headerStyles = window.getComputedStyle(headerElement);
-      const resolvedBackgroundColor =
-        headerStyles.backgroundColor && headerStyles.backgroundColor !== "rgba(0, 0, 0, 0)"
-          ? headerStyles.backgroundColor
-          : "rgba(255, 255, 255, 0.96)";
+      const headerBackgroundColor = headerStyles.backgroundColor.trim();
+      const hasHeaderBackgroundColor =
+        headerBackgroundColor.length > 0 &&
+        headerBackgroundColor !== "rgba(0, 0, 0, 0)" &&
+        headerBackgroundColor !== "transparent";
+      const resolvedBackgroundColor = hasHeaderBackgroundColor
+        ? headerBackgroundColor
+        : "rgba(255, 255, 255, 0.96)";
       const resolvedTextColor =
-        headerStyles.color && headerStyles.color.trim().length > 0
+        hasHeaderBackgroundColor && headerStyles.color && headerStyles.color.trim().length > 0
           ? headerStyles.color
           : "rgba(15, 23, 42, 0.9)";
       const resolvedBorderColor =
@@ -1934,6 +2587,7 @@ export default function RsvpsPage() {
       if (!columnIdentifier) {
         return;
       }
+      draggedColumnIdentifierRef.current = columnIdentifier;
       setDraggedColumnIdentifier(columnIdentifier);
       setDragHoverDetails(null);
       if (event.dataTransfer) {
@@ -1960,7 +2614,8 @@ export default function RsvpsPage() {
         event.clientY ?? event.nativeEvent?.clientY ?? null,
       );
 
-      if (!draggedColumnIdentifier || draggedColumnIdentifier === targetColumnIdentifier) {
+      const activeColumnIdentifier = draggedColumnIdentifierRef.current ?? draggedColumnIdentifier;
+      if (!activeColumnIdentifier || activeColumnIdentifier === targetColumnIdentifier) {
         setDragHoverDetails(null);
         return;
       }
@@ -1984,7 +2639,7 @@ export default function RsvpsPage() {
       event.preventDefault();
       event.stopPropagation();
 
-      const activeColumnIdentifier = draggedColumnIdentifier;
+      const activeColumnIdentifier = draggedColumnIdentifierRef.current ?? draggedColumnIdentifier;
       if (!activeColumnIdentifier) {
         setDragHoverDetails(null);
         removeDragPreviewElement();
@@ -1992,6 +2647,7 @@ export default function RsvpsPage() {
       }
 
       if (activeColumnIdentifier === targetColumnIdentifier) {
+        draggedColumnIdentifierRef.current = null;
         setDraggedColumnIdentifier(null);
         setDragHoverDetails(null);
         removeDragPreviewElement();
@@ -2003,6 +2659,7 @@ export default function RsvpsPage() {
           ? dragHoverDetails.position
           : "before";
 
+      hasPendingLocalDashboardTablePreferenceEditRef.current = true;
       setColumnOrder((previousColumnOrder) => {
         if (
           !previousColumnOrder.includes(activeColumnIdentifier) ||
@@ -2023,6 +2680,7 @@ export default function RsvpsPage() {
         return updatedOrder;
       });
 
+      draggedColumnIdentifierRef.current = null;
       setDraggedColumnIdentifier(null);
       setDragHoverDetails(null);
       removeDragPreviewElement();
@@ -2031,6 +2689,7 @@ export default function RsvpsPage() {
   );
 
   const handleColumnDragEnd = React.useCallback(() => {
+    draggedColumnIdentifierRef.current = null;
     setDraggedColumnIdentifier(null);
     setDragHoverDetails(null);
     removeDragPreviewElement();
@@ -2122,6 +2781,7 @@ export default function RsvpsPage() {
     return [
       {
         id: "select",
+        ...RSVP_SELECT_COLUMN_SIZING,
         header: (_context: HeaderContext<HostRsvp, unknown>) => (
           <Checkbox
             checked={allSelected || someSelected ? true : false}
@@ -2185,6 +2845,13 @@ export default function RsvpsPage() {
         const field = currentEvent?.customFields?.find((f) => f.key === fieldKey);
         return field ? field.label.replace(/:\s*$/, "").trim() : formatColumnIdentifier(columnId);
       }
+      if (columnId.startsWith("social_")) {
+        const platformKey = columnId.replace("social_", "");
+        const platform = currentEventSocialPlatforms.find(
+          (socialPlatform) => socialPlatform.platformKey === platformKey,
+        );
+        return platform?.label ?? formatColumnIdentifier(columnId);
+      }
 
       const columnMap: Record<string, string> = {
         select: "Select",
@@ -2196,13 +2863,15 @@ export default function RsvpsPage() {
         noteForHosts: "Note for Hosts",
         createdAt: "Created",
         approvalStatus: "Approval",
+        attendanceStatus: "Attendance",
         ticketStatus: "Ticket",
+        ticketViewedAt: "Ticket Viewed",
         actions: "Action",
       };
 
       return columnMap[columnId] || formatColumnIdentifier(columnId);
     },
-    [currentEvent?.customFields, formatColumnIdentifier],
+    [currentEvent?.customFields, currentEventSocialPlatforms, formatColumnIdentifier],
   );
 
   const handleExportCsv = React.useCallback(async (): Promise<boolean> => {
@@ -2276,8 +2945,296 @@ export default function RsvpsPage() {
     workspaceScope,
   ]);
 
+  const renderRowContextMenuContent = React.useCallback(
+    (rsvp: HostRsvp) => {
+      const availableListKeys = listCredentials?.map((credential) => credential.listKey) ?? [];
+      const contextActionRsvps = getRsvpContextActionTargets({
+        contextRow: rsvp,
+        rows: rsvps,
+        selectedRowIds: selectedRows,
+      });
+      const usesSelectionBatch = contextActionRsvps.length > 1;
+      const selectionBatchLabel = usesSelectionBatch
+        ? ` (${contextActionRsvps.length} selected)`
+        : "";
+      const currentTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
+      const canViewQrCode = canShowRsvpQrCode(rsvp);
+      const isUpdatingList = contextActionRsvps.some((targetRsvp) =>
+        loadingListUpdates.has(targetRsvp.id),
+      );
+      const isUpdatingApproval = contextActionRsvps.some((targetRsvp) =>
+        loadingApprovalUpdates.has(targetRsvp.id),
+      );
+      const isUpdatingAttendance = contextActionRsvps.some((targetRsvp) =>
+        loadingAttendanceUpdates.has(targetRsvp.id),
+      );
+      const isUpdatingTicket = contextActionRsvps.some((targetRsvp) =>
+        loadingTicketUpdates.has(targetRsvp.id),
+      );
+      const handleContextListChange = (listKey: string) => {
+        if (usesSelectionBatch) {
+          void handleBulkListChange(listKey);
+          return;
+        }
+        handleSingleListKeyChange(rsvp, listKey);
+      };
+      const handleContextApprovalChange = (approvalStatusOption: ApprovalStatusOption) => {
+        if (usesSelectionBatch) {
+          void handleBulkApprovalChange(approvalStatusOption);
+          return;
+        }
+        handleSingleApprovalChange(rsvp, approvalStatusOption);
+      };
+      const handleContextAttendanceStatusChange = (
+        attendanceStatusOption: AttendanceStatusOption,
+      ) => {
+        if (usesSelectionBatch) {
+          void handleBulkAttendanceStatusChange(attendanceStatusOption);
+          return;
+        }
+        handleSingleAttendanceStatusChange(rsvp, attendanceStatusOption);
+      };
+      const handleContextTicketStatusChange = (ticketStatusOption: TicketStatusOption) => {
+        if (usesSelectionBatch) {
+          void handleBulkTicketStatusChange(ticketStatusOption);
+          return;
+        }
+        handleSingleTicketStatusChange(rsvp, ticketStatusOption);
+      };
+
+      if (isReadOnly) {
+        return (
+          <ContextMenuContent className="w-56">
+            {canViewQrCode ? (
+              <ContextMenuItem onSelect={() => openRsvpQrCode(rsvp)}>
+                <QrCode className="h-4 w-4" />
+                View QR Code
+              </ContextMenuItem>
+            ) : (
+              <ContextMenuItem disabled>No row actions</ContextMenuItem>
+            )}
+          </ContextMenuContent>
+        );
+      }
+
+      return (
+        <ContextMenuContent className="w-56">
+          <ContextMenuSub>
+            <ContextMenuSubTrigger disabled={availableListKeys.length <= 1 || isUpdatingList}>
+              Change List{selectionBatchLabel}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-48">
+              {availableListKeys.map((listKey) => (
+                <ContextMenuItem
+                  key={listKey}
+                  disabled={
+                    contextActionRsvps.every((targetRsvp) => targetRsvp.listKey === listKey) ||
+                    isUpdatingList
+                  }
+                  onSelect={() => handleContextListChange(listKey)}
+                >
+                  {isUpdatingList && listKey === rsvp.listKey && <Spinner className="h-3 w-3" />}
+                  {listKey.toUpperCase()}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger disabled={isUpdatingApproval}>
+              Change Approval{selectionBatchLabel}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-48">
+              {APPROVAL_STATUS_OPTIONS.map((approvalStatusOption) => {
+                const allTargetsAlreadyHaveApprovalStatus = contextActionRsvps.every(
+                  (targetRsvp) => targetRsvp.approvalStatus === approvalStatusOption,
+                );
+                const allTargetsLockPendingApproval =
+                  approvalStatusOption === "pending" &&
+                  contextActionRsvps.every(
+                    (targetRsvp) => targetRsvp.redemptionStatus === "redeemed",
+                  );
+                const approvalStatusClassName =
+                  approvalStatusOption === "approved"
+                    ? "text-green-700"
+                    : approvalStatusOption === "denied"
+                      ? "text-red-700"
+                      : "text-amber-700";
+
+                return (
+                  <ContextMenuItem
+                    key={approvalStatusOption}
+                    disabled={
+                      allTargetsAlreadyHaveApprovalStatus ||
+                      allTargetsLockPendingApproval ||
+                      isUpdatingApproval
+                    }
+                    onSelect={() => handleContextApprovalChange(approvalStatusOption)}
+                  >
+                    {isUpdatingApproval && approvalStatusOption === rsvp.approvalStatus && (
+                      <Spinner className="h-3 w-3" />
+                    )}
+                    <span className={approvalStatusClassName}>
+                      {getApprovalStatusLabel(approvalStatusOption)}
+                    </span>
+                  </ContextMenuItem>
+                );
+              })}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger disabled={isUpdatingAttendance}>
+              Change Attendance{selectionBatchLabel}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-48">
+              {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => {
+                const allTargetsAlreadyHaveAttendanceStatus = contextActionRsvps.every(
+                  (targetRsvp) => targetRsvp.attendanceStatus === attendanceStatusOption,
+                );
+                const attendanceStatusClassName =
+                  attendanceStatusOption === "yes"
+                    ? "text-green-700"
+                    : attendanceStatusOption === "maybe"
+                      ? "text-amber-700"
+                      : "text-red-700";
+
+                return (
+                  <ContextMenuItem
+                    key={attendanceStatusOption}
+                    disabled={allTargetsAlreadyHaveAttendanceStatus || isUpdatingAttendance}
+                    onSelect={() => handleContextAttendanceStatusChange(attendanceStatusOption)}
+                  >
+                    {isUpdatingAttendance && attendanceStatusOption === rsvp.attendanceStatus && (
+                      <Spinner className="h-3 w-3" />
+                    )}
+                    <span className={attendanceStatusClassName}>
+                      {getAttendanceStatusLabel(attendanceStatusOption)}
+                    </span>
+                  </ContextMenuItem>
+                );
+              })}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger
+              disabled={
+                !contextActionRsvps.some(
+                  (targetRsvp) =>
+                    canEditTicketForRsvp(targetRsvp) &&
+                    normalizeTicketStatus(targetRsvp.redemptionStatus) !== "redeemed",
+                ) || isUpdatingTicket
+              }
+            >
+              Change Ticket{selectionBatchLabel}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-48">
+              {TICKET_STATUS_OPTIONS.map((ticketStatusOption) => {
+                const hasChangeableTarget = contextActionRsvps.some(
+                  (targetRsvp) =>
+                    canEditTicketForRsvp(targetRsvp) &&
+                    normalizeTicketStatus(targetRsvp.redemptionStatus) !== "redeemed" &&
+                    normalizeTicketStatus(targetRsvp.redemptionStatus) !== ticketStatusOption,
+                );
+                const ticketStatusClassName =
+                  ticketStatusOption === "issued"
+                    ? "text-purple-700"
+                    : ticketStatusOption === "disabled"
+                      ? "text-red-700"
+                      : "text-gray-700";
+
+                return (
+                  <ContextMenuItem
+                    key={ticketStatusOption}
+                    disabled={!hasChangeableTarget || isUpdatingTicket}
+                    onSelect={() => handleContextTicketStatusChange(ticketStatusOption)}
+                  >
+                    {isUpdatingTicket && ticketStatusOption === currentTicketStatus && (
+                      <Spinner className="h-3 w-3" />
+                    )}
+                    <span className={ticketStatusClassName}>
+                      {getTicketStatusLabel(ticketStatusOption)}
+                    </span>
+                  </ContextMenuItem>
+                );
+              })}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          {canViewQrCode && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => openRsvpQrCode(rsvp)}>
+                <QrCode className="h-4 w-4" />
+                View QR Code
+              </ContextMenuItem>
+            </>
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            variant="destructive"
+            disabled={deleteRsvpCompleteMutation.isPending || bulkDeleteRsvpsMutation.isPending}
+            onSelect={() => setRsvpsPendingDeletion(contextActionRsvps)}
+          >
+            {usesSelectionBatch
+              ? `Delete ${contextActionRsvps.length} Selected RSVPs`
+              : "Delete RSVP"}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      );
+    },
+    [
+      canEditTicketForRsvp,
+      canShowRsvpQrCode,
+      bulkDeleteRsvpsMutation.isPending,
+      deleteRsvpCompleteMutation.isPending,
+      handleBulkApprovalChange,
+      handleBulkAttendanceStatusChange,
+      handleBulkListChange,
+      handleBulkTicketStatusChange,
+      handleSingleApprovalChange,
+      handleSingleAttendanceStatusChange,
+      handleSingleListKeyChange,
+      handleSingleTicketStatusChange,
+      isReadOnly,
+      listCredentials,
+      loadingApprovalUpdates,
+      loadingAttendanceUpdates,
+      loadingListUpdates,
+      loadingTicketUpdates,
+      openRsvpQrCode,
+      rsvps,
+      selectedRows,
+    ],
+  );
+
+  const tableColumnTotalWidth = table.getTotalSize();
+  const tableFillerColumnWidth = getRsvpTableFillerColumnWidth({
+    containerWidth: tableContainerWidth,
+    columnTotalWidth: tableColumnTotalWidth,
+  });
+  const tableDisplayWidth = getRsvpTableDisplayWidth({
+    containerWidth: tableContainerWidth,
+    columnTotalWidth: tableColumnTotalWidth,
+  });
+  const shouldRenderTableFillerColumn = tableFillerColumnWidth > 0;
+  const pendingDeletionCount = rsvpsPendingDeletion.length;
+  const deletionMutationIsPending =
+    deleteRsvpCompleteMutation.isPending || bulkDeleteRsvpsMutation.isPending;
+  const pendingDeletionTitle =
+    pendingDeletionCount > 1 ? "Delete Selected RSVPs" : "Delete RSVP";
+  const pendingDeletionGuestName =
+    pendingDeletionCount === 1 && rsvpsPendingDeletion[0]
+      ? getRsvpGuestName(rsvpsPendingDeletion[0])
+      : null;
+  const pendingDeletionDescription =
+    pendingDeletionCount > 1
+      ? `Are you sure you want to delete ${pendingDeletionCount} selected RSVPs? This will permanently remove the RSVPs, any associated ticket/redemption codes, and approval history. This action cannot be undone.`
+      : `Are you sure you want to delete ${
+          pendingDeletionGuestName ? `${pendingDeletionGuestName}'s RSVP` : "this RSVP"
+        }? This will permanently remove the RSVP, any associated ticket/redemption codes, and approval history. This action cannot be undone.`;
+  const pendingDeletionActionLabel =
+    pendingDeletionCount > 1 ? `Delete ${pendingDeletionCount} RSVPs` : "Delete RSVP";
+
   return (
-    <div className="flex-1 space-y-4">
+    <div className="min-w-0 flex-1 space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2 sm:gap-1">
           <div className="flex items-start justify-between gap-3 sm:block">
@@ -2424,40 +3381,34 @@ export default function RsvpsPage() {
                 <div>
                   <label className="text-sm font-medium mb-2 block">Select Statuses</label>
                   <div className="space-y-2">
-                    {EXPORT_STATUS_OPTIONS.map((statusOption) => {
-                      const label =
-                        statusOption === "attending"
-                          ? "Attending"
-                          : statusOption.charAt(0).toUpperCase() + statusOption.slice(1);
-                      return (
-                        <div key={statusOption} className="flex items-center">
-                          <Checkbox
-                            id={`status-${statusOption}`}
-                            checked={selectedStatusesForExport.includes(statusOption)}
-                            onCheckedChange={(checked) => {
-                              setSelectedStatusesForExport((previous) => {
-                                if (checked === true) {
-                                  if (previous.includes(statusOption)) {
-                                    return previous;
-                                  }
-                                  const next = [...previous, statusOption];
-                                  return EXPORT_STATUS_OPTIONS.filter((option) =>
-                                    next.includes(option),
-                                  );
+                    {EXPORT_STATUS_OPTIONS.map((statusOption) => (
+                      <div key={statusOption} className="flex items-center">
+                        <Checkbox
+                          id={`status-${statusOption}`}
+                          checked={selectedStatusesForExport.includes(statusOption)}
+                          onCheckedChange={(checked) => {
+                            setSelectedStatusesForExport((previous) => {
+                              if (checked === true) {
+                                if (previous.includes(statusOption)) {
+                                  return previous;
                                 }
-                                return previous.filter((option) => option !== statusOption);
-                              });
-                            }}
-                          />
-                          <label
-                            htmlFor={`status-${statusOption}`}
-                            className="ml-2 text-sm cursor-pointer"
-                          >
-                            {label}
-                          </label>
-                        </div>
-                      );
-                    })}
+                                const next = [...previous, statusOption];
+                                return EXPORT_STATUS_OPTIONS.filter((option) =>
+                                  next.includes(option),
+                                );
+                              }
+                              return previous.filter((option) => option !== statusOption);
+                            });
+                          }}
+                        />
+                        <label
+                          htmlFor={`status-${statusOption}`}
+                          className="ml-2 text-sm cursor-pointer"
+                        >
+                          {statusOption.charAt(0).toUpperCase() + statusOption.slice(1)}
+                        </label>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -2554,7 +3505,7 @@ export default function RsvpsPage() {
       <div className="flex gap-2 items-center flex-wrap">
         <Input
           className="h-8 max-w-xs text-sm"
-          placeholder="Search guest"
+          placeholder="Search guest, social, invited by"
           value={guestSearch}
           onChange={(e) => setGuestSearch(e.target.value)}
         />
@@ -2586,35 +3537,19 @@ export default function RsvpsPage() {
           <SelectOption value="disabled">Disabled</SelectOption>
           <SelectOption value="not-issued">None</SelectOption>
         </Select>
-        {(currentEvent?.primaryFieldConfig?.socialPlatforms?.length ?? 0) > 0 && (
-          <>
-            <Select
-              value={socialPlatformFilter}
-              onValueChange={setSocialPlatformFilter}
-              className="w-36"
-            >
-              <SelectOption value="all">All Socials</SelectOption>
-              {currentEvent?.primaryFieldConfig?.socialPlatforms?.map((platform) => (
-                <SelectOption key={platform.platformKey} value={platform.platformKey}>
-                  {platform.label}
-                </SelectOption>
-              ))}
-            </Select>
-            <Input
-              className="h-8 max-w-[10rem] text-sm"
-              placeholder="Social handle"
-              value={socialSearch}
-              onChange={(event) => setSocialSearch(event.target.value)}
-            />
-          </>
-        )}
-        {currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true && (
-          <Input
-            className="h-8 max-w-[10rem] text-sm"
-            placeholder="Invited by"
-            value={invitedBySearch}
-            onChange={(event) => setInvitedBySearch(event.target.value)}
-          />
+        {shouldShowSocialPlatformFilter && (
+          <Select
+            value={socialPlatformFilter}
+            onValueChange={setSocialPlatformFilter}
+            className="w-36"
+          >
+            <SelectOption value="all">All Socials</SelectOption>
+            {currentEventSocialPlatforms.map((platform) => (
+              <SelectOption key={platform.platformKey} value={platform.platformKey}>
+                {platform.label}
+              </SelectOption>
+            ))}
+          </Select>
         )}
         <span className="mx-2 h-6 w-px bg-foreground/20" />
         <Select value={sortBy} onValueChange={setSortBy} className="w-36">
@@ -2624,7 +3559,9 @@ export default function RsvpsPage() {
           <SelectOption value="firstName">First Name</SelectOption>
           <SelectOption value="lastName">Last Name</SelectOption>
           <SelectOption value="approvalStatus">Approval Status</SelectOption>
+          <SelectOption value="attendanceStatus">Attendance Status</SelectOption>
           <SelectOption value="ticketStatus">Ticket Status</SelectOption>
+          <SelectOption value="ticketViewedAt">Ticket Viewed</SelectOption>
           <SelectOption value="listKey">List</SelectOption>
           <SelectOption value="attendees">Attendees</SelectOption>
           {currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true && (
@@ -2752,36 +3689,14 @@ export default function RsvpsPage() {
               </button>
             </Badge>
           )}
-          {socialPlatformFilter !== "all" && (
+          {shouldShowSocialPlatformFilter && socialPlatformFilter !== "all" && (
             <Badge variant="secondary" className="gap-1">
               Social:{" "}
-              {currentEvent?.primaryFieldConfig?.socialPlatforms?.find(
+              {currentEventSocialPlatforms.find(
                 (platform) => platform.platformKey === socialPlatformFilter,
               )?.label ?? socialPlatformFilter}
               <button
                 onClick={() => setSocialPlatformFilter("all")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          {socialSearch.trim() !== "" && (
-            <Badge variant="secondary" className="gap-1">
-              Social handle: &ldquo;{socialSearch}&rdquo;
-              <button
-                onClick={() => setSocialSearch("")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          {invitedBySearch.trim() !== "" && (
-            <Badge variant="secondary" className="gap-1">
-              Invited by: &ldquo;{invitedBySearch}&rdquo;
-              <button
-                onClick={() => setInvitedBySearch("")}
                 className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
               >
                 <X className="w-3 h-3" />
@@ -2851,6 +3766,20 @@ export default function RsvpsPage() {
                   </ContextMenuSubContent>
                 </ContextMenuSub>
                 <ContextMenuSub>
+                  <ContextMenuSubTrigger>Change Attendance</ContextMenuSubTrigger>
+                  <ContextMenuSubContent className="w-48">
+                    <ContextMenuItem onClick={() => handleBulkAttendanceStatusChange("yes")}>
+                      <span className="text-green-700">Yes</span>
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => handleBulkAttendanceStatusChange("maybe")}>
+                      <span className="text-amber-700">Maybe</span>
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => handleBulkAttendanceStatusChange("no")}>
+                      <span className="text-red-700">No</span>
+                    </ContextMenuItem>
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+                <ContextMenuSub>
                   <ContextMenuSubTrigger>Change Ticket</ContextMenuSubTrigger>
                   <ContextMenuSubContent className="w-48">
                     <ContextMenuItem onClick={() => handleBulkTicketStatusChange("not-issued")}>
@@ -2900,8 +3829,28 @@ export default function RsvpsPage() {
       {isLoading ? (
         <TableSkeleton rows={10} columns={8} />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm" style={{ tableLayout: "fixed" }}>
+        <div ref={setTableContainerElement} className="w-full max-w-full min-w-0 overflow-x-auto">
+          <table className="text-sm" style={{ tableLayout: "fixed", width: tableDisplayWidth }}>
+            <colgroup>
+              {table.getVisibleLeafColumns().map((column) => (
+                <col
+                  key={column.id}
+                  style={{
+                    width: column.getSize(),
+                    minWidth: column.columnDef.minSize,
+                    maxWidth: column.columnDef.maxSize,
+                  }}
+                />
+              ))}
+              {shouldRenderTableFillerColumn && (
+                <col
+                  aria-hidden="true"
+                  style={{
+                    width: tableFillerColumnWidth,
+                  }}
+                />
+              )}
+            </colgroup>
             <thead>
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id} className="text-left text-foreground/70">
@@ -2925,12 +3874,19 @@ export default function RsvpsPage() {
                         : columnMeta?.label && columnMeta.label.trim().length > 0
                           ? columnMeta.label
                           : formatColumnIdentifier(columnIdentifier);
+                    const canResizeColumn = header.column.getCanResize();
+                    const shouldShowResizeHandle = shouldRenderRsvpTableResizeHandle({
+                      columnIdentifier,
+                      canResize: canResizeColumn,
+                    });
+                    const isColumnResizing = header.column.getIsResizing();
+                    const resizeHandler = header.getResizeHandler();
 
                     return (
                       <th
                         key={header.id}
                         className={cn(
-                          "px-2 py-1 select-none group border-b border-foreground/10 relative",
+                          "relative select-none group border-b border-r border-foreground/10 py-1 pl-2 pr-4 last:border-r-0",
                           isDraggingColumn ? "cursor-grabbing" : "cursor-pointer",
                           dragHoverDetails?.columnId === columnIdentifier &&
                             dragHoverDetails.position === "before" &&
@@ -2997,20 +3953,65 @@ export default function RsvpsPage() {
                             <GripVertical
                               aria-hidden="true"
                               className={cn(
-                                "h-3 w-3 text-muted-foreground transition-opacity",
+                                "h-3 w-3 flex-shrink-0 text-muted-foreground transition-opacity",
                                 "opacity-0 group-hover:opacity-100",
                               )}
                             />
                           )}
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 whitespace-nowrap">
                             {flexRender(header.column.columnDef.header, header.getContext())}
                             {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ??
                               null}
                           </div>
                         </div>
+                        {shouldShowResizeHandle && (
+                          <div
+                            role="separator"
+                            aria-label={`Resize ${columnDisplayLabel} column`}
+                            aria-orientation="vertical"
+                            data-testid={RSVP_TABLE_RESIZE_HANDLE_TEST_ID}
+                            draggable={false}
+                            className={cn(
+                              "absolute top-0 right-0 z-10 h-full w-3 translate-x-1/2 cursor-col-resize touch-none select-none",
+                              "after:absolute after:inset-y-1 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-foreground/20 after:transition-colors",
+                              "hover:after:bg-foreground/50",
+                              isColumnResizing && "after:bg-foreground/70",
+                            )}
+                            onMouseDown={(resizeStartEvent) => {
+                              resizeStartEvent.preventDefault();
+                              resizeStartEvent.stopPropagation();
+                              resizeHandler(resizeStartEvent);
+                            }}
+                            onTouchStart={(resizeStartEvent) => {
+                              resizeStartEvent.preventDefault();
+                              resizeStartEvent.stopPropagation();
+                              resizeHandler(resizeStartEvent);
+                            }}
+                            onClick={(resizeClickEvent) => {
+                              resizeClickEvent.preventDefault();
+                              resizeClickEvent.stopPropagation();
+                            }}
+                            onDoubleClick={(resizeDoubleClickEvent) => {
+                              resizeDoubleClickEvent.preventDefault();
+                              resizeDoubleClickEvent.stopPropagation();
+                              header.column.resetSize();
+                            }}
+                            onDragStart={(resizeDragStartEvent) => {
+                              resizeDragStartEvent.preventDefault();
+                              resizeDragStartEvent.stopPropagation();
+                            }}
+                          />
+                        )}
                       </th>
                     );
                   })}
+                  {shouldRenderTableFillerColumn && (
+                    <th
+                      aria-hidden="true"
+                      className="border-b border-foreground/10 p-0"
+                      style={{ width: tableFillerColumnWidth }}
+                    />
+                  )}
                 </tr>
               ))}
             </thead>
@@ -3026,48 +4027,54 @@ export default function RsvpsPage() {
                 const isSelected = selectedRows.has(rsvp.id);
 
                 return (
-                  <tr
-                    key={row.id}
-                    className={cn(
-                      "border-t border-foreground/10 transition-colors hover:bg-muted/50",
-                      hasChanges && "bg-yellow-50 border-yellow-200",
-                      isSelected &&
-                        "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800",
-                    )}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td
-                        key={cell.id}
+                  <ContextMenu key={row.id}>
+                    <ContextMenuTrigger asChild>
+                      <tr
                         className={cn(
-                          "px-2 py-1",
-                          !isReadOnly &&
-                            cell.column.id !== "select" &&
-                            cell.column.id !== "listKey" &&
-                            cell.column.id !== "approvalStatus" &&
-                            cell.column.id !== "ticketStatus" &&
-                            cell.column.id !== "actions" &&
-                            "cursor-pointer",
+                          "border-t border-foreground/10 transition-colors hover:bg-muted/50",
+                          hasChanges && "bg-yellow-50 border-yellow-200",
+                          isSelected &&
+                            "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800",
                         )}
-                        style={{
-                          width: cell.column.getSize(),
-                          minWidth: cell.column.columnDef.minSize,
-                          maxWidth: cell.column.columnDef.maxSize,
-                        }}
-                        onClick={
-                          cell.column.id !== "select" &&
-                          !isReadOnly &&
-                          cell.column.id !== "listKey" &&
-                          cell.column.id !== "approvalStatus" &&
-                          cell.column.id !== "ticketStatus" &&
-                          cell.column.id !== "actions"
-                            ? () => toggleSelectRow(rsvp.id)
-                            : undefined
-                        }
                       >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
+                        {row.getVisibleCells().map((cell) => {
+                          const columnIdentifier = cell.column.id;
+                          const canToggleRowFromCell = canToggleRsvpTableRowFromBodyCell({
+                            columnIdentifier,
+                            isReadOnly,
+                          });
+
+                          return (
+                            <td
+                              key={cell.id}
+                              className={getRsvpTableBodyCellClassName({
+                                columnIdentifier,
+                                isReadOnly,
+                              })}
+                              style={{
+                                width: cell.column.getSize(),
+                                minWidth: cell.column.columnDef.minSize,
+                                maxWidth: cell.column.columnDef.maxSize,
+                              }}
+                              onClick={
+                                canToggleRowFromCell ? () => toggleSelectRow(rsvp.id) : undefined
+                              }
+                            >
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </td>
+                          );
+                        })}
+                        {shouldRenderTableFillerColumn && (
+                          <td
+                            aria-hidden="true"
+                            className="p-0"
+                            style={{ width: tableFillerColumnWidth }}
+                          />
+                        )}
+                      </tr>
+                    </ContextMenuTrigger>
+                    {renderRowContextMenuContent(rsvp)}
+                  </ContextMenu>
                 );
               })}
             </tbody>
@@ -3142,6 +4149,33 @@ export default function RsvpsPage() {
           </div>
         </div>
       )}
+
+      <AlertDialog
+        open={pendingDeletionCount > 0}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRsvpsPendingDeletion([]);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pendingDeletionTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{pendingDeletionDescription}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmPendingDelete}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              disabled={deletionMutationIsPending}
+            >
+              {deletionMutationIsPending && <Spinner className="mr-1 h-3 w-3" />}
+              {pendingDeletionActionLabel}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={showQR} onOpenChange={setShowQR}>
         <DialogContent>

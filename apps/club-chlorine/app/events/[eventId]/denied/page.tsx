@@ -5,11 +5,13 @@ import { convexQuery } from "@convex-dev/react-query";
 import { RsvpDenied, TenantButton, TenantTemplateProvider } from "@coucou/ui/tenant-template";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
+import posthog from "posthog-js";
 import { use, useCallback, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import {
   buildEventDetailPathWithPreservedQuery,
-  buildRsvpPathWithStep,
+  buildFullRsvpPath,
+  buildInfoRsvpPath,
 } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import type { Event as ClubEvent } from "@/lib/types";
@@ -47,7 +49,11 @@ export default function DeniedPage({ params }: { params: Promise<{ eventId: stri
     setIsLoading(true);
     const nextSearchParams = new URLSearchParams(searchParams?.toString());
     nextSearchParams.set("password", trimmed);
-    router.push(buildRsvpPathWithStep(eventRouteId, nextSearchParams, 1));
+    if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
+      router.push(buildInfoRsvpPath(eventRouteId, nextSearchParams));
+    } else {
+      router.push(buildFullRsvpPath(eventRouteId, nextSearchParams));
+    }
   }, [newPassword, eventRouteId, router, searchParams]);
 
   if (eventQuery.isLoading || !event) {

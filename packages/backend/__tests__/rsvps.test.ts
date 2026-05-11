@@ -1,12 +1,15 @@
 import { describe, expect, it } from "bun:test";
 
 describe("RSVP Functions", () => {
-  it("should validate RSVP status types", () => {
-    const validStatuses = ["pending", "approved", "denied", "attending"];
-    expect(validStatuses).toContain("pending");
-    expect(validStatuses).toContain("approved");
-    expect(validStatuses).toContain("denied");
-    expect(validStatuses).toContain("attending");
+  it("should validate RSVP approval and attendance status types", () => {
+    const validApprovalStatuses = ["pending", "approved", "denied"];
+    const validAttendanceStatuses = ["yes", "no", "maybe"];
+    expect(validApprovalStatuses).toContain("pending");
+    expect(validApprovalStatuses).toContain("approved");
+    expect(validApprovalStatuses).toContain("denied");
+    expect(validAttendanceStatuses).toContain("yes");
+    expect(validAttendanceStatuses).toContain("no");
+    expect(validAttendanceStatuses).toContain("maybe");
   });
 
   it("should validate list key formats", () => {
@@ -25,6 +28,8 @@ describe("RSVP Functions", () => {
       clerkUserId: "user_123",
       listKey: "general",
       status: "pending",
+      approvalStatus: "pending",
+      attendanceStatus: "yes",
       customFieldValues: {},
       createdAt: Date.now(),
       approvedAt: undefined,
@@ -35,6 +40,8 @@ describe("RSVP Functions", () => {
     expect(mockRSVP).toHaveProperty("clerkUserId");
     expect(mockRSVP).toHaveProperty("listKey");
     expect(mockRSVP).toHaveProperty("status");
+    expect(mockRSVP).toHaveProperty("approvalStatus");
+    expect(mockRSVP).toHaveProperty("attendanceStatus");
     expect(mockRSVP).toHaveProperty("customFieldValues");
     expect(typeof mockRSVP.customFieldValues).toBe("object");
   });
@@ -44,9 +51,8 @@ describe("RSVP Functions", () => {
     const isValidTransition = (from: string, to: string) => {
       const validTransitions = {
         pending: ["approved", "denied"],
-        approved: ["attending", "denied"],
+        approved: ["pending", "denied"],
         denied: ["pending"],
-        attending: ["denied"],
       };
 
       return validTransitions[from as keyof typeof validTransitions]?.includes(to) || false;
@@ -54,8 +60,7 @@ describe("RSVP Functions", () => {
 
     expect(isValidTransition("pending", "approved")).toBe(true);
     expect(isValidTransition("pending", "denied")).toBe(true);
-    expect(isValidTransition("approved", "attending")).toBe(true);
-    expect(isValidTransition("denied", "attending")).toBe(false);
-    expect(isValidTransition("attending", "pending")).toBe(false);
+    expect(isValidTransition("approved", "pending")).toBe(true);
+    expect(isValidTransition("denied", "approved")).toBe(false);
   });
 });

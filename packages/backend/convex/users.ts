@@ -6,6 +6,7 @@ import type { MutationCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { action, internalQuery, mutation, query } from "./functions";
 import { generateReferralCode } from "./lib/codeGenerators";
+import { resolveApprovalStatus } from "./lib/rsvpStatus";
 import { requireWorkspaceAdmin } from "./lib/workspaceAuth";
 
 const REFERRAL_CODE_MAX_ATTEMPTS = 20;
@@ -735,8 +736,8 @@ export const getUserStats = query({
         .length,
       organizationMembers: organizationMembers.length,
       totalRsvps: totalRsvps.length,
-      approvedRsvps: totalRsvps.filter((rsvp) => rsvp.status === "approved").length,
-      deniedRsvps: totalRsvps.filter((rsvp) => rsvp.status === "denied").length,
+      approvedRsvps: totalRsvps.filter((rsvp) => resolveApprovalStatus(rsvp) === "approved").length,
+      deniedRsvps: totalRsvps.filter((rsvp) => resolveApprovalStatus(rsvp) === "denied").length,
       lastUpdated: Date.now(),
     };
   },

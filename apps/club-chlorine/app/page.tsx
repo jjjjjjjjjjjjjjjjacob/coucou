@@ -9,12 +9,14 @@ import { ChlorineEventRow, type ChlorineLandingEvent, useMobile } from "@coucou/
 import { useQuery } from "convex/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import posthog from "posthog-js";
 import { useMemo } from "react";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import {
   buildEventDetailPathWithPreservedQuery,
+  buildFullRsvpPath,
+  buildInfoRsvpPath,
   buildPathWithPreservedQuery,
-  buildRsvpPathWithStep,
 } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import type { Event as ClubEvent } from "@/lib/types";
@@ -42,6 +44,7 @@ interface LandingRowSeed {
 }
 
 export default function Home() {
+  const searchParams = useSearchParams();
   const allEvents = useQuery(api.events.listAll, {
     siteKey: siteConfiguration.siteKey,
   }) as ClubEvent[] | undefined;
@@ -96,6 +99,7 @@ export default function Home() {
           rowSeed={rowSeed}
           mobile={isMobile}
           delayMs={index * 140}
+          searchParams={searchParams}
         />
       ))}
     </div>
@@ -106,6 +110,7 @@ interface HomeEventRowProps {
   rowSeed: LandingRowSeed;
   mobile: boolean;
   delayMs: number;
+  searchParams: ReturnType<typeof useSearchParams>;
 }
 
 /**
@@ -115,9 +120,13 @@ interface HomeEventRowProps {
  * the RSVP form. Each row owns its own RSVP-status subscription so the
  * homepage stays reactive without a batch query.
  */
-function HomeEventRow({ rowSeed, mobile, delayMs }: HomeEventRowProps) {
+function HomeEventRow({
+  rowSeed,
+  mobile,
+  delayMs,
+  searchParams,
+}: HomeEventRowProps) {
   const { isSignedIn, isLoaded } = useAuth();
-  const searchParams = useSearchParams();
   const rsvpStatus = useQuery(
     api.rsvps.statusForUserEvent,
     isLoaded && isSignedIn
@@ -126,17 +135,22 @@ function HomeEventRow({ rowSeed, mobile, delayMs }: HomeEventRowProps) {
   );
 
   const status = rsvpStatus?.status;
-  const hasRsvp =
-    status === "pending" || status === "approved" || status === "attending" || status === "denied";
+  const hasRsvp = status === "pending" || status === "approved" || status === "denied";
   const existingRsvpHref =
-    status === "approved" || status === "attending"
+    status === "approved"
       ? buildPathWithPreservedQuery(`/events/${rowSeed.routeId}/ticket`, searchParams, ["step"])
       : status === "pending" || status === "denied"
         ? buildPathWithPreservedQuery(`/events/${rowSeed.routeId}/status`, searchParams, ["step"])
         : null;
-  const brickHref = existingRsvpHref ?? buildRsvpPathWithStep(rowSeed.routeId, searchParams, 1);
+  let rsvpFormHref: string;
+  if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
+    rsvpFormHref = buildInfoRsvpPath(rowSeed.routeId, searchParams);
+  } else {
+    rsvpFormHref = buildFullRsvpPath(rowSeed.routeId, searchParams);
+  }
+  const brickHref = existingRsvpHref ?? rsvpFormHref;
   const brickLabel =
-    status === "approved" || status === "attending"
+    status === "approved"
       ? "TICKET"
       : status === "pending"
         ? "MY RSVP"

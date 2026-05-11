@@ -17,6 +17,7 @@ import {
 } from "./_generated/server";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import { type ApprovalStatus, resolveApprovalStatus } from "./lib/rsvpStatus";
 import {
   ensureEventInSiteScope,
   ensureTextBlastInSiteScope,
@@ -29,7 +30,7 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-type RsvpStatus = Doc<"rsvps">["status"];
+type RsvpStatus = ApprovalStatus;
 
 type RecipientFilterConfig =
   | { type: "all" }
@@ -38,8 +39,8 @@ type RecipientFilterConfig =
   | { type: "custom_field_missing"; fieldKey: string }
   | { type: "rsvp_before"; timestamp: number };
 
-const ALL_RSVP_STATUSES: RsvpStatus[] = ["pending", "approved", "attending", "denied"];
-const DEFAULT_APPROVED_STATUSES: RsvpStatus[] = ["approved", "attending"];
+const ALL_RSVP_STATUSES: RsvpStatus[] = ["pending", "approved", "denied"];
+const DEFAULT_APPROVED_STATUSES: RsvpStatus[] = ["approved"];
 
 const parseRecipientFilter = (rawFilter: string | null | undefined): RecipientFilterConfig => {
   if (!rawFilter) {
@@ -107,7 +108,7 @@ const statusesForFilter = (filter: RecipientFilterConfig): RsvpStatus[] => {
       return [filter.status];
     case "custom_field_missing":
     case "rsvp_before":
-      return ["pending", "approved", "attending"];
+      return ["pending", "approved"];
     default:
       return DEFAULT_APPROVED_STATUSES;
   }
@@ -428,7 +429,7 @@ export const sendBlast = action({
       throw new Error(
         "Cannot send text blast: No recipients found with SMS consent and phone numbers. " +
           "Please check that: (1) RSVPs have SMS consent enabled, (2) Users have phone numbers saved in their profiles, " +
-          "and (3) Selected lists have approved/attending RSVPs.",
+          "and (3) Selected lists have approved RSVPs.",
       );
     }
 
@@ -630,7 +631,7 @@ export const sendBlastDirect = action({
       throw new Error(
         "Cannot send text blast: No recipients found with SMS consent and phone numbers. " +
           "Please check that: (1) RSVPs have SMS consent enabled, (2) Users have phone numbers saved in their profiles, " +
-          "and (3) Selected lists have approved/attending RSVPs.",
+          "and (3) Selected lists have approved RSVPs.",
       );
     }
 
@@ -1059,22 +1060,23 @@ export const getAvailableListsForEvent = query({
     const statusesToFetch = statusesForFilter(filterConfig);
     const listUniqueUsers = new Map<string, Set<string>>();
 
-    for (const status of statusesToFetch) {
-      const rsvpsForStatus = await ctx.db
-        .query("rsvps")
-        .withIndex("by_event_status", (q) => q.eq("eventId", args.eventId).eq("status", status))
-        .collect();
+    const rsvpsForEvent = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
 
-      for (const rsvp of rsvpsForStatus) {
-        if (!rsvp.listKey) {
-          console.warn(`[getAvailableListsForEvent] RSVP ${rsvp._id} missing listKey, skipping`);
-          continue;
-        }
-        if (!listUniqueUsers.has(rsvp.listKey)) {
-          listUniqueUsers.set(rsvp.listKey, new Set());
-        }
-        listUniqueUsers.get(rsvp.listKey)!.add(rsvp.clerkUserId);
+    for (const rsvp of rsvpsForEvent) {
+      if (!statusesToFetch.includes(resolveApprovalStatus(rsvp))) {
+        continue;
       }
+      if (!rsvp.listKey) {
+        console.warn(`[getAvailableListsForEvent] RSVP ${rsvp._id} missing listKey, skipping`);
+        continue;
+      }
+      if (!listUniqueUsers.has(rsvp.listKey)) {
+        listUniqueUsers.set(rsvp.listKey, new Set());
+      }
+      listUniqueUsers.get(rsvp.listKey)!.add(rsvp.clerkUserId);
     }
 
     const result: Array<{
@@ -1599,15 +1601,12 @@ export const getApprovedRsvpsForListsInternal = internalQuery({
       args.targetLists.map((listKey) => listKey.toLowerCase()),
     );
 
-    const rsvps: Doc<"rsvps">[] = [];
-
-    for (const status of statusesToFetch) {
-      const rsvpsForStatus = await ctx.db
+    const rsvps = (
+      await ctx.db
         .query("rsvps")
-        .withIndex("by_event_status", (q) => q.eq("eventId", args.eventId).eq("status", status))
-        .collect();
-      rsvps.push(...rsvpsForStatus);
-    }
+        .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+        .collect()
+    ).filter((rsvp) => statusesToFetch.includes(resolveApprovalStatus(rsvp)));
 
     // Filter by target lists (case-insensitive) and SMS consent
     let filteredRsvps = rsvps.filter((rsvp) => {
@@ -1642,7 +1641,9 @@ export const getApprovedRsvpsForListsInternal = internalQuery({
         break;
       }
       case "status": {
-        filteredRsvps = filteredRsvps.filter((rsvp) => rsvp.status === filterConfig.status);
+        filteredRsvps = filteredRsvps.filter(
+          (rsvp) => resolveApprovalStatus(rsvp) === filterConfig.status,
+        );
         break;
       }
       case "custom_field_missing": {

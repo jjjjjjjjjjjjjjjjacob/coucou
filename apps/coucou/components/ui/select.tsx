@@ -14,6 +14,7 @@ export function Select({
   onValueChange,
   hapticFeedback = true,
   children,
+  style,
   ...props
 }: SelectProps) {
   const { trigger } = useHapticContext();
@@ -29,10 +30,18 @@ export function Select({
   return (
     <select
       className={cn(
-        "border-input h-9 w-full min-w-0 rounded-md border bg-background px-3 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/40",
+        "border-input h-9 w-full min-w-0 appearance-none rounded-md border bg-background py-1 pr-10 pl-3 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/40",
         className,
       )}
       onChange={handleChange}
+      style={{
+        backgroundImage:
+          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M6 8l4 4 4-4' stroke='%236f6961' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")",
+        backgroundPosition: "right 0.75rem center",
+        backgroundRepeat: "no-repeat",
+        backgroundSize: "1rem",
+        ...style,
+      }}
       {...props}
     >
       {children}

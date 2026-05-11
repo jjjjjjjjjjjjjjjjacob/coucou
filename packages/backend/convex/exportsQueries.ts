@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalQuery } from "./functions";
+import { resolveApprovalStatus, type ApprovalStatus } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope } from "./lib/siteScope";
 
 export type ExportContext = {
@@ -28,47 +29,28 @@ export const getRsvpsForExportInternal = internalQuery({
       workspaceSlug,
     });
 
-    const allowedStatuses: Array<Doc<"rsvps">["status"]> = [
-      "pending",
-      "approved",
-      "denied",
-      "attending",
-    ];
+    const allowedStatuses: ApprovalStatus[] = ["pending", "approved", "denied"];
     const requestedStatuses =
       statusFilters && statusFilters.length > 0
-        ? statusFilters.filter((status): status is Doc<"rsvps">["status"] =>
-            allowedStatuses.includes(status as Doc<"rsvps">["status"]),
+        ? statusFilters.filter((status): status is ApprovalStatus =>
+            allowedStatuses.includes(status as ApprovalStatus),
           )
         : allowedStatuses;
 
-    let rsvps: Doc<"rsvps">[] = [];
-    if (requestedStatuses.length === allowedStatuses.length) {
-      rsvps = await ctx.db
-        .query("rsvps")
-        .withIndex("by_event", (query) => query.eq("eventId", eventId))
-        .collect();
-    } else if (requestedStatuses.length === 0) {
-      rsvps = [];
-    } else {
-      const results = await Promise.all(
-        requestedStatuses.map((status) =>
-          ctx.db
+    let rsvps: Doc<"rsvps">[] =
+      requestedStatuses.length === 0
+        ? []
+        : await ctx.db
             .query("rsvps")
-            .withIndex("by_event_status", (query) =>
-              query.eq("eventId", eventId).eq("status", status),
-            )
-            .collect(),
-        ),
-      );
-      rsvps = results.flat();
-    }
+            .withIndex("by_event", (query) => query.eq("eventId", eventId))
+            .collect();
 
     if (listKeys && listKeys.length > 0) {
       rsvps = rsvps.filter((rsvp) => listKeys.includes(rsvp.listKey));
     }
 
     if (requestedStatuses.length !== allowedStatuses.length) {
-      rsvps = rsvps.filter((rsvp) => requestedStatuses.includes(rsvp.status));
+      rsvps = rsvps.filter((rsvp) => requestedStatuses.includes(resolveApprovalStatus(rsvp)));
     }
 
     const clerkUserIds = [...new Set(rsvps.map((rsvp) => rsvp.clerkUserId))];

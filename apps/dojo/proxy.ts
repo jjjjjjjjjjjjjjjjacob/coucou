@@ -178,7 +178,6 @@ export default clerkMiddleware(async (auth, req) => {
             correctPath = `/events/${eventRoute.eventId}/denied`;
             break;
           case "approved":
-          case "attending":
             correctPath = `/events/${eventRoute.eventId}/ticket`;
             break;
           default:

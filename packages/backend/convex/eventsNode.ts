@@ -32,6 +32,16 @@ import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 const HEX_COLOR_PATTERN = /^#(?:[0-9A-Fa-f]{6})$/;
 
+const eventUnsetFieldValidator = v.union(
+  v.literal("secondaryTitle"),
+  v.literal("productionCompany"),
+  v.literal("flyerStorageId"),
+  v.literal("guestPortalImageStorageId"),
+  v.literal("guestPortalLinkLabel"),
+  v.literal("guestPortalLinkUrl"),
+  v.literal("primaryFieldConfig"),
+);
+
 type HostCredentialData = {
   _id: Id<"listCredentials">;
   eventId: Id<"events">;
@@ -181,6 +191,7 @@ export const create = action({
     status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()),
     sendQrOnApproval: v.optional(v.boolean()),
+    attendanceQuestionEnabled: v.optional(v.boolean()),
     lists: v.array(
       v.object({
         listKey: v.string(),
@@ -325,6 +336,7 @@ export const create = action({
       status: eventStatus,
       maxAttendees: args.maxAttendees ?? 1,
       sendQrOnApproval: args.sendQrOnApproval,
+      attendanceQuestionEnabled: args.attendanceQuestionEnabled,
       customFields: args.customFields,
       primaryFieldConfig,
       themeBackgroundColor: normalizedThemeBackgroundColor,
@@ -364,6 +376,7 @@ export const update = action({
         lifecycle: v.optional(eventLifecycleValidator),
         defersQrDelivery: v.optional(v.boolean()),
         sendQrOnApproval: v.optional(v.boolean()),
+        attendanceQuestionEnabled: v.optional(v.boolean()),
         customFields: v.optional(
           v.array(
             v.object({
@@ -384,6 +397,7 @@ export const update = action({
         qrCodeColor: v.optional(v.string()),
       }),
     ),
+    unsetFields: v.optional(v.array(eventUnsetFieldValidator)),
     lists: v.optional(
       v.array(
         v.object({
@@ -399,7 +413,7 @@ export const update = action({
     ),
   },
   handler: async (ctx, args): Promise<{ ok: true }> => {
-    const { eventId, patch, lists, siteKey, workspaceSlug } = args;
+    const { eventId, patch, unsetFields, lists, siteKey, workspaceSlug } = args;
     await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
     const currentEvent = await ctx.runQuery(api.events.get, {
@@ -474,9 +488,22 @@ export const update = action({
       if (patch.guestPortalImageStorageId !== undefined) {
         sanitizedPatch.guestPortalImageStorageId = patch.guestPortalImageStorageId ?? undefined;
       }
-      if (patch.guestPortalLinkLabel !== undefined || patch.guestPortalLinkUrl !== undefined) {
-        const trimmedLinkLabel = (patch.guestPortalLinkLabel ?? "").trim();
-        const trimmedLinkUrl = (patch.guestPortalLinkUrl ?? "").trim();
+      const unsetsGuestPortalLinkLabel = unsetFields?.includes("guestPortalLinkLabel") ?? false;
+      const unsetsGuestPortalLinkUrl = unsetFields?.includes("guestPortalLinkUrl") ?? false;
+      if (
+        patch.guestPortalLinkLabel !== undefined ||
+        patch.guestPortalLinkUrl !== undefined ||
+        unsetsGuestPortalLinkLabel ||
+        unsetsGuestPortalLinkUrl
+      ) {
+        const targetLinkLabel = unsetsGuestPortalLinkLabel
+          ? ""
+          : (patch.guestPortalLinkLabel ?? currentEvent.guestPortalLinkLabel ?? "");
+        const targetLinkUrl = unsetsGuestPortalLinkUrl
+          ? ""
+          : (patch.guestPortalLinkUrl ?? currentEvent.guestPortalLinkUrl ?? "");
+        const trimmedLinkLabel = targetLinkLabel.trim();
+        const trimmedLinkUrl = targetLinkUrl.trim();
         const hasLabel = trimmedLinkLabel.length > 0;
         const hasUrl = trimmedLinkUrl.length > 0;
 
@@ -504,14 +531,26 @@ export const update = action({
           }
         }
 
-        sanitizedPatch.guestPortalLinkLabel = hasLabel ? trimmedLinkLabel : undefined;
-        sanitizedPatch.guestPortalLinkUrl = normalizedLinkUrl;
+        if (patch.guestPortalLinkLabel !== undefined) {
+          sanitizedPatch.guestPortalLinkLabel = trimmedLinkLabel;
+        }
+        if (patch.guestPortalLinkUrl !== undefined) {
+          sanitizedPatch.guestPortalLinkUrl = normalizedLinkUrl;
+        }
       }
       await ctx.runMutation(api.events.update, {
         eventId,
         siteKey,
         workspaceSlug,
+        unsetFields,
         ...sanitizedPatch,
+      });
+    } else if (unsetFields && unsetFields.length > 0) {
+      await ctx.runMutation(api.events.update, {
+        eventId,
+        siteKey,
+        workspaceSlug,
+        unsetFields,
       });
     }
 

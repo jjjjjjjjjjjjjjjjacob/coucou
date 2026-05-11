@@ -158,8 +158,8 @@ export default function TicketClientPage({ eventPreload, statusPreload }: Ticket
   const guestPortalLinkUrl = event?.guestPortalLinkUrl?.trim() ?? "";
   const shouldShowGuestLink = guestPortalLinkLabel.length > 0 && guestPortalLinkUrl.length > 0;
 
-  const acceptRsvp = useMutation({
-    mutationFn: useConvexMutation(api.rsvps.acceptRsvp),
+  const markTicketViewed = useMutation({
+    mutationFn: useConvexMutation(api.rsvps.markTicketViewed),
   });
   const [celebrate, setCelebrate] = useState(false);
   const { foregroundColor: qrForegroundColor, backgroundColor: qrBackgroundColor } =
@@ -179,12 +179,13 @@ export default function TicketClientPage({ eventPreload, statusPreload }: Ticket
     if (
       event?.name &&
       status?.status === "approved" &&
-      !acceptRsvp.isPending &&
+      !status.ticketViewedAt &&
+      !markTicketViewed.isPending &&
       !celebrate &&
       canLoadAuthenticatedTicketData &&
       canonicalEventId
     ) {
-      acceptRsvp.mutate(
+      markTicketViewed.mutate(
         {
           eventId: canonicalEventId as Id<"events">,
           siteKey: siteConfiguration.siteKey,
@@ -198,8 +199,8 @@ export default function TicketClientPage({ eventPreload, statusPreload }: Ticket
             setTimeout(() => setCelebrate(false), 5000);
           },
           onError: (error) => {
-            console.error("Failed to accept RSVP:", error);
-            toast.error("Failed to confirm attendance. Please refresh and try again.");
+            console.error("Failed to mark ticket viewed:", error);
+            toast.error("Failed to record ticket view. Please refresh and try again.");
           },
         },
       );
@@ -208,8 +209,9 @@ export default function TicketClientPage({ eventPreload, statusPreload }: Ticket
   }, [
     event?.name,
     status?.status,
+    status?.ticketViewedAt,
     canonicalEventId,
-    acceptRsvp.isPending,
+    markTicketViewed.isPending,
     celebrate,
     canLoadAuthenticatedTicketData,
   ]);
@@ -403,7 +405,7 @@ export default function TicketClientPage({ eventPreload, statusPreload }: Ticket
       return renderStatusLoading();
     }
 
-    if (status?.status === "approved" || status?.status === "attending") {
+    if (status?.status === "approved") {
       return (
         <div className="rounded border border-primary/20 p-3 space-y-2 mt-2">
           {renderApprovedContent()}

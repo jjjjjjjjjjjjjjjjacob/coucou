@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { countRsvpsWithAggregate, rsvpAggregate } from "../convex/lib/rsvpAggregate";
 import {
   applyCollectedRsvpFilters,
+  buildRsvpFuzzySearchTerms,
+  fieldValuesMatchRsvpFuzzySearchTerms,
   filtersRequireDirectRsvpCount,
   normalizeTicketStatusFilter,
 } from "../convex/lib/rsvpFilters";
@@ -143,5 +145,23 @@ describe("RSVP filtering helpers", () => {
         ticketStatusFilter: null,
       }),
     ).toBe(false);
+  });
+
+  it("builds RSVP fuzzy search terms for social handles with @ prefixes", () => {
+    expect(buildRsvpFuzzySearchTerms("@foo.bar")).toEqual(["@foo.bar", "foo.bar"]);
+    expect(fieldValuesMatchRsvpFuzzySearchTerms(["foo.bar"], ["@foo.bar", "foo.bar"])).toBe(true);
+  });
+
+  it("matches unified RSVP search terms against guests, socials, and invited-by values", () => {
+    const invitedBySearchTerms = buildRsvpFuzzySearchTerms("Orson");
+    const socialSearchTerms = buildRsvpFuzzySearchTerms("@foobaz");
+    const guestSearchTerms = buildRsvpFuzzySearchTerms("Ava");
+
+    expect(fieldValuesMatchRsvpFuzzySearchTerms(["Ava Green"], guestSearchTerms)).toBe(true);
+    expect(
+      fieldValuesMatchRsvpFuzzySearchTerms(["orson", "Orson Welles"], invitedBySearchTerms),
+    ).toBe(true);
+    expect(fieldValuesMatchRsvpFuzzySearchTerms(["foobaz"], socialSearchTerms)).toBe(true);
+    expect(fieldValuesMatchRsvpFuzzySearchTerms(["unrelated"], socialSearchTerms)).toBe(false);
   });
 });

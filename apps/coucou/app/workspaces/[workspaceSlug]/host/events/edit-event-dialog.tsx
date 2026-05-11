@@ -83,7 +83,33 @@ type EventUpdatePatch = {
   themeTextColor?: string;
   qrCodeColor?: string;
   sendQrOnApproval?: boolean;
+  attendanceQuestionEnabled?: boolean;
 };
+
+type EventUnsetField =
+  | "secondaryTitle"
+  | "productionCompany"
+  | "flyerStorageId"
+  | "guestPortalImageStorageId"
+  | "guestPortalLinkLabel"
+  | "guestPortalLinkUrl"
+  | "primaryFieldConfig";
+
+function sanitizeCustomFieldsForSubmit(customFields: CustomFieldDef[]): Event["customFields"] {
+  return customFields.map((field) => ({
+    key: field.key.trim(),
+    label: field.label.trim(),
+    placeholder: field.placeholder?.trim() ? field.placeholder.trim() : undefined,
+    required: field.required ?? false,
+    copyEnabled: field.copyEnabled ?? false,
+    prependUrl: field.prependUrl?.trim() ? field.prependUrl.trim() : undefined,
+    trimWhitespace: field.trimWhitespace !== false,
+  }));
+}
+
+function primaryFieldConfigDraftHasContent(draft: PrimaryFieldConfigDraft): boolean {
+  return draft.socialPlatforms.length > 0 || draft.invitedBy.enabled;
+}
 
 export default function EditEventDialog({
   showTrigger = true,
@@ -150,6 +176,7 @@ export default function EditEventDialog({
           : typeof event.defersQrDelivery === "boolean"
             ? !event.defersQrDelivery
             : false,
+      attendanceQuestionEnabled: event.attendanceQuestionEnabled ?? false,
     },
   });
   const [flyerStorageId, setFlyerStorageId] = React.useState<string | null>(
@@ -290,13 +317,18 @@ export default function EditEventDialog({
       }
       setSaving(true);
       const patch: EventUpdatePatch = {};
+      const unsetFields: EventUnsetField[] = [];
       const trimmedName = values.name.trim();
       if (trimmedName && trimmedName !== event.name) {
         patch.name = trimmedName;
       }
       const trimmedSecondaryTitle = values.secondaryTitle?.trim() ?? "";
       if (trimmedSecondaryTitle !== (event.secondaryTitle ?? "")) {
-        patch.secondaryTitle = trimmedSecondaryTitle || undefined;
+        if (trimmedSecondaryTitle) {
+          patch.secondaryTitle = trimmedSecondaryTitle;
+        } else {
+          unsetFields.push("secondaryTitle");
+        }
       }
       const trimmedDescription = values.description?.trim() ?? "";
       if (trimmedDescription !== (event.description ?? "")) {
@@ -316,21 +348,32 @@ export default function EditEventDialog({
       }
       const trimmedProductionCompany = values.productionCompany?.trim() ?? "";
       if (trimmedProductionCompany !== (event.productionCompany ?? "")) {
-        patch.productionCompany = trimmedProductionCompany || undefined;
+        if (trimmedProductionCompany) {
+          patch.productionCompany = trimmedProductionCompany;
+        } else {
+          unsetFields.push("productionCompany");
+        }
       }
       const trimmedLocation = values.location.trim();
       if (trimmedLocation && trimmedLocation !== event.location) {
         patch.location = trimmedLocation;
       }
       if ((flyerStorageId ?? undefined) !== (event.flyerStorageId ?? undefined)) {
-        patch.flyerStorageId = (flyerStorageId as Id<"_storage">) ?? undefined;
+        if (flyerStorageId) {
+          patch.flyerStorageId = flyerStorageId as Id<"_storage">;
+        } else {
+          unsetFields.push("flyerStorageId");
+        }
       }
       if ((eventIconStorageId ?? null) !== (event.customIconStorageId ?? null)) {
         patch.customIconStorageId = (eventIconStorageId as Id<"_storage">) ?? null;
       }
       if ((guestPortalImageStorageId ?? null) !== (event.guestPortalImageStorageId ?? null)) {
-        patch.guestPortalImageStorageId =
-          (guestPortalImageStorageId as Id<"_storage">) ?? undefined;
+        if (guestPortalImageStorageId) {
+          patch.guestPortalImageStorageId = guestPortalImageStorageId as Id<"_storage">;
+        } else {
+          unsetFields.push("guestPortalImageStorageId");
+        }
       }
       if (values.maxAttendees !== undefined && values.maxAttendees !== (event.maxAttendees ?? 1)) {
         patch.maxAttendees = values.maxAttendees;
@@ -366,10 +409,18 @@ export default function EditEventDialog({
         const previousLabel = event.guestPortalLinkLabel ?? "";
         const previousUrl = event.guestPortalLinkUrl ?? "";
         if (trimmedGuestPortalLinkLabel !== previousLabel) {
-          patch.guestPortalLinkLabel = hasLabel ? trimmedGuestPortalLinkLabel : undefined;
+          if (hasLabel) {
+            patch.guestPortalLinkLabel = trimmedGuestPortalLinkLabel;
+          } else {
+            unsetFields.push("guestPortalLinkLabel");
+          }
         }
         if (trimmedGuestPortalLinkUrl !== previousUrl) {
-          patch.guestPortalLinkUrl = hasUrl ? trimmedGuestPortalLinkUrl : undefined;
+          if (hasUrl) {
+            patch.guestPortalLinkUrl = trimmedGuestPortalLinkUrl;
+          } else {
+            unsetFields.push("guestPortalLinkUrl");
+          }
         }
       }
       const timezoneValue = values.eventTimezone || defaultTimezone;
@@ -407,6 +458,10 @@ export default function EditEventDialog({
       if (nextSendQrOnApproval !== previousSendQrOnApproval) {
         patch.sendQrOnApproval = nextSendQrOnApproval;
       }
+      const nextAttendanceQuestionEnabled = values.attendanceQuestionEnabled ?? false;
+      if (nextAttendanceQuestionEnabled !== (event.attendanceQuestionEnabled ?? false)) {
+        patch.attendanceQuestionEnabled = nextAttendanceQuestionEnabled;
+      }
       const outgoingLists = lists.map((list) => {
         let password: string | undefined;
         if (!list.requirePassword) {
@@ -425,27 +480,32 @@ export default function EditEventDialog({
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
         };
       });
-      patch.customFields = customFields.map((field) => ({
-        key: field.key.trim(),
-        label: field.label.trim(),
-        placeholder: field.placeholder?.trim() ? field.placeholder.trim() : undefined,
-        required: field.required ?? false,
-        copyEnabled: field.copyEnabled ?? false,
-        prependUrl: field.prependUrl?.trim() ? field.prependUrl.trim() : undefined,
-        trimWhitespace: field.trimWhitespace !== false,
-      }));
+      const nextCustomFields = sanitizeCustomFieldsForSubmit(customFields);
+      const previousCustomFields = sanitizeCustomFieldsForSubmit(event.customFields ?? []);
+      if (JSON.stringify(nextCustomFields) !== JSON.stringify(previousCustomFields)) {
+        patch.customFields = nextCustomFields;
+      }
       const nextPrimaryFieldConfig = usePrimaryFieldDefaults
         ? undefined
         : draftToPrimaryFieldConfig(primaryFieldConfigDraft);
       const previousPrimaryFieldConfigKey = JSON.stringify(event.primaryFieldConfig ?? null);
       const nextPrimaryFieldConfigKey = JSON.stringify(nextPrimaryFieldConfig ?? null);
-      if (previousPrimaryFieldConfigKey !== nextPrimaryFieldConfigKey) {
+      if (usePrimaryFieldDefaults) {
+        if (event.primaryFieldConfig) {
+          unsetFields.push("primaryFieldConfig");
+        }
+      } else if (!primaryFieldConfigDraftHasContent(primaryFieldConfigDraft)) {
+        if (event.primaryFieldConfig) {
+          unsetFields.push("primaryFieldConfig");
+        }
+      } else if (previousPrimaryFieldConfigKey !== nextPrimaryFieldConfigKey) {
         patch.primaryFieldConfig = nextPrimaryFieldConfig;
       }
       await update({
         eventId: event._id,
         ...workspaceScope.queryArgs,
         patch,
+        unsetFields,
         lists: outgoingLists,
       });
       toast.success("Event updated");
@@ -551,6 +611,27 @@ export default function EditEventDialog({
                           When on, approval texts include the QR code immediately. Default off —
                           most hosts send a manual blast closer to the event from the &quot;Send QR
                           Codes&quot; button on the event card.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                  <div className="space-y-3 rounded-lg border bg-card p-4">
+                    <h4 className="font-medium text-sm text-muted-foreground">ATTENDANCE</h4>
+                    <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+                      <Checkbox
+                        checked={form.watch("attendanceQuestionEnabled") ?? false}
+                        onCheckedChange={(checked) =>
+                          form.setValue("attendanceQuestionEnabled", Boolean(checked), {
+                            shouldDirty: true,
+                          })
+                        }
+                        className="mt-0.5"
+                      />
+                      <span className="space-y-1">
+                        <span className="block text-sm font-medium">Ask attendance question</span>
+                        <span className="block text-xs text-muted-foreground">
+                          When on, guests choose Yes, No, or Maybe during RSVP. When off, new RSVPs
+                          default to Yes.
                         </span>
                       </span>
                     </label>

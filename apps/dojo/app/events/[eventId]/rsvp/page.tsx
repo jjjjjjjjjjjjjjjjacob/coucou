@@ -49,6 +49,21 @@ import {
   type User,
 } from "@/lib/types";
 
+type AttendanceStatusOption = "yes" | "no" | "maybe";
+
+const ATTENDANCE_STATUS_OPTIONS: AttendanceStatusOption[] = ["yes", "maybe", "no"];
+
+function getAttendanceStatusLabel(status: AttendanceStatusOption): string {
+  switch (status) {
+    case "yes":
+      return "Yes";
+    case "maybe":
+      return "Maybe";
+    case "no":
+      return "No";
+  }
+}
+
 export default function RsvpPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId: eventRouteId } = use(params);
   const router = useRouter();
@@ -75,7 +90,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
   ) as Array<{ platformKey: string; handle: string }> | undefined;
   const myRedemption = useQuery(
     api.redemptions.forCurrentUserEvent,
-    canonicalEventId && (status?.status === "approved" || status?.status === "attending")
+    canonicalEventId && status?.status === "approved"
       ? {
           eventId: canonicalEventId as Id<"events">,
           siteKey: siteConfiguration.siteKey,
@@ -92,6 +107,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
   const [socialProfiles, setSocialProfiles] = useState<Record<string, string>>({});
   const [invitedByName, setInvitedByName] = useState<string>("");
   const [note, setNote] = useState("");
+  const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatusOption>("yes");
   const [message, setMessage] = useState("");
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -137,6 +153,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
       socialProfiles: {},
       invitedByName: "",
       attendees: 1,
+      attendanceStatus: "yes",
     },
   });
 
@@ -237,6 +254,9 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
     if (!invitedByName && status?.invitedByName) {
       setInvitedByName(status.invitedByName);
     }
+    if (status?.attendanceStatus) {
+      setAttendanceStatus(status.attendanceStatus);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     event?.customFields,
@@ -244,6 +264,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
     status?.customFieldValues,
     status?.socialProfiles,
     status?.invitedByName,
+    status?.attendanceStatus,
     userDoc?._id,
     user?.id,
     userSocialProfiles,
@@ -274,12 +295,17 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
       shouldValidate: false,
       shouldDirty: false,
     });
+    form.setValue("attendanceStatus", attendanceStatus, {
+      shouldValidate: false,
+      shouldDirty: false,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     name,
     firstName,
     lastName,
     invitedByName,
+    attendanceStatus,
     JSON.stringify(custom),
     JSON.stringify(socialProfiles),
   ]);
@@ -446,6 +472,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
         note: note || undefined,
         shareContact: true,
         attendees: form.getValues("attendees") || 1,
+        attendanceStatus: event?.attendanceQuestionEnabled ? attendanceStatus : "yes",
         smsConsent: smsConsentEnabled,
         smsConsentIpAddress: smsConsentEnabled && consentIpAddress ? consentIpAddress : undefined,
         customFields: filteredCustomFields,
@@ -572,6 +599,27 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
                     openUserProfile={openUserProfile}
                     isSignedIn={!!user}
                   />
+
+                  {event.attendanceQuestionEnabled ? (
+                    <fieldset className="space-y-2 rounded border border-primary/20 p-3">
+                      <legend className="px-1 text-sm font-medium text-primary">Attending?</legend>
+                      <div className="grid grid-cols-3 gap-2">
+                        {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => (
+                          <Button
+                            key={attendanceStatusOption}
+                            type="button"
+                            variant={
+                              attendanceStatus === attendanceStatusOption ? "default" : "outline"
+                            }
+                            className="h-9"
+                            onClick={() => setAttendanceStatus(attendanceStatusOption)}
+                          >
+                            {getAttendanceStatusLabel(attendanceStatusOption)}
+                          </Button>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ) : null}
 
                   <NoteForHostsField note={note} setNote={setNote} />
                   <div className="flex flex-col items-center gap-2">
@@ -714,62 +762,61 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
               {message && <div className="text-sm text-red-500">{message}</div>}
 
               {/* QR Code and Redemption Status Context Menu - only show if approved */}
-              {(status?.status === "approved" || status?.status === "attending") &&
-                myRedemption && (
-                  <div className="rounded border border-primary/20 p-3 space-y-2 mt-4">
-                    <div className="font-medium text-sm text-primary">Ticket Management</div>
-                    <ContextMenu>
-                      <ContextMenuTrigger asChild>
-                        <Button variant="outline" className="w-full">
-                          <QrCode className="w-4 h-4 mr-2" />
-                          Right-click for options
-                        </Button>
-                      </ContextMenuTrigger>
-                      <ContextMenuContent className="w-48">
-                        <ContextMenuItem onClick={() => setShowQRCode(!showQRCode)}>
-                          <QrCode className="w-4 h-4 mr-2" />
-                          {showQRCode ? "Hide" : "Show"} QR Code
-                        </ContextMenuItem>
-                        <ContextMenuSeparator />
-                        <ContextMenuSub>
-                          <ContextMenuSubTrigger>
-                            <ToggleLeft className="w-4 h-4 mr-2" />
-                            Redemption Status
-                          </ContextMenuSubTrigger>
-                          <ContextMenuSubContent>
-                            <ContextMenuItem disabled>
-                              <span className="text-sm font-medium">Current: Issued</span>
-                            </ContextMenuItem>
-                            <ContextMenuSeparator />
-                            <ContextMenuItem disabled>
-                              <span className="text-xs text-muted-foreground">
-                                Status managed by hosts
-                              </span>
-                            </ContextMenuItem>
-                          </ContextMenuSubContent>
-                        </ContextMenuSub>
-                      </ContextMenuContent>
-                    </ContextMenu>
+              {status?.status === "approved" && myRedemption && (
+                <div className="rounded border border-primary/20 p-3 space-y-2 mt-4">
+                  <div className="font-medium text-sm text-primary">Ticket Management</div>
+                  <ContextMenu>
+                    <ContextMenuTrigger asChild>
+                      <Button variant="outline" className="w-full">
+                        <QrCode className="w-4 h-4 mr-2" />
+                        Right-click for options
+                      </Button>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-48">
+                      <ContextMenuItem onClick={() => setShowQRCode(!showQRCode)}>
+                        <QrCode className="w-4 h-4 mr-2" />
+                        {showQRCode ? "Hide" : "Show"} QR Code
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger>
+                          <ToggleLeft className="w-4 h-4 mr-2" />
+                          Redemption Status
+                        </ContextMenuSubTrigger>
+                        <ContextMenuSubContent>
+                          <ContextMenuItem disabled>
+                            <span className="text-sm font-medium">Current: Issued</span>
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem disabled>
+                            <span className="text-xs text-muted-foreground">
+                              Status managed by hosts
+                            </span>
+                          </ContextMenuItem>
+                        </ContextMenuSubContent>
+                      </ContextMenuSub>
+                    </ContextMenuContent>
+                  </ContextMenu>
 
-                    {/* QR Code Display */}
-                    {showQRCode && myRedemption && (
-                      <div className="flex flex-col items-center gap-2 pt-2">
-                        <QRCode
-                          value={`${window.location.origin}/redeem/${myRedemption.code}`}
-                          size={240}
-                          fgColor={qrForegroundColor}
-                          bgColor={qrBackgroundColor}
-                        />
-                        <div className="text-xs text-primary/80 text-center">
-                          Show this QR code at the door
-                        </div>
-                        <div className="text-xs text-primary/60 text-center">
-                          List: {myRedemption.listKey?.toUpperCase() || "N/A"}
-                        </div>
+                  {/* QR Code Display */}
+                  {showQRCode && myRedemption && (
+                    <div className="flex flex-col items-center gap-2 pt-2">
+                      <QRCode
+                        value={`${window.location.origin}/redeem/${myRedemption.code}`}
+                        size={240}
+                        fgColor={qrForegroundColor}
+                        bgColor={qrBackgroundColor}
+                      />
+                      <div className="text-xs text-primary/80 text-center">
+                        Show this QR code at the door
                       </div>
-                    )}
-                  </div>
-                )}
+                      <div className="text-xs text-primary/60 text-center">
+                        List: {myRedemption.listKey?.toUpperCase() || "N/A"}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           ) : (
             <div className="text-sm text-red-500">{message || "Access denied"}</div>

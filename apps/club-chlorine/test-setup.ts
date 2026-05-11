@@ -305,6 +305,25 @@ mock.module("sonner", () => ({
   },
 }));
 
+mock.module("posthog-js", () => ({
+  default: {
+    capture: () => {},
+    captureException: () => {},
+    getFeatureFlag: () => "full",
+    identify: () => {},
+    init: () => {},
+    onFeatureFlags: () => () => {},
+    reset: () => {},
+  },
+  capture: () => {},
+  captureException: () => {},
+  getFeatureFlag: () => "full",
+  identify: () => {},
+  init: () => {},
+  onFeatureFlags: () => () => {},
+  reset: () => {},
+}));
+
 mock.module("react-qr-code", () => ({
   default: function MockQRCode({
     value,

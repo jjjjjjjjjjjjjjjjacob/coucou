@@ -97,7 +97,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
   // Auto-redirect on terminal RSVP states.
   useEffect(() => {
     if (!status) return;
-    if (status.status === "approved" || status.status === "attending") {
+    if (status.status === "approved") {
       router.replace(
         buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"]),
       );
@@ -250,7 +250,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
 
             <section className="flex w-full flex-col items-start gap-3">
               <p className="text-sm font-medium" style={{ color: "var(--tt-fg)" }}>
-                Share to move up in the waitlist.
+                Share with your friends.
               </p>
               <EventReferralShareButton event={event} variant="prominent" className="h-auto p-3" />
             </section>

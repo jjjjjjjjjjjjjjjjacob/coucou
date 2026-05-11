@@ -10,6 +10,7 @@ import {
   Grid,
   List,
   MoreHorizontal,
+  Plus,
   Search,
   Share,
   Trash2,
@@ -123,23 +124,26 @@ export default function EventsPage() {
   }, [eventEntries, searchQuery, sortBy, filterBy]);
 
   return (
-    <div className="flex-1 space-y-4">
+    <div className="flex-1 space-y-5">
       <CreatedToastOnce />
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Events</h2>
           <p className="text-muted-foreground">Manage and view all your events</p>
         </div>
-        <Button onClick={() => router.push(newEventPath)}>+ New Event</Button>
+        <Button onClick={() => router.push(newEventPath)} className="w-fit">
+          <Plus className="h-4 w-4" />
+          New Event
+        </Button>
       </div>
 
       {/* Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="flex flex-col sm:flex-row gap-2 flex-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-1 flex-col gap-2 sm:flex-row">
           {/* Search */}
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 sm:max-w-sm">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search events..."
@@ -150,7 +154,11 @@ export default function EventsPage() {
           </div>
 
           {/* Filters */}
-          <Select value={filterBy} onValueChange={(value) => setFilterBy(value as FilterOption)}>
+          <Select
+            value={filterBy}
+            onValueChange={(value) => setFilterBy(value as FilterOption)}
+            className="sm:w-52"
+          >
             <SelectOption value="all">All Events</SelectOption>
             <SelectOption value="draft">Drafts</SelectOption>
             <SelectOption value="upcoming">Upcoming</SelectOption>
@@ -158,7 +166,11 @@ export default function EventsPage() {
           </Select>
 
           {/* Sort */}
-          <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortOption)}>
+          <Select
+            value={sortBy}
+            onValueChange={(value) => setSortBy(value as SortOption)}
+            className="sm:w-52"
+          >
             <SelectOption value="date">Sort by Date</SelectOption>
             <SelectOption value="name">Sort by Name</SelectOption>
             <SelectOption value="rsvps">Sort by RSVPs</SelectOption>
@@ -166,12 +178,13 @@ export default function EventsPage() {
         </div>
 
         {/* View Toggle */}
-        <div className="flex gap-1 border rounded-lg p-1">
+        <div className="flex w-fit gap-1 rounded-md border p-1">
           <Button
             variant={viewMode === "card" ? "default" : "ghost"}
             size="sm"
             onClick={() => setViewMode("card")}
             className="px-2"
+            aria-label="Show grid view"
           >
             <Grid className="h-4 w-4" />
           </Button>
@@ -180,6 +193,7 @@ export default function EventsPage() {
             size="sm"
             onClick={() => setViewMode("list")}
             className="px-2"
+            aria-label="Show list view"
           >
             <List className="h-4 w-4" />
           </Button>
@@ -211,7 +225,7 @@ export default function EventsPage() {
 
       {/* Events Display */}
       {viewMode === "card" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filteredAndSortedEntries.map(({ event, flyerUrl }) => (
             <EventCard key={event._id} event={event} flyerUrl={flyerUrl} />
           ))}

@@ -455,6 +455,19 @@ mock.module("sonner", () => ({
   },
 }));
 
+mock.module("posthog-js", () => ({
+  default: {
+    capture: () => {},
+    captureException: () => {},
+    identify: () => {},
+    reset: () => {},
+  },
+  capture: () => {},
+  captureException: () => {},
+  identify: () => {},
+  reset: () => {},
+}));
+
 mock.module("react-qr-code", () => ({
   default: function MockQRCode({
     value,

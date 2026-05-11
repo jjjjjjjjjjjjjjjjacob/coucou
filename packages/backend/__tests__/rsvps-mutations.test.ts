@@ -321,26 +321,23 @@ describe("RSVP Management Mutations", () => {
       expect(result.redemptionDeleted).toBe(true);
     });
 
-    it("should reject moving an attending RSVP back to pending", () => {
+    it("should allow moving an approved RSVP with a viewed ticket back to pending", () => {
       const mockRsvp = {
         _id: "rsvp_123",
         eventId: "event_123",
         clerkUserId: "user_123",
-        status: "attending",
+        status: "approved",
+        ticketViewedAt: Date.now(),
         listKey: "general",
       };
 
       const updateRsvpCompleteLogic = (rsvp: typeof mockRsvp, approvalStatus: string) => {
-        if (rsvp.status === "attending" && approvalStatus === "pending") {
-          throw new Error("Cannot move an attending RSVP back to pending");
-        }
-
         return { rsvp: { ...rsvp, status: approvalStatus } };
       };
 
-      expect(() => {
-        updateRsvpCompleteLogic(mockRsvp, "pending");
-      }).toThrow("Cannot move an attending RSVP back to pending");
+      const result = updateRsvpCompleteLogic(mockRsvp, "pending");
+      expect(result.rsvp.status).toBe("pending");
+      expect(result.rsvp.ticketViewedAt).toBe(mockRsvp.ticketViewedAt);
     });
 
     it("should reject moving a redeemed RSVP back to pending", () => {

@@ -1,4 +1,4 @@
-import type { RSVP } from "@/lib/types";
+export type RecipientApprovalStatus = "pending" | "approved" | "denied";
 
 export type RecipientFilterType =
   | "all"
@@ -10,11 +10,11 @@ export type RecipientFilterType =
 export type RecipientFilterState =
   | { type: "all" }
   | { type: "approved_no_approval_sms" }
-  | { type: "status"; status: RSVP["status"] }
+  | { type: "status"; status: RecipientApprovalStatus }
   | { type: "custom_field_missing"; fieldKey: string }
   | { type: "rsvp_before"; isoDateTime: string };
 
-export const DEFAULT_STATUS_FILTER: RSVP["status"] = "pending";
+export const DEFAULT_STATUS_FILTER: RecipientApprovalStatus = "pending";
 
 const toDateTimeLocalString = (timestamp: number): string => {
   const date = new Date(timestamp);
@@ -83,11 +83,8 @@ export const decodeRecipientFilter = (value: string | null | undefined): Recipie
         return { type: "approved_no_approval_sms" };
       case "status": {
         const status = candidate.status;
-        if (
-          typeof status === "string" &&
-          ["pending", "approved", "attending", "denied"].includes(status)
-        ) {
-          return { type: "status", status: status as RSVP["status"] };
+        if (typeof status === "string" && ["pending", "approved", "denied"].includes(status)) {
+          return { type: "status", status: status as RecipientApprovalStatus };
         }
         return { type: "status", status: DEFAULT_STATUS_FILTER };
       }
@@ -127,7 +124,7 @@ export const describeRecipientFilter = (
 ): string => {
   switch (state.type) {
     case "all":
-      return "All approved or attending RSVPs";
+      return "All approved RSVPs";
     case "approved_no_approval_sms":
       return "Approved RSVPs without an approval SMS";
     case "status":
@@ -144,7 +141,7 @@ export const describeRecipientFilter = (
         ? `RSVP created before ${new Date(state.isoDateTime).toLocaleString()}`
         : "RSVP before a specific date/time";
     default:
-      return "All approved or attending RSVPs";
+      return "All approved RSVPs";
   }
 };
 
@@ -161,9 +158,8 @@ export const isRecipientFilterConfigured = (state: RecipientFilterState): boolea
   }
 };
 
-export const RECIPIENT_STATUS_LABELS: Record<RSVP["status"], string> = {
+export const RECIPIENT_STATUS_LABELS: Record<RecipientApprovalStatus, string> = {
   pending: "Pending",
   approved: "Approved",
-  attending: "Attending",
   denied: "Denied",
 };

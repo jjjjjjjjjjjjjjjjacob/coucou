@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./functions";
 import { generateRedemptionCode } from "./lib/codeGenerators";
-import { canManuallyEditTicket } from "./lib/rsvpStatus";
+import { canManuallyEditTicket, resolveApprovalStatus } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";
 import { requireWorkspaceDoor, requireWorkspaceHost } from "./lib/workspaceAuth";
 
@@ -304,7 +304,7 @@ export const toggleRedemptionStatus = mutation({
       workspaceSlug,
     });
 
-    if (!canManuallyEditTicket(rsvpRecord.status)) {
+    if (!canManuallyEditTicket(rsvpRecord)) {
       throw new Error("Cannot modify ticket for this RSVP status");
     }
 
@@ -356,11 +356,11 @@ export const updateTicketStatus = mutation({
       workspaceSlug,
     });
 
-    if (rsvpRecord.status === "denied") {
+    if (resolveApprovalStatus(rsvpRecord) === "denied") {
       throw new Error("Cannot modify ticket for denied RSVP");
     }
 
-    if (!canManuallyEditTicket(rsvpRecord.status) && status !== "not-issued") {
+    if (!canManuallyEditTicket(rsvpRecord) && status !== "not-issued") {
       throw new Error("Cannot issue or disable a ticket for a pending RSVP");
     }
 
@@ -376,7 +376,7 @@ export const updateTicketStatus = mutation({
       (rsvpRecord.ticketStatus as "not-issued" | "issued" | "disabled" | "redeemed") ??
       "not-issued";
 
-    if (!canManuallyEditTicket(rsvpRecord.status) && existingRedemption?.redeemedAt) {
+    if (!canManuallyEditTicket(rsvpRecord) && existingRedemption?.redeemedAt) {
       throw new Error("Cannot remove a redeemed ticket from a pending RSVP");
     }
 

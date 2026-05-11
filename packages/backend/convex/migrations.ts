@@ -6,6 +6,7 @@ import { components } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation } from "./functions";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
+import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./lib/rsvpStatus";
 import { upsertWorkspaceRecord } from "./lib/workspaceRecords";
 
 type EventCustomFieldDefinition = {
@@ -346,6 +347,43 @@ export const backfillUserNameInRsvps = migrations.define({
   },
 });
 
+export const backfillRsvpApprovalAttendanceAndTicketViewed = migrations.define({
+  table: "rsvps",
+  migrateOne: async (_ctx, rawRsvp) => {
+    const rsvp = rawRsvp as Doc<"rsvps">;
+    const approvalStatus = resolveApprovalStatus(rsvp);
+    const attendanceStatus = sanitizeAttendanceStatus(
+      (rsvp as { attendanceStatus?: string }).attendanceStatus,
+    );
+    const existingTicketViewedAt = (rsvp as { ticketViewedAt?: number }).ticketViewedAt;
+
+    const patch: {
+      status?: "pending" | "approved" | "denied";
+      approvalStatus?: "pending" | "approved" | "denied";
+      attendanceStatus?: "yes" | "no" | "maybe";
+      ticketViewedAt?: number;
+    } = {};
+
+    if (rsvp.status !== approvalStatus) {
+      patch.status = approvalStatus;
+    }
+    if ((rsvp as { approvalStatus?: string }).approvalStatus !== approvalStatus) {
+      patch.approvalStatus = approvalStatus;
+    }
+    if ((rsvp as { attendanceStatus?: string }).attendanceStatus !== attendanceStatus) {
+      patch.attendanceStatus = attendanceStatus;
+    }
+    if (rsvp.status === "attending" && existingTicketViewedAt === undefined) {
+      patch.ticketViewedAt = rsvp.updatedAt ?? rsvp.createdAt;
+    }
+    if (Object.keys(patch).length === 0) {
+      return;
+    }
+
+    return patch;
+  },
+});
+
 // Backfill RSVP customFieldValues from user metadata when possible
 export const backfillRsvpCustomFieldsFromUserMetadata = migrations.define({
   table: "rsvps",
@@ -514,9 +552,11 @@ export const migrateUserMetadataIntoRsvpCustomFields = migrations.define({
 export const backfillSmsConsentForEvent = internalMutation({
   args: {
     eventId: v.id("events"),
-    statusFilter: v.optional(v.array(v.string())), // e.g., ["approved", "attending"]
+    statusFilter: v.optional(v.array(v.string())), // e.g., ["approved", "attending"] for legacy rows
   },
   handler: async (ctx, args) => {
+    // Include legacy "attending" rows so older approved RSVPs can still be updated
+    // before the approval/attendance backfill has normalized them.
     const allowedStatuses = args.statusFilter ?? ["approved", "attending"];
 
     const rsvps = await ctx.db
