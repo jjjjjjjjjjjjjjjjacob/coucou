@@ -10,7 +10,7 @@ import { useQuery } from "convex/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import {
   buildEventDetailPathWithPreservedQuery,
@@ -44,6 +44,14 @@ interface LandingRowSeed {
 }
 
 export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
   const searchParams = useSearchParams();
   const allEvents = useQuery(api.events.listAll, {
     siteKey: siteConfiguration.siteKey,
