@@ -25,7 +25,8 @@ export function GuestInfoFields({
   invitedByName,
   setInvitedByName,
   phone,
-  openUserProfile,
+  onPhoneUpdate,
+  isPhoneUpdatePending = false,
   isSignedIn,
   step,
 }: {
@@ -44,7 +45,8 @@ export function GuestInfoFields({
   invitedByName: string;
   setInvitedByName: (value: string) => void;
   phone: string;
-  openUserProfile?: () => void;
+  onPhoneUpdate?: () => void | Promise<void>;
+  isPhoneUpdatePending?: boolean;
   isSignedIn?: boolean;
   /**
    * When set, render only the fields belonging to that step. Step 1 renders
@@ -56,6 +58,8 @@ export function GuestInfoFields({
 }) {
   const showStep1 = step === undefined || step === 1;
   const showStep2 = step === undefined || step === 2;
+  const maximumAttendees = event?.maxAttendees ?? 1;
+  const showAttendeesField = showStep2 && maximumAttendees > 1;
 
   return (
     <div className="space-y-3">
@@ -302,8 +306,12 @@ export function GuestInfoFields({
             />
             {isSignedIn ? (
               <Button
+                type="button"
                 variant="outline"
-                onClick={() => openUserProfile?.()}
+                onClick={() => {
+                  void onPhoneUpdate?.();
+                }}
+                disabled={isPhoneUpdatePending}
                 className="border-primary/30 text-primary/70"
               >
                 UPDATE
@@ -315,7 +323,7 @@ export function GuestInfoFields({
         </div>
       ) : null}
 
-      {showStep2 ? (
+      {showAttendeesField ? (
         /* Attendees selection */
         <FormField
           control={form.control}
@@ -329,27 +337,20 @@ export function GuestInfoFields({
                   : null}
               </FormLabel>
               <FormControl>
-                {(event?.maxAttendees ?? 1) === 1 ? (
-                  <Select
-                    value="1"
-                    disabled
-                    className="border border-primary/20 text-primary disabled:opacity-100"
-                  >
-                    <SelectOption value="1">1 (No Plus Ones)</SelectOption>
-                  </Select>
-                ) : (
-                  <Select
-                    value={field.value?.toString() || "1"}
-                    onValueChange={(value) => field.onChange(parseInt(value, 10))}
-                    className="border border-primary/20 text-primary"
-                  >
-                    {Array.from({ length: event?.maxAttendees ?? 1 }, (_, i) => (
-                      <SelectOption key={i + 1} value={(i + 1).toString()}>
-                        {i + 1}
-                      </SelectOption>
-                    ))}
-                  </Select>
-                )}
+                <Select
+                  value={field.value?.toString() || "1"}
+                  onValueChange={(value) => field.onChange(parseInt(value, 10))}
+                  className="border border-primary/20 text-primary"
+                >
+                  {Array.from({ length: maximumAttendees }, (_, attendeeIndex) => (
+                    <SelectOption
+                      key={attendeeIndex + 1}
+                      value={(attendeeIndex + 1).toString()}
+                    >
+                      {attendeeIndex + 1}
+                    </SelectOption>
+                  ))}
+                </Select>
               </FormControl>
               <FormMessage />
             </FormItem>

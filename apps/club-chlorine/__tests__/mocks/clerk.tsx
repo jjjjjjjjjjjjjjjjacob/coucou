@@ -21,6 +21,7 @@ export const mockUseUser = () => ({
 
 export const mockUseClerk = () => ({
   openUserProfile: () => {},
+  signOut: async () => {},
 });
 
 export const mockUseSession = () => ({

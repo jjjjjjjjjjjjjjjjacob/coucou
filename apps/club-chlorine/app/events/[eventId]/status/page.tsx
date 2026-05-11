@@ -248,7 +248,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
               </section>
             )}
 
-            <section className="flex w-full flex-col items-start gap-3">
+            <section className="flex w-full flex-col items-center gap-3 text-center">
               <p className="text-sm font-medium" style={{ color: "var(--tt-fg)" }}>
                 Share with your friends.
               </p>

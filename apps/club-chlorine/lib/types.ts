@@ -320,7 +320,8 @@ export interface GuestInfoFieldsProps {
   custom: Record<string, string>;
   setCustom: (updater: (current: Record<string, string>) => Record<string, string>) => void;
   phone: string;
-  openUserProfile?: () => void;
+  onPhoneUpdate?: () => void | Promise<void>;
+  isPhoneUpdatePending?: boolean;
 }
 
 export interface EditEventDialogProps {

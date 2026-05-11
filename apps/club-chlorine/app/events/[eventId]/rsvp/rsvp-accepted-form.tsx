@@ -1,8 +1,9 @@
 "use client";
 
-import { UserProfile, useClerk, useUser } from "@clerk/nextjs";
+import { useClerk, useUser } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { TenantButton } from "@coucou/ui/tenant-template";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { CheckCircle2 } from "lucide-react";
@@ -37,7 +38,7 @@ import {
   parseRsvpStepQueryValue,
   type RsvpStepNumber,
 } from "@/lib/rsvp-url-state";
-import { siteConfiguration } from "@/lib/site";
+import { coucouBaseUrl, siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
 import type {
   ApplicationError,
@@ -48,6 +49,7 @@ import type {
   RSVPFormData,
   User,
 } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 // Buttons in the RSVP / post-RSVP flow render transparent with just a
 // border so they never paint a solid block on top of the chlorine wordmark
@@ -62,6 +64,12 @@ export type AttendanceStatusOption = "yes" | "no" | "maybe";
 
 const ATTENDANCE_STATUS_OPTIONS: AttendanceStatusOption[] = ["yes", "maybe", "no"];
 
+const RSVP_STEPPER_STEPS: Array<{ step: RsvpStepNumber; label: string }> = [
+  { step: 1, label: "You" },
+  { step: 2, label: "Details" },
+  { step: 3, label: "Submit" },
+];
+
 function getAttendanceStatusLabel(status: AttendanceStatusOption): string {
   switch (status) {
     case "yes":
@@ -71,6 +79,87 @@ function getAttendanceStatusLabel(status: AttendanceStatusOption): string {
     case "no":
       return "No";
   }
+}
+
+function RsvpStepper({
+  currentStep,
+  onCompletedStepClick,
+}: {
+  currentStep: RsvpStepNumber;
+  onCompletedStepClick: (step: RsvpStepNumber) => void;
+}) {
+  return (
+    <nav aria-label="RSVP progress" className="pb-3">
+      <ol className="mx-auto flex w-full max-w-2xl items-center justify-center">
+        {RSVP_STEPPER_STEPS.map((stepEntry, stepIndex) => {
+          const isCompleted = stepEntry.step < currentStep;
+          const isCurrent = stepEntry.step === currentStep;
+          const isFuture = stepEntry.step > currentStep;
+          const sharedClassName = cn(
+            "group inline-flex min-w-0 items-center gap-2 px-1 py-2 text-center transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+            isCurrent
+              ? "text-primary"
+              : isCompleted
+                ? "text-primary hover:text-primary/80"
+                : "text-primary/40",
+          );
+          const markerClassName = cn(
+            "flex size-5 shrink-0 items-center justify-center border text-[10px] font-semibold leading-none",
+            isCurrent
+              ? "border-primary bg-primary text-background"
+              : isCompleted
+                ? "border-primary/70 text-primary"
+                : "border-primary/20 text-primary/40",
+          );
+          const content = (
+            <>
+              <span className={markerClassName}>{stepEntry.step}</span>
+              <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-normal">
+                {stepEntry.label}
+              </span>
+            </>
+          );
+          const connectorClassName = cn(
+            "mx-2 h-px min-w-4 flex-1 transition-colors sm:mx-8",
+            stepEntry.step < currentStep ? "bg-primary/70" : "bg-primary/20",
+          );
+
+          return (
+            <li
+              key={stepEntry.step}
+              className={cn(
+                "flex min-w-0 items-center",
+                stepIndex < RSVP_STEPPER_STEPS.length - 1 ? "flex-1" : "shrink-0",
+              )}
+            >
+              {isCompleted ? (
+                <button
+                  type="button"
+                  className={sharedClassName}
+                  onClick={() => onCompletedStepClick(stepEntry.step)}
+                >
+                  {content}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={sharedClassName}
+                  aria-current={isCurrent ? "step" : undefined}
+                  disabled={isFuture}
+                >
+                  {content}
+                </button>
+              )}
+              {stepIndex < RSVP_STEPPER_STEPS.length - 1 ? (
+                <span aria-hidden="true" className={connectorClassName} />
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
 }
 
 export type RsvpCollectedArgs = {
@@ -147,7 +236,7 @@ export function RsvpAcceptedForm({
   const publicEventRouteId = eventRouteId ?? eventId;
   const isFullForm = formVariant === "full";
   const { user } = useUser();
-  const { openUserProfile } = useClerk();
+  const { signOut } = useClerk();
 
   const status = useQuery(api.rsvps.statusForUserEvent, {
     eventId,
@@ -188,6 +277,7 @@ export function RsvpAcceptedForm({
   const [hasAcknowledgedSmsOptOutPrompt, setHasAcknowledgedSmsOptOutPrompt] =
     useState<boolean>(false);
   const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<"encourage" | null>(null);
+  const [phoneUpdatePending, setPhoneUpdatePending] = useState<boolean>(false);
 
   const smsSenderDisplayName = useMemo(
     () =>
@@ -435,6 +525,31 @@ export function RsvpAcceptedForm({
     return status?.status === "denied" && !!effectiveListKey && status.listKey === effectiveListKey;
   }, [status?.status, status?.listKey, listKey, resolvedListKey]);
 
+  const handlePhoneUpdate = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    setMessage("");
+    setPhoneUpdatePending(true);
+    const fallbackRsvpPathname = isFullForm
+      ? `/events/${publicEventRouteId}/rsvp/full`
+      : `/events/${publicEventRouteId}/rsvp`;
+    const returnPath = buildPathWithPreservedQuery(pathname ?? fallbackRsvpPathname, searchParams);
+    const primarySignInUrl = buildTenantPrimarySignInUrl({
+      primaryBaseUrl: coucouBaseUrl,
+      siteConfiguration,
+      redirectUrl: buildSatelliteReturnUrl(window.location.origin, returnPath),
+    });
+
+    try {
+      await signOut({ redirectUrl: primarySignInUrl });
+    } catch (error: unknown) {
+      const errorDetails = error as ApplicationError | Error;
+      const errorMessage = errorDetails?.message || "Failed to start phone update.";
+      setMessage(errorMessage);
+      toast.error("Phone update failed", { description: errorMessage });
+      setPhoneUpdatePending(false);
+    }
+  }, [isFullForm, pathname, publicEventRouteId, searchParams, signOut]);
+
   const handleSmsConsentChange = React.useCallback(
     async (checked: boolean | "indeterminate") => {
       const isEnabled = checked === true;
@@ -643,6 +758,13 @@ export function RsvpAcceptedForm({
     replaceStepInUrl(previousStep);
   };
 
+  const goToCompletedStep = (targetStep: RsvpStepNumber) => {
+    if (isFullForm || targetStep >= step) return;
+    setMessage("");
+    setStep(targetStep);
+    replaceStepInUrl(targetStep);
+  };
+
   const goNext = async () => {
     setMessage("");
     if (step === 1) {
@@ -799,6 +921,10 @@ export function RsvpAcceptedForm({
     <>
       <Form {...form}>
         <form onSubmit={handleFormSubmit} className="space-y-3">
+          {!isFullForm ? (
+            <RsvpStepper currentStep={step} onCompletedStepClick={goToCompletedStep} />
+          ) : null}
+
           {showGuestInfoFields ? (
             <GuestInfoFields
               form={form}
@@ -816,7 +942,8 @@ export function RsvpAcceptedForm({
               invitedByName={invitedByName}
               setInvitedByName={setInvitedByName}
               phone={phone}
-              openUserProfile={openUserProfile}
+              onPhoneUpdate={handlePhoneUpdate}
+              isPhoneUpdatePending={phoneUpdatePending}
               isSignedIn={!!user}
               step={guestInfoStep}
             />
@@ -1076,12 +1203,6 @@ export function RsvpAcceptedForm({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {user ? (
-        <div style={{ display: "none" }}>
-          <UserProfile routing="hash" />
-        </div>
-      ) : null}
 
       {submitting ? (
         <div className="pt-4">

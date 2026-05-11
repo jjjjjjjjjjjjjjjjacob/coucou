@@ -111,6 +111,7 @@ mock.module("@clerk/nextjs", () => ({
   }),
   useClerk: () => ({
     openUserProfile: () => {},
+    signOut: async () => {},
   }),
   useSignIn: () => ({
     isLoaded: true,
