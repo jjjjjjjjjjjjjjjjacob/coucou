@@ -11,6 +11,8 @@ describe("auth domain helpers", () => {
   it("lists configured client site redirect origins", () => {
     expect(getClientSiteRedirectOrigins()).toContain("https://dojopomodoro.club");
     expect(getClientSiteRedirectOrigins()).toContain("https://clubchlorine.party");
+    expect(getClientSiteRedirectOrigins()).toContain("http://localhost:5678");
+    expect(getClientSiteRedirectOrigins()).toContain("http://localhost:5679");
     expect(getClientSiteRedirectOrigins()).not.toContain("https://coucou.events");
   });
 
@@ -36,7 +38,7 @@ describe("auth domain helpers", () => {
     const redirectUrl = signInUrl.searchParams.get("redirect_url");
 
     expect(signInUrl.origin).toBe("https://coucou.events");
-    expect(signInUrl.pathname).toBe("/workspaces/dojo-pomodoro/login");
+    expect(signInUrl.pathname).toBe("/clients/dojo/sign-in");
     expect(redirectUrl).toContain("https://dojopomodoro.club/events/event_123");
     expect(redirectUrl).toContain(`${CLERK_SATELLITE_SYNC_PARAM}=false`);
   });

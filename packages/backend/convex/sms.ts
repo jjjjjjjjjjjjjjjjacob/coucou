@@ -19,6 +19,8 @@ export const createNotification = internalMutation({
     recipientPhoneObfuscated: v.string(),
     type: v.string(),
     message: v.string(),
+    textBlastId: v.optional(v.id("textBlasts")),
+    textBlastRecipientId: v.optional(v.id("textBlastRecipients")),
   },
   async handler(ctx, args) {
     const notification = await ctx.db.insert("smsNotifications", {
@@ -58,6 +60,16 @@ export const updateNotificationStatus = internalMutation({
     };
 
     await ctx.db.patch(args.notificationId, updateData);
+
+    if (notification.textBlastRecipientId) {
+      await ctx.db.patch(notification.textBlastRecipientId, {
+        status: args.status,
+        messageId: args.messageId ?? notification.messageId,
+        errorMessage: args.errorMessage ?? notification.errorMessage,
+        sentAt: args.sentAt ?? notification.sentAt,
+        updatedAt: Date.now(),
+      });
+    }
   },
 });
 

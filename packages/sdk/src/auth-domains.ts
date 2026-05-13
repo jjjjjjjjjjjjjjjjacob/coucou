@@ -1,16 +1,25 @@
-import { type SiteConfiguration, siteConfigurations } from "./site-config";
+import { type SiteConfiguration, type SiteKey, siteConfigurations } from "./site-config";
 
 export const CLERK_SATELLITE_SYNC_PARAM = "__clerk_synced";
 export const CLERK_SATELLITE_SYNC_VALUE = "false";
+
+const localClientSiteOrigins: Partial<Record<SiteKey, string>> = {
+  dojo: "http://localhost:5678",
+  "club-chlorine": "http://localhost:5679",
+};
 
 export function getSiteOrigin(siteConfiguration: SiteConfiguration): string {
   return new URL(siteConfiguration.domain).origin;
 }
 
 export function getClientSiteRedirectOrigins(): string[] {
-  return Object.values(siteConfigurations)
+  const redirectOrigins = Object.values(siteConfigurations)
     .filter((siteConfiguration) => siteConfiguration.appKind === "client")
     .map(getSiteOrigin);
+  if (process.env.NODE_ENV !== "production") {
+    redirectOrigins.push(...Object.values(localClientSiteOrigins));
+  }
+  return [...new Set(redirectOrigins)];
 }
 
 export function buildSatelliteReturnUrl(baseUrl: string, redirectPath: string): string {

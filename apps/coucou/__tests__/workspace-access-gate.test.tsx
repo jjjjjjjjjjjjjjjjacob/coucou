@@ -164,4 +164,51 @@ describe("WorkspaceAccessGate", () => {
     expect(screen.getByText("write")).toBeTruthy();
     expect(getWorkspaceAccessGateTestGlobal().__getClerkSetActiveCalls?.()).toEqual([]);
   });
+
+  it("keeps Coucou active when platform members also have tenant membership", async () => {
+    getWorkspaceAccessGateTestGlobal().__setClerkTestState?.({
+      orgId: "org_coucou",
+      orgSlug: "coucou",
+    });
+    getWorkspaceAccessGateTestGlobal().__setClerkTestMemberships?.([
+      {
+        id: "membership_coucou",
+        role: "org:admin",
+        organization: {
+          id: "org_coucou",
+          name: "Coucou",
+          slug: "coucou",
+        },
+      },
+      {
+        id: "membership_dojo",
+        role: "org:admin",
+        organization: {
+          id: "org_dojo",
+          name: "Dojo Pomodoro",
+          slug: "dojo-pomodoro",
+        },
+      },
+    ]);
+    getWorkspaceAccessGateTestGlobal().__setConvexQueryResponse?.({
+      _id: "workspace_123",
+      slug: "dojo-pomodoro",
+      name: "Dojo Pomodoro",
+      kind: "client",
+      clerkOrganizationId: "org_dojo",
+      clerkOrganizationSlug: "dojo-pomodoro",
+      sites: [],
+    });
+
+    render(
+      <WorkspaceAccessGate workspaceSlug="dojo-pomodoro" accessKind="host">
+        <div>Workspace loaded</div>
+      </WorkspaceAccessGate>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Workspace loaded")).toBeTruthy();
+    });
+    expect(getWorkspaceAccessGateTestGlobal().__getClerkSetActiveCalls?.()).toEqual([]);
+  });
 });

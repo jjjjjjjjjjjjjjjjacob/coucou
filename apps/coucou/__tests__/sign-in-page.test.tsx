@@ -193,4 +193,19 @@ describe("SignInClient", () => {
     });
     expect(getRouterReplaceCalls()).toEqual([]);
   });
+
+  it("redirects signed-in local satellite users back to localhost tenant origins", async () => {
+    setClerkSignedIn(true);
+
+    render(
+      <SignInClient redirectUrl="http://localhost:5679/events/sample/ticket?__clerk_synced=false" />,
+    );
+
+    await waitFor(() => {
+      expect(getLocationReplaceCalls()).toEqual([
+        "http://localhost:5679/events/sample/ticket?__clerk_synced=false",
+      ]);
+    });
+    expect(getRouterReplaceCalls()).toEqual([]);
+  });
 });

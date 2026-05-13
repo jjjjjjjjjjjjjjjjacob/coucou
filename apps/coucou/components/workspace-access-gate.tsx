@@ -152,6 +152,8 @@ export function WorkspaceAccessGate({
           clerkOrganizationSlug: workspace.clerkOrganizationSlug ?? null,
         }
       : null;
+  const canUsePlatformWorkspaceAccess =
+    Boolean(workspaceConfiguration) && hasCoucouPlatformAccess;
   const targetMembership =
     memberships.find((membership) => {
       if (
@@ -182,17 +184,19 @@ export function WorkspaceAccessGate({
     Boolean(targetOrganizationId) &&
     orgId !== targetOrganizationId &&
     Boolean(setActive) &&
+    !canUsePlatformWorkspaceAccess &&
     !activationErrorMessage;
   const hasUsableWorkspaceAuthorization =
     (Boolean(targetOrganizationId) &&
       (orgId === targetOrganizationId ||
         verifiedMembershipOrganizationId === targetOrganizationId)) ||
-    (Boolean(workspaceConfiguration) && hasCoucouPlatformAccess);
+    canUsePlatformWorkspaceAccess;
 
   useEffect(() => {
     if (
       !targetMembership ||
       !targetOrganizationId ||
+      canUsePlatformWorkspaceAccess ||
       orgId === targetOrganizationId ||
       isActivatingOrganization ||
       activationErrorMessage ||
@@ -225,6 +229,7 @@ export function WorkspaceAccessGate({
     };
   }, [
     activationErrorMessage,
+    canUsePlatformWorkspaceAccess,
     isActivatingOrganization,
     orgId,
     setActive,
@@ -409,8 +414,7 @@ export function WorkspaceAccessGate({
     );
   }
 
-  const hasCoucouSuperadminWorkspaceAccess =
-    Boolean(workspaceConfiguration) && hasCoucouPlatformAccess;
+  const hasCoucouSuperadminWorkspaceAccess = canUsePlatformWorkspaceAccess;
 
   if (!targetMembership && !hasCoucouSuperadminWorkspaceAccess) {
     return (

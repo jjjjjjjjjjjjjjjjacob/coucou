@@ -23,6 +23,10 @@ mock.module("next/navigation", () => ({
 }));
 
 mock.module("@clerk/nextjs", () => ({
+  useAuth: () => ({
+    isLoaded: true,
+    isSignedIn: true,
+  }),
   useUser: () => ({
     user: {
       id: "user_123",
@@ -41,13 +45,33 @@ mock.module("@clerk/nextjs", () => ({
 }));
 
 mock.module("convex/react", () => ({
+  useConvexAuth: () => ({
+    isAuthenticated: true,
+    isLoading: false,
+  }),
   useQuery: () => undefined,
   useMutation: () => mock(async () => undefined),
   useAction: () => mock(async () => ({ ok: true, listKey: "vip", matched: "fallback" })),
 }));
 
 mock.module("@coucou/ui/tenant-template", () => ({
+  CHLORINE_PHASE_SPLIT_MS: 0,
+  ChlorineEventRow: ({
+    event,
+  }: {
+    event: { id: string; rsvpHref?: string; rsvpLabel?: string; rsvpDisabled?: boolean };
+  }) => (
+    <a
+      href={event.rsvpHref ?? ""}
+      aria-disabled={event.rsvpDisabled ? "true" : undefined}
+      data-testid={`rsvp-brick-${event.id}`}
+    >
+      {event.rsvpLabel ?? "RSVP"}
+    </a>
+  ),
+  RsvpPending: ({ heading }: { heading: string }) => <div>{heading}</div>,
   TenantButton: (props: React.ComponentProps<"button">) => <button {...props} />,
+  useMobile: () => false,
 }));
 
 const { RsvpAcceptedForm } = await import("../app/events/[eventId]/rsvp/rsvp-accepted-form");

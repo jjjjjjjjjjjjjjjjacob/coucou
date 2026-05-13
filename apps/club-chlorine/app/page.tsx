@@ -139,17 +139,20 @@ function HomeEventRow({ rowSeed, mobile, delayMs, searchParams }: HomeEventRowPr
 
   const status = rsvpStatus?.status;
   const hasRsvp = status === "pending" || status === "approved" || status === "denied";
+  const rsvpStatusIsLoading = !isLoaded || (isSignedIn && rsvpStatus === undefined);
   const existingRsvpHref =
     status === "approved"
       ? buildPathWithPreservedQuery(`/events/${rowSeed.routeId}/ticket`, searchParams, ["step"])
       : status === "pending" || status === "denied"
         ? buildPathWithPreservedQuery(`/events/${rowSeed.routeId}/status`, searchParams, ["step"])
         : null;
-  let rsvpFormHref: string;
-  if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
-    rsvpFormHref = buildInfoRsvpPath(rowSeed.routeId, searchParams);
-  } else {
-    rsvpFormHref = buildFullRsvpPath(rowSeed.routeId, searchParams);
+  let rsvpFormHref: string | undefined;
+  if (!existingRsvpHref && rowSeed.isOpenForRsvp && !rsvpStatusIsLoading) {
+    if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
+      rsvpFormHref = buildInfoRsvpPath(rowSeed.routeId, searchParams);
+    } else {
+      rsvpFormHref = buildFullRsvpPath(rowSeed.routeId, searchParams);
+    }
   }
   const brickHref = existingRsvpHref ?? rsvpFormHref;
   const brickLabel =
@@ -162,7 +165,7 @@ function HomeEventRow({ rowSeed, mobile, delayMs, searchParams }: HomeEventRowPr
           : rowSeed.isOpenForRsvp
             ? "RSVP"
             : "CLOSED";
-  const brickDisabled = hasRsvp ? false : !rowSeed.isOpenForRsvp;
+  const brickDisabled = hasRsvp ? false : !rowSeed.isOpenForRsvp || rsvpStatusIsLoading;
 
   const event: ChlorineLandingEvent = {
     id: rowSeed.routeId,

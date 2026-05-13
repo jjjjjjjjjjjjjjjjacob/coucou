@@ -188,6 +188,10 @@ mock.module("@clerk/nextjs", () => ({
 
 // Mock Convex
 mock.module("convex/react", () => ({
+  useConvexAuth: () => ({
+    isAuthenticated: true,
+    isLoading: false,
+  }),
   useQuery: () => {
     // Return safe default data that works for most queries
     return [

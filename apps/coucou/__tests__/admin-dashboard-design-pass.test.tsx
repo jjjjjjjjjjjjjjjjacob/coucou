@@ -112,7 +112,6 @@ describe("admin dashboard design pass", () => {
       "social_instagram",
       "invitedByName",
       "approvalStatus",
-      "attendanceStatus",
       "referredByName",
       "createdAt",
     ]);
@@ -141,6 +140,12 @@ describe("admin dashboard design pass", () => {
     const defaultHiddenColumnIds = availableColumnIds.filter(
       (columnId) => !defaultVisibleColumnIds.includes(columnId),
     );
+    const previousDefaultVisibleColumnIds = availableColumnIds.filter(
+      (columnId) => defaultVisibleColumnIds.includes(columnId) || columnId === "attendanceStatus",
+    );
+    const previousDefaultHiddenColumnIds = availableColumnIds.filter(
+      (columnId) => !previousDefaultVisibleColumnIds.includes(columnId),
+    );
 
     expect(
       shouldResetHostRsvpsSavedTablePreference({
@@ -148,6 +153,15 @@ describe("admin dashboard design pass", () => {
         defaultVisibleColumnIds,
         savedColumnOrder: defaultVisibleColumnIds.filter((columnId) => columnId !== "createdAt"),
         hiddenColumnIds: [...defaultHiddenColumnIds, "createdAt"],
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldResetHostRsvpsSavedTablePreference({
+        availableColumnIds,
+        defaultVisibleColumnIds,
+        savedColumnOrder: availableColumnIds,
+        hiddenColumnIds: previousDefaultHiddenColumnIds,
       }),
     ).toBe(true);
 

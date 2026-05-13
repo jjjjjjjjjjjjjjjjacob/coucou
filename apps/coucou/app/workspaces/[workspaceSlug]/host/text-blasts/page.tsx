@@ -15,7 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -49,6 +49,12 @@ import TextBlastDialog from "./text-blast-dialog";
 type TextBlastWithSender = TextBlast & { sentByName: string };
 type FilterOption = "all" | "draft" | "sent" | "failed";
 type SortOption = "date" | "name" | "recipients";
+
+function getBlastTargetEventIds(blast: TextBlast): Id<"events">[] {
+  return blast.targetEventIds && blast.targetEventIds.length > 0
+    ? blast.targetEventIds
+    : [blast.eventId];
+}
 
 function getStatusIcon(status: TextBlastStatus) {
   switch (status) {
@@ -100,21 +106,13 @@ export default function TextBlastsPage() {
     [events],
   );
 
-  const initialEventId = searchParams.get("eventId") ?? eventsSorted[0]?._id;
-  const [selectedEventId, setSelectedEventId] = useState<string | undefined>(initialEventId);
-
-  // Auto-select first event when events load
-  useEffect(() => {
-    if (!selectedEventId && eventsSorted[0]?._id) {
-      setSelectedEventId(eventsSorted[0]._id);
-    }
-  }, [selectedEventId, eventsSorted]);
+  const initialEventId = searchParams.get("eventId") ?? "all";
+  const [selectedEventId, setSelectedEventId] = useState<string>(initialEventId);
 
   const textBlasts = useQuery(
-    api.textBlasts.getBlastsByEventWithSenderNames,
-    selectedEventId && workspaceScope
+    api.textBlasts.getBlastsByWorkspaceWithSenderNames,
+    workspaceScope
       ? {
-          eventId: selectedEventId as Id<"events">,
           ...workspaceScope.queryArgs,
         }
       : "skip",
@@ -160,13 +158,24 @@ export default function TextBlastsPage() {
 
     let filtered = textBlasts.filter((blast) => {
       // Search filter
-      const event = eventsMap.get(blast.eventId);
+      const targetEvents = getBlastTargetEventIds(blast)
+        .map((eventId) => eventsMap.get(eventId))
+        .filter((event): event is Event => event !== undefined);
       const matchesSearch =
         blast.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        event?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        targetEvents.some((event) =>
+          formatEventTitleInline(event).toLowerCase().includes(searchQuery.toLowerCase()),
+        ) ||
         blast.message.toLowerCase().includes(searchQuery.toLowerCase());
 
       if (!matchesSearch) return false;
+
+      if (
+        selectedEventId !== "all" &&
+        !getBlastTargetEventIds(blast).includes(selectedEventId as Id<"events">)
+      ) {
+        return false;
+      }
 
       // Status filter
       if (filterBy !== "all" && blast.status !== filterBy) return false;
@@ -192,7 +201,7 @@ export default function TextBlastsPage() {
     });
 
     return filtered;
-  }, [textBlasts, searchQuery, filterBy, sentByFilter, sortBy, eventsMap]);
+  }, [textBlasts, searchQuery, selectedEventId, filterBy, sentByFilter, sortBy, eventsMap]);
 
   const handleDuplicateBlast = async (blastId: Id<"textBlasts">) => {
     try {
@@ -267,12 +276,13 @@ export default function TextBlastsPage() {
         <div className="flex flex-col sm:flex-row gap-2 flex-1 flex-wrap">
           {/* Event Selector */}
           <Select
-            value={selectedEventId ?? ""}
+            value={selectedEventId}
             onValueChange={(value) => {
               setSelectedEventId(value);
               setSentByFilter("all");
             }}
           >
+            <SelectOption value="all">All Events</SelectOption>
             {eventsSorted.map((event) => (
               <SelectOption key={event._id} value={event._id}>
                 {formatEventTitleInline(event)}
@@ -320,21 +330,8 @@ export default function TextBlastsPage() {
         </div>
       </div>
 
-      {/* No event selected state */}
-      {!selectedEventId && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Send className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Select an event</h3>
-            <p className="text-muted-foreground text-center">
-              Choose an event above to view its text blasts
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Text Blasts Grid */}
-      {selectedEventId && filteredAndSortedBlasts.length === 0 ? (
+      {filteredAndSortedBlasts.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Send className="h-12 w-12 text-muted-foreground mb-4" />
@@ -350,10 +347,13 @@ export default function TextBlastsPage() {
             </Button>
           </CardContent>
         </Card>
-      ) : selectedEventId ? (
+      ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedBlasts.map((blast) => {
-            const _event = eventsMap.get(blast.eventId);
+            const targetEventLabels = getBlastTargetEventIds(blast)
+              .map((eventId) => eventsMap.get(eventId))
+              .filter((event): event is Event => event !== undefined)
+              .map((event) => formatEventTitleInline(event));
             const statusBadge = getStatusBadgeProps(blast.status);
             return (
               <Card key={blast._id} className="hover:shadow-md transition-shadow">
@@ -364,6 +364,13 @@ export default function TextBlastsPage() {
                       <p className="text-sm text-muted-foreground line-clamp-1">
                         Sent by {blast.sentByName}
                       </p>
+                      {targetEventLabels.length > 0 && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">
+                          {targetEventLabels.length === 1
+                            ? targetEventLabels[0]
+                            : `${targetEventLabels.length} events`}
+                        </p>
+                      )}
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -525,7 +532,7 @@ export default function TextBlastsPage() {
             );
           })}
         </div>
-      ) : null}
+      )}
 
       {/* Text Blast Dialog */}
       <TextBlastDialog

@@ -16,10 +16,14 @@ interface RsvpResizableColumnSizing {
 
 interface RsvpTableColumnSizingOptions {
   label: string;
-  minContentWidth: number;
-  preferredSize?: number;
+  contentValues?: readonly RsvpTableContentValue[];
+  minContentWidth?: number;
+  contentWidthCap?: number;
+  contentHorizontalAffordance?: number;
   maxSize?: number;
 }
+
+type RsvpTableContentValue = boolean | null | number | string | undefined;
 
 interface RsvpTableBodyCellClassNameOptions {
   columnIdentifier: string;
@@ -61,26 +65,54 @@ const RSVP_ROW_SELECTION_EXCLUDED_COLUMN_IDS = new Set([
   "actions",
 ]);
 
-const RSVP_TABLE_COLUMN_MIN_WIDTH_FLOOR = 80;
+const RSVP_TABLE_COLUMN_MIN_WIDTH_FLOOR = 72;
 const RSVP_TABLE_HEADER_CHARACTER_WIDTH = 8;
 const RSVP_TABLE_HEADER_AFFORDANCE_WIDTH = 52;
 const RSVP_TABLE_BODY_HORIZONTAL_AFFORDANCE_WIDTH = 32;
+const RSVP_TABLE_BODY_CHARACTER_WIDTH = 8;
+
+function getRsvpTableContentValueText(contentValue: RsvpTableContentValue): string {
+  if (contentValue === null || contentValue === undefined) {
+    return "";
+  }
+
+  if (typeof contentValue === "boolean") {
+    return contentValue ? "Yes" : "No";
+  }
+
+  return String(contentValue).trim();
+}
+
+function getRsvpTableContentValueWidth(contentValue: RsvpTableContentValue): number {
+  return getRsvpTableContentValueText(contentValue).length * RSVP_TABLE_BODY_CHARACTER_WIDTH;
+}
 
 export function getRsvpTableColumnSizing({
   label,
-  minContentWidth,
-  preferredSize = 150,
+  contentValues = [],
+  minContentWidth = 0,
+  contentWidthCap,
+  contentHorizontalAffordance = RSVP_TABLE_BODY_HORIZONTAL_AFFORDANCE_WIDTH,
   maxSize = RSVP_TABLE_COLUMN_MAX_WIDTH,
 }: RsvpTableColumnSizingOptions): RsvpResizableColumnSizing {
   const labelWidth =
     label.trim().length * RSVP_TABLE_HEADER_CHARACTER_WIDTH + RSVP_TABLE_HEADER_AFFORDANCE_WIDTH;
-  const contentWidth = minContentWidth + RSVP_TABLE_BODY_HORIZONTAL_AFFORDANCE_WIDTH;
+  const widestContentValueWidth = Math.max(
+    0,
+    ...contentValues.map((contentValue) => getRsvpTableContentValueWidth(contentValue)),
+  );
+  const cappedContentValueWidth =
+    contentWidthCap === undefined
+      ? widestContentValueWidth
+      : Math.min(widestContentValueWidth, contentWidthCap);
+  const contentWidth =
+    Math.max(minContentWidth, cappedContentValueWidth) + contentHorizontalAffordance;
   const minSize = Math.ceil(Math.max(RSVP_TABLE_COLUMN_MIN_WIDTH_FLOOR, labelWidth, contentWidth));
   const resolvedMaxSize = Math.max(minSize, maxSize);
 
   return {
     enableResizing: true,
-    size: Math.min(Math.max(preferredSize, minSize), resolvedMaxSize),
+    size: minSize,
     minSize,
     maxSize: resolvedMaxSize,
   };
@@ -98,7 +130,7 @@ export function getRsvpTableBodyCellClassName({
   isReadOnly,
 }: RsvpTableBodyCellClassNameOptions): string {
   return cn(
-    "py-1 pr-2 border-r border-foreground/10 last:border-r-0",
+    "max-w-0 overflow-hidden py-1 pr-2 align-middle border-r border-foreground/10 last:border-r-0",
     columnIdentifier === "select" ? "pl-2" : RSVP_TABLE_BODY_ALIGNMENT_GUTTER_CLASS,
     canToggleRsvpTableRowFromBodyCell({ columnIdentifier, isReadOnly }) && "cursor-pointer",
   );

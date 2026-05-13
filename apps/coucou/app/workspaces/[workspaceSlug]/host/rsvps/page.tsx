@@ -208,6 +208,53 @@ function coerceTicketStatusOption(status: TicketDisplayStatus): TicketStatusOpti
   return status;
 }
 
+function normalizeFieldKey(key: string): string {
+  return key
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .trim();
+}
+
+function getHostRsvpCustomFieldValue(rsvp: HostRsvp, fieldKey: string): string {
+  if (!rsvp.customFieldValues) {
+    return "";
+  }
+
+  const exactValue = rsvp.customFieldValues[fieldKey];
+  if (exactValue) {
+    return exactValue;
+  }
+
+  const normalizedFieldKey = normalizeFieldKey(fieldKey);
+  for (const [customFieldKey, customFieldValue] of Object.entries(rsvp.customFieldValues)) {
+    if (normalizeFieldKey(customFieldKey) === normalizedFieldKey) {
+      return customFieldValue;
+    }
+  }
+
+  return "";
+}
+
+function getHostRsvpGuestDisplayValue(rsvp: HostRsvp): string {
+  const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
+  return displayName || rsvp.contact?.email || rsvp.contact?.phone || "(no contact)";
+}
+
+function getTimestampDateTimeLabels(timestamp: number): [string, string] {
+  const date = new Date(timestamp);
+  return [
+    date.toLocaleDateString(),
+    date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  ];
+}
+
+function stopRsvpTableInteractiveEventPropagation(event: React.SyntheticEvent): void {
+  event.stopPropagation();
+}
+
 export default function RsvpsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -558,21 +605,13 @@ export default function RsvpsPage() {
     }
   }, [loadingListUpdates, loadingApprovalUpdates, loadingAttendanceUpdates, loadingTicketUpdates]);
 
-  // Normalize a field key for shared field lookup
-  const normalizeFieldKey = (key: string): string => {
-    return key
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "") // Remove all non-alphanumeric characters
-      .trim();
-  };
-
   const canEditTicketForRsvp = React.useCallback((rsvp: HostRsvp): boolean => {
     return rsvp.approvalStatus === "approved";
   }, []);
 
   const getRsvpGuestName = React.useCallback((rsvp: HostRsvp): string => {
-    const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
-    return displayName || rsvp.contact?.email || rsvp.contact?.phone || "Guest";
+    const displayValue = getHostRsvpGuestDisplayValue(rsvp);
+    return displayValue === "(no contact)" ? "Guest" : displayValue;
   }, []);
 
   const openRsvpQrCode = React.useCallback((rsvp: HostRsvp) => {
@@ -895,6 +934,31 @@ export default function RsvpsPage() {
     }
   }, [deleteRsvps, getRsvpGuestName, rsvpsPendingDeletion, workspaceScope]);
 
+  const listKeyColumnContentValues = React.useMemo(() => {
+    const visibleListKeys = rsvps.map((rsvp) => rsvp.listKey?.toUpperCase() ?? "");
+    const availableListKeys =
+      listCredentials?.map((credential) => credential.listKey.toUpperCase()) ?? [];
+
+    return Array.from(new Set([...visibleListKeys, ...availableListKeys])).filter(
+      (listKey) => listKey.length > 0,
+    );
+  }, [listCredentials, rsvps]);
+
+  const createdAtColumnContentValues = React.useMemo(
+    () => rsvps.flatMap((rsvp) => getTimestampDateTimeLabels(rsvp.createdAt)),
+    [rsvps],
+  );
+
+  const ticketViewedAtColumnContentValues = React.useMemo(
+    () => [
+      "Not viewed",
+      ...rsvps.flatMap((rsvp) =>
+        rsvp.ticketViewedAt === undefined ? [] : getTimestampDateTimeLabels(rsvp.ticketViewedAt),
+      ),
+    ],
+    [rsvps],
+  );
+
   // Generate dynamic custom field columns
   const customFieldColumns = React.useMemo<ColumnDef<HostRsvp>[]>(() => {
     if (!currentEvent?.customFields) return [];
@@ -907,29 +971,11 @@ export default function RsvpsPage() {
         header: fieldLabel, // Remove trailing colon and spaces
         ...getRsvpTableColumnSizing({
           label: fieldLabel,
-          minContentWidth: 128,
-          preferredSize: 180,
+          contentValues: rsvps.map((rsvp) => getHostRsvpCustomFieldValue(rsvp, field.key)),
+          contentWidthCap: 160,
+          contentHorizontalAffordance: field.prependUrl || field.copyEnabled ? 56 : 32,
         }),
-        accessorFn: (row: HostRsvp) => {
-          if (!row.customFieldValues) return "";
-
-          // Try exact match first
-          if (row.customFieldValues[field.key]) {
-            return row.customFieldValues[field.key] ?? "";
-          }
-
-          // Try normalized key
-          const normalizedKey = normalizeFieldKey(field.key);
-
-          // Check all stored keys for a normalized match
-          for (const [metaKey, metaValue] of Object.entries(row.customFieldValues)) {
-            if (normalizeFieldKey(metaKey) === normalizedKey) {
-              return metaValue;
-            }
-          }
-
-          return "";
-        },
+        accessorFn: (row: HostRsvp) => getHostRsvpCustomFieldValue(row, field.key),
         cell: ({ getValue }) => {
           const rawValue = (getValue() as string | undefined) ?? "";
           const hasPrependUrl = !!field.prependUrl;
@@ -964,13 +1010,15 @@ export default function RsvpsPage() {
               <ContextMenu>
                 <ContextMenuTrigger asChild>
                   <div
-                    className="flex items-center gap-1 cursor-pointer group hover:bg-muted/50 rounded px-2 py-1 -mx-2 -my-1"
+                    className="group -mx-2 -my-1 flex max-w-full min-w-0 cursor-pointer items-center gap-1 overflow-hidden rounded px-2 py-1 hover:bg-muted/50"
                     onClick={(e) => {
                       e.stopPropagation(); // Prevent row selection
                       window.open(fullUrl, "_blank", "noopener,noreferrer");
                     }}
                   >
-                    <span className="truncate max-w-32 group-hover:underline">{rawValue}</span>
+                    <span className="min-w-0 flex-1 truncate group-hover:underline">
+                      {rawValue}
+                    </span>
                     <ExternalLink className="h-3 w-3 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                   </div>
                 </ContextMenuTrigger>
@@ -1001,11 +1049,11 @@ export default function RsvpsPage() {
             return (
               <div
                 className={cn(
-                  "flex items-center justify-between w-full group cursor-pointer transition-colors duration-150 rounded px-2 py-1 -mx-2 -my-1",
+                  "group -mx-2 -my-1 flex max-w-full min-w-0 cursor-pointer items-center justify-between overflow-hidden rounded px-2 py-1 transition-colors duration-150",
                 )}
                 onClick={handleCopyClick}
               >
-                <span className="truncate max-w-32">{rawValue}</span>
+                <span className="min-w-0 flex-1 truncate">{rawValue}</span>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100 bg-muted transition-opacity duration-150 ml-2 flex-shrink-0" />
@@ -1019,11 +1067,11 @@ export default function RsvpsPage() {
           }
 
           // Handle regular fields without special functionality
-          return <span className="truncate max-w-32">{rawValue || "-"}</span>;
+          return <span className="block max-w-full truncate">{rawValue || "-"}</span>;
         },
       };
     });
-  }, [currentEvent?.customFields]);
+  }, [currentEvent?.customFields, rsvps]);
 
   const socialProfileColumns = React.useMemo<ColumnDef<HostRsvp>[]>(() => {
     const socialPlatforms = currentEvent?.primaryFieldConfig?.socialPlatforms ?? [];
@@ -1032,8 +1080,12 @@ export default function RsvpsPage() {
       header: platform.label,
       ...getRsvpTableColumnSizing({
         label: platform.label,
-        minContentWidth: 112,
-        preferredSize: 150,
+        contentValues: rsvps.map(
+          (rsvp) =>
+            rsvp.socialProfiles.find((profile) => profile.platformKey === platform.platformKey)
+              ?.handle ?? "",
+        ),
+        contentWidthCap: 144,
       }),
       accessorFn: (rsvp: HostRsvp): string =>
         rsvp.socialProfiles.find((profile) => profile.platformKey === platform.platformKey)
@@ -1047,21 +1099,21 @@ export default function RsvpsPage() {
           ? `${platform.profileUrlPrefix}${handle}`
           : null;
         if (!profileUrl) {
-          return <span className="truncate max-w-32">{handle}</span>;
+          return <span className="block max-w-full truncate">{handle}</span>;
         }
         return (
           <a
             href={profileUrl}
             target="_blank"
             rel="noreferrer"
-            className="truncate max-w-32 text-sm underline underline-offset-4"
+            className="block max-w-full truncate text-sm underline underline-offset-4"
           >
             {handle}
           </a>
         );
       },
     }));
-  }, [currentEvent?.primaryFieldConfig?.socialPlatforms]);
+  }, [currentEvent?.primaryFieldConfig?.socialPlatforms, rsvps]);
 
   // Create base columns without selection functionality first
   const baseCols = React.useMemo<ColumnDef<HostRsvp>[]>(() => {
@@ -1071,19 +1123,14 @@ export default function RsvpsPage() {
         header: "Guest",
         ...getRsvpTableColumnSizing({
           label: "Guest",
-          minContentWidth: 128,
-          preferredSize: 170,
+          contentValues: rsvps.map(getHostRsvpGuestDisplayValue),
+          contentWidthCap: 192,
         }),
-        accessorFn: (rsvp: HostRsvp) => {
-          const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
-          return displayName || rsvp.contact?.email || rsvp.contact?.phone || "(no contact)";
-        },
+        accessorFn: getHostRsvpGuestDisplayValue,
         cell: ({ row }) => {
           const rsvp = row.original;
-          const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
-          const guestName =
-            displayName || rsvp.contact?.email || rsvp.contact?.phone || "(no contact)";
-          return <span>{guestName}</span>;
+          const guestName = getHostRsvpGuestDisplayValue(rsvp);
+          return <span className="block max-w-full truncate">{guestName}</span>;
         },
       },
       {
@@ -1092,8 +1139,8 @@ export default function RsvpsPage() {
         accessorKey: "listKey",
         ...getRsvpTableColumnSizing({
           label: "List",
-          minContentWidth: 56,
-          preferredSize: 96,
+          contentValues: listKeyColumnContentValues,
+          contentHorizontalAffordance: isReadOnly ? 32 : 48,
         }),
         cell: ({ row }) => {
           const rsvp = row.original;
@@ -1105,7 +1152,9 @@ export default function RsvpsPage() {
 
           if (isReadOnly || availableListKeys.length <= 1) {
             // If only one list or no lists, show as text
-            return <span>{currentListKey?.toUpperCase()}</span>;
+            return (
+              <span className="block max-w-full truncate">{currentListKey?.toUpperCase()}</span>
+            );
           }
 
           return (
@@ -1114,11 +1163,15 @@ export default function RsvpsPage() {
                 <Button
                   variant="outline"
                   size="xs"
-                  className="h-6 px-2 text-xs"
+                  className="h-6 max-w-full min-w-0 shrink overflow-hidden px-2 text-xs"
                   disabled={isUpdatingList}
+                  onClick={stopRsvpTableInteractiveEventPropagation}
+                  onPointerDown={stopRsvpTableInteractiveEventPropagation}
                 >
                   {isUpdatingList && <Spinner className="mr-1 h-3 w-3" />}
-                  {!isUpdatingList && currentListKey?.toUpperCase()}
+                  {!isUpdatingList && (
+                    <span className="min-w-0 truncate">{currentListKey?.toUpperCase()}</span>
+                  )}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -1143,8 +1196,7 @@ export default function RsvpsPage() {
         accessorFn: (rsvp: HostRsvp): number => rsvp.attendees ?? 1,
         ...getRsvpTableColumnSizing({
           label: "Attendees",
-          minContentWidth: 56,
-          preferredSize: 124,
+          contentValues: rsvps.map((rsvp) => rsvp.attendees ?? 1),
         }),
         cell: ({ row }) => {
           const attendees = row.original.attendees ?? 1;
@@ -1156,8 +1208,8 @@ export default function RsvpsPage() {
         header: "SMS Consent",
         ...getRsvpTableColumnSizing({
           label: "SMS Consent",
-          minContentWidth: 72,
-          preferredSize: 136,
+          contentValues: ["Yes", "No"],
+          contentHorizontalAffordance: 48,
         }),
         accessorFn: (rsvp: HostRsvp): string => {
           return rsvp.smsConsent === true ? "Yes" : rsvp.smsConsent === false ? "No" : "—";
@@ -1189,15 +1241,15 @@ export default function RsvpsPage() {
               accessorKey: "invitedByName",
               ...getRsvpTableColumnSizing({
                 label: currentEvent.primaryFieldConfig.invitedBy.label ?? "Invited By",
-                minContentWidth: 112,
-                preferredSize: 160,
+                contentValues: rsvps.map((rsvp) => rsvp.invitedByName?.trim() ?? ""),
+                contentWidthCap: 144,
               }),
               cell: ({ row }) => {
                 const invitedByName = row.original.invitedByName?.trim();
                 if (!invitedByName) {
                   return <span className="text-sm text-muted-foreground">—</span>;
                 }
-                return <span className="text-sm truncate max-w-32">{invitedByName}</span>;
+                return <span className="block max-w-full truncate text-sm">{invitedByName}</span>;
               },
             } satisfies ColumnDef<HostRsvp>,
           ]
@@ -1208,8 +1260,10 @@ export default function RsvpsPage() {
         accessorKey: "referredByName",
         ...getRsvpTableColumnSizing({
           label: "Referred By",
-          minContentWidth: 112,
-          preferredSize: 160,
+          contentValues: rsvps.map(
+            (rsvp) => rsvp.referredByName?.trim() || rsvp.referralCode?.trim() || "",
+          ),
+          contentWidthCap: 144,
         }),
         cell: ({ row }) => {
           const referredByName =
@@ -1217,7 +1271,7 @@ export default function RsvpsPage() {
           if (!referredByName) {
             return <span className="text-sm text-muted-foreground">—</span>;
           }
-          return <span className="text-sm truncate max-w-32">{referredByName}</span>;
+          return <span className="block max-w-full truncate text-sm">{referredByName}</span>;
         },
       },
       ...socialProfileColumns,
@@ -1227,8 +1281,8 @@ export default function RsvpsPage() {
         accessorKey: "note",
         ...getRsvpTableColumnSizing({
           label: "Note for Hosts",
-          minContentWidth: 160,
-          preferredSize: 220,
+          contentValues: rsvps.map((rsvp) => rsvp.note?.trim() ?? ""),
+          contentWidthCap: 256,
         }),
         cell: ({ row }) => {
           const noteForHosts = row.original.note?.trim();
@@ -1239,7 +1293,7 @@ export default function RsvpsPage() {
           return (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-sm truncate max-w-[16rem] cursor-default">
+                <span className="block max-w-full cursor-default truncate text-sm">
                   {noteForHosts}
                 </span>
               </TooltipTrigger>
@@ -1256,21 +1310,14 @@ export default function RsvpsPage() {
         accessorKey: "createdAt",
         ...getRsvpTableColumnSizing({
           label: "Created",
-          minContentWidth: 104,
-          preferredSize: 128,
+          contentValues: createdAtColumnContentValues,
         }),
         cell: ({ row }) => {
-          const timestamp = row.original.createdAt;
-          const date = new Date(timestamp);
+          const [dateLabel, timeLabel] = getTimestampDateTimeLabels(row.original.createdAt);
           return (
             <div className="text-xs">
-              <div>{date.toLocaleDateString()}</div>
-              <div className="text-muted-foreground">
-                {date.toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </div>
+              <div>{dateLabel}</div>
+              <div className="text-muted-foreground">{timeLabel}</div>
             </div>
           );
         },
@@ -1283,8 +1330,8 @@ export default function RsvpsPage() {
         accessorKey: "approvalStatus",
         ...getRsvpTableColumnSizing({
           label: "Approval",
-          minContentWidth: 112,
-          preferredSize: 150,
+          contentValues: APPROVAL_STATUS_OPTIONS.map(getApprovalStatusLabel),
+          contentHorizontalAffordance: 48,
         }),
         cell: ({ row }) => {
           const rsvp = row.original;
@@ -1316,15 +1363,24 @@ export default function RsvpsPage() {
 
           return (
             <DropdownMenu>
-              <DropdownMenuTrigger className="flex w-18" asChild>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="xs"
-                  className={cn(getStatusColor(currentApprovalStatus))}
+                  className={cn(
+                    "max-w-full min-w-0 shrink overflow-hidden",
+                    getStatusColor(currentApprovalStatus),
+                  )}
                   disabled={isUpdatingApproval}
+                  onClick={stopRsvpTableInteractiveEventPropagation}
+                  onPointerDown={stopRsvpTableInteractiveEventPropagation}
                 >
                   {isUpdatingApproval && <Spinner className="mr-1 h-3 w-3" />}
-                  {!isUpdatingApproval && getApprovalStatusLabel(currentApprovalStatus)}
+                  {!isUpdatingApproval && (
+                    <span className="min-w-0 truncate">
+                      {getApprovalStatusLabel(currentApprovalStatus)}
+                    </span>
+                  )}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -1358,8 +1414,8 @@ export default function RsvpsPage() {
         accessorKey: "attendanceStatus",
         ...getRsvpTableColumnSizing({
           label: "Attendance",
-          minContentWidth: 88,
-          preferredSize: 136,
+          contentValues: ATTENDANCE_STATUS_OPTIONS.map(getAttendanceStatusLabel),
+          contentHorizontalAffordance: 48,
         }),
         cell: ({ row }) => {
           const rsvp = row.original;
@@ -1379,15 +1435,24 @@ export default function RsvpsPage() {
 
           return (
             <DropdownMenu>
-              <DropdownMenuTrigger className="flex w-16" asChild>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="xs"
-                  className={cn(getAttendanceStatusClassName(currentAttendanceStatus))}
+                  className={cn(
+                    "max-w-full min-w-0 shrink overflow-hidden",
+                    getAttendanceStatusClassName(currentAttendanceStatus),
+                  )}
                   disabled={isUpdatingAttendance}
+                  onClick={stopRsvpTableInteractiveEventPropagation}
+                  onPointerDown={stopRsvpTableInteractiveEventPropagation}
                 >
                   {isUpdatingAttendance && <Spinner className="mr-1 h-3 w-3" />}
-                  {!isUpdatingAttendance && getAttendanceStatusLabel(currentAttendanceStatus)}
+                  {!isUpdatingAttendance && (
+                    <span className="min-w-0 truncate">
+                      {getAttendanceStatusLabel(currentAttendanceStatus)}
+                    </span>
+                  )}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -1427,8 +1492,8 @@ export default function RsvpsPage() {
         accessorFn: (rsvp: HostRsvp) => rsvp.redemptionStatus,
         ...getRsvpTableColumnSizing({
           label: "Ticket",
-          minContentWidth: 88,
-          preferredSize: 130,
+          contentValues: TICKET_STATUS_OPTIONS.map(getTicketStatusLabel),
+          contentHorizontalAffordance: 48,
         }),
         cell: ({ row }) => {
           const rsvp = row.original;
@@ -1463,26 +1528,42 @@ export default function RsvpsPage() {
               <Button
                 variant="outline"
                 size="xs"
-                className={cn(getTicketStatusColor(currentTicketStatus))}
+                className={cn(
+                  "max-w-full min-w-0 shrink overflow-hidden",
+                  getTicketStatusColor(currentTicketStatus),
+                )}
                 disabled={!canViewQrCode}
-                onClick={() => openRsvpQrCode(rsvp)}
+                onClick={(event) => {
+                  stopRsvpTableInteractiveEventPropagation(event);
+                  openRsvpQrCode(rsvp);
+                }}
+                onPointerDown={stopRsvpTableInteractiveEventPropagation}
               >
-                {getTicketStatusLabel(currentTicketStatus)}
+                <span className="min-w-0 truncate">{getTicketStatusLabel(currentTicketStatus)}</span>
               </Button>
             );
           }
 
           return (
             <DropdownMenu>
-              <DropdownMenuTrigger className="flex w-16" asChild>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="xs"
-                  className={cn(getTicketStatusColor(currentTicketStatus))}
+                  className={cn(
+                    "max-w-full min-w-0 shrink overflow-hidden",
+                    getTicketStatusColor(currentTicketStatus),
+                  )}
                   disabled={isRedeemed || isUpdatingTicket || !ticketEditingIsAllowed}
+                  onClick={stopRsvpTableInteractiveEventPropagation}
+                  onPointerDown={stopRsvpTableInteractiveEventPropagation}
                 >
                   {isUpdatingTicket && <Spinner className="mr-1 h-3 w-3" />}
-                  {!isUpdatingTicket && getTicketStatusLabel(currentTicketStatus)}
+                  {!isUpdatingTicket && (
+                    <span className="min-w-0 truncate">
+                      {getTicketStatusLabel(currentTicketStatus)}
+                    </span>
+                  )}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -1523,8 +1604,8 @@ export default function RsvpsPage() {
         accessorKey: "ticketViewedAt",
         ...getRsvpTableColumnSizing({
           label: "Ticket Viewed",
-          minContentWidth: 104,
-          preferredSize: 148,
+          contentValues: ticketViewedAtColumnContentValues,
+          contentHorizontalAffordance: 48,
         }),
         cell: ({ row }) => {
           const ticketViewedAt = row.original.ticketViewedAt;
@@ -1554,8 +1635,8 @@ export default function RsvpsPage() {
         header: "Action",
         ...getRsvpTableColumnSizing({
           label: "Action",
-          minContentWidth: 72,
-          preferredSize: 120,
+          contentValues: ["Delete"],
+          contentHorizontalAffordance: 48,
         }),
         cell: ({ row }) => {
           const rsvp = row.original;
@@ -1711,6 +1792,7 @@ export default function RsvpsPage() {
       .filter((column) => !isReadOnly || column.id !== "actions");
   }, [
     canEditTicketForRsvp,
+    createdAtColumnContentValues,
     customFieldColumns,
     currentEvent?.primaryFieldConfig,
     deleteRsvpCompleteMutation,
@@ -1719,6 +1801,7 @@ export default function RsvpsPage() {
     handleSingleListKeyChange,
     handleSingleTicketStatusChange,
     isReadOnly,
+    listKeyColumnContentValues,
     listCredentials,
     loadingApprovalUpdates,
     loadingAttendanceUpdates,
@@ -1726,7 +1809,9 @@ export default function RsvpsPage() {
     loadingTicketUpdates,
     openRsvpQrCode,
     pendingChanges,
+    rsvps,
     socialProfileColumns,
+    ticketViewedAtColumnContentValues,
     updateRsvpCompleteMutation,
     workspaceScope,
   ]);
@@ -2203,6 +2288,7 @@ export default function RsvpsPage() {
     previousDashboardTableStructureSignatureRef.current = dashboardTableStructureSignature;
     hasPendingLocalDashboardTablePreferenceEditRef.current = false;
     hydratedDashboardTablePreferenceKeyRef.current = null;
+    setColumnSizing({});
   }, [dashboardTableStructureSignature]);
 
   React.useEffect(() => {
@@ -3744,7 +3830,7 @@ export default function RsvpsPage() {
                   <ContextMenuSubTrigger>Change List</ContextMenuSubTrigger>
                   <ContextMenuSubContent className="w-48">
                     {(listCredentials?.map((cred) => cred.listKey) || []).map((listKey) => (
-                      <ContextMenuItem key={listKey} onClick={() => handleBulkListChange(listKey)}>
+                      <ContextMenuItem key={listKey} onSelect={() => handleBulkListChange(listKey)}>
                         {listKey.toUpperCase()}
                       </ContextMenuItem>
                     ))}
@@ -3753,13 +3839,13 @@ export default function RsvpsPage() {
                 <ContextMenuSub>
                   <ContextMenuSubTrigger>Change Approval</ContextMenuSubTrigger>
                   <ContextMenuSubContent className="w-48">
-                    <ContextMenuItem onClick={() => handleBulkApprovalChange("pending")}>
+                    <ContextMenuItem onSelect={() => handleBulkApprovalChange("pending")}>
                       <span className="text-amber-700">Pending</span>
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => handleBulkApprovalChange("approved")}>
+                    <ContextMenuItem onSelect={() => handleBulkApprovalChange("approved")}>
                       <span className="text-green-700">Approved</span>
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => handleBulkApprovalChange("denied")}>
+                    <ContextMenuItem onSelect={() => handleBulkApprovalChange("denied")}>
                       <span className="text-red-700">Denied</span>
                     </ContextMenuItem>
                   </ContextMenuSubContent>
@@ -3767,13 +3853,13 @@ export default function RsvpsPage() {
                 <ContextMenuSub>
                   <ContextMenuSubTrigger>Change Attendance</ContextMenuSubTrigger>
                   <ContextMenuSubContent className="w-48">
-                    <ContextMenuItem onClick={() => handleBulkAttendanceStatusChange("yes")}>
+                    <ContextMenuItem onSelect={() => handleBulkAttendanceStatusChange("yes")}>
                       <span className="text-green-700">Yes</span>
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => handleBulkAttendanceStatusChange("maybe")}>
+                    <ContextMenuItem onSelect={() => handleBulkAttendanceStatusChange("maybe")}>
                       <span className="text-amber-700">Maybe</span>
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => handleBulkAttendanceStatusChange("no")}>
+                    <ContextMenuItem onSelect={() => handleBulkAttendanceStatusChange("no")}>
                       <span className="text-red-700">No</span>
                     </ContextMenuItem>
                   </ContextMenuSubContent>
@@ -3781,13 +3867,13 @@ export default function RsvpsPage() {
                 <ContextMenuSub>
                   <ContextMenuSubTrigger>Change Ticket</ContextMenuSubTrigger>
                   <ContextMenuSubContent className="w-48">
-                    <ContextMenuItem onClick={() => handleBulkTicketStatusChange("not-issued")}>
+                    <ContextMenuItem onSelect={() => handleBulkTicketStatusChange("not-issued")}>
                       <span className="text-gray-700">None</span>
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => handleBulkTicketStatusChange("issued")}>
+                    <ContextMenuItem onSelect={() => handleBulkTicketStatusChange("issued")}>
                       <span className="text-purple-700">Issued</span>
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => handleBulkTicketStatusChange("disabled")}>
+                    <ContextMenuItem onSelect={() => handleBulkTicketStatusChange("disabled")}>
                       <span className="text-red-700">Disabled</span>
                     </ContextMenuItem>
                   </ContextMenuSubContent>
@@ -3885,7 +3971,7 @@ export default function RsvpsPage() {
                       <th
                         key={header.id}
                         className={cn(
-                          "relative select-none group border-b border-r border-foreground/10 py-1 pl-2 pr-4 last:border-r-0",
+                          "group relative select-none overflow-hidden border-b border-r border-foreground/10 py-1 pl-2 pr-4 last:border-r-0",
                           isDraggingColumn ? "cursor-grabbing" : "cursor-pointer",
                           dragHoverDetails?.columnId === columnIdentifier &&
                             dragHoverDetails.position === "before" &&
@@ -3922,7 +4008,7 @@ export default function RsvpsPage() {
                         }}
                       >
                         <div
-                          className="flex items-center gap-1"
+                          className="flex min-w-0 items-center gap-1"
                           draggable={isDragSourceEnabled}
                           onDragStart={
                             isDragSourceEnabled
@@ -3957,8 +4043,10 @@ export default function RsvpsPage() {
                               )}
                             />
                           )}
-                          <div className="flex items-center gap-1 whitespace-nowrap">
-                            {flexRender(header.column.columnDef.header, header.getContext())}
+                          <div className="flex min-w-0 items-center gap-1 whitespace-nowrap">
+                            <span className="min-w-0 truncate">
+                              {flexRender(header.column.columnDef.header, header.getContext())}
+                            </span>
                             {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ??
                               null}
                           </div>

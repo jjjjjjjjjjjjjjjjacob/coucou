@@ -20,8 +20,8 @@ import {
   MAISON_OBSCUR_TOAST_OPTIONS,
 } from "@/lib/organization-navigation";
 import { getToastErrorMessage, runMutationWithToast } from "@/lib/toast-mutation";
-import { getCoucouOrganizationSlug } from "@/lib/workspace-config";
-import { buildRoleAwareDashboardPath, hasWorkspaceWriteAccess } from "@/lib/workspace-roles";
+import { buildWorkspaceOperationHref, getCoucouOrganizationSlug } from "@/lib/workspace-config";
+import { hasWorkspaceWriteAccess } from "@/lib/workspace-roles";
 
 interface DashboardMembership {
   organizationId: string;
@@ -381,13 +381,11 @@ export function DashboardClient() {
               </div>
             </div>
             {tenantWorkspaces.map((workspace) => {
-              const dashboardHref = buildRoleAwareDashboardPath(
+              const dashboardAbsoluteHref = buildWorkspaceOperationHref(
                 workspace.slug,
-                workspace.membershipRole,
+                "dashboard",
+                hasWorkspaceWriteAccess(workspace.membershipRole) ? "" : "rsvps",
               );
-              const organizationId =
-                workspace.organizationId ?? workspace.clerkOrganizationId ?? undefined;
-              const dashboardTargetKey = `${workspace.slug}:dashboard`;
               const domainTargetKey = `${workspace.slug}:domain`;
               const canEditWorkspaceDomain = hasWorkspaceWriteAccess(workspace.membershipRole);
               const workspaceStatus = workspace.primaryDomain
@@ -477,25 +475,14 @@ export function DashboardClient() {
                   </div>
                   <div role="cell" className="flex md:justify-end">
                     <Button
-                      type="button"
+                      asChild
                       size="sm"
                       className="h-8 rounded-none px-3 text-[12px]"
-                      onClick={() =>
-                        openOrganizationPath(
-                          organizationId,
-                          dashboardHref,
-                          dashboardTargetKey,
-                          `Switching workspace to ${workspace.name}...`,
-                        )
-                      }
-                      disabled={activatingTarget === dashboardTargetKey}
                     >
-                      {activatingTarget === dashboardTargetKey ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
+                      <a href={dashboardAbsoluteHref}>
                         <ArrowRight className="size-4" />
-                      )}
-                      Open dashboard
+                        Open dashboard
+                      </a>
                     </Button>
                   </div>
                 </div>

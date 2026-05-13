@@ -144,9 +144,101 @@ describe("DashboardClient", () => {
 
     expect(screen.getAllByText("Dojo Pomodoro").length).toBeGreaterThan(0);
     expect(screen.getByText("dojopomodoro.club")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Open dashboard/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Open dashboard/ })).toHaveAttribute(
+      "href",
+      "http://localhost:3000/workspaces/dojo-pomodoro/dashboard",
+    );
     expect(screen.queryByRole("button", { name: /Host/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Door/ })).toBeNull();
+  });
+
+  it("opens tenant dashboards from Coucou without switching into the tenant organization", async () => {
+    getDashboardTestGlobal().__setClerkTestMemberships?.([
+      {
+        id: "membership_coucou",
+        role: "org:admin",
+        organization: { id: "org_coucou", name: "Coucou", slug: "coucou" },
+      },
+      {
+        id: "membership_dojo",
+        role: "org:admin",
+        organization: {
+          id: "org_dojo",
+          name: "Dojo Pomodoro",
+          slug: "dojo-pomodoro",
+        },
+      },
+    ]);
+    setDashboardAccessResponse({
+      hasCoucouOrganizationAccess: true,
+      tenantWorkspaces: [
+        {
+          slug: "dojo-pomodoro",
+          name: "Dojo Pomodoro",
+          primaryDomain: "dojopomodoro.club",
+          clerkOrganizationId: "org_dojo",
+          clerkOrganizationSlug: "dojo-pomodoro",
+          organizationId: "org_dojo",
+          membershipRole: "org:admin",
+          isWorkspaceConfigured: true,
+        },
+      ],
+    });
+
+    render(<DashboardClient />);
+
+    const openDashboardLink = screen.getByRole("link", { name: /Open dashboard/ });
+    expect(openDashboardLink).toHaveAttribute(
+      "href",
+      "http://localhost:3000/workspaces/dojo-pomodoro/dashboard",
+    );
+    fireEvent.click(openDashboardLink);
+
+    expect(getClerkSetActiveCalls()).toEqual([]);
+    expect(getLocationAssignCalls()).toEqual([]);
+    expect(getRouterPushCalls()).toEqual([]);
+  });
+
+  it("opens tenant dashboards as direct links for tenant-only dashboard navigation", () => {
+    getDashboardTestGlobal().__setClerkTestMemberships?.([
+      {
+        id: "membership_dojo",
+        role: "org:admin",
+        organization: {
+          id: "org_dojo",
+          name: "Dojo Pomodoro",
+          slug: "dojo-pomodoro",
+        },
+      },
+    ]);
+    setDashboardAccessResponse({
+      hasCoucouOrganizationAccess: false,
+      tenantWorkspaces: [
+        {
+          slug: "dojo-pomodoro",
+          name: "Dojo Pomodoro",
+          primaryDomain: "dojopomodoro.club",
+          clerkOrganizationId: "org_dojo",
+          clerkOrganizationSlug: "dojo-pomodoro",
+          organizationId: "org_dojo",
+          membershipRole: "org:admin",
+          isWorkspaceConfigured: true,
+        },
+      ],
+    });
+
+    render(<DashboardClient />);
+
+    const openDashboardLink = screen.getByRole("link", { name: /Open dashboard/ });
+    expect(openDashboardLink).toHaveAttribute(
+      "href",
+      "http://localhost:3000/workspaces/dojo-pomodoro/dashboard",
+    );
+    fireEvent.click(openDashboardLink);
+
+    expect(getClerkSetActiveCalls()).toEqual([]);
+    expect(getLocationAssignCalls()).toEqual([]);
+    expect(getRouterPushCalls()).toEqual([]);
   });
 
   it("shows tenant members an open dashboard action without URL editing", () => {
@@ -179,7 +271,10 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
 
-    expect(screen.getByRole("button", { name: /Open dashboard/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Open dashboard/ })).toHaveAttribute(
+      "href",
+      "http://localhost:3000/workspaces/dojo-pomodoro/dashboard/rsvps",
+    );
     expect(screen.queryByLabelText("Primary URL")).toBeNull();
   });
 

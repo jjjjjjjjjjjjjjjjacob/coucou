@@ -215,11 +215,17 @@ export type TextBlastStatus = "draft" | "sending" | "sent" | "failed";
 export interface TextBlast {
   _id: Id<"textBlasts">;
   eventId: Id<"events">;
+  targetEventIds?: Id<"events">[];
   name: string;
   message: string;
   targetLists: string[];
   recipientFilter?: string;
+  recipientHistoryFilter?: {
+    type: "received_any" | "not_received_any";
+    textBlastIds: Id<"textBlasts">[];
+  };
   includeQrCodes?: boolean;
+  deliveryTrackingEnabled?: boolean;
   recipientCount: number;
   sentCount: number;
   failedCount: number;

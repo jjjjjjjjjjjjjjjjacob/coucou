@@ -22,9 +22,18 @@ export function normalizeDomainOrigin(domain: string | null | undefined): string
   }
 
   try {
-    const domainUrl = new URL(
-      trimmedDomain.match(/^https?:\/\//) ? trimmedDomain : `https://${trimmedDomain}`,
-    );
+    const hasProtocol = /^https?:\/\//i.test(trimmedDomain);
+    const domainUrl = new URL(hasProtocol ? trimmedDomain : `https://${trimmedDomain}`);
+    if (
+      !hasProtocol &&
+      (domainUrl.hostname === "localhost" ||
+        domainUrl.hostname === "127.0.0.1" ||
+        domainUrl.hostname === "0.0.0.0" ||
+        domainUrl.hostname.endsWith(".localhost") ||
+        domainUrl.hostname.endsWith(".local"))
+    ) {
+      domainUrl.protocol = "http:";
+    }
     return domainUrl.origin;
   } catch {
     return null;

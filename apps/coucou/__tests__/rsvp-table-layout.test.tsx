@@ -81,6 +81,7 @@ describe("RSVP table layout", () => {
     expect(bodyCells.length).toBe(8);
     for (const bodyCell of bodyCells) {
       expect(bodyCell.className).toContain(RSVP_TABLE_BODY_ALIGNMENT_GUTTER_CLASS);
+      expect(bodyCell.className).toContain("overflow-hidden");
     }
   });
 
@@ -148,27 +149,49 @@ describe("RSVP table layout", () => {
   it("derives resizable column minimums from labels and body content", () => {
     const referredBySizing = getRsvpTableColumnSizing({
       label: "Referred By",
-      minContentWidth: 112,
-      preferredSize: 120,
+      contentValues: ["Half the lineup"],
+      contentWidthCap: 144,
     });
     const approvalSizing = getRsvpTableColumnSizing({
       label: "Approval",
-      minContentWidth: 112,
-      preferredSize: 120,
+      contentValues: ["Pending", "Approved", "Denied"],
+      contentHorizontalAffordance: 48,
     });
 
     expect(referredBySizing.enableResizing).toBe(true);
     expect(referredBySizing.minSize).toBeGreaterThanOrEqual(140);
     expect(referredBySizing.size).toBe(referredBySizing.minSize);
-    expect(approvalSizing.minSize).toBeGreaterThanOrEqual(144);
+    expect(approvalSizing.minSize).toBeGreaterThanOrEqual(112);
     expect(approvalSizing.maxSize).toBe(RSVP_TABLE_COLUMN_MAX_WIDTH);
+  });
+
+  it("fits compact list controls for visible list key content", () => {
+    const listSizing = getRsvpTableColumnSizing({
+      label: "List",
+      contentValues: ["GA", "ARTIST GUEST"],
+      contentHorizontalAffordance: 48,
+    });
+
+    expect(listSizing.size).toBe(listSizing.minSize);
+    expect(listSizing.minSize).toBeGreaterThanOrEqual(144);
+  });
+
+  it("caps long text content when deriving default sizes", () => {
+    const cappedGuestSizing = getRsvpTableColumnSizing({
+      label: "Guest",
+      contentValues: ["A very long guest name that should not make the table enormous"],
+      contentWidthCap: 128,
+    });
+
+    expect(cappedGuestSizing.size).toBe(cappedGuestSizing.minSize);
+    expect(cappedGuestSizing.minSize).toBeLessThan(240);
+    expect(cappedGuestSizing.maxSize).toBe(RSVP_TABLE_COLUMN_MAX_WIDTH);
   });
 
   it("never creates a resizable column max width below its computed minimum", () => {
     const oversizedLabelSizing = getRsvpTableColumnSizing({
       label: "Very Long Custom Field Label That Exceeds The Requested Cap",
       minContentWidth: 80,
-      preferredSize: 120,
       maxSize: 160,
     });
 

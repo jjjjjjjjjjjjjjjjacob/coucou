@@ -37,13 +37,18 @@ import { Select, SelectOption } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { formatEventTitleInline } from "@/lib/event-display";
-import type { RecipientApprovalStatus, RecipientFilterState } from "@/lib/text-blast-filters";
+import type {
+  RecipientApprovalStatus,
+  RecipientFilterState,
+  RecipientHistoryFilterState,
+} from "@/lib/text-blast-filters";
 import {
   DEFAULT_STATUS_FILTER,
   decodeRecipientFilter,
   describeRecipientFilter,
   encodeRecipientFilter,
   isRecipientFilterConfigured,
+  recipientHistoryFilterIsConfigured,
   RECIPIENT_STATUS_LABELS,
 } from "@/lib/text-blast-filters";
 import type { Event, TextBlast } from "@/lib/types";
@@ -56,11 +61,12 @@ interface TextBlastDialogProps {
 }
 
 interface FormData {
-  eventId: Id<"events"> | "";
+  eventIds: Id<"events">[];
   name: string;
   message: string;
   targetLists: string[];
   recipientFilter: RecipientFilterState;
+  recipientHistoryFilter: RecipientHistoryFilterState;
   includeQrCodes: boolean;
   selectedRsvpIds: Id<"rsvps">[]; // For testing: filter to specific recipients
 }
@@ -89,11 +95,12 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
 
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<FormData>({
-    eventId: "",
+    eventIds: [],
     name: "",
     message: "",
     targetLists: [],
     recipientFilter: { type: "all" },
+    recipientHistoryFilter: { type: "none", textBlastIds: [] },
     includeQrCodes: false,
     selectedRsvpIds: [],
   });
@@ -102,23 +109,52 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
   const [isSending, setIsSending] = useState(false);
   const [recipientSearchQuery, setRecipientSearchQuery] = useState("");
   const [isRecipientPopoverOpen, setIsRecipientPopoverOpen] = useState(false);
+  const [isEventPopoverOpen, setIsEventPopoverOpen] = useState(false);
 
   const isEditMode = !!blastId;
-  const selectedEvent = events?.find((event) => event._id === formData.eventId);
-  const customFields = selectedEvent?.customFields ?? [];
+  const selectedEvents = useMemo(() => {
+    const eventMap = new Map((events ?? []).map((event) => [event._id, event]));
+    return formData.eventIds
+      .map((eventId) => eventMap.get(eventId))
+      .filter((event): event is Event => event !== undefined);
+  }, [events, formData.eventIds]);
+  const primaryEvent = selectedEvents[0];
+  const isMultiEventBlast = formData.eventIds.length > 1;
+  const customFields = useMemo(() => {
+    const fieldMap = new Map<string, NonNullable<Event["customFields"]>[number]>();
+    for (const event of selectedEvents) {
+      for (const customField of event.customFields ?? []) {
+        fieldMap.set(customField.key, customField);
+      }
+    }
+    return Array.from(fieldMap.values());
+  }, [selectedEvents]);
   const recipientFilterIsConfigured = isRecipientFilterConfigured(formData.recipientFilter);
+  const historyFilterIsConfigured = recipientHistoryFilterIsConfigured(
+    formData.recipientHistoryFilter,
+  );
   const encodedRecipientFilter = useMemo(
     () => encodeRecipientFilter(formData.recipientFilter),
     [formData.recipientFilter],
   );
+  const encodedRecipientHistoryFilter = useMemo(() => {
+    if (formData.recipientHistoryFilter.type === "none") return undefined;
+    return {
+      type: formData.recipientHistoryFilter.type,
+      textBlastIds: formData.recipientHistoryFilter.textBlastIds as Id<"textBlasts">[],
+    };
+  }, [formData.recipientHistoryFilter]);
+  const primaryEventId = formData.eventIds[0] ?? "";
 
   // Fetch available lists with counts for the selected event
   const availableListsWithCounts = useQuery(
-    api.textBlasts.getAvailableListsForEvent,
-    formData.eventId && workspaceScope
+    api.textBlasts.getAvailableListsForEvents,
+    primaryEventId && workspaceScope
       ? {
-          eventId: formData.eventId as Id<"events">,
+          eventId: primaryEventId as Id<"events">,
+          targetEventIds: formData.eventIds,
           recipientFilter: encodedRecipientFilter,
+          recipientHistoryFilter: encodedRecipientHistoryFilter,
           ...(workspaceScope?.queryArgs ?? {}),
         }
       : "skip",
@@ -127,18 +163,43 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
   // Fetch recipients for selection (when target lists are selected)
   const recipientsForSelection = useQuery(
     api.textBlasts.getRecipientsForSelection,
-    formData.eventId &&
+    primaryEventId &&
       workspaceScope &&
       formData.targetLists.length > 0 &&
-      recipientFilterIsConfigured
+      recipientFilterIsConfigured &&
+      historyFilterIsConfigured
       ? {
-          eventId: formData.eventId as Id<"events">,
+          eventId: primaryEventId as Id<"events">,
+          targetEventIds: formData.eventIds,
           targetLists: formData.targetLists,
           recipientFilter: encodedRecipientFilter,
+          recipientHistoryFilter: encodedRecipientHistoryFilter,
           ...(workspaceScope?.queryArgs ?? {}),
         }
       : "skip",
-  ) as Array<{ rsvpId: Id<"rsvps">; name: string; listKey: string }> | undefined;
+  ) as
+    | Array<{
+        rsvpId: Id<"rsvps">;
+        name: string;
+        listKey: string;
+        eventId: Id<"events">;
+        eventName: string;
+      }>
+    | undefined;
+
+  const historyBlastOptions = useQuery(
+    api.textBlasts.getBlastsByWorkspaceWithSenderNames,
+    workspaceScope
+      ? {
+          ...workspaceScope.queryArgs,
+          limit: 100,
+        }
+      : "skip",
+  ) as Array<TextBlast & { sentByName: string }> | undefined;
+  const selectedHistoryBlastIds =
+    formData.recipientHistoryFilter.type === "none"
+      ? []
+      : formData.recipientHistoryFilter.textBlastIds;
 
   // Get available lists for selected event from query result
   const availableLists = useMemo(() => {
@@ -154,7 +215,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
 
   // Update recipient count when target lists, filter, or selected RSVPs change
   useEffect(() => {
-    if (!recipientFilterIsConfigured) {
+    if (!recipientFilterIsConfigured || !historyFilterIsConfigured) {
       setRecipientCount(0);
       return;
     }
@@ -170,14 +231,24 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       return;
     }
 
-    // Otherwise, use the listCountMap
+    if (recipientsForSelection) {
+      setRecipientCount(recipientsForSelection.length);
+      return;
+    }
+
     let totalCount = 0;
     for (const listKey of formData.targetLists) {
-      const count = listCountMap.get(listKey) || 0;
-      totalCount += count;
+      totalCount += listCountMap.get(listKey) || 0;
     }
     setRecipientCount(totalCount);
-  }, [formData.targetLists, formData.selectedRsvpIds, listCountMap, recipientFilterIsConfigured]);
+  }, [
+    formData.targetLists,
+    formData.selectedRsvpIds,
+    listCountMap,
+    recipientFilterIsConfigured,
+    historyFilterIsConfigured,
+    recipientsForSelection,
+  ]);
 
   useEffect(() => {
     setFormData((prev) => {
@@ -186,7 +257,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       }
       return { ...prev, selectedRsvpIds: [] };
     });
-  }, [encodedRecipientFilter, formData.targetLists]);
+  }, [encodedRecipientFilter, encodedRecipientHistoryFilter, formData.targetLists]);
 
   useEffect(() => {
     const currentFilter = formData.recipientFilter;
@@ -194,7 +265,6 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       return;
     }
 
-    const customFields = selectedEvent?.customFields ?? [];
     if (customFields.length === 0) {
       if (currentFilter.fieldKey !== "") {
         setFormData((prev) => ({
@@ -215,18 +285,28 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
         },
       }));
     }
-  }, [formData.recipientFilter, selectedEvent]);
+  }, [formData.recipientFilter, customFields]);
 
   // Reset form when dialog opens/closes
   useEffect(() => {
     if (isOpen) {
       if (existingBlast) {
+        const targetEventIds =
+          existingBlast.targetEventIds && existingBlast.targetEventIds.length > 0
+            ? existingBlast.targetEventIds
+            : [existingBlast.eventId];
         setFormData({
-          eventId: existingBlast.eventId,
+          eventIds: targetEventIds,
           name: existingBlast.name,
           message: existingBlast.message,
           targetLists: existingBlast.targetLists,
           recipientFilter: decodeRecipientFilter(existingBlast.recipientFilter ?? undefined),
+          recipientHistoryFilter: existingBlast.recipientHistoryFilter
+            ? {
+                type: existingBlast.recipientHistoryFilter.type,
+                textBlastIds: existingBlast.recipientHistoryFilter.textBlastIds,
+              }
+            : { type: "none", textBlastIds: [] },
           includeQrCodes: existingBlast.includeQrCodes ?? false,
           selectedRsvpIds: [],
         });
@@ -234,11 +314,12 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
         setCurrentStep(1);
       } else {
         setFormData({
-          eventId: "",
+          eventIds: [],
           name: "",
           message: "",
           targetLists: [],
           recipientFilter: { type: "all" },
+          recipientHistoryFilter: { type: "none", textBlastIds: [] },
           includeQrCodes: false,
           selectedRsvpIds: [],
         });
@@ -248,6 +329,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       setPreviewMode(false);
       setRecipientSearchQuery("");
       setIsRecipientPopoverOpen(false);
+      setIsEventPopoverOpen(false);
     }
   }, [isOpen, existingBlast]);
 
@@ -264,33 +346,44 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
   // Template variables for message preview
   const sampleData = {
     firstName: "John",
-    eventName: selectedEvent?.name || "Sample Event",
-    eventDate: selectedEvent
-      ? new Date(selectedEvent.eventDate).toLocaleDateString()
+    eventName: primaryEvent?.name || "Sample Event",
+    eventDate: primaryEvent
+      ? new Date(primaryEvent.eventDate).toLocaleDateString()
       : "Dec 31, 2024",
-    eventLocation: selectedEvent?.location || "Sample Location",
+    eventLocation: primaryEvent?.location || "Sample Location",
   };
+
+  const multiEventRestrictedVariablePattern =
+    /\{\{\s*(eventName|eventDate|eventLocation|qrCodeUrl)\s*\}\}/;
+  const hasMultiEventRestrictedVariables =
+    isMultiEventBlast && multiEventRestrictedVariablePattern.test(formData.message);
 
   const previewMessage = formData.message
     .replace(/\{\{firstName\}\}/g, sampleData.firstName)
     .replace(/\{\{eventName\}\}/g, sampleData.eventName)
     .replace(/\{\{eventDate\}\}/g, sampleData.eventDate)
-    .replace(/\{\{eventLocation\}\}/g, sampleData.eventLocation);
+    .replace(/\{\{eventLocation\}\}/g, sampleData.eventLocation)
+    .replace(/\{\{qrCodeUrl\}\}/g, "https://example.com/ticket");
 
-  const handleEventChange = (eventId: Id<"events"> | "") => {
+  const handleEventToggle = (eventId: Id<"events">, checked: boolean) => {
     setFormData((prev) => {
       // Reset filter to "all" when event changes if it's event-specific (custom_field_missing)
       const newRecipientFilter =
         prev.recipientFilter.type === "custom_field_missing"
           ? { type: "all" as const }
           : prev.recipientFilter;
+      const nextEventIds = checked
+        ? [...prev.eventIds, eventId]
+        : prev.eventIds.filter((selectedEventId) => selectedEventId !== eventId);
+      const nextIsMultiEvent = nextEventIds.length > 1;
 
       return {
         ...prev,
-        eventId,
+        eventIds: nextEventIds,
         targetLists: [], // Reset target lists when event changes
         selectedRsvpIds: [],
         recipientFilter: newRecipientFilter,
+        includeQrCodes: nextIsMultiEvent ? false : prev.includeQrCodes,
       };
     });
     setRecipientCount(0);
@@ -326,7 +419,6 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           };
         }
         case "custom_field_missing": {
-          const customFields = selectedEvent?.customFields ?? [];
           const nextFieldKey = customFields.length > 0 ? customFields[0].key : "";
           return {
             ...prev,
@@ -350,9 +442,54 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
     });
   };
 
+  const handleRecipientHistoryFilterTypeChange = (value: RecipientHistoryFilterState["type"]) => {
+    setFormData((prev) => ({
+      ...prev,
+      recipientHistoryFilter:
+        value === "none"
+          ? { type: "none", textBlastIds: [] }
+          : {
+              type: value,
+              textBlastIds:
+                prev.recipientHistoryFilter.type === "none"
+                  ? []
+                  : prev.recipientHistoryFilter.textBlastIds,
+            },
+      selectedRsvpIds: [],
+    }));
+  };
+
+  const handleRecipientHistoryBlastToggle = (textBlastId: Id<"textBlasts">, checked: boolean) => {
+    setFormData((prev) => {
+      if (prev.recipientHistoryFilter.type === "none") {
+        return prev;
+      }
+      return {
+        ...prev,
+        recipientHistoryFilter: {
+          ...prev.recipientHistoryFilter,
+          textBlastIds: checked
+            ? [...prev.recipientHistoryFilter.textBlastIds, textBlastId]
+            : prev.recipientHistoryFilter.textBlastIds.filter(
+                (selectedBlastId) => selectedBlastId !== textBlastId,
+              ),
+        },
+        selectedRsvpIds: [],
+      };
+    });
+  };
+
   const handleSaveDraft = async () => {
     if (!recipientFilterIsConfigured) {
       toast.error("Complete the recipient filter details before saving.");
+      return;
+    }
+    if (!historyFilterIsConfigured) {
+      toast.error("Select at least one text blast for the recipient history filter.");
+      return;
+    }
+    if (hasMultiEventRestrictedVariables) {
+      toast.error("Remove event-specific variables before saving a multi-event blast.");
       return;
     }
     try {
@@ -361,12 +498,20 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
         return;
       }
       if (isEditMode && blastId) {
+        if (!primaryEventId) {
+          toast.error("Select at least one event before saving the draft");
+          return;
+        }
         await updateDraftMutation({
           blastId,
+          eventId: primaryEventId as Id<"events">,
+          targetEventIds: formData.eventIds,
           name: formData.name,
           message: formData.message,
           targetLists: formData.targetLists,
           recipientFilter: encodedRecipientFilter,
+          recipientHistoryFilter: encodedRecipientHistoryFilter,
+          clearRecipientHistoryFilter: encodedRecipientHistoryFilter === undefined,
           includeQrCodes: formData.includeQrCodes,
           ...workspaceScope.queryArgs,
         });
@@ -379,22 +524,24 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
         });
         toast.success("Text blast updated successfully");
       } else {
-        if (!formData.eventId) {
-          toast.error("Select an event before saving the draft");
+        if (!primaryEventId) {
+          toast.error("Select at least one event before saving the draft");
           return;
         }
         await createDraftMutation({
-          eventId: formData.eventId,
+          eventId: primaryEventId as Id<"events">,
+          targetEventIds: formData.eventIds,
           name: formData.name,
           message: formData.message,
           targetLists: formData.targetLists,
           recipientFilter: encodedRecipientFilter,
+          recipientHistoryFilter: encodedRecipientHistoryFilter,
           includeQrCodes: formData.includeQrCodes,
           ...workspaceScope.queryArgs,
         });
         posthog.capture("text_blast_draft_saved", {
           blast_name: formData.name,
-          event_id: formData.eventId,
+          event_ids: formData.eventIds,
           target_lists: formData.targetLists,
           recipient_filter_type: formData.recipientFilter.type,
           is_edit: false,
@@ -411,7 +558,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
 
   const handleSendBlast = async () => {
     if (
-      !formData.eventId ||
+      !primaryEventId ||
       !formData.name ||
       !formData.message ||
       formData.targetLists.length === 0
@@ -431,6 +578,16 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       setIsSending(false);
       return;
     }
+    if (!historyFilterIsConfigured) {
+      toast.error("Select at least one text blast for the recipient history filter.");
+      setIsSending(false);
+      return;
+    }
+    if (hasMultiEventRestrictedVariables) {
+      toast.error("Remove event-specific variables before sending a multi-event blast.");
+      setIsSending(false);
+      return;
+    }
     try {
       let result: SendBlastResult;
       if (blastId && isEditMode) {
@@ -442,11 +599,13 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       } else {
         // Send directly without saving draft first
         result = await sendBlastDirectAction({
-          eventId: formData.eventId as Id<"events">,
+          eventId: primaryEventId as Id<"events">,
+          targetEventIds: formData.eventIds,
           name: formData.name,
           message: formData.message,
           targetLists: formData.targetLists,
           recipientFilter: encodedRecipientFilter,
+          recipientHistoryFilter: encodedRecipientHistoryFilter,
           includeQrCodes: formData.includeQrCodes,
           selectedRsvpIds:
             formData.selectedRsvpIds.length > 0 ? formData.selectedRsvpIds : undefined,
@@ -457,8 +616,8 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       if (result.success) {
         posthog.capture("text_blast_sent", {
           blast_name: formData.name,
-          event_id: formData.eventId,
-          event_name: selectedEvent?.name,
+          event_ids: formData.eventIds,
+          event_name: primaryEvent?.name,
           target_lists: formData.targetLists,
           recipient_count: result.sentCount ?? 0,
           recipient_filter_type: formData.recipientFilter.type,
@@ -479,9 +638,16 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
     }
   };
 
-  const canProceedToStep2 = formData.eventId && formData.name && formData.message;
+  const canProceedToStep2 =
+    formData.eventIds.length > 0 &&
+    formData.name &&
+    formData.message &&
+    !hasMultiEventRestrictedVariables;
   const canProceedToStep3 =
-    canProceedToStep2 && formData.targetLists.length > 0 && recipientFilterIsConfigured;
+    canProceedToStep2 &&
+    formData.targetLists.length > 0 &&
+    recipientFilterIsConfigured &&
+    historyFilterIsConfigured;
   const canSave = canProceedToStep3 && !isMessageTooLong;
 
   const renderStepContent = () => {
@@ -490,21 +656,47 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
         return (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="eventId">Event</Label>
-              <Select
-                value={formData.eventId || ""}
-                onValueChange={(value) => handleEventChange(value ? (value as Id<"events">) : "")}
-              >
-                <SelectOption value="">Select an event</SelectOption>
-                {events?.map((event) => {
-                  const inlineTitle = formatEventTitleInline(event);
-                  return (
-                    <SelectOption key={event._id} value={event._id}>
-                      {inlineTitle}
-                    </SelectOption>
-                  );
-                })}
-              </Select>
+              <Label>Events</Label>
+              <Popover open={isEventPopoverOpen} onOpenChange={setIsEventPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between" type="button">
+                    <span className="truncate">
+                      {selectedEvents.length === 0
+                        ? "Select events"
+                        : selectedEvents.length === 1
+                          ? formatEventTitleInline(selectedEvents[0])
+                          : `${selectedEvents.length} events selected`}
+                    </span>
+                    <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                  <div className="max-h-72 overflow-y-auto p-2">
+                    {(events ?? []).map((event) => {
+                      const isSelected = formData.eventIds.includes(event._id);
+                      const inlineTitle = formatEventTitleInline(event);
+                      return (
+                        <div
+                          key={event._id}
+                          role="button"
+                          tabIndex={0}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-accent"
+                          onClick={() => handleEventToggle(event._id, !isSelected)}
+                          onKeyDown={(keyboardEvent) => {
+                            if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+                              keyboardEvent.preventDefault();
+                              handleEventToggle(event._id, !isSelected);
+                            }
+                          }}
+                        >
+                          <Checkbox checked={isSelected} />
+                          <span className="min-w-0 flex-1 truncate text-sm">{inlineTitle}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-2">
@@ -544,10 +736,15 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                 className={isMessageTooLong ? "border-destructive" : ""}
               />
               <div className="text-xs text-muted-foreground">
-                Available variables: &#123;&#123;firstName&#125;&#125;,
-                &#123;&#123;eventName&#125;&#125;, &#123;&#123;eventDate&#125;&#125;,
-                &#123;&#123;eventLocation&#125;&#125;, &#123;&#123;qrCodeUrl&#125;&#125;
+                {isMultiEventBlast
+                  ? "Available variable: {{firstName}}"
+                  : "Available variables: {{firstName}}, {{eventName}}, {{eventDate}}, {{eventLocation}}, {{qrCodeUrl}}"}
               </div>
+              {hasMultiEventRestrictedVariables && (
+                <div className="text-xs text-destructive">
+                  Multi-event blasts cannot use event-specific variables.
+                </div>
+              )}
               {isMessageTooLong && (
                 <div className="text-xs text-destructive">
                   Message is too long. Please keep it under {SMS_CONCAT_LIMIT} characters.
@@ -690,14 +887,76 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
             )}
 
             <div className="space-y-2">
+              <Label>Recipient History</Label>
+              <Select
+                value={formData.recipientHistoryFilter.type}
+                onValueChange={(value) =>
+                  handleRecipientHistoryFilterTypeChange(
+                    value as RecipientHistoryFilterState["type"],
+                  )
+                }
+              >
+                <SelectOption value="none">No history filter</SelectOption>
+                <SelectOption value="received_any">Has received any of</SelectOption>
+                <SelectOption value="not_received_any">Has not received any of</SelectOption>
+              </Select>
+              {formData.recipientHistoryFilter.type !== "none" && (
+                <div className="grid gap-2 rounded-md border p-2">
+                  {(historyBlastOptions ?? []).map((historyBlast) => {
+                    const isCurrentBlast = historyBlast._id === blastId;
+                    const isTracked = historyBlast.deliveryTrackingEnabled === true;
+                    const isSentOrPartiallySent =
+                      historyBlast.status === "sent" || historyBlast.sentCount > 0;
+                    const isDisabled = isCurrentBlast || !isTracked || !isSentOrPartiallySent;
+                    const isSelected = selectedHistoryBlastIds.includes(historyBlast._id);
+                    return (
+                      <div key={historyBlast._id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`history-${historyBlast._id}`}
+                          checked={isSelected}
+                          disabled={isDisabled}
+                          onCheckedChange={(checked) =>
+                            handleRecipientHistoryBlastToggle(historyBlast._id, checked === true)
+                          }
+                        />
+                        <Label
+                          htmlFor={`history-${historyBlast._id}`}
+                          className={`min-w-0 flex-1 cursor-pointer text-sm ${
+                            isDisabled ? "text-muted-foreground" : ""
+                          }`}
+                        >
+                          <span className="block truncate">{historyBlast.name}</span>
+                        </Label>
+                        {!isTracked && (
+                          <Badge variant="outline" className="shrink-0 text-xs">
+                            Untracked
+                          </Badge>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {(historyBlastOptions ?? []).length === 0 && (
+                    <div className="text-sm text-muted-foreground">No text blasts yet.</div>
+                  )}
+                </div>
+              )}
+              {!historyFilterIsConfigured && (
+                <div className="text-xs text-destructive">
+                  Select at least one tracked text blast.
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="includeQrCodes"
                   checked={formData.includeQrCodes}
+                  disabled={isMultiEventBlast}
                   onCheckedChange={(checked) =>
                     setFormData((prev) => ({
                       ...prev,
-                      includeQrCodes: checked === true,
+                      includeQrCodes: isMultiEventBlast ? false : checked === true,
                     }))
                   }
                 />
@@ -706,9 +965,9 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                 </Label>
               </div>
               <div className="text-xs text-muted-foreground">
-                When enabled, QR code images will be generated and sent as MMS attachments for
-                recipients with redemption codes. Use &#123;&#123;qrCodeUrl&#125;&#125; in your
-                message to include the QR code URL in the text.
+                {isMultiEventBlast
+                  ? "QR attachments are only available for single-event blasts."
+                  : "When enabled, QR code images will be generated and sent as MMS attachments for recipients with redemption codes. Use {{qrCodeUrl}} in your message to include the QR code URL in the text."}
               </div>
             </div>
 
@@ -716,7 +975,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
               <Label>Select Recipient Lists</Label>
               {availableLists.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
-                  {formData.eventId
+                  {primaryEventId
                     ? "No recipient lists available for this event. Make sure there are approved RSVPs for this event."
                     : "Select an event to see available recipient lists."}
                 </div>
@@ -796,6 +1055,10 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                 <div className="text-sm text-muted-foreground">
                   Complete the filter details above to select specific recipients.
                 </div>
+              ) : !historyFilterIsConfigured ? (
+                <div className="text-sm text-muted-foreground">
+                  Complete the history filter above to select specific recipients.
+                </div>
               ) : recipientsForSelection && recipientsForSelection.length > 0 ? (
                 <>
                   <Popover open={isRecipientPopoverOpen} onOpenChange={setIsRecipientPopoverOpen}>
@@ -859,7 +1122,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                                   <div className="flex-1">
                                     <div className="text-sm font-medium">{recipient.name}</div>
                                     <div className="text-xs text-muted-foreground capitalize">
-                                      {recipient.listKey}
+                                      {recipient.eventName} - {recipient.listKey}
                                     </div>
                                   </div>
                                 </div>
@@ -940,8 +1203,10 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label className="text-sm font-medium">Event</Label>
-                  <p className="text-sm text-muted-foreground">{selectedEvent?.name}</p>
+                  <Label className="text-sm font-medium">Events</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedEvents.map((event) => formatEventTitleInline(event)).join(", ")}
+                  </p>
                 </div>
 
                 <div>
@@ -977,6 +1242,12 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                         customFields.find((field) => field.key === key)?.label,
                     })}
                   </p>
+                  {formData.recipientHistoryFilter.type !== "none" && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      History: {selectedHistoryBlastIds.length} tracked blast
+                      {selectedHistoryBlastIds.length !== 1 ? "s" : ""}
+                    </p>
+                  )}
                   {formData.includeQrCodes && (
                     <p className="text-xs text-muted-foreground mt-1">QR Code Images: Enabled</p>
                   )}

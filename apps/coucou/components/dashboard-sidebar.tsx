@@ -10,12 +10,16 @@ import {
   activateOrganizationBeforeNavigation,
   MAISON_OBSCUR_TOAST_OPTIONS,
 } from "@/lib/organization-navigation";
-import { buildRoleAwareDashboardPath, hasWorkspaceReadAccess } from "@/lib/workspace-roles";
+import { buildWorkspaceOperationHref } from "@/lib/workspace-config";
+import {
+  buildRoleAwareDashboardPath,
+  hasWorkspaceReadAccess,
+  hasWorkspaceWriteAccess,
+} from "@/lib/workspace-roles";
 
 interface AccessibleWorkspaceEntry {
   slug: string;
   name: string;
-  organizationId: string | null | undefined;
   membershipRole: string;
 }
 
@@ -25,6 +29,12 @@ interface AdminSidebarButtonProps {
   disabled?: boolean;
   count?: React.ReactNode;
   onClick: () => void;
+}
+
+interface AdminSidebarLinkProps {
+  children: React.ReactNode;
+  active?: boolean;
+  href: string;
 }
 
 function getAdminNavigationItemStyle(active?: boolean): React.CSSProperties {
@@ -54,6 +64,18 @@ function AdminSidebarButton({
         <span style={{ color: "var(--tt-fg-mute)" }}>{count}</span>
       ) : null}
     </button>
+  );
+}
+
+function AdminSidebarLink({ children, active, href }: AdminSidebarLinkProps) {
+  return (
+    <a
+      href={href}
+      className="flex w-full items-center justify-between px-6 py-2 text-left text-[13px] transition-colors"
+      style={getAdminNavigationItemStyle(active)}
+    >
+      <span>{children}</span>
+    </a>
   );
 }
 
@@ -91,7 +113,6 @@ function useDashboardNavigationAccess(): {
         {
           slug: workspace.slug,
           name: workspace.name,
-          organizationId: workspace.organizationId ?? workspace.clerkOrganizationId,
           membershipRole: workspace.membershipRole,
         },
       ];
@@ -145,21 +166,20 @@ export function DashboardSidebar() {
       {accessibleWorkspaces.length > 0 ? (
         <NavGroup label="Organization access">
           {accessibleWorkspaces.map((workspace) => {
-            const href = buildRoleAwareDashboardPath(workspace.slug, workspace.membershipRole);
+            const path = buildRoleAwareDashboardPath(workspace.slug, workspace.membershipRole);
+            const href = buildWorkspaceOperationHref(
+              workspace.slug,
+              "dashboard",
+              hasWorkspaceWriteAccess(workspace.membershipRole) ? "" : "rsvps",
+            );
             return (
-              <AdminSidebarButton
+              <AdminSidebarLink
                 key={`${workspace.slug}-dashboard`}
-                active={pathname?.startsWith(`/workspaces/${workspace.slug}/dashboard`)}
-                onClick={() =>
-                  void navigateToOrganizationPath(
-                    workspace.organizationId,
-                    href,
-                    `Switching workspace to ${workspace.name}...`,
-                  ).catch(() => undefined)
-                }
+                href={href}
+                active={pathname?.startsWith(path)}
               >
                 {workspace.name}
-              </AdminSidebarButton>
+              </AdminSidebarLink>
             );
           })}
         </NavGroup>

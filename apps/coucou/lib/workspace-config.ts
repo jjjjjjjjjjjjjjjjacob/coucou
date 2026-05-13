@@ -21,6 +21,16 @@ export function normalizeCoucouBaseUrl(baseUrl: string | undefined): string {
   return (baseUrl ?? "http://localhost:5680").replace(/\/+$/, "");
 }
 
+function resolveCoucouBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_COUCOU_BASE_URL) {
+    return normalizeCoucouBaseUrl(process.env.NEXT_PUBLIC_COUCOU_BASE_URL);
+  }
+  if (typeof window !== "undefined") {
+    return window.location.origin.replace(/\/+$/, "");
+  }
+  return normalizeCoucouBaseUrl(undefined);
+}
+
 export function buildWorkspaceOperationPath(
   workspaceSlug: string,
   surface: WorkspaceOperationSurface,
@@ -53,7 +63,7 @@ export function buildWorkspaceOperationHref(
   surface: WorkspaceOperationSurface,
   pathname = "",
 ): string {
-  const baseUrl = normalizeCoucouBaseUrl(process.env.NEXT_PUBLIC_COUCOU_BASE_URL);
+  const baseUrl = resolveCoucouBaseUrl();
   return `${baseUrl}${buildWorkspaceOperationPath(workspaceSlug, surface, pathname)}`;
 }
 

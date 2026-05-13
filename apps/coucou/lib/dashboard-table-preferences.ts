@@ -2,6 +2,7 @@ export const HOST_RSVPS_TABLE_KEY = "host.rsvps";
 
 const HOST_RSVPS_DEFAULT_HIDDEN_COLUMN_IDS = new Set([
   "attendees",
+  "attendanceStatus",
   "smsConsent",
   "ticketStatus",
   "ticketViewedAt",
@@ -167,6 +168,26 @@ export function shouldResetHostRsvpsSavedTablePreference({
   const savedVisibleColumnOrder = normalizedSavedColumnOrder.filter((columnId) =>
     savedVisibleColumnIds.includes(columnId),
   );
+  const attendanceLegacyVisibleColumnIds = availableColumnIds.filter(
+    (columnId) =>
+      defaultVisibleColumnIds.includes(columnId) ||
+      (columnId === "attendanceStatus" && availableColumnIdSet.has(columnId)),
+  );
+  const attendanceLegacyHiddenColumnIds = availableColumnIds.filter(
+    (columnId) => !attendanceLegacyVisibleColumnIds.includes(columnId),
+  );
+
+  if (
+    attendanceLegacyVisibleColumnIds.length > 0 &&
+    areDashboardTableColumnIdsEqual(savedVisibleColumnIds, attendanceLegacyVisibleColumnIds) &&
+    areDashboardTableColumnIdsEqual(
+      savedVisibleColumnOrder,
+      attendanceLegacyVisibleColumnIds,
+    ) &&
+    areDashboardTableColumnIdsEqual(normalizedHiddenColumnIds, attendanceLegacyHiddenColumnIds)
+  ) {
+    return true;
+  }
 
   return (
     compactLegacyVisibleColumnIds.length > 0 &&

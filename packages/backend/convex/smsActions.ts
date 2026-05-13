@@ -377,6 +377,8 @@ export const sendBulkSmsInternal = internalAction({
         phoneNumber: v.string(),
         clerkUserId: v.string(),
         notificationId: v.optional(v.id("smsNotifications")),
+        textBlastRecipientId: v.optional(v.id("textBlastRecipients")),
+        phoneHash: v.optional(v.string()),
         personalizedMessage: v.optional(v.string()),
         mediaUrl: v.optional(v.string()),
       }),
@@ -394,12 +396,25 @@ export const sendBulkSmsInternal = internalAction({
       console.error(
         `[sendBulkSmsInternal] Twilio disabled - failing all ${args.recipients.length} recipients`,
       );
+      await Promise.all(
+        args.recipients.map(async (recipient) => {
+          await updateNotificationStatusSafely(
+            ctx,
+            recipient.notificationId,
+            "failed",
+            undefined,
+            "Twilio disabled in development (DEV_TWILIO_ENABLED=false)",
+          );
+        }),
+      );
       return {
         totalRecipients: args.recipients.length,
         successCount: 0,
         failureCount: args.recipients.length,
         results: args.recipients.map((recipient) => ({
           clerkUserId: recipient.clerkUserId,
+          phoneHash: recipient.phoneHash,
+          textBlastRecipientId: recipient.textBlastRecipientId,
           success: false,
           error: "Twilio disabled in development (DEV_TWILIO_ENABLED=false)",
         })),
@@ -414,6 +429,8 @@ export const sendBulkSmsInternal = internalAction({
     const batchSize = args.batchSize || 10; // Process 10 SMS at a time
     const results: Array<{
       clerkUserId: string;
+      phoneHash?: string;
+      textBlastRecipientId?: Id<"textBlastRecipients">;
       success: boolean;
       messageId?: string;
       error?: string;
@@ -571,6 +588,8 @@ export const sendBulkSmsInternal = internalAction({
           if (result.value.success) {
             results.push({
               clerkUserId: recipient.clerkUserId,
+              phoneHash: recipient.phoneHash,
+              textBlastRecipientId: recipient.textBlastRecipientId,
               success: true,
               messageId: result.value.messageId,
             });
@@ -582,6 +601,8 @@ export const sendBulkSmsInternal = internalAction({
             );
             results.push({
               clerkUserId: recipient.clerkUserId,
+              phoneHash: recipient.phoneHash,
+              textBlastRecipientId: recipient.textBlastRecipientId,
               success: false,
               error: errorMessage,
             });
@@ -597,6 +618,8 @@ export const sendBulkSmsInternal = internalAction({
           );
           results.push({
             clerkUserId: recipient.clerkUserId,
+            phoneHash: recipient.phoneHash,
+            textBlastRecipientId: recipient.textBlastRecipientId,
             success: false,
             error: errorMessage,
           });

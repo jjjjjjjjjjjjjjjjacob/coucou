@@ -25,6 +25,10 @@ describe("workspace login branding helpers", () => {
     expect(normalizeDomainOrigin("https://dojopomodoro.club/path")).toBe(
       "https://dojopomodoro.club",
     );
+    expect(normalizeDomainOrigin("localhost:5679")).toBe("http://localhost:5679");
+    expect(normalizeDomainOrigin("http://localhost:5679/events/sample")).toBe(
+      "http://localhost:5679",
+    );
   });
 
   it("selects the configured client site for tenant auth copy and preset", () => {
@@ -50,5 +54,19 @@ describe("workspace login branding helpers", () => {
         ],
       }),
     ).toEqual(["https://dojopomodoro.club"]);
+  });
+
+  it("allows local workspace redirects over http", () => {
+    expect(
+      buildWorkspaceAllowedRedirectOrigins({
+        primaryDomain: "localhost:5679",
+        sites: [
+          {
+            siteKey: "club-chlorine",
+            domain: "localhost:5679",
+          },
+        ],
+      }),
+    ).toEqual(["http://localhost:5679", "https://clubchlorine.party"]);
   });
 });

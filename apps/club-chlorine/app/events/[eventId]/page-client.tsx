@@ -94,7 +94,7 @@ const monoBodyStyle: React.CSSProperties = {
 export default function EventPageClient({ params }: EventPageClientProps) {
   const { eventId: eventRouteId } = use(params);
   const searchParams = useSearchParams();
-  const { isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
 
   const isMobile = useMobile();
   const allEvents = useQuery(api.events.listAll, {
@@ -155,28 +155,30 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     );
   }
 
-  const focusedEventIsOpen = isEventOpenForRsvp(resolvedFocusedEvent);
-  let focusedRsvpFormHref: string;
-  if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
-    focusedRsvpFormHref = buildInfoRsvpPath(eventRouteId, searchParams);
-  } else {
-    focusedRsvpFormHref = buildFullRsvpPath(eventRouteId, searchParams);
-  }
-
   // When the user already has an RSVP, replace the standard "RSVP" brick
   // with a contextual one that jumps straight to their existing status or
   // ticket. There's no separate pill — the brick itself becomes the link.
+  const focusedEventIsOpen = isEventOpenForRsvp(resolvedFocusedEvent);
   const focusedRsvpStatus = focusedEventStatus?.status;
   const focusedHasRsvp =
     focusedRsvpStatus === "pending" ||
     focusedRsvpStatus === "approved" ||
     focusedRsvpStatus === "denied";
+  const focusedRsvpStatusIsLoading = !isLoaded || (isSignedIn && focusedEventStatus === undefined);
   const focusedExistingRsvpHref =
     focusedRsvpStatus === "approved"
       ? buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"])
       : focusedRsvpStatus === "pending" || focusedRsvpStatus === "denied"
         ? buildPathWithPreservedQuery(`/events/${eventRouteId}/status`, searchParams, ["step"])
         : null;
+  let focusedRsvpFormHref: string | undefined;
+  if (!focusedExistingRsvpHref && focusedEventIsOpen && !focusedRsvpStatusIsLoading) {
+    if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
+      focusedRsvpFormHref = buildInfoRsvpPath(eventRouteId, searchParams);
+    } else {
+      focusedRsvpFormHref = buildFullRsvpPath(eventRouteId, searchParams);
+    }
+  }
   const focusedBrickHref = focusedExistingRsvpHref ?? focusedRsvpFormHref;
   const focusedBrickLabel =
     focusedRsvpStatus === "approved"
@@ -249,7 +251,9 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   // The brick on the focused row is contextual: when the user already has
   // an RSVP it routes straight to their status/ticket and is never
   // disabled. Otherwise it's the standard CLOSED-aware RSVP brick.
-  const focusedBrickDisabled = focusedHasRsvp ? false : !focusedEventIsOpen;
+  const focusedBrickDisabled = focusedHasRsvp
+    ? false
+    : !focusedEventIsOpen || focusedRsvpStatusIsLoading;
 
   // Include the focused event even if it's not in `orderedEvents` (e.g. its
   // RSVP cutoff has already passed but the user navigated to it directly).
@@ -279,11 +283,13 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     const eventIsOpen = isEventOpenForRsvp(event);
     const eventRouteIdentifier = getEventRouteId(event);
     const isFocused = event._id === resolvedFocusedEvent._id;
-    let rsvpFormHref: string;
-    if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
-      rsvpFormHref = buildInfoRsvpPath(eventRouteIdentifier, searchParams);
-    } else {
-      rsvpFormHref = buildFullRsvpPath(eventRouteIdentifier, searchParams);
+    let rsvpFormHref: string | undefined;
+    if (!isFocused && eventIsOpen) {
+      if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
+        rsvpFormHref = buildInfoRsvpPath(eventRouteIdentifier, searchParams);
+      } else {
+        rsvpFormHref = buildFullRsvpPath(eventRouteIdentifier, searchParams);
+      }
     }
     allRows.push({
       landingEvent: {

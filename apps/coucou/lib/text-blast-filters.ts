@@ -14,6 +14,11 @@ export type RecipientFilterState =
   | { type: "custom_field_missing"; fieldKey: string }
   | { type: "rsvp_before"; isoDateTime: string };
 
+export type RecipientHistoryFilterState =
+  | { type: "none"; textBlastIds: [] }
+  | { type: "received_any"; textBlastIds: string[] }
+  | { type: "not_received_any"; textBlastIds: string[] };
+
 export const DEFAULT_STATUS_FILTER: RecipientApprovalStatus = "pending";
 
 const toDateTimeLocalString = (timestamp: number): string => {
@@ -157,6 +162,9 @@ export const isRecipientFilterConfigured = (state: RecipientFilterState): boolea
       return true;
   }
 };
+
+export const recipientHistoryFilterIsConfigured = (state: RecipientHistoryFilterState): boolean =>
+  state.type === "none" || state.textBlastIds.length > 0;
 
 export const RECIPIENT_STATUS_LABELS: Record<RecipientApprovalStatus, string> = {
   pending: "Pending",

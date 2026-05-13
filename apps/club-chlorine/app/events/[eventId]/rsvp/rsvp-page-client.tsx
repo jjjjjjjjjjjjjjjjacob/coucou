@@ -7,7 +7,7 @@ import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sd
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { REFERRAL_QUERY_PARAM } from "@coucou/sdk/shared/event-routes";
 import { CHLORINE_PHASE_SPLIT_MS, RsvpPending } from "@coucou/ui/tenant-template";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { use, useCallback, useEffect } from "react";
@@ -41,6 +41,8 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isSignedIn, isLoaded } = useAuth();
+  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
+    useConvexAuth();
 
   const event = useQuery(api.events.getByRouteId, {
     eventRouteId,
@@ -48,10 +50,15 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
   });
   const canonicalEventId = event?._id;
 
-  const status = useQuery(api.rsvps.statusForUserEventByRouteId, {
-    eventRouteId,
-    siteKey: siteConfiguration.siteKey,
-  });
+  const status = useQuery(
+    api.rsvps.statusForUserEventByRouteId,
+    isLoaded && isSignedIn && isConvexAuthenticated
+      ? {
+          eventRouteId,
+          siteKey: siteConfiguration.siteKey,
+        }
+      : "skip",
+  );
 
   const submitRsvp = useMutation(api.rsvps.submitRequest);
 
@@ -78,32 +85,23 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
         : `/events/${eventRouteId}/rsvp`;
   const eventIsOpenForRsvp = event ? isEventOpenForRsvp(event) : false;
   const rsvpFlowVariant = formVariant === "full" ? "control" : "info";
+  const existingRsvpDestination =
+    status?.status === "approved"
+      ? buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"])
+      : status?.status === "denied"
+        ? buildPathWithPreservedQuery(`/events/${eventRouteId}/denied`, searchParams, ["step"])
+        : status?.status === "pending"
+          ? buildPathWithPreservedQuery(`/events/${eventRouteId}/status`, searchParams, ["step"])
+          : null;
 
   // Auto-redirect to the right post-submission surface if the user already
   // has an RSVP for this event. Any submitted request — pending, approved,
   // denied — should pull the user off the password gate and onto
   // the matching status / ticket / denied surface.
   useEffect(() => {
-    if (!status?.status) return;
-    if (status.status === "approved") {
-      router.replace(
-        buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"]),
-      );
-      return;
-    }
-    if (status.status === "denied") {
-      router.replace(
-        buildPathWithPreservedQuery(`/events/${eventRouteId}/denied`, searchParams, ["step"]),
-      );
-      return;
-    }
-    if (status.status === "pending") {
-      router.replace(
-        buildPathWithPreservedQuery(`/events/${eventRouteId}/status`, searchParams, ["step"]),
-      );
-      return;
-    }
-  }, [status, eventRouteId, router, searchParams]);
+    if (!existingRsvpDestination) return;
+    router.replace(existingRsvpDestination);
+  }, [existingRsvpDestination, router]);
 
   // Sign-in gate. The satellite never serves its own auth surface — bounce
   // unauthenticated visitors to the chlorine-branded phone-auth page hosted
@@ -186,7 +184,18 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
     ],
   );
 
-  if (!event || !isLoaded || (!isSignedIn && isLoaded) || (isSignedIn && status === undefined)) {
+  const rsvpStatusIsLoading =
+    isLoaded &&
+    isSignedIn &&
+    (isConvexAuthLoading || !isConvexAuthenticated || status === undefined);
+
+  if (
+    !event ||
+    !isLoaded ||
+    (!isSignedIn && isLoaded) ||
+    rsvpStatusIsLoading ||
+    existingRsvpDestination
+  ) {
     return (
       <div className="flex w-full items-center justify-center py-10">
         <Spinner />

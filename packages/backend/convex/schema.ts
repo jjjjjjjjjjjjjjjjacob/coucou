@@ -434,6 +434,8 @@ export default defineSchema({
     message: v.string(),
     status: v.string(), // 'pending' | 'sent' | 'failed'
     messageId: v.optional(v.string()), // AWS SNS MessageId
+    textBlastId: v.optional(v.id("textBlasts")),
+    textBlastRecipientId: v.optional(v.id("textBlastRecipients")),
     errorMessage: v.optional(v.string()),
     sentAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -441,16 +443,25 @@ export default defineSchema({
     .index("by_event", ["eventId"])
     .index("by_user", ["recipientClerkUserId"])
     .index("by_status", ["status"])
-    .index("by_type", ["type"]),
+    .index("by_type", ["type"])
+    .index("by_text_blast", ["textBlastId"]),
 
   // Text blast campaigns
   textBlasts: defineTable({
     eventId: v.id("events"),
+    targetEventIds: v.optional(v.array(v.id("events"))),
     name: v.string(),
     message: v.string(),
     targetLists: v.array(v.string()), // ['vip', 'ga', etc.]
     recipientFilter: v.optional(v.string()), // 'all' | 'approved_no_approval_sms'
+    recipientHistoryFilter: v.optional(
+      v.object({
+        type: v.union(v.literal("received_any"), v.literal("not_received_any")),
+        textBlastIds: v.array(v.id("textBlasts")),
+      }),
+    ),
     includeQrCodes: v.optional(v.boolean()), // Whether to include QR code images in MMS
+    deliveryTrackingEnabled: v.optional(v.boolean()),
     recipientCount: v.number(),
     sentCount: v.number(),
     failedCount: v.number(),
@@ -464,6 +475,26 @@ export default defineSchema({
     .index("by_event", ["eventId"])
     .index("by_status", ["status"])
     .index("by_sent_by", ["sentBy"]),
+
+  textBlastRecipients: defineTable({
+    textBlastId: v.id("textBlasts"),
+    phoneHash: v.string(),
+    status: v.string(), // 'pending' | 'sent' | 'failed'
+    smsNotificationId: v.optional(v.id("smsNotifications")),
+    sourceEventIds: v.array(v.id("events")),
+    sourceRsvpIds: v.array(v.id("rsvps")),
+    sourceListKeys: v.array(v.string()),
+    recipientClerkUserIds: v.array(v.string()),
+    messageId: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_text_blast", ["textBlastId"])
+    .index("by_text_blast_phone", ["textBlastId", "phoneHash"])
+    .index("by_text_blast_status", ["textBlastId", "status"])
+    .index("by_phone", ["phoneHash"]),
 
   // SMS usage tracking for cost monitoring and analytics
   smsUsageLogs: defineTable({

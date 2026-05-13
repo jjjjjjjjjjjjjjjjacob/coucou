@@ -32,6 +32,7 @@ import type * as lib_credentialPasswords from "../lib/credentialPasswords.js";
 import type * as lib_eventMetadata from "../lib/eventMetadata.js";
 import type * as lib_eventPatch from "../lib/eventPatch.js";
 import type * as lib_eventTiming from "../lib/eventTiming.js";
+import type * as lib_phoneHash from "../lib/phoneHash.js";
 import type * as lib_phoneUtils from "../lib/phoneUtils.js";
 import type * as lib_platformAuth from "../lib/platformAuth.js";
 import type * as lib_primaryFields from "../lib/primaryFields.js";
@@ -104,6 +105,7 @@ declare const fullApi: ApiFromModules<{
   "lib/eventMetadata": typeof lib_eventMetadata;
   "lib/eventPatch": typeof lib_eventPatch;
   "lib/eventTiming": typeof lib_eventTiming;
+  "lib/phoneHash": typeof lib_phoneHash;
   "lib/phoneUtils": typeof lib_phoneUtils;
   "lib/platformAuth": typeof lib_platformAuth;
   "lib/primaryFields": typeof lib_primaryFields;
