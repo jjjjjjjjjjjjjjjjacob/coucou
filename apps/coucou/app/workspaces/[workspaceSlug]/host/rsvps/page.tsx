@@ -3034,238 +3034,238 @@ export default function RsvpsPage() {
   ]);
 
   const renderRowContextMenuContent = (rsvp: HostRsvp) => {
-      const availableListKeys = listCredentials?.map((credential) => credential.listKey) ?? [];
-      const contextActionRsvps = getRsvpContextActionTargets({
-        contextRow: rsvp,
-        rows: rsvps,
-        selectedRowIds: selectedRows,
-      });
-      const usesSelectionBatch = contextActionRsvps.length > 1;
-      const selectionBatchLabel = usesSelectionBatch
-        ? ` (${contextActionRsvps.length} selected)`
-        : "";
-      const currentTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
-      const canViewQrCode = canShowRsvpQrCode(rsvp);
-      const isUpdatingList = contextActionRsvps.some((targetRsvp) =>
-        loadingListUpdates.has(targetRsvp.id),
-      );
-      const isUpdatingApproval = contextActionRsvps.some((targetRsvp) =>
-        loadingApprovalUpdates.has(targetRsvp.id),
-      );
-      const isUpdatingAttendance = contextActionRsvps.some((targetRsvp) =>
-        loadingAttendanceUpdates.has(targetRsvp.id),
-      );
-      const isUpdatingTicket = contextActionRsvps.some((targetRsvp) =>
-        loadingTicketUpdates.has(targetRsvp.id),
-      );
-      const handleContextListChange = (listKey: string) => {
-        if (usesSelectionBatch) {
-          void handleBulkListChange(listKey);
-          return;
-        }
-        handleSingleListKeyChange(rsvp, listKey);
-      };
-      const handleContextApprovalChange = (approvalStatusOption: ApprovalStatusOption) => {
-        if (usesSelectionBatch) {
-          void handleBulkApprovalChange(approvalStatusOption);
-          return;
-        }
-        handleSingleApprovalChange(rsvp, approvalStatusOption);
-      };
-      const handleContextAttendanceStatusChange = (
-        attendanceStatusOption: AttendanceStatusOption,
-      ) => {
-        if (usesSelectionBatch) {
-          void handleBulkAttendanceStatusChange(attendanceStatusOption);
-          return;
-        }
-        handleSingleAttendanceStatusChange(rsvp, attendanceStatusOption);
-      };
-      const handleContextTicketStatusChange = (ticketStatusOption: TicketStatusOption) => {
-        if (usesSelectionBatch) {
-          void handleBulkTicketStatusChange(ticketStatusOption);
-          return;
-        }
-        handleSingleTicketStatusChange(rsvp, ticketStatusOption);
-      };
-
-      if (isReadOnly) {
-        return (
-          <ContextMenuContent className="w-56">
-            {canViewQrCode ? (
-              <ContextMenuItem onSelect={() => openRsvpQrCode(rsvp)}>
-                <QrCode className="h-4 w-4" />
-                View QR Code
-              </ContextMenuItem>
-            ) : (
-              <ContextMenuItem disabled>No row actions</ContextMenuItem>
-            )}
-          </ContextMenuContent>
-        );
+    const availableListKeys = listCredentials?.map((credential) => credential.listKey) ?? [];
+    const contextActionRsvps = getRsvpContextActionTargets({
+      contextRow: rsvp,
+      rows: rsvps,
+      selectedRowIds: selectedRows,
+    });
+    const usesSelectionBatch = contextActionRsvps.length > 1;
+    const selectionBatchLabel = usesSelectionBatch
+      ? ` (${contextActionRsvps.length} selected)`
+      : "";
+    const currentTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
+    const canViewQrCode = canShowRsvpQrCode(rsvp);
+    const isUpdatingList = contextActionRsvps.some((targetRsvp) =>
+      loadingListUpdates.has(targetRsvp.id),
+    );
+    const isUpdatingApproval = contextActionRsvps.some((targetRsvp) =>
+      loadingApprovalUpdates.has(targetRsvp.id),
+    );
+    const isUpdatingAttendance = contextActionRsvps.some((targetRsvp) =>
+      loadingAttendanceUpdates.has(targetRsvp.id),
+    );
+    const isUpdatingTicket = contextActionRsvps.some((targetRsvp) =>
+      loadingTicketUpdates.has(targetRsvp.id),
+    );
+    const handleContextListChange = (listKey: string) => {
+      if (usesSelectionBatch) {
+        void handleBulkListChange(listKey);
+        return;
       }
+      handleSingleListKeyChange(rsvp, listKey);
+    };
+    const handleContextApprovalChange = (approvalStatusOption: ApprovalStatusOption) => {
+      if (usesSelectionBatch) {
+        void handleBulkApprovalChange(approvalStatusOption);
+        return;
+      }
+      handleSingleApprovalChange(rsvp, approvalStatusOption);
+    };
+    const handleContextAttendanceStatusChange = (
+      attendanceStatusOption: AttendanceStatusOption,
+    ) => {
+      if (usesSelectionBatch) {
+        void handleBulkAttendanceStatusChange(attendanceStatusOption);
+        return;
+      }
+      handleSingleAttendanceStatusChange(rsvp, attendanceStatusOption);
+    };
+    const handleContextTicketStatusChange = (ticketStatusOption: TicketStatusOption) => {
+      if (usesSelectionBatch) {
+        void handleBulkTicketStatusChange(ticketStatusOption);
+        return;
+      }
+      handleSingleTicketStatusChange(rsvp, ticketStatusOption);
+    };
 
+    if (isReadOnly) {
       return (
         <ContextMenuContent className="w-56">
-          <ContextMenuSub>
-            <ContextMenuSubTrigger disabled={availableListKeys.length <= 1 || isUpdatingList}>
-              Change List{selectionBatchLabel}
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent className="w-48">
-              {availableListKeys.map((listKey) => (
-                <ContextMenuItem
-                  key={listKey}
-                  disabled={
-                    contextActionRsvps.every((targetRsvp) => targetRsvp.listKey === listKey) ||
-                    isUpdatingList
-                  }
-                  onSelect={() => handleContextListChange(listKey)}
-                >
-                  {isUpdatingList && listKey === rsvp.listKey && <Spinner className="h-3 w-3" />}
-                  {listKey.toUpperCase()}
-                </ContextMenuItem>
-              ))}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger disabled={isUpdatingApproval}>
-              Change Approval{selectionBatchLabel}
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent className="w-48">
-              {APPROVAL_STATUS_OPTIONS.map((approvalStatusOption) => {
-                const allTargetsAlreadyHaveApprovalStatus = contextActionRsvps.every(
-                  (targetRsvp) => targetRsvp.approvalStatus === approvalStatusOption,
-                );
-                const allTargetsLockPendingApproval =
-                  approvalStatusOption === "pending" &&
-                  contextActionRsvps.every(
-                    (targetRsvp) => targetRsvp.redemptionStatus === "redeemed",
-                  );
-                const approvalStatusClassName =
-                  approvalStatusOption === "approved"
-                    ? "text-green-700"
-                    : approvalStatusOption === "denied"
-                      ? "text-red-700"
-                      : "text-amber-700";
-
-                return (
-                  <ContextMenuItem
-                    key={approvalStatusOption}
-                    disabled={
-                      allTargetsAlreadyHaveApprovalStatus ||
-                      allTargetsLockPendingApproval ||
-                      isUpdatingApproval
-                    }
-                    onSelect={() => handleContextApprovalChange(approvalStatusOption)}
-                  >
-                    {isUpdatingApproval && approvalStatusOption === rsvp.approvalStatus && (
-                      <Spinner className="h-3 w-3" />
-                    )}
-                    <span className={approvalStatusClassName}>
-                      {getApprovalStatusLabel(approvalStatusOption)}
-                    </span>
-                  </ContextMenuItem>
-                );
-              })}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger disabled={isUpdatingAttendance}>
-              Change Attendance{selectionBatchLabel}
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent className="w-48">
-              {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => {
-                const allTargetsAlreadyHaveAttendanceStatus = contextActionRsvps.every(
-                  (targetRsvp) => targetRsvp.attendanceStatus === attendanceStatusOption,
-                );
-                const attendanceStatusClassName =
-                  attendanceStatusOption === "yes"
-                    ? "text-green-700"
-                    : attendanceStatusOption === "maybe"
-                      ? "text-amber-700"
-                      : "text-red-700";
-
-                return (
-                  <ContextMenuItem
-                    key={attendanceStatusOption}
-                    disabled={allTargetsAlreadyHaveAttendanceStatus || isUpdatingAttendance}
-                    onSelect={() => handleContextAttendanceStatusChange(attendanceStatusOption)}
-                  >
-                    {isUpdatingAttendance && attendanceStatusOption === rsvp.attendanceStatus && (
-                      <Spinner className="h-3 w-3" />
-                    )}
-                    <span className={attendanceStatusClassName}>
-                      {getAttendanceStatusLabel(attendanceStatusOption)}
-                    </span>
-                  </ContextMenuItem>
-                );
-              })}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger
-              disabled={
-                !contextActionRsvps.some(
-                  (targetRsvp) =>
-                    canEditTicketForRsvp(targetRsvp) &&
-                    normalizeTicketStatus(targetRsvp.redemptionStatus) !== "redeemed",
-                ) || isUpdatingTicket
-              }
-            >
-              Change Ticket{selectionBatchLabel}
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent className="w-48">
-              {TICKET_STATUS_OPTIONS.map((ticketStatusOption) => {
-                const hasChangeableTarget = contextActionRsvps.some(
-                  (targetRsvp) =>
-                    canEditTicketForRsvp(targetRsvp) &&
-                    normalizeTicketStatus(targetRsvp.redemptionStatus) !== "redeemed" &&
-                    normalizeTicketStatus(targetRsvp.redemptionStatus) !== ticketStatusOption,
-                );
-                const ticketStatusClassName =
-                  ticketStatusOption === "issued"
-                    ? "text-purple-700"
-                    : ticketStatusOption === "disabled"
-                      ? "text-red-700"
-                      : "text-gray-700";
-
-                return (
-                  <ContextMenuItem
-                    key={ticketStatusOption}
-                    disabled={!hasChangeableTarget || isUpdatingTicket}
-                    onSelect={() => handleContextTicketStatusChange(ticketStatusOption)}
-                  >
-                    {isUpdatingTicket && ticketStatusOption === currentTicketStatus && (
-                      <Spinner className="h-3 w-3" />
-                    )}
-                    <span className={ticketStatusClassName}>
-                      {getTicketStatusLabel(ticketStatusOption)}
-                    </span>
-                  </ContextMenuItem>
-                );
-              })}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          {canViewQrCode && (
-            <>
-              <ContextMenuSeparator />
-              <ContextMenuItem onSelect={() => openRsvpQrCode(rsvp)}>
-                <QrCode className="h-4 w-4" />
-                View QR Code
-              </ContextMenuItem>
-            </>
+          {canViewQrCode ? (
+            <ContextMenuItem onSelect={() => openRsvpQrCode(rsvp)}>
+              <QrCode className="h-4 w-4" />
+              View QR Code
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuItem disabled>No row actions</ContextMenuItem>
           )}
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            variant="destructive"
-            disabled={deleteRsvpCompleteMutation.isPending || bulkDeleteRsvpsMutation.isPending}
-            onSelect={() => setRsvpsPendingDeletion(contextActionRsvps)}
-          >
-            {usesSelectionBatch
-              ? `Delete ${contextActionRsvps.length} Selected RSVPs`
-              : "Delete RSVP"}
-          </ContextMenuItem>
         </ContextMenuContent>
       );
+    }
+
+    return (
+      <ContextMenuContent className="w-56">
+        <ContextMenuSub>
+          <ContextMenuSubTrigger disabled={availableListKeys.length <= 1 || isUpdatingList}>
+            Change List{selectionBatchLabel}
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            {availableListKeys.map((listKey) => (
+              <ContextMenuItem
+                key={listKey}
+                disabled={
+                  contextActionRsvps.every((targetRsvp) => targetRsvp.listKey === listKey) ||
+                  isUpdatingList
+                }
+                onSelect={() => handleContextListChange(listKey)}
+              >
+                {isUpdatingList && listKey === rsvp.listKey && <Spinner className="h-3 w-3" />}
+                {listKey.toUpperCase()}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger disabled={isUpdatingApproval}>
+            Change Approval{selectionBatchLabel}
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            {APPROVAL_STATUS_OPTIONS.map((approvalStatusOption) => {
+              const allTargetsAlreadyHaveApprovalStatus = contextActionRsvps.every(
+                (targetRsvp) => targetRsvp.approvalStatus === approvalStatusOption,
+              );
+              const allTargetsLockPendingApproval =
+                approvalStatusOption === "pending" &&
+                contextActionRsvps.every(
+                  (targetRsvp) => targetRsvp.redemptionStatus === "redeemed",
+                );
+              const approvalStatusClassName =
+                approvalStatusOption === "approved"
+                  ? "text-green-700"
+                  : approvalStatusOption === "denied"
+                    ? "text-red-700"
+                    : "text-amber-700";
+
+              return (
+                <ContextMenuItem
+                  key={approvalStatusOption}
+                  disabled={
+                    allTargetsAlreadyHaveApprovalStatus ||
+                    allTargetsLockPendingApproval ||
+                    isUpdatingApproval
+                  }
+                  onSelect={() => handleContextApprovalChange(approvalStatusOption)}
+                >
+                  {isUpdatingApproval && approvalStatusOption === rsvp.approvalStatus && (
+                    <Spinner className="h-3 w-3" />
+                  )}
+                  <span className={approvalStatusClassName}>
+                    {getApprovalStatusLabel(approvalStatusOption)}
+                  </span>
+                </ContextMenuItem>
+              );
+            })}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger disabled={isUpdatingAttendance}>
+            Change Attendance{selectionBatchLabel}
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => {
+              const allTargetsAlreadyHaveAttendanceStatus = contextActionRsvps.every(
+                (targetRsvp) => targetRsvp.attendanceStatus === attendanceStatusOption,
+              );
+              const attendanceStatusClassName =
+                attendanceStatusOption === "yes"
+                  ? "text-green-700"
+                  : attendanceStatusOption === "maybe"
+                    ? "text-amber-700"
+                    : "text-red-700";
+
+              return (
+                <ContextMenuItem
+                  key={attendanceStatusOption}
+                  disabled={allTargetsAlreadyHaveAttendanceStatus || isUpdatingAttendance}
+                  onSelect={() => handleContextAttendanceStatusChange(attendanceStatusOption)}
+                >
+                  {isUpdatingAttendance && attendanceStatusOption === rsvp.attendanceStatus && (
+                    <Spinner className="h-3 w-3" />
+                  )}
+                  <span className={attendanceStatusClassName}>
+                    {getAttendanceStatusLabel(attendanceStatusOption)}
+                  </span>
+                </ContextMenuItem>
+              );
+            })}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger
+            disabled={
+              !contextActionRsvps.some(
+                (targetRsvp) =>
+                  canEditTicketForRsvp(targetRsvp) &&
+                  normalizeTicketStatus(targetRsvp.redemptionStatus) !== "redeemed",
+              ) || isUpdatingTicket
+            }
+          >
+            Change Ticket{selectionBatchLabel}
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            {TICKET_STATUS_OPTIONS.map((ticketStatusOption) => {
+              const hasChangeableTarget = contextActionRsvps.some(
+                (targetRsvp) =>
+                  canEditTicketForRsvp(targetRsvp) &&
+                  normalizeTicketStatus(targetRsvp.redemptionStatus) !== "redeemed" &&
+                  normalizeTicketStatus(targetRsvp.redemptionStatus) !== ticketStatusOption,
+              );
+              const ticketStatusClassName =
+                ticketStatusOption === "issued"
+                  ? "text-purple-700"
+                  : ticketStatusOption === "disabled"
+                    ? "text-red-700"
+                    : "text-gray-700";
+
+              return (
+                <ContextMenuItem
+                  key={ticketStatusOption}
+                  disabled={!hasChangeableTarget || isUpdatingTicket}
+                  onSelect={() => handleContextTicketStatusChange(ticketStatusOption)}
+                >
+                  {isUpdatingTicket && ticketStatusOption === currentTicketStatus && (
+                    <Spinner className="h-3 w-3" />
+                  )}
+                  <span className={ticketStatusClassName}>
+                    {getTicketStatusLabel(ticketStatusOption)}
+                  </span>
+                </ContextMenuItem>
+              );
+            })}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        {canViewQrCode && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => openRsvpQrCode(rsvp)}>
+              <QrCode className="h-4 w-4" />
+              View QR Code
+            </ContextMenuItem>
+          </>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          variant="destructive"
+          disabled={deleteRsvpCompleteMutation.isPending || bulkDeleteRsvpsMutation.isPending}
+          onSelect={() => setRsvpsPendingDeletion(contextActionRsvps)}
+        >
+          {usesSelectionBatch
+            ? `Delete ${contextActionRsvps.length} Selected RSVPs`
+            : "Delete RSVP"}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    );
   };
 
   const tableColumnTotalWidth = table.getTotalSize();
