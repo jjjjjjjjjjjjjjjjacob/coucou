@@ -1539,7 +1539,9 @@ export default function RsvpsPage() {
                 }}
                 onPointerDown={stopRsvpTableInteractiveEventPropagation}
               >
-                <span className="min-w-0 truncate">{getTicketStatusLabel(currentTicketStatus)}</span>
+                <span className="min-w-0 truncate">
+                  {getTicketStatusLabel(currentTicketStatus)}
+                </span>
               </Button>
             );
           }
@@ -3031,8 +3033,7 @@ export default function RsvpsPage() {
     workspaceScope,
   ]);
 
-  const renderRowContextMenuContent = React.useCallback(
-    (rsvp: HostRsvp) => {
+  const renderRowContextMenuContent = (rsvp: HostRsvp) => {
       const availableListKeys = listCredentials?.map((credential) => credential.listKey) ?? [];
       const contextActionRsvps = getRsvpContextActionTargets({
         contextRow: rsvp,
@@ -3265,31 +3266,7 @@ export default function RsvpsPage() {
           </ContextMenuItem>
         </ContextMenuContent>
       );
-    },
-    [
-      canEditTicketForRsvp,
-      canShowRsvpQrCode,
-      bulkDeleteRsvpsMutation.isPending,
-      deleteRsvpCompleteMutation.isPending,
-      handleBulkApprovalChange,
-      handleBulkAttendanceStatusChange,
-      handleBulkListChange,
-      handleBulkTicketStatusChange,
-      handleSingleApprovalChange,
-      handleSingleAttendanceStatusChange,
-      handleSingleListKeyChange,
-      handleSingleTicketStatusChange,
-      isReadOnly,
-      listCredentials,
-      loadingApprovalUpdates,
-      loadingAttendanceUpdates,
-      loadingListUpdates,
-      loadingTicketUpdates,
-      openRsvpQrCode,
-      rsvps,
-      selectedRows,
-    ],
-  );
+  };
 
   const tableColumnTotalWidth = table.getTotalSize();
   const tableFillerColumnWidth = getRsvpTableFillerColumnWidth({
@@ -3929,7 +3906,6 @@ export default function RsvpsPage() {
               ))}
               {shouldRenderTableFillerColumn && (
                 <col
-                  aria-hidden="true"
                   style={{
                     width: tableFillerColumnWidth,
                   }}

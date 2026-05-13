@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
-  recipientHistoryFilterIsConfigured,
   type RecipientHistoryFilterState,
+  recipientHistoryFilterIsConfigured,
 } from "../lib/text-blast-filters";
 
 describe("text blast filters", () => {

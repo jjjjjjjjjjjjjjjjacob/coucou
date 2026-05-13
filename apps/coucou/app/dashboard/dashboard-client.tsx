@@ -474,11 +474,7 @@ export function DashboardClient() {
                     )}
                   </div>
                   <div role="cell" className="flex md:justify-end">
-                    <Button
-                      asChild
-                      size="sm"
-                      className="h-8 rounded-none px-3 text-[12px]"
-                    >
+                    <Button asChild size="sm" className="h-8 rounded-none px-3 text-[12px]">
                       <a href={dashboardAbsoluteHref}>
                         <ArrowRight className="size-4" />
                         Open dashboard

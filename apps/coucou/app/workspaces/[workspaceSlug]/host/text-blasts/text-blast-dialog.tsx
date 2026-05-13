@@ -48,8 +48,8 @@ import {
   describeRecipientFilter,
   encodeRecipientFilter,
   isRecipientFilterConfigured,
-  recipientHistoryFilterIsConfigured,
   RECIPIENT_STATUS_LABELS,
+  recipientHistoryFilterIsConfigured,
 } from "@/lib/text-blast-filters";
 import type { Event, TextBlast } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";

@@ -152,8 +152,7 @@ export function WorkspaceAccessGate({
           clerkOrganizationSlug: workspace.clerkOrganizationSlug ?? null,
         }
       : null;
-  const canUsePlatformWorkspaceAccess =
-    Boolean(workspaceConfiguration) && hasCoucouPlatformAccess;
+  const canUsePlatformWorkspaceAccess = Boolean(workspaceConfiguration) && hasCoucouPlatformAccess;
   const targetMembership =
     memberships.find((membership) => {
       if (

@@ -7,6 +7,7 @@ import type { UserIdentity } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
   internalAction,
@@ -15,7 +16,7 @@ import {
   mutation,
   query,
 } from "./_generated/server";
-import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
 import { type ApprovalStatus, resolveApprovalStatus } from "./lib/rsvpStatus";
@@ -26,7 +27,6 @@ import {
   getEventInSiteScope,
   getTextBlastInSiteScope,
 } from "./lib/siteScope";
-import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 function getErrorMessage(error: unknown): string {

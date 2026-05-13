@@ -180,10 +180,7 @@ export function shouldResetHostRsvpsSavedTablePreference({
   if (
     attendanceLegacyVisibleColumnIds.length > 0 &&
     areDashboardTableColumnIdsEqual(savedVisibleColumnIds, attendanceLegacyVisibleColumnIds) &&
-    areDashboardTableColumnIdsEqual(
-      savedVisibleColumnOrder,
-      attendanceLegacyVisibleColumnIds,
-    ) &&
+    areDashboardTableColumnIdsEqual(savedVisibleColumnOrder, attendanceLegacyVisibleColumnIds) &&
     areDashboardTableColumnIdsEqual(normalizedHiddenColumnIds, attendanceLegacyHiddenColumnIds)
   ) {
     return true;
