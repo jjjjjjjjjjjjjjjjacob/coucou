@@ -3,6 +3,7 @@ export type RecipientApprovalStatus = "pending" | "approved" | "denied";
 export type RecipientFilterType =
   | "all"
   | "approved_no_approval_sms"
+  | "approved_with_approval_sms"
   | "status"
   | "custom_field_missing"
   | "rsvp_before";
@@ -10,6 +11,7 @@ export type RecipientFilterType =
 export type RecipientFilterState =
   | { type: "all" }
   | { type: "approved_no_approval_sms" }
+  | { type: "approved_with_approval_sms" }
   | { type: "status"; status: RecipientApprovalStatus }
   | { type: "custom_field_missing"; fieldKey: string }
   | { type: "rsvp_before"; isoDateTime: string };
@@ -20,6 +22,15 @@ export type RecipientHistoryFilterState =
   | { type: "not_received_any"; textBlastIds: string[] };
 
 export const DEFAULT_STATUS_FILTER: RecipientApprovalStatus = "pending";
+
+export const RECIPIENT_FILTER_LABELS: Record<RecipientFilterType, string> = {
+  all: "All Approved",
+  approved_no_approval_sms: "Approved but No Approval SMS Sent",
+  approved_with_approval_sms: "Approved with Approval SMS Sent",
+  status: "Filter by RSVP Status",
+  custom_field_missing: "Missing Custom Field",
+  rsvp_before: "RSVP Before Date/Time",
+};
 
 const toDateTimeLocalString = (timestamp: number): string => {
   const date = new Date(timestamp);
@@ -43,6 +54,8 @@ export const encodeRecipientFilter = (state: RecipientFilterState): string | und
       return undefined;
     case "approved_no_approval_sms":
       return "approved_no_approval_sms";
+    case "approved_with_approval_sms":
+      return "approved_with_approval_sms";
     case "status":
       return JSON.stringify({ type: "status", status: state.status });
     case "custom_field_missing":
@@ -71,6 +84,10 @@ export const decodeRecipientFilter = (value: string | null | undefined): Recipie
     return { type: "approved_no_approval_sms" };
   }
 
+  if (value === "approved_with_approval_sms") {
+    return { type: "approved_with_approval_sms" };
+  }
+
   try {
     const parsed: unknown = JSON.parse(value);
     if (!parsed || typeof parsed !== "object") {
@@ -86,6 +103,8 @@ export const decodeRecipientFilter = (value: string | null | undefined): Recipie
         return { type: "all" };
       case "approved_no_approval_sms":
         return { type: "approved_no_approval_sms" };
+      case "approved_with_approval_sms":
+        return { type: "approved_with_approval_sms" };
       case "status": {
         const status = candidate.status;
         if (typeof status === "string" && ["pending", "approved", "denied"].includes(status)) {
@@ -132,6 +151,8 @@ export const describeRecipientFilter = (
       return "All approved RSVPs";
     case "approved_no_approval_sms":
       return "Approved RSVPs without an approval SMS";
+    case "approved_with_approval_sms":
+      return "Approved RSVPs with an approval SMS";
     case "status":
       return `RSVP status: ${state.status}`;
     case "custom_field_missing": {

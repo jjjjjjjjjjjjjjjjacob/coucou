@@ -38,6 +38,7 @@ type RsvpStatus = ApprovalStatus;
 type RecipientFilterConfig =
   | { type: "all" }
   | { type: "approved_no_approval_sms" }
+  | { type: "approved_with_approval_sms" }
   | { type: "status"; status: RsvpStatus }
   | { type: "custom_field_missing"; fieldKey: string }
   | { type: "rsvp_before"; timestamp: number };
@@ -58,6 +59,8 @@ const recipientHistoryFilterValidator = v.optional(
 
 const MULTI_EVENT_RESTRICTED_VARIABLE_PATTERN =
   /\{\{\s*(eventName|eventDate|eventLocation|qrCodeUrl)\s*\}\}/;
+const QR_CODE_URL_VARIABLE_PATTERN = /\{\{\s*qrCodeUrl\s*\}\}/;
+const QR_CODE_URL_VARIABLE_REPLACEMENT_PATTERN = /\{\{\s*qrCodeUrl\s*\}\}/g;
 
 const getUniqueIds = <T extends string>(ids: T[]): T[] => Array.from(new Set(ids));
 
@@ -82,6 +85,14 @@ const normalizeTargetEventIds = (args: {
 
 const messageContainsMultiEventRestrictedVariables = (message: string): boolean =>
   MULTI_EVENT_RESTRICTED_VARIABLE_PATTERN.test(message);
+
+const messageContainsQrCodeUrlVariable = (message: string): boolean =>
+  QR_CODE_URL_VARIABLE_PATTERN.test(message);
+
+const resolveEffectiveIncludeQrCodes = (args: {
+  message: string;
+  includeQrCodes?: boolean;
+}): boolean => args.includeQrCodes === true || messageContainsQrCodeUrlVariable(args.message);
 
 const validateBlastConfiguration = (args: {
   targetEventIds: Id<"events">[];
@@ -112,6 +123,10 @@ const parseRecipientFilter = (rawFilter: string | null | undefined): RecipientFi
     return { type: "approved_no_approval_sms" };
   }
 
+  if (rawFilter === "approved_with_approval_sms") {
+    return { type: "approved_with_approval_sms" };
+  }
+
   try {
     const parsed = JSON.parse(rawFilter) as Partial<RecipientFilterConfig>;
     if (!parsed || typeof parsed !== "object" || typeof parsed.type !== "string") {
@@ -123,6 +138,8 @@ const parseRecipientFilter = (rawFilter: string | null | undefined): RecipientFi
         return { type: "all" };
       case "approved_no_approval_sms":
         return { type: "approved_no_approval_sms" };
+      case "approved_with_approval_sms":
+        return { type: "approved_with_approval_sms" };
       case "status":
         if (
           typeof parsed.status === "string" &&
@@ -164,6 +181,7 @@ const statusesForFilter = (filter: RecipientFilterConfig): RsvpStatus[] => {
   switch (filter.type) {
     case "all":
     case "approved_no_approval_sms":
+    case "approved_with_approval_sms":
       return DEFAULT_APPROVED_STATUSES;
     case "status":
       return [filter.status];
@@ -185,6 +203,25 @@ const customFieldIsMissing = (rsvp: Doc<"rsvps">, fieldKey: string): boolean => 
   }
   return value.trim().length === 0;
 };
+
+async function rsvpHasSentApprovalSms(
+  ctx: Pick<QueryCtx, "db">,
+  rsvp: Doc<"rsvps">,
+): Promise<boolean> {
+  const approvalSms = await ctx.db
+    .query("smsNotifications")
+    .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", rsvp.eventId))
+    .filter((queryBuilder) =>
+      queryBuilder.and(
+        queryBuilder.eq(queryBuilder.field("recipientClerkUserId"), rsvp.clerkUserId),
+        queryBuilder.eq(queryBuilder.field("type"), "approval"),
+        queryBuilder.eq(queryBuilder.field("status"), "sent"),
+      ),
+    )
+    .first();
+
+  return approvalSms !== null;
+}
 
 type IdentityWithRole = UserIdentity & { role?: string };
 
@@ -254,6 +291,10 @@ export const createDraft = mutation({
     const identityWithRole = identity as IdentityWithRole;
 
     const targetEventIds = normalizeTargetEventIds(args);
+    const effectiveIncludeQrCodes = resolveEffectiveIncludeQrCodes({
+      message: args.message,
+      includeQrCodes: args.includeQrCodes,
+    });
     validateBlastConfiguration({
       targetEventIds,
       message: args.message,
@@ -290,7 +331,7 @@ export const createDraft = mutation({
       targetLists: args.targetLists,
       recipientFilter: args.recipientFilter,
       recipientHistoryFilter: args.recipientHistoryFilter,
-      includeQrCodes: args.includeQrCodes ?? false,
+      includeQrCodes: effectiveIncludeQrCodes,
       deliveryTrackingEnabled: true,
       recipientCount,
       sentCount: 0,
@@ -353,6 +394,10 @@ export const updateDraft = mutation({
         : getBlastTargetEventIds(blast);
     const nextMessage = args.message ?? blast.message;
     const nextIncludeQrCodes = args.includeQrCodes ?? blast.includeQrCodes ?? false;
+    const effectiveIncludeQrCodes = resolveEffectiveIncludeQrCodes({
+      message: nextMessage,
+      includeQrCodes: nextIncludeQrCodes,
+    });
     validateBlastConfiguration({
       targetEventIds,
       message: nextMessage,
@@ -413,8 +458,8 @@ export const updateDraft = mutation({
       updateData.recipientHistoryFilter = undefined;
       updateData.recipientCount = recipientCount;
     }
-    if (args.includeQrCodes !== undefined) {
-      updateData.includeQrCodes = args.includeQrCodes;
+    if (args.includeQrCodes !== undefined || args.message !== undefined) {
+      updateData.includeQrCodes = effectiveIncludeQrCodes;
     }
 
     await ctx.db.patch(args.blastId, updateData);
@@ -517,7 +562,7 @@ const applyTemplateVariables = (template: string, variables: TemplateVariables):
     .replace(/\{\{eventName\}\}/g, variables.eventName)
     .replace(/\{\{eventDate\}\}/g, variables.eventDate)
     .replace(/\{\{eventLocation\}\}/g, variables.eventLocation)
-    .replace(/\{\{qrCodeUrl\}\}/g, variables.qrCodeUrl || "");
+    .replace(QR_CODE_URL_VARIABLE_REPLACEMENT_PATTERN, variables.qrCodeUrl || "");
 };
 
 const resolveRecipientFirstName = (recipient: BlastRecipient): string => {
@@ -667,19 +712,19 @@ async function getFilteredRsvpsForTargeting(
     case "approved_no_approval_sms": {
       const filteredWithApprovalSmsStatus = await Promise.all(
         filteredRsvps.map(async (rsvp) => {
-          const approvalSms = await ctx.db
-            .query("smsNotifications")
-            .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", rsvp.eventId))
-            .filter((queryBuilder) =>
-              queryBuilder.and(
-                queryBuilder.eq(queryBuilder.field("recipientClerkUserId"), rsvp.clerkUserId),
-                queryBuilder.eq(queryBuilder.field("type"), "approval"),
-                queryBuilder.eq(queryBuilder.field("status"), "sent"),
-              ),
-            )
-            .first();
+          return (await rsvpHasSentApprovalSms(ctx, rsvp)) ? null : rsvp;
+        }),
+      );
 
-          return approvalSms ? null : rsvp;
+      filteredRsvps = filteredWithApprovalSmsStatus.filter(
+        (rsvp): rsvp is (typeof filteredRsvps)[0] => rsvp !== null,
+      );
+      break;
+    }
+    case "approved_with_approval_sms": {
+      const filteredWithApprovalSmsStatus = await Promise.all(
+        filteredRsvps.map(async (rsvp) => {
+          return (await rsvpHasSentApprovalSms(ctx, rsvp)) ? rsvp : null;
         }),
       );
 
@@ -956,6 +1001,10 @@ export const sendBlast = action({
     }
 
     const targetEventIds = getBlastTargetEventIds(blast);
+    const effectiveIncludeQrCodes = resolveEffectiveIncludeQrCodes({
+      message: blast.message,
+      includeQrCodes: blast.includeQrCodes,
+    });
     validateBlastConfiguration({
       targetEventIds,
       message: blast.message,
@@ -974,6 +1023,7 @@ export const sendBlast = action({
     await ctx.runMutation(internal.textBlasts.startBlastSend, {
       blastId: args.blastId,
       sentAt: Date.now(),
+      includeQrCodes: effectiveIncludeQrCodes,
     });
 
     try {
@@ -1026,7 +1076,7 @@ export const sendBlast = action({
         primaryEvent: event,
         recipients,
         message: blast.message,
-        includeQrCodes: blast.includeQrCodes ?? false,
+        includeQrCodes: effectiveIncludeQrCodes,
       });
 
       // Send bulk SMS - Twilio handles promotional messages via standard API
@@ -1118,6 +1168,10 @@ export const sendBlastDirect = action({
     }
 
     const targetEventIds = normalizeTargetEventIds(args);
+    const effectiveIncludeQrCodes = resolveEffectiveIncludeQrCodes({
+      message: args.message,
+      includeQrCodes: args.includeQrCodes,
+    });
     validateBlastConfiguration({
       targetEventIds,
       message: args.message,
@@ -1155,7 +1209,7 @@ export const sendBlastDirect = action({
       targetLists: args.targetLists,
       recipientFilter: args.recipientFilter,
       recipientHistoryFilter: args.recipientHistoryFilter,
-      includeQrCodes: args.includeQrCodes ?? false,
+      includeQrCodes: effectiveIncludeQrCodes,
       recipientCount: recipients.length,
       sentBy: identity.subject,
       createdAt: now,
@@ -1165,6 +1219,7 @@ export const sendBlastDirect = action({
     await ctx.runMutation(internal.textBlasts.startBlastSend, {
       blastId,
       sentAt: now,
+      includeQrCodes: effectiveIncludeQrCodes,
     });
 
     try {
@@ -1174,7 +1229,7 @@ export const sendBlastDirect = action({
         primaryEvent: event,
         recipients,
         message: args.message,
-        includeQrCodes: args.includeQrCodes ?? false,
+        includeQrCodes: effectiveIncludeQrCodes,
       });
 
       // Send bulk SMS - Twilio handles promotional messages via standard API
@@ -1681,6 +1736,10 @@ export const duplicateBlast = mutation({
     }
 
     const targetEventIds = getBlastTargetEventIds(originalBlast);
+    const effectiveIncludeQrCodes = resolveEffectiveIncludeQrCodes({
+      message: originalBlast.message,
+      includeQrCodes: originalBlast.includeQrCodes,
+    });
 
     // Count current recipients for the target lists
     const recipientCount = await ctx.runQuery(internal.textBlasts.countRecipientsInternal, {
@@ -1702,7 +1761,7 @@ export const duplicateBlast = mutation({
       targetLists: originalBlast.targetLists,
       recipientFilter: originalBlast.recipientFilter,
       recipientHistoryFilter: originalBlast.recipientHistoryFilter,
-      includeQrCodes: originalBlast.includeQrCodes ?? false,
+      includeQrCodes: effectiveIncludeQrCodes,
       deliveryTrackingEnabled: true,
       recipientCount,
       sentCount: 0,
@@ -1817,7 +1876,10 @@ export const createBlastInternal = internalMutation({
       targetLists: args.targetLists,
       recipientFilter: args.recipientFilter,
       recipientHistoryFilter: args.recipientHistoryFilter,
-      includeQrCodes: args.includeQrCodes ?? false,
+      includeQrCodes: resolveEffectiveIncludeQrCodes({
+        message: args.message,
+        includeQrCodes: args.includeQrCodes,
+      }),
       deliveryTrackingEnabled: true,
       recipientCount: args.recipientCount,
       sentCount: 0,
@@ -1890,6 +1952,7 @@ export const startBlastSend = internalMutation({
   args: {
     blastId: v.id("textBlasts"),
     sentAt: v.number(),
+    includeQrCodes: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<Doc<"textBlasts">> => {
     const blast = await ctx.db.get(args.blastId);
@@ -1903,6 +1966,7 @@ export const startBlastSend = internalMutation({
     await ctx.db.patch(args.blastId, {
       status: "sending",
       sentAt: args.sentAt,
+      includeQrCodes: args.includeQrCodes ?? blast.includeQrCodes ?? false,
       deliveryTrackingEnabled: true,
       updatedAt: Date.now(),
     });
@@ -2061,7 +2125,7 @@ export const getRecipientsWithPhonesInternal = internalAction({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
     targetLists: v.array(v.string()),
-    recipientFilter: v.optional(v.string()), // 'all' | 'approved_no_approval_sms'
+    recipientFilter: v.optional(v.string()), // Serialized recipient filter config
     recipientHistoryFilter: recipientHistoryFilterValidator,
     selectedRsvpIds: v.optional(v.array(v.id("rsvps"))), // Filter to specific RSVP IDs if provided
     textBlastId: v.optional(v.id("textBlasts")),

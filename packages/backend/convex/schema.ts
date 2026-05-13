@@ -453,7 +453,7 @@ export default defineSchema({
     name: v.string(),
     message: v.string(),
     targetLists: v.array(v.string()), // ['vip', 'ga', etc.]
-    recipientFilter: v.optional(v.string()), // 'all' | 'approved_no_approval_sms'
+    recipientFilter: v.optional(v.string()), // Serialized recipient filter config
     recipientHistoryFilter: v.optional(
       v.object({
         type: v.union(v.literal("received_any"), v.literal("not_received_any")),

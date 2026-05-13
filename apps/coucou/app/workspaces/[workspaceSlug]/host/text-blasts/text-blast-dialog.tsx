@@ -48,9 +48,16 @@ import {
   describeRecipientFilter,
   encodeRecipientFilter,
   isRecipientFilterConfigured,
+  RECIPIENT_FILTER_LABELS,
   RECIPIENT_STATUS_LABELS,
   recipientHistoryFilterIsConfigured,
 } from "@/lib/text-blast-filters";
+import {
+  messageContainsMultiEventRestrictedVariables,
+  messageContainsQrCodeUrlVariable,
+  replaceQrCodeUrlVariable,
+  resolveEffectiveIncludeQrCodes,
+} from "@/lib/text-blast-message";
 import type { Event, TextBlast } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
@@ -353,17 +360,24 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
     eventLocation: primaryEvent?.location || "Sample Location",
   };
 
-  const multiEventRestrictedVariablePattern =
-    /\{\{\s*(eventName|eventDate|eventLocation|qrCodeUrl)\s*\}\}/;
   const hasMultiEventRestrictedVariables =
-    isMultiEventBlast && multiEventRestrictedVariablePattern.test(formData.message);
+    isMultiEventBlast && messageContainsMultiEventRestrictedVariables(formData.message);
+  const qrCodesAreForcedByMessage =
+    !isMultiEventBlast && messageContainsQrCodeUrlVariable(formData.message);
+  const effectiveIncludeQrCodes = resolveEffectiveIncludeQrCodes({
+    isMultiEventBlast,
+    includeQrCodes: formData.includeQrCodes,
+    message: formData.message,
+  });
 
-  const previewMessage = formData.message
-    .replace(/\{\{firstName\}\}/g, sampleData.firstName)
-    .replace(/\{\{eventName\}\}/g, sampleData.eventName)
-    .replace(/\{\{eventDate\}\}/g, sampleData.eventDate)
-    .replace(/\{\{eventLocation\}\}/g, sampleData.eventLocation)
-    .replace(/\{\{qrCodeUrl\}\}/g, "https://example.com/ticket");
+  const previewMessage = replaceQrCodeUrlVariable(
+    formData.message
+      .replace(/\{\{firstName\}\}/g, sampleData.firstName)
+      .replace(/\{\{eventName\}\}/g, sampleData.eventName)
+      .replace(/\{\{eventDate\}\}/g, sampleData.eventDate)
+      .replace(/\{\{eventLocation\}\}/g, sampleData.eventLocation),
+    "https://example.com/ticket",
+  );
 
   const handleEventToggle = (eventId: Id<"events">, checked: boolean) => {
     setFormData((prev) => {
@@ -407,6 +421,11 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           return {
             ...prev,
             recipientFilter: { type: "approved_no_approval_sms" },
+          };
+        case "approved_with_approval_sms":
+          return {
+            ...prev,
+            recipientFilter: { type: "approved_with_approval_sms" },
           };
         case "status": {
           const nextStatus =
@@ -512,7 +531,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           recipientFilter: encodedRecipientFilter,
           recipientHistoryFilter: encodedRecipientHistoryFilter,
           clearRecipientHistoryFilter: encodedRecipientHistoryFilter === undefined,
-          includeQrCodes: formData.includeQrCodes,
+          includeQrCodes: effectiveIncludeQrCodes,
           ...workspaceScope.queryArgs,
         });
         posthog.capture("text_blast_draft_saved", {
@@ -536,7 +555,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           targetLists: formData.targetLists,
           recipientFilter: encodedRecipientFilter,
           recipientHistoryFilter: encodedRecipientHistoryFilter,
-          includeQrCodes: formData.includeQrCodes,
+          includeQrCodes: effectiveIncludeQrCodes,
           ...workspaceScope.queryArgs,
         });
         posthog.capture("text_blast_draft_saved", {
@@ -606,7 +625,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           targetLists: formData.targetLists,
           recipientFilter: encodedRecipientFilter,
           recipientHistoryFilter: encodedRecipientHistoryFilter,
-          includeQrCodes: formData.includeQrCodes,
+          includeQrCodes: effectiveIncludeQrCodes,
           selectedRsvpIds:
             formData.selectedRsvpIds.length > 0 ? formData.selectedRsvpIds : undefined,
           ...workspaceScope.queryArgs,
@@ -621,7 +640,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           target_lists: formData.targetLists,
           recipient_count: result.sentCount ?? 0,
           recipient_filter_type: formData.recipientFilter.type,
-          include_qr_codes: formData.includeQrCodes,
+          include_qr_codes: effectiveIncludeQrCodes,
           is_test_send: formData.selectedRsvpIds.length > 0,
           workspace_slug: workspaceScope.workspaceSlug,
         });
@@ -784,15 +803,20 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                   handleRecipientFilterTypeChange(value as RecipientFilterState["type"])
                 }
               >
-                <SelectOption value="all">All Approved</SelectOption>
+                <SelectOption value="all">{RECIPIENT_FILTER_LABELS.all}</SelectOption>
                 <SelectOption value="approved_no_approval_sms">
-                  Approved but No Approval SMS Sent
+                  {RECIPIENT_FILTER_LABELS.approved_no_approval_sms}
                 </SelectOption>
-                <SelectOption value="status">Filter by RSVP Status</SelectOption>
+                <SelectOption value="approved_with_approval_sms">
+                  {RECIPIENT_FILTER_LABELS.approved_with_approval_sms}
+                </SelectOption>
+                <SelectOption value="status">{RECIPIENT_FILTER_LABELS.status}</SelectOption>
                 <SelectOption value="custom_field_missing" disabled={customFields.length === 0}>
-                  Missing Custom Field
+                  {RECIPIENT_FILTER_LABELS.custom_field_missing}
                 </SelectOption>
-                <SelectOption value="rsvp_before">RSVP Before Date/Time</SelectOption>
+                <SelectOption value="rsvp_before">
+                  {RECIPIENT_FILTER_LABELS.rsvp_before}
+                </SelectOption>
               </Select>
               <div className="text-xs text-muted-foreground">
                 {describeRecipientFilter(formData.recipientFilter, {
@@ -951,8 +975,8 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="includeQrCodes"
-                  checked={formData.includeQrCodes}
-                  disabled={isMultiEventBlast}
+                  checked={effectiveIncludeQrCodes}
+                  disabled={isMultiEventBlast || qrCodesAreForcedByMessage}
                   onCheckedChange={(checked) =>
                     setFormData((prev) => ({
                       ...prev,
@@ -967,7 +991,9 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
               <div className="text-xs text-muted-foreground">
                 {isMultiEventBlast
                   ? "QR attachments are only available for single-event blasts."
-                  : "When enabled, QR code images will be generated and sent as MMS attachments for recipients with redemption codes. Use {{qrCodeUrl}} in your message to include the QR code URL in the text."}
+                  : qrCodesAreForcedByMessage
+                    ? "The {{qrCodeUrl}} variable automatically enables QR code image delivery for recipients with redemption codes."
+                    : "When enabled, QR code images will be generated and sent as MMS attachments for recipients with redemption codes. Use {{qrCodeUrl}} in your message to include the QR code URL in the text."}
               </div>
             </div>
 
@@ -1248,7 +1274,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                       {selectedHistoryBlastIds.length !== 1 ? "s" : ""}
                     </p>
                   )}
-                  {formData.includeQrCodes && (
+                  {effectiveIncludeQrCodes && (
                     <p className="text-xs text-muted-foreground mt-1">QR Code Images: Enabled</p>
                   )}
                   {formData.selectedRsvpIds.length > 0 && (
