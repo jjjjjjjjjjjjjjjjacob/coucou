@@ -3,7 +3,7 @@ export const rsvpStepQueryValues = ["info", "details", "final"] as const;
 export type RsvpStepQueryValue = (typeof rsvpStepQueryValues)[number];
 export type RsvpStepNumber = 1 | 2 | 3;
 
-type QueryStringSource = string | { toString: () => string } | null | undefined;
+export type QueryStringSource = string | { toString: () => string } | null | undefined;
 
 const rsvpStepNumberToQueryValue: Record<RsvpStepNumber, RsvpStepQueryValue> = {
   1: "info",

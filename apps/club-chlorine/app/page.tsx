@@ -9,13 +9,15 @@ import { ChlorineEventRow, type ChlorineLandingEvent, useMobile } from "@coucou/
 import { useQuery } from "convex/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import posthog from "posthog-js";
 import { Suspense, useMemo } from "react";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import {
+  buildRsvpPathForViewport,
+  type RsvpFlowViewport,
+  useRsvpFlowViewport,
+} from "@/lib/rsvp-flow-routing";
+import {
   buildEventDetailPathWithPreservedQuery,
-  buildFullRsvpPath,
-  buildInfoRsvpPath,
   buildPathWithPreservedQuery,
 } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
@@ -77,6 +79,7 @@ function HomeContent() {
 
   const isLoadingEvents = allEvents === undefined;
   const isMobile = useMobile();
+  const rsvpFlowViewport = useRsvpFlowViewport();
 
   if (isLoadingEvents) {
     return null;
@@ -108,6 +111,7 @@ function HomeContent() {
           mobile={isMobile}
           delayMs={index * 140}
           searchParams={searchParams}
+          rsvpFlowViewport={rsvpFlowViewport}
         />
       ))}
     </div>
@@ -119,6 +123,7 @@ interface HomeEventRowProps {
   mobile: boolean;
   delayMs: number;
   searchParams: ReturnType<typeof useSearchParams>;
+  rsvpFlowViewport: RsvpFlowViewport;
 }
 
 /**
@@ -128,7 +133,13 @@ interface HomeEventRowProps {
  * the RSVP form. Each row owns its own RSVP-status subscription so the
  * homepage stays reactive without a batch query.
  */
-function HomeEventRow({ rowSeed, mobile, delayMs, searchParams }: HomeEventRowProps) {
+function HomeEventRow({
+  rowSeed,
+  mobile,
+  delayMs,
+  searchParams,
+  rsvpFlowViewport,
+}: HomeEventRowProps) {
   const { isSignedIn, isLoaded } = useAuth();
   const rsvpStatus = useQuery(
     api.rsvps.statusForUserEvent,
@@ -148,11 +159,7 @@ function HomeEventRow({ rowSeed, mobile, delayMs, searchParams }: HomeEventRowPr
         : null;
   let rsvpFormHref: string | undefined;
   if (!existingRsvpHref && rowSeed.isOpenForRsvp && !rsvpStatusIsLoading) {
-    if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
-      rsvpFormHref = buildInfoRsvpPath(rowSeed.routeId, searchParams);
-    } else {
-      rsvpFormHref = buildFullRsvpPath(rowSeed.routeId, searchParams);
-    }
+    rsvpFormHref = buildRsvpPathForViewport(rowSeed.routeId, searchParams, rsvpFlowViewport);
   }
   const brickHref = existingRsvpHref ?? rsvpFormHref;
   const brickLabel =
@@ -165,7 +172,14 @@ function HomeEventRow({ rowSeed, mobile, delayMs, searchParams }: HomeEventRowPr
           : rowSeed.isOpenForRsvp
             ? "RSVP"
             : "CLOSED";
-  const brickDisabled = hasRsvp ? false : !rowSeed.isOpenForRsvp || rsvpStatusIsLoading;
+  const rsvpFlowRouteIsLoading =
+    !existingRsvpHref &&
+    rowSeed.isOpenForRsvp &&
+    !rsvpStatusIsLoading &&
+    rsvpFlowViewport === "unknown";
+  const brickDisabled = hasRsvp
+    ? false
+    : !rowSeed.isOpenForRsvp || rsvpStatusIsLoading || rsvpFlowRouteIsLoading;
 
   const event: ChlorineLandingEvent = {
     id: rowSeed.routeId,

@@ -10,11 +10,13 @@ import { CHLORINE_PHASE_SPLIT_MS, RsvpPending } from "@coucou/ui/tenant-template
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
-import { use, useCallback, useEffect } from "react";
+import { use, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { isPostHogConfigured } from "@/lib/posthog";
+import { useRsvpFlowViewport } from "@/lib/rsvp-flow-routing";
 import {
+  buildInfoRsvpPath,
   buildPathWithPreservedQuery,
   buildPathWithQueryString,
   buildQueryStringWithoutKeys,
@@ -43,6 +45,8 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
   const { isSignedIn, isLoaded } = useAuth();
   const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
     useConvexAuth();
+  const rsvpFlowViewport = useRsvpFlowViewport();
+  const lastExistingRsvpDestinationRef = useRef<string | null>(null);
 
   const event = useQuery(api.events.getByRouteId, {
     eventRouteId,
@@ -85,6 +89,8 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
         : `/events/${eventRouteId}/rsvp`;
   const eventIsOpenForRsvp = event ? isEventOpenForRsvp(event) : false;
   const rsvpFlowVariant = formVariant === "full" ? "control" : "info";
+  const fullFormViewportIsLoading = formVariant === "full" && rsvpFlowViewport === "unknown";
+  const fullFormShouldUseSegmented = formVariant === "full" && rsvpFlowViewport === "mobile";
   const existingRsvpDestination =
     status?.status === "approved"
       ? buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"])
@@ -100,8 +106,16 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
   // the matching status / ticket / denied surface.
   useEffect(() => {
     if (!existingRsvpDestination) return;
+    if (lastExistingRsvpDestinationRef.current === existingRsvpDestination) return;
+    lastExistingRsvpDestinationRef.current = existingRsvpDestination;
     router.replace(existingRsvpDestination);
   }, [existingRsvpDestination, router]);
+
+  useEffect(() => {
+    if (!fullFormShouldUseSegmented) return;
+    if (existingRsvpDestination) return;
+    router.replace(buildInfoRsvpPath(eventRouteId, searchParams));
+  }, [eventRouteId, existingRsvpDestination, fullFormShouldUseSegmented, router, searchParams]);
 
   // Sign-in gate. The satellite never serves its own auth surface — bounce
   // unauthenticated visitors to the chlorine-branded phone-auth page hosted
@@ -114,6 +128,7 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
   useEffect(() => {
     if (!isLoaded) return;
     if (isSignedIn) return;
+    if (formVariant === "full" && rsvpFlowViewport !== "desktop") return;
     if (typeof window === "undefined") return;
     const intendedPath = buildPathWithQueryString(rsvpPathname, rsvpQueryString);
     // Anchor the return URL at the *live* origin so the user lands back
@@ -133,7 +148,7 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
     return () => {
       window.clearTimeout(redirectTimeoutId);
     };
-  }, [isLoaded, isSignedIn, rsvpPathname, rsvpQueryString]);
+  }, [formVariant, isLoaded, isSignedIn, rsvpFlowViewport, rsvpPathname, rsvpQueryString]);
 
   const handleInfoCollected = useCallback(
     async (args: RsvpCollectedArgs) => {
@@ -156,12 +171,16 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
           ...submissionArgs,
         });
         if (isPostHogConfigured()) {
-          posthog.capture("rsvp_request_submitted", {
+          const postHogEventProperties = {
             event_id: canonicalEventId,
             event_route_id: eventRouteId,
             rsvp_flow_variant: rsvpFlowVariant,
-            "$feature/rsvp-flow-route": rsvpFlowVariant,
-          });
+            rsvp_flow_viewport: rsvpFlowViewport,
+            ...(rsvpFlowViewport === "desktop"
+              ? { "$feature/rsvp-flow-route": rsvpFlowVariant }
+              : {}),
+          };
+          posthog.capture("rsvp_request_submitted", postHogEventProperties);
         }
         toast.success("RSVP submitted");
         router.replace(
@@ -181,6 +200,7 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
       router,
       searchParams,
       rsvpFlowVariant,
+      rsvpFlowViewport,
     ],
   );
 
@@ -193,6 +213,8 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
     !event ||
     !isLoaded ||
     (!isSignedIn && isLoaded) ||
+    fullFormViewportIsLoading ||
+    fullFormShouldUseSegmented ||
     rsvpStatusIsLoading ||
     existingRsvpDestination
   ) {

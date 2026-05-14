@@ -7,16 +7,14 @@ import { ChlorineEventRow, type ChlorineLandingEvent, useMobile } from "@coucou/
 import { useQuery } from "convex/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import posthog from "posthog-js";
 import type React from "react";
 import { use, useMemo } from "react";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Spinner } from "@/components/ui/spinner";
 import { getPublicEventActs } from "@/lib/event-lineup";
+import { buildRsvpPathForViewport, useRsvpFlowViewport } from "@/lib/rsvp-flow-routing";
 import {
   buildEventDetailPathWithPreservedQuery,
-  buildFullRsvpPath,
-  buildInfoRsvpPath,
   buildPathWithPreservedQuery,
 } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
@@ -97,6 +95,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   const { isLoaded, isSignedIn } = useAuth();
 
   const isMobile = useMobile();
+  const rsvpFlowViewport = useRsvpFlowViewport();
   const allEvents = useQuery(api.events.listAll, {
     siteKey: siteConfiguration.siteKey,
   }) as ClubEvent[] | undefined;
@@ -173,11 +172,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         : null;
   let focusedRsvpFormHref: string | undefined;
   if (!focusedExistingRsvpHref && focusedEventIsOpen && !focusedRsvpStatusIsLoading) {
-    if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
-      focusedRsvpFormHref = buildInfoRsvpPath(eventRouteId, searchParams);
-    } else {
-      focusedRsvpFormHref = buildFullRsvpPath(eventRouteId, searchParams);
-    }
+    focusedRsvpFormHref = buildRsvpPathForViewport(eventRouteId, searchParams, rsvpFlowViewport);
   }
   const focusedBrickHref = focusedExistingRsvpHref ?? focusedRsvpFormHref;
   const focusedBrickLabel =
@@ -253,7 +248,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   // disabled. Otherwise it's the standard CLOSED-aware RSVP brick.
   const focusedBrickDisabled = focusedHasRsvp
     ? false
-    : !focusedEventIsOpen || focusedRsvpStatusIsLoading;
+    : !focusedEventIsOpen || focusedRsvpStatusIsLoading || rsvpFlowViewport === "unknown";
 
   // Include the focused event even if it's not in `orderedEvents` (e.g. its
   // RSVP cutoff has already passed but the user navigated to it directly).
@@ -285,11 +280,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     const isFocused = event._id === resolvedFocusedEvent._id;
     let rsvpFormHref: string | undefined;
     if (!isFocused && eventIsOpen) {
-      if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
-        rsvpFormHref = buildInfoRsvpPath(eventRouteIdentifier, searchParams);
-      } else {
-        rsvpFormHref = buildFullRsvpPath(eventRouteIdentifier, searchParams);
-      }
+      rsvpFormHref = buildRsvpPathForViewport(eventRouteIdentifier, searchParams, rsvpFlowViewport);
     }
     allRows.push({
       landingEvent: {
@@ -305,7 +296,9 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         })),
         rsvpHref: isFocused ? focusedBrickHref : rsvpFormHref,
         rsvpLabel: isFocused ? focusedBrickLabel : eventIsOpen ? "RSVP" : "CLOSED",
-        rsvpDisabled: isFocused ? focusedBrickDisabled : !eventIsOpen,
+        rsvpDisabled: isFocused
+          ? focusedBrickDisabled
+          : !eventIsOpen || rsvpFlowViewport === "unknown",
       },
       isFocused,
     });

@@ -5,14 +5,10 @@ import { convexQuery } from "@convex-dev/react-query";
 import { RsvpDenied, TenantButton, TenantTemplateProvider } from "@coucou/ui/tenant-template";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import posthog from "posthog-js";
 import { use, useCallback, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  buildEventDetailPathWithPreservedQuery,
-  buildFullRsvpPath,
-  buildInfoRsvpPath,
-} from "@/lib/rsvp-url-state";
+import { buildRsvpPathForViewport, useRsvpFlowViewport } from "@/lib/rsvp-flow-routing";
+import { buildEventDetailPathWithPreservedQuery } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import type { Event as ClubEvent } from "@/lib/types";
 
@@ -26,6 +22,7 @@ export default function DeniedPage({ params }: { params: Promise<{ eventId: stri
   const searchParams = useSearchParams();
   const [newPassword, setNewPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const rsvpFlowViewport = useRsvpFlowViewport();
 
   const eventQuery = useQuery(
     convexQuery(api.events.getByRouteId, {
@@ -46,15 +43,13 @@ export default function DeniedPage({ params }: { params: Promise<{ eventId: stri
   const handleTryNewPassword = useCallback(() => {
     const trimmed = newPassword.trim();
     if (!trimmed) return;
+    if (rsvpFlowViewport === "unknown") return;
     setIsLoading(true);
     const nextSearchParams = new URLSearchParams(searchParams?.toString());
     nextSearchParams.set("password", trimmed);
-    if (posthog.getFeatureFlag("rsvp-flow-route") === "info") {
-      router.push(buildInfoRsvpPath(eventRouteId, nextSearchParams));
-    } else {
-      router.push(buildFullRsvpPath(eventRouteId, nextSearchParams));
-    }
-  }, [newPassword, eventRouteId, router, searchParams]);
+    const nextRsvpPath = buildRsvpPathForViewport(eventRouteId, nextSearchParams, rsvpFlowViewport);
+    if (nextRsvpPath) router.push(nextRsvpPath);
+  }, [newPassword, eventRouteId, router, searchParams, rsvpFlowViewport]);
 
   if (eventQuery.isLoading || !event) {
     return (
@@ -108,7 +103,7 @@ export default function DeniedPage({ params }: { params: Promise<{ eventId: stri
               <TenantButton
                 type="button"
                 onClick={handleTryNewPassword}
-                disabled={!newPassword.trim() || isLoading}
+                disabled={!newPassword.trim() || isLoading || rsvpFlowViewport === "unknown"}
               >
                 {isLoading ? "Trying…" : "Try again"}
               </TenantButton>

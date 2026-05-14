@@ -22,6 +22,25 @@ let eventRsvpStatus: RsvpStatusValue | undefined = null;
 let eventDocument: Event | null | undefined;
 let eventList: Event[] | undefined;
 let currentSearchParams = new URLSearchParams();
+let viewportIsMobile = false;
+
+function createMatchMediaResult(query: string): MediaQueryList {
+  return {
+    matches: query.includes("max-width") ? viewportIsMobile : false,
+    media: query,
+    onchange: null,
+    addListener: mock(() => undefined),
+    removeListener: mock(() => undefined),
+    addEventListener: mock(() => undefined),
+    removeEventListener: mock(() => undefined),
+    dispatchEvent: mock(() => false),
+  } as MediaQueryList;
+}
+
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: (query: string) => createMatchMediaResult(query),
+});
 
 function createEvent(overrides: Partial<Event> = {}): Event {
   return {
@@ -145,12 +164,23 @@ mock.module("../app/events/[eventId]/rsvp/rsvp-accepted-form", () => ({
 const { RsvpPageClient } = await import("../app/events/[eventId]/rsvp/rsvp-page-client");
 const { default: Home } = await import("../app/page");
 const { default: EventPageClient } = await import("../app/events/[eventId]/page-client");
+const { buildRsvpPathForViewport } = await import("../lib/rsvp-flow-routing");
 
 async function renderRsvpPage() {
   await act(async () => {
     render(
       <Suspense fallback={<div>Loading route</div>}>
         <RsvpPageClient params={Promise.resolve({ eventId: "club" })} formVariant="stepped" />
+      </Suspense>,
+    );
+  });
+}
+
+async function renderFullRsvpPage() {
+  await act(async () => {
+    render(
+      <Suspense fallback={<div>Loading route</div>}>
+        <RsvpPageClient params={Promise.resolve({ eventId: "club" })} formVariant="full" />
       </Suspense>,
     );
   });
@@ -185,6 +215,21 @@ describe("RSVP page reservation-status gate", () => {
     routeRsvpStatus = null;
     eventRsvpStatus = null;
     currentSearchParams = new URLSearchParams("step=info");
+    viewportIsMobile = false;
+  });
+
+  it("builds segmented RSVP paths on mobile without evaluating the RSVP experiment", () => {
+    const rsvpPath = buildRsvpPathForViewport("club", currentSearchParams, "mobile");
+
+    expect(rsvpPath).toBe("/events/club/rsvp/info?step=info");
+    expect(postHogFeatureFlagCalls).toEqual([]);
+  });
+
+  it("evaluates the RSVP experiment for desktop RSVP paths", () => {
+    const rsvpPath = buildRsvpPathForViewport("club", currentSearchParams, "desktop");
+
+    expect(rsvpPath).toBe("/events/club/rsvp/full");
+    expect(postHogFeatureFlagCalls).toEqual(["rsvp-flow-route"]);
   });
 
   it("holds the form while RSVP status is still loading", async () => {
@@ -250,6 +295,42 @@ describe("RSVP page reservation-status gate", () => {
     expect(routerReplaceCalls).toEqual([]);
   });
 
+  it("redirects mobile full-form RSVP URLs back to the segmented flow", async () => {
+    viewportIsMobile = true;
+
+    await renderFullRsvpPage();
+
+    await waitFor(() => {
+      expect(routerReplaceCalls).toContain("/events/club/rsvp/info?step=info");
+    });
+    expect(screen.queryByTestId("rsvp-form")).toBeNull();
+    expect(postHogFeatureFlagCalls).toEqual([]);
+  });
+
+  it("uses segmented RSVP links on mobile homepage events without evaluating the experiment", async () => {
+    viewportIsMobile = true;
+
+    await renderHomePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("rsvp-brick-club").getAttribute("href")).toBe(
+        "/events/club/rsvp/info?step=info",
+      );
+    });
+    expect(postHogFeatureFlagCalls).toEqual([]);
+  });
+
+  it("evaluates the RSVP experiment for desktop homepage events", async () => {
+    await renderHomePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("rsvp-brick-club").getAttribute("href")).toBe(
+        "/events/club/rsvp/full",
+      );
+    });
+    expect(postHogFeatureFlagCalls).toEqual(["rsvp-flow-route"]);
+  });
+
   it("does not evaluate the RSVP experiment for a known homepage RSVP", async () => {
     eventRsvpStatus = { status: "approved" };
 
@@ -297,6 +378,19 @@ describe("RSVP page reservation-status gate", () => {
     await renderEventPage();
 
     expect(screen.getByTestId("rsvp-brick-club").getAttribute("aria-disabled")).toBe("true");
+    expect(postHogFeatureFlagCalls).toEqual([]);
+  });
+
+  it("uses segmented RSVP links on mobile focused events without evaluating the experiment", async () => {
+    viewportIsMobile = true;
+
+    await renderEventPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("rsvp-brick-club").getAttribute("href")).toBe(
+        "/events/club/rsvp/info?step=info",
+      );
+    });
     expect(postHogFeatureFlagCalls).toEqual([]);
   });
 });
