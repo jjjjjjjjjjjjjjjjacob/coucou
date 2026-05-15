@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { resolveSendQrOnApproval } from "../convex/notifications";
+import {
+  formatApprovalMessage,
+  formatDeferredApprovalMessage,
+  resolveSendQrOnApproval,
+} from "../convex/notifications";
 
 // Resolution precedence (top wins):
 //   1. List `sendQrOnApproval`
@@ -43,6 +47,44 @@ describe("resolveSendQrOnApproval", () => {
     );
     expect(resolveSendQrOnApproval({}, { sendQrOnApproval: true, defersQrDelivery: true })).toBe(
       true,
+    );
+  });
+});
+
+describe("approval SMS template variables", () => {
+  const event = {
+    name: "Spring Gala",
+    secondaryTitle: "After Dark",
+    productionCompany: "Coucou",
+    location: "Main Room",
+    eventDate: Date.UTC(2030, 4, 1, 16),
+    eventTimezone: "America/New_York",
+  };
+  const recipient = { firstName: "Riley", lastName: "Stone" };
+
+  it("renders the same variables used by text blasts in approval copy", () => {
+    const message = formatApprovalMessage(
+      event,
+      recipient,
+      "ticket-code",
+      "https://dojo.test",
+      "Hi {{ firstName }} for {{eventName}} at {{eventLocation}} on {{eventDate}}: {{ qrCodeUrl }}",
+    );
+
+    expect(message).toBe(
+      "COUCOU:\n\nHi Riley for Spring Gala: After Dark at Main Room on 05.01.2030: https://dojo.test/redeem/ticket-code",
+    );
+  });
+
+  it("uses custom deferred confirmation copy without exposing the QR URL", () => {
+    const message = formatDeferredApprovalMessage(
+      event,
+      recipient,
+      "Hi {{firstName}}, approved for {{eventName}}. Ticket arrives later: {{qrCodeUrl}}",
+    );
+
+    expect(message).toBe(
+      "COUCOU:\n\nHi Riley, approved for Spring Gala: After Dark. Ticket arrives later: ",
     );
   });
 });

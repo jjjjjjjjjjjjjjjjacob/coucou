@@ -15,6 +15,7 @@ import { EventDetailsSection } from "@/components/event-form-sections/event-deta
 import { EventGuestPageSection } from "@/components/event-form-sections/event-guest-page-section";
 import { EventLookSection } from "@/components/event-form-sections/event-look-section";
 import { EventScheduleSection } from "@/components/event-form-sections/event-schedule-section";
+import { ListConfirmationTextsSection } from "@/components/list-confirmation-texts-section";
 import {
   draftToPrimaryFieldConfig,
   EMPTY_PRIMARY_FIELD_CONFIG,
@@ -36,7 +37,7 @@ import {
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
 import {
   createTimestamp,
   extractDateFromTimestamp,
@@ -234,7 +235,32 @@ export default function EditEventDialog({
   const getStoredPasswords = useAction(api.credentialsNode.getPasswordsForEvent);
   const [storedPasswords, setStoredPasswords] = React.useState<Map<string, string>>(new Map());
   const currentEventName = form.watch("name");
+  const currentEventSecondaryTitle = form.watch("secondaryTitle");
+  const currentEventLocation = form.watch("location");
+  const currentEventDate = form.watch("eventDate");
+  const currentEventTime = form.watch("eventTime");
+  const currentEventTimezone = form.watch("eventTimezone");
+  const currentSendQrOnApproval = form.watch("sendQrOnApproval") ?? false;
   const defaultApprovalMessage = getDefaultApprovalMessage(currentEventName);
+  const confirmationPreviewVariables = React.useMemo(
+    () =>
+      buildConfirmationPreviewVariables({
+        name: currentEventName,
+        secondaryTitle: currentEventSecondaryTitle,
+        eventDate: currentEventDate,
+        eventTime: currentEventTime,
+        eventTimezone: currentEventTimezone,
+        location: currentEventLocation,
+      }),
+    [
+      currentEventName,
+      currentEventSecondaryTitle,
+      currentEventDate,
+      currentEventTime,
+      currentEventTimezone,
+      currentEventLocation,
+    ],
+  );
 
   useEffect(() => {
     if (open && creds && workspaceScope) {
@@ -306,6 +332,33 @@ export default function EditEventDialog({
         position === index ? { ...item, password: value, passwordEdited: true } : item,
       ),
     );
+  const setListApprovalMessage = React.useCallback((listIndex: number, approvalMessage: string) => {
+    setLists((currentLists) =>
+      currentLists.map((list, currentIndex) =>
+        currentIndex === listIndex ? { ...list, approvalMessage } : list,
+      ),
+    );
+  }, []);
+  const setListQrAttachmentEnabled = React.useCallback(
+    (listIndex: number, qrAttachmentEnabled: boolean) => {
+      setLists((currentLists) =>
+        currentLists.map((list, currentIndex) => {
+          if (currentIndex !== listIndex) return list;
+          return qrAttachmentEnabled
+            ? {
+                ...list,
+                generateQR: true,
+                sendQrOnApprovalOverride: true,
+              }
+            : {
+                ...list,
+                sendQrOnApprovalOverride: false,
+              };
+        }),
+      );
+    },
+    [],
+  );
   const removeList = (index: number) =>
     setLists((array) => array.filter((_, position) => position !== index));
 
@@ -529,7 +582,7 @@ export default function EditEventDialog({
         <DialogHeader className="px-5 pt-5 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
           <DialogTitle>Edit Event</DialogTitle>
           <DialogDescription>
-            Update event details, list access, and per-list approval messages.
+            Update event details, list access, and per-list confirmation texts.
           </DialogDescription>
         </DialogHeader>
         <div className="mx-auto w-full max-w-[1200px] px-5 pb-5 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8">
@@ -542,6 +595,7 @@ export default function EditEventDialog({
                   <TabsTrigger value="look">Look</TabsTrigger>
                   <TabsTrigger value="lineup">Lineup</TabsTrigger>
                   <TabsTrigger value="guest">Guest Page</TabsTrigger>
+                  <TabsTrigger value="confirmations">Confirmation Texts</TabsTrigger>
                   <TabsTrigger value="rsvp">RSVP &amp; Lists</TabsTrigger>
                 </TabsList>
 
@@ -592,12 +646,25 @@ export default function EditEventDialog({
                   />
                 </TabsContent>
 
+                <TabsContent value="confirmations">
+                  <ListConfirmationTextsSection
+                    lists={lists}
+                    defaultApprovalMessage={defaultApprovalMessage}
+                    onApprovalMessageChange={setListApprovalMessage}
+                    resolveQrAttachmentEnabled={(list) =>
+                      list.generateQR && (list.sendQrOnApprovalOverride ?? currentSendQrOnApproval)
+                    }
+                    onQrAttachmentChange={setListQrAttachmentEnabled}
+                    previewVariables={confirmationPreviewVariables}
+                  />
+                </TabsContent>
+
                 <TabsContent value="rsvp" className="space-y-6">
                   <div className="space-y-3 rounded-lg border bg-card p-4">
                     <h4 className="font-medium text-sm text-muted-foreground">NOTIFICATIONS</h4>
                     <label className="flex items-start gap-3 rounded border border-border/60 p-3">
                       <Checkbox
-                        checked={form.watch("sendQrOnApproval") ?? false}
+                        checked={currentSendQrOnApproval}
                         onCheckedChange={(checked) =>
                           form.setValue("sendQrOnApproval", Boolean(checked), {
                             shouldDirty: true,
@@ -782,30 +849,13 @@ export default function EditEventDialog({
                                 }}
                               >
                                 <option value="inherit">
-                                  Inherit from event (
-                                  {form.watch("sendQrOnApproval") ? "on" : "off"})
+                                  Inherit from event ({currentSendQrOnApproval ? "on" : "off"})
                                 </option>
                                 <option value="on">On (always send)</option>
                                 <option value="off">Off (always defer)</option>
                               </select>
                             </div>
                           ) : null}
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium text-muted-foreground">
-                              Approval Message{" "}
-                              <span className="text-muted-foreground">(optional)</span>
-                            </label>
-                            <p className="text-xs text-muted-foreground">
-                              Sent when a guest on this list is approved.
-                            </p>
-                            <Textarea
-                              placeholder={defaultApprovalMessage}
-                              value={listPassword.approvalMessage}
-                              onChange={(event) =>
-                                setList(index, "approvalMessage", event.target.value)
-                              }
-                            />
-                          </div>
                         </div>
                       ))}
                       <Button

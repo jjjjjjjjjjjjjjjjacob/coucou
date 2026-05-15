@@ -16,6 +16,7 @@ import { DateTimePicker } from "@/components/date-time-picker";
 import { EventActsEditor } from "@/components/event-acts-editor";
 import { EventIconUpload } from "@/components/event-icon-upload";
 import { FlyerUpload, StorageImageUpload } from "@/components/flyer-upload";
+import { ListConfirmationTextsSection } from "@/components/list-confirmation-texts-section";
 import {
   draftToPrimaryFieldConfig,
   EMPTY_PRIMARY_FIELD_CONFIG,
@@ -37,6 +38,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
 import {
   createTimestamp,
   extractDateFromTimestamp,
@@ -120,13 +122,20 @@ const STEPS: WizardStep[] = [
   },
   {
     number: "07",
+    eyebrow: "Texts",
+    title: "Write the confirmations.",
+    description: "Customize the approval SMS guests receive after each list is approved.",
+    validate: [],
+  },
+  {
+    number: "08",
     eyebrow: "RSVP fields",
     title: "What you want to know.",
     description: "Optional. Anything you'd like guests to tell you when they RSVP.",
     validate: [],
   },
   {
-    number: "08",
+    number: "09",
     eyebrow: "Review",
     title: "Last look.",
     description: "Glance over everything, then send it live.",
@@ -234,6 +243,33 @@ export default function EventCreateWizard() {
   // manual blast (or scheduled batch) closer to the event from the
   // dashboard's "Send QR Codes" button.
   const [sendQrOnApproval, setSendQrOnApproval] = React.useState(false);
+  const setListApprovalMessage = React.useCallback((listIndex: number, approvalMessage: string) => {
+    setLists((currentLists) =>
+      currentLists.map((list, currentIndex) =>
+        currentIndex === listIndex ? { ...list, approvalMessage } : list,
+      ),
+    );
+  }, []);
+  const setListQrAttachmentEnabled = React.useCallback(
+    (listIndex: number, qrAttachmentEnabled: boolean) => {
+      setLists((currentLists) =>
+        currentLists.map((list, currentIndex) => {
+          if (currentIndex !== listIndex) return list;
+          return qrAttachmentEnabled
+            ? {
+                ...list,
+                shouldGenerateQrCode: true,
+                sendQrOnApprovalOverride: true,
+              }
+            : {
+                ...list,
+                sendQrOnApprovalOverride: false,
+              };
+        }),
+      );
+    },
+    [],
+  );
 
   const workspacePrimaryFieldDefaultsDraft: PrimaryFieldConfigDraft = React.useMemo(
     () =>
@@ -254,7 +290,31 @@ export default function EventCreateWizard() {
   const eventIconStorageId = form.watch("customIconStorageId") ?? null;
   const guestPortalImageStorageId = form.watch("guestPortalImageStorageId") ?? null;
   const eventName = form.watch("name");
+  const eventSecondaryTitle = form.watch("secondaryTitle");
+  const eventLocation = form.watch("location");
+  const eventDateValue = form.watch("eventDate");
+  const eventTimeValue = form.watch("eventTime");
+  const eventTimezoneValue = form.watch("eventTimezone");
   const defaultApprovalMessage = getDefaultApprovalMessage(eventName);
+  const confirmationPreviewVariables = React.useMemo(
+    () =>
+      buildConfirmationPreviewVariables({
+        name: eventName,
+        secondaryTitle: eventSecondaryTitle,
+        eventDate: eventDateValue,
+        eventTime: eventTimeValue,
+        eventTimezone: eventTimezoneValue,
+        location: eventLocation,
+      }),
+    [
+      eventName,
+      eventSecondaryTitle,
+      eventDateValue,
+      eventTimeValue,
+      eventTimezoneValue,
+      eventLocation,
+    ],
+  );
 
   React.useEffect(() => {
     const eventDefaults = workspace?.eventDefaults;
@@ -707,7 +767,10 @@ export default function EventCreateWizard() {
         <header className="flex items-center justify-between border-b border-border/60 py-6">
           <div className="text-sm uppercase tracking-[0.18em] text-foreground">New event</div>
           <div className="text-sm tabular-nums text-muted-foreground">
-            {step.number} <span className="text-muted-foreground/50">/ 08</span>
+            {step.number}{" "}
+            <span className="text-muted-foreground/50">
+              / {String(STEPS.length).padStart(2, "0")}
+            </span>
           </div>
           <button
             type="button"
@@ -826,10 +889,22 @@ export default function EventCreateWizard() {
                 }
                 lists={lists}
                 setLists={setLists}
-                defaultApprovalMessage={defaultApprovalMessage}
               />
             )}
             {stepIndex === 6 && (
+              <ListConfirmationTextsSection
+                lists={lists}
+                defaultApprovalMessage={defaultApprovalMessage}
+                onApprovalMessageChange={setListApprovalMessage}
+                resolveQrAttachmentEnabled={(list) =>
+                  list.shouldGenerateQrCode && (list.sendQrOnApprovalOverride ?? sendQrOnApproval)
+                }
+                onQrAttachmentChange={setListQrAttachmentEnabled}
+                previewVariables={confirmationPreviewVariables}
+                className="border-border/60"
+              />
+            )}
+            {stepIndex === 7 && (
               <StepCustomFields
                 onChange={setCustomFields}
                 initial={customFields}
@@ -840,7 +915,7 @@ export default function EventCreateWizard() {
                 workspacePrimaryFieldDefaults={workspacePrimaryFieldDefaultsDraft}
               />
             )}
-            {stepIndex === 7 && (
+            {stepIndex === 8 && (
               <StepReview
                 values={form.getValues()}
                 acts={acts}
@@ -1402,7 +1477,6 @@ function overrideOptionToValue(option: SendQrOnApprovalOverrideOption): boolean 
 function StepLists({
   lists,
   setLists,
-  defaultApprovalMessage,
   sendQrOnApproval,
   onSendQrOnApprovalChange,
   attendanceQuestionEnabled,
@@ -1410,7 +1484,6 @@ function StepLists({
 }: {
   lists: ListRow[];
   setLists: React.Dispatch<React.SetStateAction<ListRow[]>>;
-  defaultApprovalMessage: string;
   sendQrOnApproval: boolean;
   onSendQrOnApprovalChange: (value: boolean) => void;
   attendanceQuestionEnabled: boolean;
@@ -1533,18 +1606,6 @@ function StepLists({
               </Select>
             </div>
           ) : null}
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-              Approval message{" "}
-              <span className="normal-case text-muted-foreground/70">(optional)</span>
-            </label>
-            <Textarea
-              rows={2}
-              placeholder={defaultApprovalMessage}
-              value={list.approvalMessage}
-              onChange={(event) => update(index, "approvalMessage", event.target.value)}
-            />
-          </div>
         </div>
       ))}
       <Button type="button" variant="outline" size="sm" onClick={add} className="w-full">
@@ -1554,7 +1615,7 @@ function StepLists({
   );
 }
 
-// ─── Step 07 — Custom RSVP fields ───────────────────────────────
+// ─── Step 08 — Custom RSVP fields ───────────────────────────────
 
 function StepCustomFields({
   initial,
@@ -1600,7 +1661,7 @@ function StepCustomFields({
   );
 }
 
-// ─── Step 08 — Review ───────────────────────────────────────────
+// ─── Step 09 — Review ───────────────────────────────────────────
 
 function StepReview({
   values,
@@ -1615,7 +1676,10 @@ function StepReview({
   customFields: CustomFieldDef[];
   onJump: (index: number) => void;
 }) {
-  const filteredLists = lists.filter((list) => list.listKey?.trim() && list.password?.trim());
+  const filteredLists = lists.filter((list) => list.listKey?.trim());
+  const customConfirmationTextCount = filteredLists.filter((list) =>
+    list.approvalMessage.trim(),
+  ).length;
   const dateLabel = values.eventDate
     ? `${values.eventDate} · ${values.eventTime ?? ""} ${values.eventTimezone ?? ""}`.trim()
     : "—";
@@ -1675,6 +1739,16 @@ function StepReview({
     },
     {
       stepIndex: 6,
+      key: "Texts",
+      value:
+        customConfirmationTextCount > 0
+          ? `${customConfirmationTextCount} custom confirmation text${
+              customConfirmationTextCount === 1 ? "" : "s"
+            }`
+          : "Default confirmations",
+    },
+    {
+      stepIndex: 7,
       key: "RSVP fields",
       value: customFields.length
         ? customFields.map((field) => field.label || field.key).join(", ")

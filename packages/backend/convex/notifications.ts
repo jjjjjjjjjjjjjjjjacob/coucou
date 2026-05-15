@@ -1,5 +1,15 @@
 "use node";
-import { resolveApprovalMessageText } from "@coucou/sdk/shared/approval-messages";
+import {
+  resolveApprovalMessageText,
+  sanitizeOptionalApprovalMessage,
+} from "@coucou/sdk/shared/approval-messages";
+import {
+  applyMessageTemplateVariables,
+  formatEventDateForMessageTemplate,
+  formatEventTitleForMessageTemplate,
+  messageContainsQrCodeUrlVariable,
+  resolveMessageTemplateFirstName,
+} from "@coucou/sdk/shared/message-template";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -9,9 +19,18 @@ import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
 
 type ApprovalEventSummary = {
   name: string;
+  secondaryTitle?: string;
   hosts?: string[];
   productionCompany?: string;
+  location?: string;
+  eventDate?: number;
+  eventTimezone?: string;
   approvalMessage?: string;
+};
+
+type ApprovalRecipientSummary = {
+  firstName?: string | null;
+  lastName?: string | null;
 };
 
 type SmsConsentEventSummary = {
@@ -96,32 +115,72 @@ export function resolveSendQrOnApproval(
   return false;
 }
 
-function formatApprovalMessage(
+function buildApprovalTemplateVariables(
   event: ApprovalEventSummary,
+  recipient: ApprovalRecipientSummary,
+  qrCodeUrl: string,
+) {
+  const recipientFullName = [recipient.firstName, recipient.lastName].filter(Boolean).join(" ");
+  return {
+    firstName: resolveMessageTemplateFirstName({
+      firstName: recipient.firstName,
+      fullName: recipientFullName,
+    }),
+    eventName: formatEventTitleForMessageTemplate(event),
+    eventDate: formatEventDateForMessageTemplate(event.eventDate, event.eventTimezone),
+    eventLocation: event.location?.trim() ?? "",
+    qrCodeUrl,
+  };
+}
+
+export function formatApprovalMessage(
+  event: ApprovalEventSummary,
+  recipient: ApprovalRecipientSummary,
   code: string,
   baseUrl: string,
   listApprovalMessage?: string,
 ): string {
   const ticketUrl = `${baseUrl}/redeem/${code}`;
-
   // Get header (production company or host names)
   const header = getSmsMessageHeader(event as SmsConsentEventSummary);
-
-  const approvalMessage = resolveApprovalMessageText({
+  const approvalMessageTemplate = resolveApprovalMessageText({
     eventName: event.name,
     listApprovalMessage,
     eventApprovalMessage: event.approvalMessage,
   });
+  const approvalMessage = applyMessageTemplateVariables(
+    approvalMessageTemplate,
+    buildApprovalTemplateVariables(event, recipient, ticketUrl),
+  );
+  const ticketFooter = messageContainsQrCodeUrlVariable(approvalMessageTemplate)
+    ? ""
+    : `\n\nView your ticket here: ${ticketUrl}`;
 
   return `${header}:
 
-${approvalMessage}
-
-View your ticket here: ${ticketUrl}`;
+${approvalMessage}${ticketFooter}`;
 }
 
-function formatDeferredApprovalMessage(event: ApprovalEventSummary): string {
+export function formatDeferredApprovalMessage(
+  event: ApprovalEventSummary,
+  recipient: ApprovalRecipientSummary,
+  listApprovalMessage?: string,
+): string {
   const header = getSmsMessageHeader(event as SmsConsentEventSummary);
+  const customApprovalMessage =
+    sanitizeOptionalApprovalMessage(listApprovalMessage) ??
+    sanitizeOptionalApprovalMessage(event.approvalMessage);
+
+  if (customApprovalMessage) {
+    const approvalMessage = applyMessageTemplateVariables(
+      customApprovalMessage,
+      buildApprovalTemplateVariables(event, recipient, ""),
+    );
+    return `${header}:
+
+${approvalMessage}`;
+  }
+
   const eventLabel = event.name?.trim() || "the event";
   return `${header}:
 
@@ -300,9 +359,14 @@ export const sendApprovalSms = action({
       // closer to the event so guests don't expect an immediate ticket.
       const approvalMessage =
         generateQrCode && !sendNow
-          ? formatDeferredApprovalMessage(event as ApprovalEventSummary)
+          ? formatDeferredApprovalMessage(
+              event as ApprovalEventSummary,
+              userRecord as ApprovalRecipientSummary,
+              matchingCredential?.approvalMessage,
+            )
           : formatApprovalMessage(
               event as ApprovalEventSummary,
+              userRecord as ApprovalRecipientSummary,
               args.code,
               validatedBaseUrl,
               matchingCredential?.approvalMessage,

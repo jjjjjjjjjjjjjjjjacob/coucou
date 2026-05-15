@@ -3,10 +3,12 @@ import { render, screen } from "@testing-library/react";
 import {
   canToggleRsvpTableRowFromBodyCell,
   getRsvpContextActionTargets,
+  getRsvpSelectionRangeIds,
   getRsvpTableBodyCellClassName,
   getRsvpTableColumnSizing,
   getRsvpTableDisplayWidth,
   getRsvpTableFillerColumnWidth,
+  isRsvpTableInteractiveEventTarget,
   RSVP_SELECT_COLUMN_SIZING,
   RSVP_TABLE_BODY_ALIGNMENT_GUTTER_CLASS,
   RSVP_TABLE_COLUMN_MAX_WIDTH,
@@ -97,12 +99,76 @@ describe("RSVP table layout", () => {
       minSize: 50,
       maxSize: 70,
     });
+  });
+
+  it("only allows the select column to toggle row selection", () => {
     expect(
       canToggleRsvpTableRowFromBodyCell({
         columnIdentifier: "select",
         isReadOnly: false,
       }),
+    ).toBe(true);
+    for (const columnIdentifier of [
+      "guest",
+      "listKey",
+      "approvalStatus",
+      "attendanceStatus",
+      "ticketStatus",
+      "actions",
+      "social_instagram",
+      "createdAt",
+    ]) {
+      expect(
+        canToggleRsvpTableRowFromBodyCell({
+          columnIdentifier,
+          isReadOnly: false,
+        }),
+      ).toBe(false);
+    }
+    expect(
+      canToggleRsvpTableRowFromBodyCell({
+        columnIdentifier: "select",
+        isReadOnly: true,
+      }),
     ).toBe(false);
+  });
+
+  it("recognizes interactive content inside selectable RSVP table cells", () => {
+    render(
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              <a href="https://instagram.com/example" data-testid="social-profile-link">
+                <span data-testid="nested-social-profile-label">example</span>
+              </a>
+            </td>
+            <td>
+              <button type="button" data-testid="approval-status-button">
+                Pending
+              </button>
+            </td>
+            <td>
+              <div data-rsvp-table-interactive="true" data-testid="custom-copy-control">
+                Copy
+              </div>
+            </td>
+            <td data-testid="plain-selectable-cell">Plain text</td>
+          </tr>
+        </tbody>
+      </table>,
+    );
+
+    expect(
+      isRsvpTableInteractiveEventTarget(screen.getByTestId("nested-social-profile-label")),
+    ).toBe(true);
+    expect(isRsvpTableInteractiveEventTarget(screen.getByTestId("approval-status-button"))).toBe(
+      true,
+    );
+    expect(isRsvpTableInteractiveEventTarget(screen.getByTestId("custom-copy-control"))).toBe(true);
+    expect(isRsvpTableInteractiveEventTarget(screen.getByTestId("plain-selectable-cell"))).toBe(
+      false,
+    );
   });
 
   it("renders header resize handles only for resizable non-select columns", () => {
@@ -197,6 +263,25 @@ describe("RSVP table layout", () => {
 
     expect(oversizedLabelSizing.maxSize).toBeGreaterThanOrEqual(oversizedLabelSizing.minSize);
     expect(oversizedLabelSizing.size).toBe(oversizedLabelSizing.minSize);
+  });
+
+  it("computes inclusive drag selection ranges from an anchor and focus row", () => {
+    const orderedRowIds = ["rsvp_1", "rsvp_2", "rsvp_3", "rsvp_4", "rsvp_5"];
+
+    expect(getRsvpSelectionRangeIds(orderedRowIds, "rsvp_2", "rsvp_4")).toEqual([
+      "rsvp_2",
+      "rsvp_3",
+      "rsvp_4",
+    ]);
+    expect(getRsvpSelectionRangeIds(orderedRowIds, "rsvp_4", "rsvp_2")).toEqual([
+      "rsvp_2",
+      "rsvp_3",
+      "rsvp_4",
+    ]);
+    expect(getRsvpSelectionRangeIds(orderedRowIds, "rsvp_3", "rsvp_3")).toEqual(["rsvp_3"]);
+    expect(getRsvpSelectionRangeIds(orderedRowIds, "missing", "rsvp_3")).toEqual([]);
+    expect(getRsvpSelectionRangeIds(orderedRowIds, "rsvp_3", "missing")).toEqual([]);
+    expect(getRsvpSelectionRangeIds([], "rsvp_1", "rsvp_2")).toEqual([]);
   });
 
   it("resolves selected row context actions to the selected batch", () => {

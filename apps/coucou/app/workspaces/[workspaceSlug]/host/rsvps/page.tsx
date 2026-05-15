@@ -16,21 +16,27 @@ import {
 } from "@tanstack/react-table";
 import { useAction, useMutation as useConvexReactMutation, useQuery } from "convex/react";
 import {
+  CheckCircle,
   Columns,
   Copy,
   Download,
+  Edit,
   ExternalLink,
   Eye,
+  EyeOff,
   GripVertical,
   Link,
+  MoreHorizontal,
   QrCode,
   Share,
+  Trash2,
   X,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
+import EditEventDialog from "@/app/workspaces/[workspaceSlug]/host/events/edit-event-dialog";
 import { ShareEventPopover } from "@/components/share-event-popover";
 import {
   AlertDialog,
@@ -97,11 +103,15 @@ import {
   shouldResetHostRsvpsSavedTablePreference,
 } from "@/lib/dashboard-table-preferences";
 import { formatEventTitleInline } from "@/lib/event-display";
+import {
+  getEventLifecycleActionLabel,
+  runEventLifecycleAction,
+} from "@/lib/event-lifecycle-actions";
 import { buildPublicEventUrl } from "@/lib/event-public-url";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import {
-  canToggleRsvpTableRowFromBodyCell,
   getRsvpContextActionTargets,
+  getRsvpSelectionRangeIds,
   getRsvpTableBodyCellClassName,
   getRsvpTableColumnSizing,
   getRsvpTableDisplayWidth,
@@ -125,13 +135,6 @@ type ApprovalFilterOption = "all" | ApprovalStatusOption;
 type AttendanceStatusOption = "yes" | "no" | "maybe";
 type TicketStatusOption = "issued" | "not-issued" | "disabled";
 type TicketDisplayStatus = TicketStatusOption | "redeemed";
-type UpdateRsvpCompleteInput = {
-  rsvpId: Id<"rsvps">;
-  siteKey: string;
-  workspaceSlug: string;
-  approvalStatus?: ApprovalStatusOption;
-  ticketStatus?: TicketStatusOption;
-};
 type ExportableApprovalStatusOption = "pending" | "approved" | "denied";
 
 const hasStringAccessorKey = <TData extends RowData>(
@@ -201,13 +204,6 @@ function normalizeTicketStatus(status: HostRsvp["redemptionStatus"]): TicketDisp
   return status;
 }
 
-function coerceTicketStatusOption(status: TicketDisplayStatus): TicketStatusOption | undefined {
-  if (status === "redeemed") {
-    return undefined;
-  }
-  return status;
-}
-
 function normalizeFieldKey(key: string): string {
   return key
     .toLowerCase()
@@ -253,6 +249,427 @@ function getTimestampDateTimeLabels(timestamp: number): [string, string] {
 
 function stopRsvpTableInteractiveEventPropagation(event: React.SyntheticEvent): void {
   event.stopPropagation();
+}
+
+interface RsvpTableContextValue {
+  isReadOnly: boolean;
+  listCredentials: ListCredential[] | undefined;
+  loadingListUpdates: Set<string>;
+  loadingApprovalUpdates: Set<string>;
+  loadingAttendanceUpdates: Set<string>;
+  loadingTicketUpdates: Set<string>;
+  selectedRows: Set<string>;
+  allSelected: boolean;
+  someSelected: boolean;
+  deleteRsvpCompleteIsPending: boolean;
+  canEditTicketForRsvp: (rsvp: HostRsvp) => boolean;
+  handleSingleListKeyChange: (rsvp: HostRsvp, newListKey: string) => void;
+  handleSingleApprovalChange: (rsvp: HostRsvp, value: ApprovalStatusOption) => void;
+  handleSingleAttendanceStatusChange: (rsvp: HostRsvp, value: AttendanceStatusOption) => void;
+  handleSingleTicketStatusChange: (rsvp: HostRsvp, value: TicketStatusOption) => void;
+  openRsvpQrCode: (rsvp: HostRsvp) => void;
+  onDeleteRsvp: (rsvp: HostRsvp) => void;
+  beginSelectionDrag: (rsvpId: string) => void;
+  extendSelectionDrag: (rsvpId: string) => void;
+  toggleSelectAllCurrent: () => void;
+}
+
+const RsvpTableContext = React.createContext<RsvpTableContextValue | null>(null);
+
+function useRsvpTableContext(): RsvpTableContextValue {
+  const contextValue = React.useContext(RsvpTableContext);
+  if (!contextValue) {
+    throw new Error("useRsvpTableContext must be used within an RsvpTableContext.Provider");
+  }
+  return contextValue;
+}
+
+function RsvpListKeyCell({ row }: CellContext<HostRsvp, unknown>) {
+  const { isReadOnly, listCredentials, loadingListUpdates, handleSingleListKeyChange } =
+    useRsvpTableContext();
+  const rsvp = row.original;
+  const currentListKey = rsvp.listKey;
+  const availableListKeys = listCredentials?.map((credential) => credential.listKey) || [];
+  const isUpdatingList = loadingListUpdates.has(rsvp.id);
+
+  if (isReadOnly || availableListKeys.length <= 1) {
+    return <span className="block max-w-full truncate">{currentListKey?.toUpperCase()}</span>;
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="xs"
+          className="h-6 max-w-full min-w-0 shrink overflow-hidden px-2 text-xs"
+          disabled={isUpdatingList}
+          onClick={stopRsvpTableInteractiveEventPropagation}
+          onPointerDown={stopRsvpTableInteractiveEventPropagation}
+        >
+          {isUpdatingList && <Spinner className="mr-1 h-3 w-3" />}
+          {!isUpdatingList && (
+            <span className="min-w-0 truncate">{currentListKey?.toUpperCase()}</span>
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent onClick={stopRsvpTableInteractiveEventPropagation}>
+        <DropdownMenuRadioGroup
+          value={currentListKey}
+          onValueChange={(newListKey) => handleSingleListKeyChange(rsvp, newListKey)}
+        >
+          {availableListKeys.map((listKey) => (
+            <DropdownMenuRadioItem key={listKey} value={listKey}>
+              {listKey.toUpperCase()}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RsvpApprovalStatusCell({ row }: CellContext<HostRsvp, unknown>) {
+  const { isReadOnly, loadingApprovalUpdates, handleSingleApprovalChange } = useRsvpTableContext();
+  const rsvp = row.original;
+  const currentApprovalStatus = rsvp.approvalStatus;
+  const isUpdatingApproval = loadingApprovalUpdates.has(rsvp.id);
+
+  const getStatusColor = (currentStatus: ApprovalStatusOption): string => {
+    switch (currentStatus) {
+      case "approved":
+        return "text-green-700 border-green-200 bg-green-50 hover:bg-green-10 hover:text-green-700";
+      case "denied":
+        return "text-red-700 border-red-200 bg-red-50 hover:bg-red-10 hover:text-red-700";
+      case "pending":
+      default:
+        return "text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-10 hover:text-amber-700";
+    }
+  };
+
+  if (isReadOnly) {
+    return (
+      <Badge variant="secondary" className="text-xs">
+        {getApprovalStatusLabel(currentApprovalStatus)}
+      </Badge>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="xs"
+          className={cn(
+            "max-w-full min-w-0 shrink overflow-hidden",
+            getStatusColor(currentApprovalStatus),
+          )}
+          disabled={isUpdatingApproval}
+          onClick={stopRsvpTableInteractiveEventPropagation}
+          onPointerDown={stopRsvpTableInteractiveEventPropagation}
+        >
+          {isUpdatingApproval && <Spinner className="mr-1 h-3 w-3" />}
+          {!isUpdatingApproval && (
+            <span className="min-w-0 truncate">
+              {getApprovalStatusLabel(currentApprovalStatus)}
+            </span>
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent onClick={stopRsvpTableInteractiveEventPropagation}>
+        <DropdownMenuRadioGroup
+          value={currentApprovalStatus}
+          onValueChange={(value) => handleSingleApprovalChange(rsvp, value as ApprovalStatusOption)}
+        >
+          <DropdownMenuRadioItem value="pending" disabled={rsvp.redemptionStatus === "redeemed"}>
+            <span className="text-amber-700">Pending</span>
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="approved">
+            <span className="text-green-700">Approved</span>
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="denied">
+            <span className="text-red-700">Denied</span>
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RsvpAttendanceStatusCell({ row }: CellContext<HostRsvp, unknown>) {
+  const { isReadOnly, loadingAttendanceUpdates, handleSingleAttendanceStatusChange } =
+    useRsvpTableContext();
+  const rsvp = row.original;
+  const currentAttendanceStatus = rsvp.attendanceStatus;
+  const isUpdatingAttendance = loadingAttendanceUpdates.has(rsvp.id);
+
+  if (isReadOnly) {
+    return (
+      <Badge
+        variant="secondary"
+        className={cn("text-xs", getAttendanceStatusClassName(currentAttendanceStatus))}
+      >
+        {getAttendanceStatusLabel(currentAttendanceStatus)}
+      </Badge>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="xs"
+          className={cn(
+            "max-w-full min-w-0 shrink overflow-hidden",
+            getAttendanceStatusClassName(currentAttendanceStatus),
+          )}
+          disabled={isUpdatingAttendance}
+          onClick={stopRsvpTableInteractiveEventPropagation}
+          onPointerDown={stopRsvpTableInteractiveEventPropagation}
+        >
+          {isUpdatingAttendance && <Spinner className="mr-1 h-3 w-3" />}
+          {!isUpdatingAttendance && (
+            <span className="min-w-0 truncate">
+              {getAttendanceStatusLabel(currentAttendanceStatus)}
+            </span>
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent onClick={stopRsvpTableInteractiveEventPropagation}>
+        <DropdownMenuRadioGroup
+          value={currentAttendanceStatus}
+          onValueChange={(value) =>
+            handleSingleAttendanceStatusChange(rsvp, value as AttendanceStatusOption)
+          }
+        >
+          {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => (
+            <DropdownMenuRadioItem key={attendanceStatusOption} value={attendanceStatusOption}>
+              <span
+                className={
+                  attendanceStatusOption === "yes"
+                    ? "text-green-700"
+                    : attendanceStatusOption === "maybe"
+                      ? "text-amber-700"
+                      : "text-red-700"
+                }
+              >
+                {getAttendanceStatusLabel(attendanceStatusOption)}
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RsvpTicketStatusCell({ row }: CellContext<HostRsvp, unknown>) {
+  const {
+    isReadOnly,
+    loadingTicketUpdates,
+    canEditTicketForRsvp,
+    handleSingleTicketStatusChange,
+    openRsvpQrCode,
+  } = useRsvpTableContext();
+  const rsvp = row.original;
+  const originalTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
+  const currentTicketStatus = originalTicketStatus;
+  const isRedeemed = originalTicketStatus === "redeemed";
+  const ticketEditingIsAllowed = canEditTicketForRsvp(rsvp);
+  const isUpdatingTicket = loadingTicketUpdates.has(rsvp.id);
+
+  const getTicketStatusColor = (status: TicketDisplayStatus): string => {
+    switch (status) {
+      case "issued":
+        return "text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-10 hover:text-purple-700";
+      case "redeemed":
+        return "text-blue-700 border-blue-200 bg-blue-50 hover:text-blue-700 hover:bg-blue-10";
+      case "disabled":
+        return "text-red-700 border-red-200 bg-red-50 hover:bg-red-10 hover:text-red-700";
+      case "not-issued":
+      default:
+        return "text-gray-700 border-gray-200 bg-gray-50";
+    }
+  };
+
+  if (isReadOnly) {
+    const canViewQrCode =
+      (currentTicketStatus === "issued" || currentTicketStatus === "redeemed") &&
+      Boolean(rsvp.redemptionCode);
+
+    return (
+      <Button
+        variant="outline"
+        size="xs"
+        className={cn(
+          "max-w-full min-w-0 shrink overflow-hidden",
+          getTicketStatusColor(currentTicketStatus),
+        )}
+        disabled={!canViewQrCode}
+        onClick={(event) => {
+          stopRsvpTableInteractiveEventPropagation(event);
+          openRsvpQrCode(rsvp);
+        }}
+        onPointerDown={stopRsvpTableInteractiveEventPropagation}
+      >
+        <span className="min-w-0 truncate">{getTicketStatusLabel(currentTicketStatus)}</span>
+      </Button>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="xs"
+          className={cn(
+            "max-w-full min-w-0 shrink overflow-hidden",
+            getTicketStatusColor(currentTicketStatus),
+          )}
+          disabled={isRedeemed || isUpdatingTicket || !ticketEditingIsAllowed}
+          onClick={stopRsvpTableInteractiveEventPropagation}
+          onPointerDown={stopRsvpTableInteractiveEventPropagation}
+        >
+          {isUpdatingTicket && <Spinner className="mr-1 h-3 w-3" />}
+          {!isUpdatingTicket && (
+            <span className="min-w-0 truncate">{getTicketStatusLabel(currentTicketStatus)}</span>
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent onClick={stopRsvpTableInteractiveEventPropagation}>
+        <DropdownMenuRadioGroup
+          value={currentTicketStatus}
+          onValueChange={(value) =>
+            handleSingleTicketStatusChange(rsvp, value as TicketStatusOption)
+          }
+        >
+          <DropdownMenuRadioItem value="not-issued">
+            <span className="text-gray-700">None</span>
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="issued">
+            <span className="text-purple-700">Issued</span>
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="disabled">
+            <span className="text-red-700">Disabled</span>
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+        {(currentTicketStatus === "issued" || currentTicketStatus === "redeemed") &&
+          rsvp.redemptionCode && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => openRsvpQrCode(rsvp)}>
+                <QrCode className="w-4 h-4 mr-2" />
+                View QR Code
+              </DropdownMenuItem>
+            </>
+          )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RsvpActionsCell({ row }: CellContext<HostRsvp, unknown>) {
+  const { deleteRsvpCompleteIsPending, onDeleteRsvp } = useRsvpTableContext();
+  const rsvp = row.original;
+
+  return (
+    <div className="flex gap-2">
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+            disabled={deleteRsvpCompleteIsPending}
+          >
+            {deleteRsvpCompleteIsPending && <Spinner className="mr-1 h-3 w-3" />}
+            Delete
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete RSVP</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this RSVP? This will permanently remove the RSVP, any
+              associated ticket/redemption codes, and approval history. This action cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => onDeleteRsvp(rsvp)}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              Delete RSVP
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function RsvpSelectHeaderCell(_context: HeaderContext<HostRsvp, unknown>) {
+  const { allSelected, someSelected, toggleSelectAllCurrent } = useRsvpTableContext();
+
+  return (
+    <Checkbox
+      checked={allSelected || someSelected ? true : false}
+      onCheckedChange={toggleSelectAllCurrent}
+      aria-label="Select all"
+      className="ml-2"
+      ref={(checkboxRootElement: HTMLButtonElement | null) => {
+        if (checkboxRootElement) {
+          const innerInputElement = checkboxRootElement.querySelector(
+            'input[type="checkbox"]',
+          ) as HTMLInputElement | null;
+          if (innerInputElement) {
+            innerInputElement.indeterminate = someSelected;
+          }
+        }
+      }}
+    />
+  );
+}
+
+function RsvpSelectCell({ row }: CellContext<HostRsvp, unknown>) {
+  const { selectedRows, beginSelectionDrag, extendSelectionDrag } = useRsvpTableContext();
+  const rsvp = row.original;
+  const isSelected = selectedRows.has(rsvp.id);
+
+  return (
+    <div
+      data-rsvp-table-interactive="true"
+      className="flex h-full w-full items-center pl-2 select-none"
+      onPointerDown={(pointerDownEvent) => {
+        if (pointerDownEvent.button !== 0) {
+          return;
+        }
+        pointerDownEvent.preventDefault();
+        pointerDownEvent.stopPropagation();
+        window.getSelection()?.removeAllRanges();
+        beginSelectionDrag(rsvp.id);
+      }}
+      onPointerEnter={(pointerEnterEvent) => {
+        if (pointerEnterEvent.buttons === 0) {
+          return;
+        }
+        extendSelectionDrag(rsvp.id);
+      }}
+    >
+      <Checkbox
+        checked={isSelected}
+        tabIndex={-1}
+        aria-label="Select row"
+        className="pointer-events-none"
+        hapticFeedback={false}
+      />
+    </div>
+  );
 }
 
 export default function RsvpsPage() {
@@ -389,6 +806,125 @@ export default function RsvpsPage() {
   const canShareCurrentEvent = Boolean(
     currentEvent && (!workspaceScope || workspace !== undefined),
   );
+
+  // Event lifecycle / management mutations + state mirrored from event-card-client.
+  const publishCurrentEventMutation = useConvexReactMutation(api.events.publishEvent);
+  const unpublishCurrentEventMutation = useConvexReactMutation(api.events.unpublishEvent);
+  const setFeaturedEventMutation = useConvexReactMutation(api.events.setFeaturedEvent);
+  const removeCurrentEventMutation = useConvexReactMutation(api.events.remove);
+  const sendDeferredQrBatchAction = useAction(api.qrDelivery.sendDeferredQrBatch);
+  const pendingDeferredQrCount = useQuery(
+    api.qrDelivery.countPendingDeferredRecipients,
+    currentEvent && workspaceScope
+      ? { eventId: currentEvent._id, ...workspaceScope.queryArgs }
+      : "skip",
+  );
+  const [showEditEventDialog, setShowEditEventDialog] = React.useState(false);
+  const [showDeleteEventDialog, setShowDeleteEventDialog] = React.useState(false);
+  const [isSendingQrBatch, setIsSendingQrBatch] = React.useState(false);
+
+  const currentEventInlineTitle = currentEvent ? formatEventTitleInline(currentEvent) : "";
+  const isCurrentEventDraft = (currentEvent?.lifecycle ?? "published") === "draft";
+  const currentEventLifecycleActionLabel = getEventLifecycleActionLabel(isCurrentEventDraft);
+  const showSendPendingQrCodesAction = !isCurrentEventDraft && (pendingDeferredQrCount ?? 0) > 0;
+
+  const handleOpenCurrentEventView = React.useCallback(() => {
+    if (!currentEvent) {
+      return;
+    }
+    if (isCurrentEventDraft) {
+      const editDraftPath = `/workspaces/${workspaceScope?.workspaceSlug ?? ""}/host/new?draftId=${currentEvent._id}`;
+      router.push(editDraftPath);
+      return;
+    }
+    if (publicEventUrl) {
+      window.open(publicEventUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    window.open(`/events/${currentEvent._id}`, "_blank", "noopener,noreferrer");
+  }, [currentEvent, isCurrentEventDraft, publicEventUrl, router, workspaceScope]);
+
+  const handleToggleCurrentEventLifecycle = React.useCallback(async () => {
+    if (!currentEvent) {
+      return;
+    }
+    try {
+      const lifecycleActionResult = await runEventLifecycleAction({
+        eventId: currentEvent._id,
+        isDraft: isCurrentEventDraft,
+        workspaceScope,
+        publishEvent: publishCurrentEventMutation,
+        unpublishEvent: unpublishCurrentEventMutation,
+      });
+      if (lifecycleActionResult === "published") {
+        toast.success("Event published");
+      } else if (lifecycleActionResult === "unpublished") {
+        toast.success("Event unpublished");
+      }
+    } catch (lifecycleError: unknown) {
+      toast.error((lifecycleError as Error).message || "Failed to update lifecycle");
+    }
+  }, [
+    currentEvent,
+    isCurrentEventDraft,
+    publishCurrentEventMutation,
+    unpublishCurrentEventMutation,
+    workspaceScope,
+  ]);
+
+  const handleSetCurrentEventFeatured = React.useCallback(async () => {
+    if (!currentEvent || !workspaceScope) {
+      return;
+    }
+    try {
+      await setFeaturedEventMutation({
+        eventId: currentEvent._id,
+        ...workspaceScope.queryArgs,
+      });
+      toast.success(`"${currentEventInlineTitle}" is now the featured event`);
+    } catch (featuredError) {
+      toast.error("Failed to set featured event: " + (featuredError as Error).message);
+    }
+  }, [currentEvent, currentEventInlineTitle, setFeaturedEventMutation, workspaceScope]);
+
+  const handleDeleteCurrentEvent = React.useCallback(async () => {
+    if (!currentEvent || !workspaceScope) {
+      return;
+    }
+    try {
+      await removeCurrentEventMutation({
+        eventId: currentEvent._id,
+        ...workspaceScope.queryArgs,
+      });
+      toast.success("Event deleted");
+      setShowDeleteEventDialog(false);
+      setEventId(undefined);
+    } catch (removeError) {
+      toast.error("Failed to delete event: " + (removeError as Error).message);
+    }
+  }, [currentEvent, removeCurrentEventMutation, workspaceScope]);
+
+  const handleSendCurrentEventPendingQrCodes = React.useCallback(async () => {
+    if (!currentEvent || !workspaceScope || !pendingDeferredQrCount) {
+      return;
+    }
+    setIsSendingQrBatch(true);
+    try {
+      const sendQrResult = await sendDeferredQrBatchAction({
+        eventId: currentEvent._id,
+        ...workspaceScope.queryArgs,
+      });
+      const successMessage =
+        sendQrResult.failed > 0
+          ? `Sent ${sendQrResult.sent} QR codes (${sendQrResult.failed} failed, ${sendQrResult.skipped} skipped)`
+          : `Sent ${sendQrResult.sent} QR codes`;
+      toast.success(successMessage);
+    } catch (sendQrError) {
+      toast.error((sendQrError as Error).message || "Failed to send QR codes");
+    } finally {
+      setIsSendingQrBatch(false);
+    }
+  }, [currentEvent, pendingDeferredQrCount, sendDeferredQrBatchAction, workspaceScope]);
   const currentEventSocialPlatforms = React.useMemo(
     () => currentEvent?.primaryFieldConfig?.socialPlatforms ?? [],
     [currentEvent?.primaryFieldConfig?.socialPlatforms],
@@ -686,7 +1222,7 @@ export default function RsvpsPage() {
 
   const handleSingleApprovalChange = React.useCallback(
     (rsvp: HostRsvp, newStatus: ApprovalStatusOption) => {
-      if (isReadOnly || newStatus === rsvp.approvalStatus) {
+      if (isReadOnly || loadingApprovalUpdates.has(rsvp.id) || newStatus === rsvp.approvalStatus) {
         return;
       }
       if (newStatus === "pending" && rsvp.redemptionStatus === "redeemed") {
@@ -731,7 +1267,13 @@ export default function RsvpsPage() {
         },
       );
     },
-    [getRsvpGuestName, isReadOnly, updateRsvpCompleteMutation, workspaceScope],
+    [
+      getRsvpGuestName,
+      isReadOnly,
+      loadingApprovalUpdates,
+      updateRsvpCompleteMutation,
+      workspaceScope,
+    ],
   );
 
   const handleSingleAttendanceStatusChange = React.useCallback(
@@ -1010,6 +1552,7 @@ export default function RsvpsPage() {
               <ContextMenu>
                 <ContextMenuTrigger asChild>
                   <div
+                    data-rsvp-table-interactive="true"
                     className="group -mx-2 -my-1 flex max-w-full min-w-0 cursor-pointer items-center gap-1 overflow-hidden rounded px-2 py-1 hover:bg-muted/50"
                     onClick={(e) => {
                       e.stopPropagation(); // Prevent row selection
@@ -1048,6 +1591,7 @@ export default function RsvpsPage() {
           if (isCopyEnabled && rawValue && rawValue !== "-") {
             return (
               <div
+                data-rsvp-table-interactive="true"
                 className={cn(
                   "group -mx-2 -my-1 flex max-w-full min-w-0 cursor-pointer items-center justify-between overflow-hidden rounded px-2 py-1 transition-colors duration-150",
                 )}
@@ -1106,7 +1650,9 @@ export default function RsvpsPage() {
             href={profileUrl}
             target="_blank"
             rel="noreferrer"
+            data-rsvp-table-interactive="true"
             className="block max-w-full truncate text-sm underline underline-offset-4"
+            onClick={stopRsvpTableInteractiveEventPropagation}
           >
             {handle}
           </a>
@@ -1142,53 +1688,7 @@ export default function RsvpsPage() {
           contentValues: listKeyColumnContentValues,
           contentHorizontalAffordance: isReadOnly ? 32 : 48,
         }),
-        cell: ({ row }) => {
-          const rsvp = row.original;
-          const currentListKey = rsvp.listKey;
-          const availableListKeys = listCredentials?.map((credential) => credential.listKey) || [];
-
-          // Use shared loading state for this row
-          const isUpdatingList = loadingListUpdates.has(rsvp.id);
-
-          if (isReadOnly || availableListKeys.length <= 1) {
-            // If only one list or no lists, show as text
-            return (
-              <span className="block max-w-full truncate">{currentListKey?.toUpperCase()}</span>
-            );
-          }
-
-          return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="h-6 max-w-full min-w-0 shrink overflow-hidden px-2 text-xs"
-                  disabled={isUpdatingList}
-                  onClick={stopRsvpTableInteractiveEventPropagation}
-                  onPointerDown={stopRsvpTableInteractiveEventPropagation}
-                >
-                  {isUpdatingList && <Spinner className="mr-1 h-3 w-3" />}
-                  {!isUpdatingList && (
-                    <span className="min-w-0 truncate">{currentListKey?.toUpperCase()}</span>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuRadioGroup
-                  value={currentListKey}
-                  onValueChange={(newListKey) => handleSingleListKeyChange(rsvp, newListKey)}
-                >
-                  {availableListKeys.map((listKey) => (
-                    <DropdownMenuRadioItem key={listKey} value={listKey}>
-                      {listKey.toUpperCase()}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          );
-        },
+        cell: RsvpListKeyCell,
       },
       {
         id: "attendees",
@@ -1333,80 +1833,7 @@ export default function RsvpsPage() {
           contentValues: APPROVAL_STATUS_OPTIONS.map(getApprovalStatusLabel),
           contentHorizontalAffordance: 48,
         }),
-        cell: ({ row }) => {
-          const rsvp = row.original;
-          const originalApprovalStatus = rsvp.approvalStatus;
-          const currentApprovalStatus = originalApprovalStatus;
-
-          // Use shared loading state for this row
-          const isUpdatingApproval = loadingApprovalUpdates.has(rsvp.id);
-
-          const getStatusColor = (currentStatus: ApprovalStatusOption): string => {
-            switch (currentStatus) {
-              case "approved":
-                return "text-green-700 border-green-200 bg-green-50 hover:bg-green-10 hover:text-green-700";
-              case "denied":
-                return "text-red-700 border-red-200 bg-red-50 hover:bg-red-10 hover:text-red-700";
-              case "pending":
-              default:
-                return "text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-10 hover:text-amber-700";
-            }
-          };
-
-          if (isReadOnly) {
-            return (
-              <Badge variant="secondary" className="text-xs">
-                {getApprovalStatusLabel(currentApprovalStatus)}
-              </Badge>
-            );
-          }
-
-          return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className={cn(
-                    "max-w-full min-w-0 shrink overflow-hidden",
-                    getStatusColor(currentApprovalStatus),
-                  )}
-                  disabled={isUpdatingApproval}
-                  onClick={stopRsvpTableInteractiveEventPropagation}
-                  onPointerDown={stopRsvpTableInteractiveEventPropagation}
-                >
-                  {isUpdatingApproval && <Spinner className="mr-1 h-3 w-3" />}
-                  {!isUpdatingApproval && (
-                    <span className="min-w-0 truncate">
-                      {getApprovalStatusLabel(currentApprovalStatus)}
-                    </span>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuRadioGroup
-                  value={currentApprovalStatus}
-                  onValueChange={(value) =>
-                    handleSingleApprovalChange(rsvp, value as ApprovalStatusOption)
-                  }
-                >
-                  <DropdownMenuRadioItem
-                    value="pending"
-                    disabled={rsvp.redemptionStatus === "redeemed"}
-                  >
-                    <span className="text-amber-700">Pending</span>
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="approved">
-                    <span className="text-green-700">Approved</span>
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="denied">
-                    <span className="text-red-700">Denied</span>
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          );
-        },
+        cell: RsvpApprovalStatusCell,
       },
       {
         id: "attendanceStatus",
@@ -1417,74 +1844,7 @@ export default function RsvpsPage() {
           contentValues: ATTENDANCE_STATUS_OPTIONS.map(getAttendanceStatusLabel),
           contentHorizontalAffordance: 48,
         }),
-        cell: ({ row }) => {
-          const rsvp = row.original;
-          const currentAttendanceStatus = rsvp.attendanceStatus;
-          const isUpdatingAttendance = loadingAttendanceUpdates.has(rsvp.id);
-
-          if (isReadOnly) {
-            return (
-              <Badge
-                variant="secondary"
-                className={cn("text-xs", getAttendanceStatusClassName(currentAttendanceStatus))}
-              >
-                {getAttendanceStatusLabel(currentAttendanceStatus)}
-              </Badge>
-            );
-          }
-
-          return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className={cn(
-                    "max-w-full min-w-0 shrink overflow-hidden",
-                    getAttendanceStatusClassName(currentAttendanceStatus),
-                  )}
-                  disabled={isUpdatingAttendance}
-                  onClick={stopRsvpTableInteractiveEventPropagation}
-                  onPointerDown={stopRsvpTableInteractiveEventPropagation}
-                >
-                  {isUpdatingAttendance && <Spinner className="mr-1 h-3 w-3" />}
-                  {!isUpdatingAttendance && (
-                    <span className="min-w-0 truncate">
-                      {getAttendanceStatusLabel(currentAttendanceStatus)}
-                    </span>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuRadioGroup
-                  value={currentAttendanceStatus}
-                  onValueChange={(value) =>
-                    handleSingleAttendanceStatusChange(rsvp, value as AttendanceStatusOption)
-                  }
-                >
-                  {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => (
-                    <DropdownMenuRadioItem
-                      key={attendanceStatusOption}
-                      value={attendanceStatusOption}
-                    >
-                      <span
-                        className={
-                          attendanceStatusOption === "yes"
-                            ? "text-green-700"
-                            : attendanceStatusOption === "maybe"
-                              ? "text-amber-700"
-                              : "text-red-700"
-                        }
-                      >
-                        {getAttendanceStatusLabel(attendanceStatusOption)}
-                      </span>
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          );
-        },
+        cell: RsvpAttendanceStatusCell,
       },
       {
         id: "ticketStatus",
@@ -1495,110 +1855,7 @@ export default function RsvpsPage() {
           contentValues: TICKET_STATUS_OPTIONS.map(getTicketStatusLabel),
           contentHorizontalAffordance: 48,
         }),
-        cell: ({ row }) => {
-          const rsvp = row.original;
-          const originalTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
-          const currentTicketStatus = originalTicketStatus;
-          const isRedeemed = originalTicketStatus === "redeemed";
-          const ticketEditingIsAllowed = canEditTicketForRsvp(rsvp);
-
-          // Use shared loading state for this row
-          const isUpdatingTicket = loadingTicketUpdates.has(rsvp.id);
-
-          const getTicketStatusColor = (status: TicketDisplayStatus): string => {
-            switch (status) {
-              case "issued":
-                return "text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-10 hover:text-purple-700";
-              case "redeemed":
-                return "text-blue-700 border-blue-200 bg-blue-50 hover:text-blue-700 hover:bg-blue-10";
-              case "disabled":
-                return "text-red-700 border-red-200 bg-red-50 hover:bg-red-10 hover:text-red-700";
-              case "not-issued":
-              default:
-                return "text-gray-700 border-gray-200 bg-gray-50";
-            }
-          };
-
-          if (isReadOnly) {
-            const canViewQrCode =
-              (currentTicketStatus === "issued" || currentTicketStatus === "redeemed") &&
-              Boolean(rsvp.redemptionCode);
-
-            return (
-              <Button
-                variant="outline"
-                size="xs"
-                className={cn(
-                  "max-w-full min-w-0 shrink overflow-hidden",
-                  getTicketStatusColor(currentTicketStatus),
-                )}
-                disabled={!canViewQrCode}
-                onClick={(event) => {
-                  stopRsvpTableInteractiveEventPropagation(event);
-                  openRsvpQrCode(rsvp);
-                }}
-                onPointerDown={stopRsvpTableInteractiveEventPropagation}
-              >
-                <span className="min-w-0 truncate">
-                  {getTicketStatusLabel(currentTicketStatus)}
-                </span>
-              </Button>
-            );
-          }
-
-          return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className={cn(
-                    "max-w-full min-w-0 shrink overflow-hidden",
-                    getTicketStatusColor(currentTicketStatus),
-                  )}
-                  disabled={isRedeemed || isUpdatingTicket || !ticketEditingIsAllowed}
-                  onClick={stopRsvpTableInteractiveEventPropagation}
-                  onPointerDown={stopRsvpTableInteractiveEventPropagation}
-                >
-                  {isUpdatingTicket && <Spinner className="mr-1 h-3 w-3" />}
-                  {!isUpdatingTicket && (
-                    <span className="min-w-0 truncate">
-                      {getTicketStatusLabel(currentTicketStatus)}
-                    </span>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuRadioGroup
-                  value={currentTicketStatus}
-                  onValueChange={(value) =>
-                    handleSingleTicketStatusChange(rsvp, value as TicketStatusOption)
-                  }
-                >
-                  <DropdownMenuRadioItem value="not-issued">
-                    <span className="text-gray-700">None</span>
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="issued">
-                    <span className="text-purple-700">Issued</span>
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="disabled">
-                    <span className="text-red-700">Disabled</span>
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-                {(currentTicketStatus === "issued" || currentTicketStatus === "redeemed") &&
-                  rsvp.redemptionCode && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => openRsvpQrCode(rsvp)}>
-                        <QrCode className="w-4 h-4 mr-2" />
-                        View QR Code
-                      </DropdownMenuItem>
-                    </>
-                  )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          );
-        },
+        cell: RsvpTicketStatusCell,
       },
       {
         id: "ticketViewedAt",
@@ -1640,120 +1897,7 @@ export default function RsvpsPage() {
           contentValues: ["Delete"],
           contentHorizontalAffordance: 48,
         }),
-        cell: ({ row }) => {
-          const rsvp = row.original;
-          const changes = pendingChanges[rsvp.id];
-          const hasChanges =
-            changes &&
-            (changes.currentApprovalStatus !== changes.originalApprovalStatus ||
-              changes.currentTicketStatus !== changes.originalTicketStatus);
-
-          const _handleSave = async () => {
-            if (!changes || !hasChanges) return;
-            if (!workspaceScope) {
-              toast.error("Workspace scope is required to update RSVPs");
-              return;
-            }
-
-            const approvalStatusUpdate =
-              changes.currentApprovalStatus !== changes.originalApprovalStatus
-                ? changes.currentApprovalStatus
-                : undefined;
-            const ticketStatusUpdate =
-              changes.currentTicketStatus !== changes.originalTicketStatus
-                ? coerceTicketStatusOption(changes.currentTicketStatus)
-                : undefined;
-
-            const mutationInput: UpdateRsvpCompleteInput = {
-              rsvpId: rsvp.id,
-              ...workspaceScope.queryArgs,
-            };
-            if (approvalStatusUpdate) {
-              mutationInput.approvalStatus = approvalStatusUpdate;
-            }
-            if (ticketStatusUpdate) {
-              mutationInput.ticketStatus = ticketStatusUpdate;
-            }
-
-            updateRsvpCompleteMutation.mutate(mutationInput, {
-              onSuccess: () => {
-                // Clear pending changes for this row
-                setPendingChanges((prev) => {
-                  const updated = { ...prev };
-                  delete updated[rsvp.id];
-                  return updated;
-                });
-
-                toast.success("Changes saved successfully");
-              },
-              onError: (error) => {
-                toast.error("Failed to save changes: " + (error as Error).message);
-              },
-            });
-          };
-
-          const handleDelete = async () => {
-            if (!workspaceScope) {
-              toast.error("Workspace scope is required to delete RSVPs");
-              return;
-            }
-            deleteRsvpCompleteMutation.mutate(
-              { rsvpId: rsvp.id, ...workspaceScope.queryArgs },
-              {
-                onSuccess: () => {
-                  // Clear pending changes for this row
-                  setPendingChanges((prev) => {
-                    const updated = { ...prev };
-                    delete updated[rsvp.id];
-                    return updated;
-                  });
-
-                  toast.success("RSVP deleted successfully");
-                },
-                onError: (error) => {
-                  toast.error("Failed to delete RSVP: " + (error as Error).message);
-                },
-              },
-            );
-          };
-
-          return (
-            <div className="flex gap-2">
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                    disabled={deleteRsvpCompleteMutation.isPending}
-                  >
-                    {deleteRsvpCompleteMutation.isPending && <Spinner className="mr-1 h-3 w-3" />}
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete RSVP</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to delete this RSVP? This will permanently remove the
-                      RSVP, any associated ticket/redemption codes, and approval history. This
-                      action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
-                    >
-                      Delete RSVP
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          );
-        },
+        cell: RsvpActionsCell,
       },
     ];
 
@@ -1793,29 +1937,14 @@ export default function RsvpsPage() {
       .filter((column): column is ColumnDef<HostRsvp> & { id: string } => column !== undefined)
       .filter((column) => !isReadOnly || column.id !== "actions");
   }, [
-    canEditTicketForRsvp,
     createdAtColumnContentValues,
     customFieldColumns,
     currentEvent?.primaryFieldConfig,
-    deleteRsvpCompleteMutation,
-    handleSingleApprovalChange,
-    handleSingleAttendanceStatusChange,
-    handleSingleListKeyChange,
-    handleSingleTicketStatusChange,
     isReadOnly,
     listKeyColumnContentValues,
-    listCredentials,
-    loadingApprovalUpdates,
-    loadingAttendanceUpdates,
-    loadingListUpdates,
-    loadingTicketUpdates,
-    openRsvpQrCode,
-    pendingChanges,
     rsvps,
     socialProfileColumns,
     ticketViewedAtColumnContentValues,
-    updateRsvpCompleteMutation,
-    workspaceScope,
   ]);
 
   // Filtering is now handled by the backend
@@ -1848,21 +1977,141 @@ export default function RsvpsPage() {
     redemptionFilter !== "all" ||
     (shouldShowSocialPlatformFilter && socialPlatformFilter !== "all");
 
-  // Selection handlers (basic implementations, will be updated after table creation)
-  const toggleSelectRow = React.useCallback(
+  // Drag-aware selection handlers — pointerdown on the select cell starts a paint drag.
+  // The anchor row's prior state decides the drag mode: an unchecked anchor paints "select"
+  // (adds every row in the range), a checked anchor paints "deselect" (removes every row in
+  // the range). The pre-drag selection is preserved for rows not touched by the drag.
+  const orderedRsvpIds = React.useMemo(() => rsvps.map((rsvp) => rsvp.id), [rsvps]);
+  const dragAnchorRsvpIdRef = React.useRef<string | null>(null);
+  const dragStartSelectionRef = React.useRef<Set<string> | null>(null);
+  const dragModeRef = React.useRef<"select" | "deselect" | null>(null);
+  const [selectionDragMode, setSelectionDragMode] = React.useState<"select" | "deselect" | null>(
+    null,
+  );
+  const isSelectionDragActive = selectionDragMode !== null;
+
+  const applySelectionDragPaint = React.useCallback(
+    (focusRsvpId: string) => {
+      const anchorRsvpId = dragAnchorRsvpIdRef.current;
+      const dragStartSelection = dragStartSelectionRef.current;
+      const dragMode = dragModeRef.current;
+      if (!anchorRsvpId || !dragStartSelection || !dragMode) {
+        return;
+      }
+      const rangeRsvpIds = getRsvpSelectionRangeIds(orderedRsvpIds, anchorRsvpId, focusRsvpId);
+      if (rangeRsvpIds.length === 0) {
+        return;
+      }
+      const nextSelectedRows = new Set(dragStartSelection);
+      if (dragMode === "select") {
+        for (const rangeRsvpId of rangeRsvpIds) {
+          nextSelectedRows.add(rangeRsvpId);
+        }
+      } else {
+        for (const rangeRsvpId of rangeRsvpIds) {
+          nextSelectedRows.delete(rangeRsvpId);
+        }
+      }
+      setSelectedRows(nextSelectedRows);
+    },
+    [orderedRsvpIds],
+  );
+
+  const beginSelectionDrag = React.useCallback(
     (rsvpId: string) => {
       if (isReadOnly) {
         return;
       }
-      const newSelectedRows = new Set(selectedRows);
-      if (newSelectedRows.has(rsvpId)) {
-        newSelectedRows.delete(rsvpId);
-      } else {
-        newSelectedRows.add(rsvpId);
-      }
-      setSelectedRows(newSelectedRows);
+      let resolvedDragMode: "select" | "deselect" = "select";
+      setSelectedRows((previousSelectedRows) => {
+        dragStartSelectionRef.current = new Set(previousSelectedRows);
+        dragAnchorRsvpIdRef.current = rsvpId;
+        resolvedDragMode = previousSelectedRows.has(rsvpId) ? "deselect" : "select";
+        dragModeRef.current = resolvedDragMode;
+        const nextSelectedRows = new Set(previousSelectedRows);
+        if (resolvedDragMode === "select") {
+          nextSelectedRows.add(rsvpId);
+        } else {
+          nextSelectedRows.delete(rsvpId);
+        }
+        return nextSelectedRows;
+      });
+      setSelectionDragMode(resolvedDragMode);
     },
-    [isReadOnly, selectedRows],
+    [isReadOnly],
+  );
+
+  const extendSelectionDrag = React.useCallback(
+    (rsvpId: string) => {
+      if (isReadOnly) {
+        return;
+      }
+      applySelectionDragPaint(rsvpId);
+    },
+    [isReadOnly, applySelectionDragPaint],
+  );
+
+  const endSelectionDrag = React.useCallback(() => {
+    dragAnchorRsvpIdRef.current = null;
+    dragStartSelectionRef.current = null;
+    dragModeRef.current = null;
+    setSelectionDragMode(null);
+  }, []);
+
+  React.useEffect(() => {
+    window.addEventListener("pointerup", endSelectionDrag);
+    window.addEventListener("pointercancel", endSelectionDrag);
+    return () => {
+      window.removeEventListener("pointerup", endSelectionDrag);
+      window.removeEventListener("pointercancel", endSelectionDrag);
+    };
+  }, [endSelectionDrag]);
+
+  // Suppress browser text selection (and the caret) while a drag is in progress so the user
+  // doesn't accidentally select cell text as the pointer crosses other rows.
+  React.useEffect(() => {
+    if (!isSelectionDragActive) {
+      return;
+    }
+    const previousUserSelect = document.body.style.userSelect;
+    const previousWebkitUserSelect = (
+      document.body.style as CSSStyleDeclaration & { webkitUserSelect?: string }
+    ).webkitUserSelect;
+    document.body.style.userSelect = "none";
+    (document.body.style as CSSStyleDeclaration & { webkitUserSelect?: string }).webkitUserSelect =
+      "none";
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+      (
+        document.body.style as CSSStyleDeclaration & { webkitUserSelect?: string }
+      ).webkitUserSelect = previousWebkitUserSelect ?? "";
+    };
+  }, [isSelectionDragActive]);
+
+  const handleDeleteSingleRsvp = React.useCallback(
+    (rsvp: HostRsvp) => {
+      if (!workspaceScope) {
+        toast.error("Workspace scope is required to delete RSVPs");
+        return;
+      }
+      deleteRsvpCompleteMutation.mutate(
+        { rsvpId: rsvp.id, ...workspaceScope.queryArgs },
+        {
+          onSuccess: () => {
+            setPendingChanges((previousPendingChanges) => {
+              const nextPendingChanges = { ...previousPendingChanges };
+              delete nextPendingChanges[rsvp.id];
+              return nextPendingChanges;
+            });
+            toast.success("RSVP deleted successfully");
+          },
+          onError: (error) => {
+            toast.error("Failed to delete RSVP: " + (error as Error).message);
+          },
+        },
+      );
+    },
+    [deleteRsvpCompleteMutation, workspaceScope],
   );
 
   React.useEffect(() => {
@@ -2186,20 +2435,13 @@ export default function RsvpsPage() {
               id: "select",
               header: "Select",
               ...RSVP_SELECT_COLUMN_SIZING,
-              cell: ({ row }) => (
-                <Checkbox
-                  checked={selectedRows.has(row.original.id)}
-                  onCheckedChange={() => toggleSelectRow(row.original.id)}
-                  aria-label="Select row"
-                  className="ml-2"
-                />
-              ),
+              cell: RsvpSelectCell,
               enableSorting: false,
               enableHiding: false,
             },
             ...baseCols,
           ],
-    [baseCols, isReadOnly, selectedRows, toggleSelectRow],
+    [baseCols, isReadOnly],
   );
 
   const computedInitialColumnIdentifiers = React.useMemo(() => {
@@ -2870,45 +3112,14 @@ export default function RsvpsPage() {
       {
         id: "select",
         ...RSVP_SELECT_COLUMN_SIZING,
-        header: (_context: HeaderContext<HostRsvp, unknown>) => (
-          <Checkbox
-            checked={allSelected || someSelected ? true : false}
-            onCheckedChange={toggleSelectAllCurrent}
-            aria-label="Select all"
-            className="ml-2"
-            ref={(el: HTMLButtonElement | null) => {
-              if (el) {
-                // For button-based checkbox, we need to find the actual input element
-                const input = el.querySelector('input[type="checkbox"]') as HTMLInputElement;
-                if (input) {
-                  input.indeterminate = someSelected;
-                }
-              }
-            }}
-          />
-        ),
-        cell: ({ row }: CellContext<HostRsvp, unknown>) => (
-          <Checkbox
-            checked={selectedRows.has(row.original.id)}
-            onCheckedChange={() => toggleSelectRow(row.original.id)}
-            aria-label="Select row"
-            className="ml-2"
-          />
-        ),
+        header: RsvpSelectHeaderCell,
+        cell: RsvpSelectCell,
         enableSorting: false,
         enableHiding: false,
       },
       ...baseCols,
     ];
-  }, [
-    baseCols,
-    isReadOnly,
-    selectedRows,
-    allSelected,
-    someSelected,
-    toggleSelectAllCurrent,
-    toggleSelectRow,
-  ]);
+  }, [baseCols, isReadOnly]);
 
   // Update table columns when they change
   React.useEffect(() => {
@@ -3295,1029 +3506,1170 @@ export default function RsvpsPage() {
   const pendingDeletionActionLabel =
     pendingDeletionCount > 1 ? `Delete ${pendingDeletionCount} RSVPs` : "Delete RSVP";
 
+  const rsvpTableContextValue = React.useMemo<RsvpTableContextValue>(
+    () => ({
+      isReadOnly,
+      listCredentials,
+      loadingListUpdates,
+      loadingApprovalUpdates,
+      loadingAttendanceUpdates,
+      loadingTicketUpdates,
+      selectedRows,
+      allSelected,
+      someSelected,
+      deleteRsvpCompleteIsPending: deleteRsvpCompleteMutation.isPending,
+      canEditTicketForRsvp,
+      handleSingleListKeyChange,
+      handleSingleApprovalChange,
+      handleSingleAttendanceStatusChange,
+      handleSingleTicketStatusChange,
+      openRsvpQrCode,
+      onDeleteRsvp: handleDeleteSingleRsvp,
+      beginSelectionDrag,
+      extendSelectionDrag,
+      toggleSelectAllCurrent,
+    }),
+    [
+      isReadOnly,
+      listCredentials,
+      loadingListUpdates,
+      loadingApprovalUpdates,
+      loadingAttendanceUpdates,
+      loadingTicketUpdates,
+      selectedRows,
+      allSelected,
+      someSelected,
+      deleteRsvpCompleteMutation.isPending,
+      canEditTicketForRsvp,
+      handleSingleListKeyChange,
+      handleSingleApprovalChange,
+      handleSingleAttendanceStatusChange,
+      handleSingleTicketStatusChange,
+      openRsvpQrCode,
+      handleDeleteSingleRsvp,
+      beginSelectionDrag,
+      extendSelectionDrag,
+      toggleSelectAllCurrent,
+    ],
+  );
+
+  // Hidden anchor refs used to keep the Share and Export popovers anchored to the (...) trigger
+  // after the dropdown menu closes. Each invisible button shares the (...) button's bounding box
+  // (via `absolute inset-0`), so popovers render in the same place as if the user had clicked a
+  // visible Share/Export button.
+  const shareEventTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const exportCsvTriggerRef = React.useRef<HTMLButtonElement>(null);
+
   return (
-    <div className="min-w-0 flex-1 space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-2 sm:gap-1">
-          <div className="flex items-start justify-between gap-3 sm:block">
+    <RsvpTableContext.Provider value={rsvpTableContextValue}>
+      <div className="min-w-0 flex-1 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 sm:gap-1">
             <h2 className="text-3xl font-bold tracking-tight">RSVPs</h2>
-            <div className="flex items-center gap-2 sm:hidden">
-              {currentEvent && canShareCurrentEvent ? (
-                <ShareEventPopover
-                  eventId={currentEvent._id}
-                  eventUrl={publicEventUrl}
-                  siteKey={workspaceScope?.siteKey}
-                  workspaceSlug={workspaceScope?.workspaceSlug}
-                >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="justify-center px-3"
-                    aria-label="Share event"
-                  >
-                    <Share className="h-4 w-4" />
-                  </Button>
-                </ShareEventPopover>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-center px-3"
-                  aria-label="Share event"
-                  disabled
-                >
-                  <Share className="h-4 w-4" />
-                </Button>
-              )}
+            <p className="text-muted-foreground">Manage guest responses and ticket status</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="relative inline-block">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
                     className="justify-center px-3"
-                    aria-label="Open actions"
+                    aria-label="Open event actions"
+                    disabled={!currentEvent}
                   >
-                    <span className="text-lg leading-none">⋯</span>
+                    <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuItem
-                    onClick={() => {
-                      if (eventId) {
-                        window.open(`/events/${eventId}`, "_blank");
-                      }
+                    onSelect={(menuEvent) => {
+                      menuEvent.preventDefault();
+                      handleOpenCurrentEventView();
+                    }}
+                    disabled={!currentEvent}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    {isCurrentEventDraft ? "Continue editing" : "View Event"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(menuEvent) => {
+                      menuEvent.preventDefault();
+                      requestAnimationFrame(() => shareEventTriggerRef.current?.click());
+                    }}
+                    disabled={!canShareCurrentEvent}
+                  >
+                    <Share className="h-4 w-4 mr-2" />
+                    Share Event
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(menuEvent) => {
+                      menuEvent.preventDefault();
+                      setShowEditEventDialog(true);
+                    }}
+                    disabled={!currentEvent || isReadOnly}
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Event
+                  </DropdownMenuItem>
+                  {showSendPendingQrCodesAction && (
+                    <DropdownMenuItem
+                      disabled={isSendingQrBatch}
+                      onSelect={(menuEvent) => {
+                        menuEvent.preventDefault();
+                        void handleSendCurrentEventPendingQrCodes();
+                      }}
+                    >
+                      <QrCode className="h-4 w-4 mr-2" />
+                      {isSendingQrBatch
+                        ? "Sending QR codes..."
+                        : `Send QR codes (${pendingDeferredQrCount})`}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onSelect={(menuEvent) => {
+                      menuEvent.preventDefault();
+                      void handleToggleCurrentEventLifecycle();
+                    }}
+                    disabled={!currentEvent || isReadOnly}
+                  >
+                    {isCurrentEventDraft ? (
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                    ) : (
+                      <EyeOff className="h-4 w-4 mr-2" />
+                    )}
+                    {currentEventLifecycleActionLabel}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(menuEvent) => {
+                      menuEvent.preventDefault();
+                      void handleSetCurrentEventFeatured();
+                    }}
+                    disabled={!currentEvent || isReadOnly || currentEvent?.isFeatured === true}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    {currentEvent?.isFeatured ? "Already Featured" : "Set as Featured"}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={(menuEvent) => {
+                      menuEvent.preventDefault();
+                      requestAnimationFrame(() => exportCsvTriggerRef.current?.click());
                     }}
                     disabled={!eventId}
                   >
-                    <Eye className="h-4 w-4 mr-2" />
-                    View Event
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setExportOptionsOpen(true)} disabled={!eventId}>
                     <Download className="h-4 w-4 mr-2" />
                     Export CSV
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setColumnVisibilityOpen(true)}>
+                  <DropdownMenuItem
+                    onSelect={(menuEvent) => {
+                      menuEvent.preventDefault();
+                      setColumnVisibilityOpen(true);
+                    }}
+                  >
                     <Columns className="h-4 w-4 mr-2" />
                     Columns
                   </DropdownMenuItem>
+                  {!isReadOnly && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={(menuEvent) => {
+                          menuEvent.preventDefault();
+                          setShowDeleteEventDialog(true);
+                        }}
+                        disabled={!currentEvent}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Event
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
+              {/* Hidden popover anchors sit on top of the (...) button so Share/Export popovers
+                  position cleanly after the menu closes. */}
+              {currentEvent && canShareCurrentEvent && (
+                <ShareEventPopover
+                  eventId={currentEvent._id}
+                  eventUrl={publicEventUrl}
+                  siteKey={workspaceScope?.siteKey}
+                  workspaceSlug={workspaceScope?.workspaceSlug}
+                >
+                  <button
+                    ref={shareEventTriggerRef}
+                    type="button"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                    className="pointer-events-none absolute inset-0 opacity-0"
+                  />
+                </ShareEventPopover>
+              )}
+              <Popover open={exportOptionsOpen} onOpenChange={setExportOptionsOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    ref={exportCsvTriggerRef}
+                    type="button"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                    className="pointer-events-none absolute inset-0 opacity-0"
+                  />
+                </PopoverTrigger>
+                <PopoverContent className="w-80" align="end">
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-medium text-sm mb-2">Export Options</h4>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Select Lists</label>
+                      <div className="space-y-2">
+                        {(listCredentials || []).map((cred) => (
+                          <div key={cred.listKey} className="flex items-center">
+                            <Checkbox
+                              id={`list-${cred.listKey}`}
+                              checked={selectedListsForExport.includes(cred.listKey)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedListsForExport([
+                                    ...selectedListsForExport,
+                                    cred.listKey,
+                                  ]);
+                                } else {
+                                  setSelectedListsForExport(
+                                    selectedListsForExport.filter((k) => k !== cred.listKey),
+                                  );
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor={`list-${cred.listKey}`}
+                              className="ml-2 text-sm cursor-pointer"
+                            >
+                              {cred.listKey.toUpperCase()}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Select Statuses</label>
+                      <div className="space-y-2">
+                        {EXPORT_STATUS_OPTIONS.map((statusOption) => (
+                          <div key={statusOption} className="flex items-center">
+                            <Checkbox
+                              id={`status-${statusOption}`}
+                              checked={selectedStatusesForExport.includes(statusOption)}
+                              onCheckedChange={(checked) => {
+                                setSelectedStatusesForExport((previous) => {
+                                  if (checked === true) {
+                                    if (previous.includes(statusOption)) {
+                                      return previous;
+                                    }
+                                    const next = [...previous, statusOption];
+                                    return EXPORT_STATUS_OPTIONS.filter((option) =>
+                                      next.includes(option),
+                                    );
+                                  }
+                                  return previous.filter((option) => option !== statusOption);
+                                });
+                              }}
+                            />
+                            <label
+                              htmlFor={`status-${statusOption}`}
+                              className="ml-2 text-sm cursor-pointer"
+                            >
+                              {statusOption.charAt(0).toUpperCase() + statusOption.slice(1)}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Select Columns</label>
+                      <div className="space-y-2">
+                        <div className="flex items-center">
+                          <Checkbox
+                            id="col-attendees"
+                            checked={includeAttendees}
+                            onCheckedChange={(checked) => setIncludeAttendees(checked === true)}
+                          />
+                          <label htmlFor="col-attendees" className="ml-2 text-sm cursor-pointer">
+                            Attendees
+                          </label>
+                        </div>
+                        <div className="flex items-center">
+                          <Checkbox
+                            id="col-note"
+                            checked={includeNote}
+                            onCheckedChange={(checked) => setIncludeNote(checked === true)}
+                          />
+                          <label htmlFor="col-note" className="ml-2 text-sm cursor-pointer">
+                            Note
+                          </label>
+                        </div>
+                        <div className="flex items-center">
+                          <Checkbox
+                            id="col-phone"
+                            checked={includePhone}
+                            onCheckedChange={(checked) => setIncludePhone(checked === true)}
+                          />
+                          <label htmlFor="col-phone" className="ml-2 text-sm cursor-pointer">
+                            Phone
+                          </label>
+                        </div>
+                        <div className="flex items-center">
+                          <Checkbox
+                            id="col-custom"
+                            checked={includeCustomFields}
+                            onCheckedChange={(checked) => setIncludeCustomFields(checked === true)}
+                          />
+                          <label htmlFor="col-custom" className="ml-2 text-sm cursor-pointer">
+                            Custom Fields
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={async () => {
+                        const exported = await handleExportCsv();
+                        if (exported) {
+                          setExportOptionsOpen(false);
+                        }
+                      }}
+                      disabled={
+                        isLoading ||
+                        isExportingCsv ||
+                        selectedListsForExport.length === 0 ||
+                        selectedStatusesForExport.length === 0
+                      }
+                      className="w-full"
+                      size="sm"
+                    >
+                      {isExportingCsv ? (
+                        <Spinner className="h-4 w-4 mr-2" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
+                      {isExportingCsv ? "Exporting..." : "Export"}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
-          <p className="text-muted-foreground">Manage guest responses and ticket status</p>
         </div>
-        <div className="hidden sm:flex sm:flex-row sm:items-center sm:justify-end sm:gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (eventId) {
-                window.open(`/events/${eventId}`, "_blank");
-              }
-            }}
-            disabled={!eventId}
+        {/* Event Selector */}
+        <div className="flex gap-2 items-center flex-wrap">
+          <span className="text-sm text-foreground/70">Event:</span>
+          <Select value={eventId} onValueChange={setEventId} className="max-w-sm">
+            {eventsSorted.map((event) => {
+              const inlineTitle = formatEventTitleInline(event);
+              return (
+                <SelectOption key={event._id} value={event._id}>
+                  {new Date(event.eventDate).toLocaleDateString()} • {inlineTitle}
+                </SelectOption>
+              );
+            })}
+          </Select>
+        </div>
+
+        {/* Filters */}
+        <div className="flex gap-2 items-center flex-wrap">
+          <Input
+            className="h-8 max-w-xs text-sm"
+            placeholder="Search guest, social, invited by"
+            value={guestSearch}
+            onChange={(e) => setGuestSearch(e.target.value)}
+          />
+          <span className="mx-2 h-6 w-px bg-foreground/20" />
+          <Select
+            value={approvalFilter}
+            onValueChange={(value) => setApprovalFilter(value as ApprovalFilterOption)}
+            className="w-32"
           >
-            <Eye className="h-4 w-4 mr-2" />
-            View Event
-          </Button>
-          {currentEvent && canShareCurrentEvent ? (
-            <ShareEventPopover
-              eventId={currentEvent._id}
-              eventUrl={publicEventUrl}
-              siteKey={workspaceScope?.siteKey}
-              workspaceSlug={workspaceScope?.workspaceSlug}
+            <SelectOption value="all">All Approval</SelectOption>
+            {uniqueApprovalStatuses.map((status) => (
+              <SelectOption key={status} value={status}>
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </SelectOption>
+            ))}
+          </Select>
+          <Select value={listFilter} onValueChange={setListFilter} className="w-32">
+            <SelectOption value="all">All Lists</SelectOption>
+            {uniqueListKeys.map((listKey) => (
+              <SelectOption key={listKey} value={listKey}>
+                {listKey.toUpperCase()}
+              </SelectOption>
+            ))}
+          </Select>
+          <Select value={redemptionFilter} onValueChange={setRedemptionFilter} className="w-36">
+            <SelectOption value="all">All Tickets</SelectOption>
+            <SelectOption value="issued">Issued</SelectOption>
+            <SelectOption value="redeemed">Redeemed</SelectOption>
+            <SelectOption value="disabled">Disabled</SelectOption>
+            <SelectOption value="not-issued">None</SelectOption>
+          </Select>
+          {shouldShowSocialPlatformFilter && (
+            <Select
+              value={socialPlatformFilter}
+              onValueChange={setSocialPlatformFilter}
+              className="w-36"
             >
-              <Button variant="outline" size="sm">
-                <Share className="h-4 w-4 mr-2" />
-                Share Event
-              </Button>
-            </ShareEventPopover>
-          ) : (
-            <Button variant="outline" size="sm" disabled>
-              <Share className="h-4 w-4 mr-2" />
-              Share Event
-            </Button>
+              <SelectOption value="all">All Socials</SelectOption>
+              {currentEventSocialPlatforms.map((platform) => (
+                <SelectOption key={platform.platformKey} value={platform.platformKey}>
+                  {platform.label}
+                </SelectOption>
+              ))}
+            </Select>
           )}
-          <Popover open={exportOptionsOpen} onOpenChange={setExportOptionsOpen}>
+          <span className="mx-2 h-6 w-px bg-foreground/20" />
+          <Select value={sortBy} onValueChange={setSortBy} className="w-36">
+            <SelectOption value="createdAt">Created Date</SelectOption>
+            <SelectOption value="updatedAt">Updated Date</SelectOption>
+            <SelectOption value="name">Guest Name</SelectOption>
+            <SelectOption value="firstName">First Name</SelectOption>
+            <SelectOption value="lastName">Last Name</SelectOption>
+            <SelectOption value="approvalStatus">Approval Status</SelectOption>
+            <SelectOption value="attendanceStatus">Attendance Status</SelectOption>
+            <SelectOption value="ticketStatus">Ticket Status</SelectOption>
+            <SelectOption value="ticketViewedAt">Ticket Viewed</SelectOption>
+            <SelectOption value="listKey">List</SelectOption>
+            <SelectOption value="attendees">Attendees</SelectOption>
+            {currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true && (
+              <SelectOption value="invitedByName">Invited By</SelectOption>
+            )}
+            <SelectOption value="referredByName">Referred By</SelectOption>
+            {currentEvent?.primaryFieldConfig?.socialPlatforms?.map((platform) => (
+              <SelectOption
+                key={`sort-${platform.platformKey}`}
+                value={`social:${platform.platformKey}`}
+              >
+                {platform.label}
+              </SelectOption>
+            ))}
+          </Select>
+          <Select
+            value={sortOrder}
+            onValueChange={(value) => setSortOrder(value as "asc" | "desc")}
+            className="w-28"
+          >
+            <SelectOption value="desc">Descending</SelectOption>
+            <SelectOption value="asc">Ascending</SelectOption>
+          </Select>
+          <span className="mx-2 h-6 w-px bg-foreground/20" />
+          <Popover open={columnVisibilityOpen} onOpenChange={setColumnVisibilityOpen}>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Export CSV
+              <Button variant="outline" size="sm" className="h-8">
+                <Columns className="h-4 w-4 mr-2" />
+                Columns
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80" align="end">
               <div className="space-y-4">
                 <div>
-                  <h4 className="font-medium text-sm mb-2">Export Options</h4>
+                  <h4 className="font-medium text-sm mb-2">Show Columns</h4>
                 </div>
-
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Select Lists</label>
-                  <div className="space-y-2">
-                    {(listCredentials || []).map((cred) => (
-                      <div key={cred.listKey} className="flex items-center">
-                        <Checkbox
-                          id={`list-${cred.listKey}`}
-                          checked={selectedListsForExport.includes(cred.listKey)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedListsForExport([...selectedListsForExport, cred.listKey]);
-                            } else {
-                              setSelectedListsForExport(
-                                selectedListsForExport.filter((k) => k !== cred.listKey),
-                              );
-                            }
-                          }}
-                        />
-                        <label
-                          htmlFor={`list-${cred.listKey}`}
-                          className="ml-2 text-sm cursor-pointer"
-                        >
-                          {cred.listKey.toUpperCase()}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {getAllAvailableColumnIds()
+                    .filter(
+                      (columnId) =>
+                        columnId !== "select" && (!isReadOnly || columnId !== "actions"),
+                    )
+                    .map((columnId) => {
+                      const displayName = getColumnDisplayName(columnId);
+                      const isVisible = visibleColumns.has(columnId);
+                      return (
+                        <div key={columnId} className="flex items-center">
+                          <Checkbox
+                            id={`column-${columnId}`}
+                            checked={isVisible}
+                            onCheckedChange={(checked) => {
+                              handleColumnVisibilityChange({
+                                ...columnVisibility,
+                                [columnId]: checked === true,
+                              });
+                            }}
+                          />
+                          <label
+                            htmlFor={`column-${columnId}`}
+                            className="ml-2 text-sm cursor-pointer"
+                          >
+                            {displayName}
+                          </label>
+                        </div>
+                      );
+                    })}
                 </div>
-
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Select Statuses</label>
-                  <div className="space-y-2">
-                    {EXPORT_STATUS_OPTIONS.map((statusOption) => (
-                      <div key={statusOption} className="flex items-center">
-                        <Checkbox
-                          id={`status-${statusOption}`}
-                          checked={selectedStatusesForExport.includes(statusOption)}
-                          onCheckedChange={(checked) => {
-                            setSelectedStatusesForExport((previous) => {
-                              if (checked === true) {
-                                if (previous.includes(statusOption)) {
-                                  return previous;
-                                }
-                                const next = [...previous, statusOption];
-                                return EXPORT_STATUS_OPTIONS.filter((option) =>
-                                  next.includes(option),
-                                );
-                              }
-                              return previous.filter((option) => option !== statusOption);
-                            });
-                          }}
-                        />
-                        <label
-                          htmlFor={`status-${statusOption}`}
-                          className="ml-2 text-sm cursor-pointer"
-                        >
-                          {statusOption.charAt(0).toUpperCase() + statusOption.slice(1)}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Select Columns</label>
-                  <div className="space-y-2">
-                    <div className="flex items-center">
-                      <Checkbox
-                        id="col-attendees"
-                        checked={includeAttendees}
-                        onCheckedChange={(checked) => setIncludeAttendees(checked === true)}
-                      />
-                      <label htmlFor="col-attendees" className="ml-2 text-sm cursor-pointer">
-                        Attendees
-                      </label>
-                    </div>
-                    <div className="flex items-center">
-                      <Checkbox
-                        id="col-note"
-                        checked={includeNote}
-                        onCheckedChange={(checked) => setIncludeNote(checked === true)}
-                      />
-                      <label htmlFor="col-note" className="ml-2 text-sm cursor-pointer">
-                        Note
-                      </label>
-                    </div>
-                    <div className="flex items-center">
-                      <Checkbox
-                        id="col-phone"
-                        checked={includePhone}
-                        onCheckedChange={(checked) => setIncludePhone(checked === true)}
-                      />
-                      <label htmlFor="col-phone" className="ml-2 text-sm cursor-pointer">
-                        Phone
-                      </label>
-                    </div>
-                    <div className="flex items-center">
-                      <Checkbox
-                        id="col-custom"
-                        checked={includeCustomFields}
-                        onCheckedChange={(checked) => setIncludeCustomFields(checked === true)}
-                      />
-                      <label htmlFor="col-custom" className="ml-2 text-sm cursor-pointer">
-                        Custom Fields
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={async () => {
-                    const exported = await handleExportCsv();
-                    if (exported) {
-                      setExportOptionsOpen(false);
-                    }
-                  }}
-                  disabled={
-                    isLoading ||
-                    isExportingCsv ||
-                    selectedListsForExport.length === 0 ||
-                    selectedStatusesForExport.length === 0
-                  }
-                  className="w-full"
-                  size="sm"
-                >
-                  {isExportingCsv ? (
-                    <Spinner className="h-4 w-4 mr-2" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
-                  )}
-                  {isExportingCsv ? "Exporting..." : "Export"}
-                </Button>
               </div>
             </PopoverContent>
           </Popover>
-        </div>
-      </div>
-      {/* Event Selector */}
-      <div className="flex gap-2 items-center flex-wrap">
-        <span className="text-sm text-foreground/70">Event:</span>
-        <Select value={eventId} onValueChange={setEventId} className="max-w-sm">
-          {eventsSorted.map((event) => {
-            const inlineTitle = formatEventTitleInline(event);
-            return (
-              <SelectOption key={event._id} value={event._id}>
-                {new Date(event.eventDate).toLocaleDateString()} • {inlineTitle}
-              </SelectOption>
-            );
-          })}
-        </Select>
-      </div>
-
-      {/* Filters */}
-      <div className="flex gap-2 items-center flex-wrap">
-        <Input
-          className="h-8 max-w-xs text-sm"
-          placeholder="Search guest, social, invited by"
-          value={guestSearch}
-          onChange={(e) => setGuestSearch(e.target.value)}
-        />
-        <span className="mx-2 h-6 w-px bg-foreground/20" />
-        <Select
-          value={approvalFilter}
-          onValueChange={(value) => setApprovalFilter(value as ApprovalFilterOption)}
-          className="w-32"
-        >
-          <SelectOption value="all">All Approval</SelectOption>
-          {uniqueApprovalStatuses.map((status) => (
-            <SelectOption key={status} value={status}>
-              {status.charAt(0).toUpperCase() + status.slice(1)}
-            </SelectOption>
-          ))}
-        </Select>
-        <Select value={listFilter} onValueChange={setListFilter} className="w-32">
-          <SelectOption value="all">All Lists</SelectOption>
-          {uniqueListKeys.map((listKey) => (
-            <SelectOption key={listKey} value={listKey}>
-              {listKey.toUpperCase()}
-            </SelectOption>
-          ))}
-        </Select>
-        <Select value={redemptionFilter} onValueChange={setRedemptionFilter} className="w-36">
-          <SelectOption value="all">All Tickets</SelectOption>
-          <SelectOption value="issued">Issued</SelectOption>
-          <SelectOption value="redeemed">Redeemed</SelectOption>
-          <SelectOption value="disabled">Disabled</SelectOption>
-          <SelectOption value="not-issued">None</SelectOption>
-        </Select>
-        {shouldShowSocialPlatformFilter && (
-          <Select
-            value={socialPlatformFilter}
-            onValueChange={setSocialPlatformFilter}
-            className="w-36"
-          >
-            <SelectOption value="all">All Socials</SelectOption>
-            {currentEventSocialPlatforms.map((platform) => (
-              <SelectOption key={platform.platformKey} value={platform.platformKey}>
-                {platform.label}
-              </SelectOption>
-            ))}
-          </Select>
-        )}
-        <span className="mx-2 h-6 w-px bg-foreground/20" />
-        <Select value={sortBy} onValueChange={setSortBy} className="w-36">
-          <SelectOption value="createdAt">Created Date</SelectOption>
-          <SelectOption value="updatedAt">Updated Date</SelectOption>
-          <SelectOption value="name">Guest Name</SelectOption>
-          <SelectOption value="firstName">First Name</SelectOption>
-          <SelectOption value="lastName">Last Name</SelectOption>
-          <SelectOption value="approvalStatus">Approval Status</SelectOption>
-          <SelectOption value="attendanceStatus">Attendance Status</SelectOption>
-          <SelectOption value="ticketStatus">Ticket Status</SelectOption>
-          <SelectOption value="ticketViewedAt">Ticket Viewed</SelectOption>
-          <SelectOption value="listKey">List</SelectOption>
-          <SelectOption value="attendees">Attendees</SelectOption>
-          {currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true && (
-            <SelectOption value="invitedByName">Invited By</SelectOption>
-          )}
-          <SelectOption value="referredByName">Referred By</SelectOption>
-          {currentEvent?.primaryFieldConfig?.socialPlatforms?.map((platform) => (
-            <SelectOption
-              key={`sort-${platform.platformKey}`}
-              value={`social:${platform.platformKey}`}
-            >
-              {platform.label}
-            </SelectOption>
-          ))}
-        </Select>
-        <Select
-          value={sortOrder}
-          onValueChange={(value) => setSortOrder(value as "asc" | "desc")}
-          className="w-28"
-        >
-          <SelectOption value="desc">Descending</SelectOption>
-          <SelectOption value="asc">Ascending</SelectOption>
-        </Select>
-        <span className="mx-2 h-6 w-px bg-foreground/20" />
-        <Popover open={columnVisibilityOpen} onOpenChange={setColumnVisibilityOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8">
-              <Columns className="h-4 w-4 mr-2" />
-              Columns
+          {hasActiveFilters && (
+            <Button size="sm" variant="outline" onClick={clearAllFilters} className="text-xs">
+              Clear All
             </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80" align="end">
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-medium text-sm mb-2">Show Columns</h4>
+          )}
+        </div>
+
+        {/* Active Filters Display */}
+        {hasActiveFilters && (
+          <div className="flex gap-2 items-center flex-wrap">
+            <span className="text-sm text-foreground/70">Active filters:</span>
+            {guestSearch.trim() !== "" && (
+              <Badge variant="secondary" className="gap-1">
+                Search: &ldquo;{guestSearch}&rdquo;
+                <button
+                  onClick={() => setGuestSearch("")}
+                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+            {approvalFilter !== "all" && (
+              <Badge variant="secondary" className="gap-1">
+                Approval: {approvalFilter.charAt(0).toUpperCase() + approvalFilter.slice(1)}
+                <button
+                  onClick={() => setApprovalFilter("all")}
+                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+            {listFilter !== "all" && (
+              <Badge variant="secondary" className="gap-1">
+                List: {listFilter.toUpperCase()}
+                <button
+                  onClick={() => setListFilter("all")}
+                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+            {redemptionFilter !== "all" && (
+              <Badge variant="secondary" className="gap-1">
+                Ticket:{" "}
+                {redemptionFilter === "not-issued"
+                  ? "None"
+                  : redemptionFilter.charAt(0).toUpperCase() + redemptionFilter.slice(1)}
+                <button
+                  onClick={() => setRedemptionFilter("all")}
+                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+            {shouldShowSocialPlatformFilter && socialPlatformFilter !== "all" && (
+              <Badge variant="secondary" className="gap-1">
+                Social:{" "}
+                {currentEventSocialPlatforms.find(
+                  (platform) => platform.platformKey === socialPlatformFilter,
+                )?.label ?? socialPlatformFilter}
+                <button
+                  onClick={() => setSocialPlatformFilter("all")}
+                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+            <span className="text-xs text-foreground/60">
+              (Showing {rsvps.length} RSVPs on this page)
+            </span>
+          </div>
+        )}
+
+        {/* Bulk Actions Bar — hidden during a "select" paint drag (to avoid a jumpy bar as rows
+          are added). During a "deselect" paint drag the bar stays mounted even if the count
+          briefly hits zero, so it doesn't flicker out under the user's pointer. */}
+        {!isReadOnly &&
+          selectionDragMode !== "select" &&
+          (selectionDragMode === "deselect" || selectedRows.size > 0) && (
+            <div className="flex items-center justify-between bg-muted/50 border rounded-md p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{selectedRows.size} selected</span>
+                <Button size="sm" variant="outline" onClick={() => setSelectedRows(new Set())}>
+                  Clear selection
+                </Button>
               </div>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {getAllAvailableColumnIds()
-                  .filter(
-                    (columnId) => columnId !== "select" && (!isReadOnly || columnId !== "actions"),
-                  )
-                  .map((columnId) => {
-                    const displayName = getColumnDisplayName(columnId);
-                    const isVisible = visibleColumns.has(columnId);
-                    return (
-                      <div key={columnId} className="flex items-center">
-                        <Checkbox
-                          id={`column-${columnId}`}
-                          checked={isVisible}
-                          onCheckedChange={(checked) => {
-                            handleColumnVisibilityChange({
-                              ...columnVisibility,
-                              [columnId]: checked === true,
-                            });
-                          }}
-                        />
-                        <label
-                          htmlFor={`column-${columnId}`}
-                          className="ml-2 text-sm cursor-pointer"
+              <div className="flex items-center gap-2">
+                <ContextMenu>
+                  <ContextMenuTrigger asChild>
+                    <div className="inline-block">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={(e) => {
+                          // Programmatically trigger context menu on left click
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const contextMenuEvent = new MouseEvent("contextmenu", {
+                            bubbles: true,
+                            clientX: rect.left,
+                            clientY: rect.bottom,
+                          });
+                          e.currentTarget.dispatchEvent(contextMenuEvent);
+                        }}
+                      >
+                        <span className="text-lg leading-none">⋯</span>
+                      </Button>
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="w-56">
+                    <ContextMenuSub>
+                      <ContextMenuSubTrigger>Change List</ContextMenuSubTrigger>
+                      <ContextMenuSubContent className="w-48">
+                        {(listCredentials?.map((cred) => cred.listKey) || []).map((listKey) => (
+                          <ContextMenuItem
+                            key={listKey}
+                            onSelect={() => handleBulkListChange(listKey)}
+                          >
+                            {listKey.toUpperCase()}
+                          </ContextMenuItem>
+                        ))}
+                      </ContextMenuSubContent>
+                    </ContextMenuSub>
+                    <ContextMenuSub>
+                      <ContextMenuSubTrigger>Change Approval</ContextMenuSubTrigger>
+                      <ContextMenuSubContent className="w-48">
+                        <ContextMenuItem onSelect={() => handleBulkApprovalChange("pending")}>
+                          <span className="text-amber-700">Pending</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => handleBulkApprovalChange("approved")}>
+                          <span className="text-green-700">Approved</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => handleBulkApprovalChange("denied")}>
+                          <span className="text-red-700">Denied</span>
+                        </ContextMenuItem>
+                      </ContextMenuSubContent>
+                    </ContextMenuSub>
+                    <ContextMenuSub>
+                      <ContextMenuSubTrigger>Change Attendance</ContextMenuSubTrigger>
+                      <ContextMenuSubContent className="w-48">
+                        <ContextMenuItem onSelect={() => handleBulkAttendanceStatusChange("yes")}>
+                          <span className="text-green-700">Yes</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => handleBulkAttendanceStatusChange("maybe")}>
+                          <span className="text-amber-700">Maybe</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => handleBulkAttendanceStatusChange("no")}>
+                          <span className="text-red-700">No</span>
+                        </ContextMenuItem>
+                      </ContextMenuSubContent>
+                    </ContextMenuSub>
+                    <ContextMenuSub>
+                      <ContextMenuSubTrigger>Change Ticket</ContextMenuSubTrigger>
+                      <ContextMenuSubContent className="w-48">
+                        <ContextMenuItem
+                          onSelect={() => handleBulkTicketStatusChange("not-issued")}
                         >
-                          {displayName}
-                        </label>
-                      </div>
-                    );
-                  })}
+                          <span className="text-gray-700">None</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => handleBulkTicketStatusChange("issued")}>
+                          <span className="text-purple-700">Issued</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => handleBulkTicketStatusChange("disabled")}>
+                          <span className="text-red-700">Disabled</span>
+                        </ContextMenuItem>
+                      </ContextMenuSubContent>
+                    </ContextMenuSub>
+                    <ContextMenuSeparator />
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <ContextMenuItem variant="destructive" onSelect={(e) => e.preventDefault()}>
+                          Delete Selected
+                        </ContextMenuItem>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Selected RSVPs</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete {selectedRows.size} selected RSVPs? This
+                            will permanently remove the RSVPs, any associated ticket/redemption
+                            codes, and approval history. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleBulkDelete}
+                            className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                          >
+                            Delete {selectedRows.size} RSVPs
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </ContextMenuContent>
+                </ContextMenu>
               </div>
             </div>
-          </PopoverContent>
-        </Popover>
-        {hasActiveFilters && (
-          <Button size="sm" variant="outline" onClick={clearAllFilters} className="text-xs">
-            Clear All
-          </Button>
-        )}
-      </div>
+          )}
 
-      {/* Active Filters Display */}
-      {hasActiveFilters && (
-        <div className="flex gap-2 items-center flex-wrap">
-          <span className="text-sm text-foreground/70">Active filters:</span>
-          {guestSearch.trim() !== "" && (
-            <Badge variant="secondary" className="gap-1">
-              Search: &ldquo;{guestSearch}&rdquo;
-              <button
-                onClick={() => setGuestSearch("")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          {approvalFilter !== "all" && (
-            <Badge variant="secondary" className="gap-1">
-              Approval: {approvalFilter.charAt(0).toUpperCase() + approvalFilter.slice(1)}
-              <button
-                onClick={() => setApprovalFilter("all")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          {listFilter !== "all" && (
-            <Badge variant="secondary" className="gap-1">
-              List: {listFilter.toUpperCase()}
-              <button
-                onClick={() => setListFilter("all")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          {redemptionFilter !== "all" && (
-            <Badge variant="secondary" className="gap-1">
-              Ticket:{" "}
-              {redemptionFilter === "not-issued"
-                ? "None"
-                : redemptionFilter.charAt(0).toUpperCase() + redemptionFilter.slice(1)}
-              <button
-                onClick={() => setRedemptionFilter("all")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          {shouldShowSocialPlatformFilter && socialPlatformFilter !== "all" && (
-            <Badge variant="secondary" className="gap-1">
-              Social:{" "}
-              {currentEventSocialPlatforms.find(
-                (platform) => platform.platformKey === socialPlatformFilter,
-              )?.label ?? socialPlatformFilter}
-              <button
-                onClick={() => setSocialPlatformFilter("all")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          <span className="text-xs text-foreground/60">
-            (Showing {rsvps.length} RSVPs on this page)
-          </span>
-        </div>
-      )}
-
-      {/* Bulk Actions Bar */}
-      {!isReadOnly && selectedRows.size > 0 && (
-        <div className="flex items-center justify-between bg-muted/50 border rounded-md p-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{selectedRows.size} selected</span>
-            <Button size="sm" variant="outline" onClick={() => setSelectedRows(new Set())}>
-              Clear selection
-            </Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <ContextMenu>
-              <ContextMenuTrigger asChild>
-                <div className="inline-block">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={(e) => {
-                      // Programmatically trigger context menu on left click
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const contextMenuEvent = new MouseEvent("contextmenu", {
-                        bubbles: true,
-                        clientX: rect.left,
-                        clientY: rect.bottom,
-                      });
-                      e.currentTarget.dispatchEvent(contextMenuEvent);
+        {isLoading ? (
+          <TableSkeleton rows={10} columns={8} />
+        ) : (
+          <div ref={setTableContainerElement} className="w-full max-w-full min-w-0 overflow-x-auto">
+            <table className="text-sm" style={{ tableLayout: "fixed", width: tableDisplayWidth }}>
+              <colgroup>
+                {table.getVisibleLeafColumns().map((column) => (
+                  <col
+                    key={column.id}
+                    style={{
+                      width: column.getSize(),
+                      minWidth: column.columnDef.minSize,
+                      maxWidth: column.columnDef.maxSize,
                     }}
-                  >
-                    <span className="text-lg leading-none">⋯</span>
-                  </Button>
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent className="w-56">
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>Change List</ContextMenuSubTrigger>
-                  <ContextMenuSubContent className="w-48">
-                    {(listCredentials?.map((cred) => cred.listKey) || []).map((listKey) => (
-                      <ContextMenuItem key={listKey} onSelect={() => handleBulkListChange(listKey)}>
-                        {listKey.toUpperCase()}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>Change Approval</ContextMenuSubTrigger>
-                  <ContextMenuSubContent className="w-48">
-                    <ContextMenuItem onSelect={() => handleBulkApprovalChange("pending")}>
-                      <span className="text-amber-700">Pending</span>
-                    </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => handleBulkApprovalChange("approved")}>
-                      <span className="text-green-700">Approved</span>
-                    </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => handleBulkApprovalChange("denied")}>
-                      <span className="text-red-700">Denied</span>
-                    </ContextMenuItem>
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>Change Attendance</ContextMenuSubTrigger>
-                  <ContextMenuSubContent className="w-48">
-                    <ContextMenuItem onSelect={() => handleBulkAttendanceStatusChange("yes")}>
-                      <span className="text-green-700">Yes</span>
-                    </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => handleBulkAttendanceStatusChange("maybe")}>
-                      <span className="text-amber-700">Maybe</span>
-                    </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => handleBulkAttendanceStatusChange("no")}>
-                      <span className="text-red-700">No</span>
-                    </ContextMenuItem>
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>Change Ticket</ContextMenuSubTrigger>
-                  <ContextMenuSubContent className="w-48">
-                    <ContextMenuItem onSelect={() => handleBulkTicketStatusChange("not-issued")}>
-                      <span className="text-gray-700">None</span>
-                    </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => handleBulkTicketStatusChange("issued")}>
-                      <span className="text-purple-700">Issued</span>
-                    </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => handleBulkTicketStatusChange("disabled")}>
-                      <span className="text-red-700">Disabled</span>
-                    </ContextMenuItem>
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-                <ContextMenuSeparator />
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <ContextMenuItem variant="destructive" onSelect={(e) => e.preventDefault()}>
-                      Delete Selected
-                    </ContextMenuItem>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete Selected RSVPs</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Are you sure you want to delete {selectedRows.size} selected RSVPs? This
-                        will permanently remove the RSVPs, any associated ticket/redemption codes,
-                        and approval history. This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleBulkDelete}
-                        className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
-                      >
-                        Delete {selectedRows.size} RSVPs
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </ContextMenuContent>
-            </ContextMenu>
-          </div>
-        </div>
-      )}
+                  />
+                ))}
+                {shouldRenderTableFillerColumn && (
+                  <col
+                    style={{
+                      width: tableFillerColumnWidth,
+                    }}
+                  />
+                )}
+              </colgroup>
+              <thead>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <tr key={headerGroup.id} className="text-left text-foreground/70">
+                    {headerGroup.headers.map((header) => {
+                      const columnIdentifier =
+                        header.column.id ??
+                        (hasStringAccessorKey(header.column.columnDef)
+                          ? header.column.columnDef.accessorKey
+                          : header.id);
+                      const sortingHandler = header.column.getCanSort()
+                        ? header.column.getToggleSortingHandler()
+                        : undefined;
+                      const isDragSourceEnabled = columnIdentifier !== "select";
+                      const columnMeta = header.column.columnDef.meta as
+                        | { label?: string }
+                        | undefined;
+                      const columnDisplayLabel =
+                        typeof header.column.columnDef.header === "string" &&
+                        header.column.columnDef.header.trim().length > 0
+                          ? header.column.columnDef.header
+                          : columnMeta?.label && columnMeta.label.trim().length > 0
+                            ? columnMeta.label
+                            : formatColumnIdentifier(columnIdentifier);
+                      const canResizeColumn = header.column.getCanResize();
+                      const shouldShowResizeHandle = shouldRenderRsvpTableResizeHandle({
+                        columnIdentifier,
+                        canResize: canResizeColumn,
+                      });
+                      const isColumnResizing = header.column.getIsResizing();
+                      const resizeHandler = header.getResizeHandler();
 
-      {isLoading ? (
-        <TableSkeleton rows={10} columns={8} />
-      ) : (
-        <div ref={setTableContainerElement} className="w-full max-w-full min-w-0 overflow-x-auto">
-          <table className="text-sm" style={{ tableLayout: "fixed", width: tableDisplayWidth }}>
-            <colgroup>
-              {table.getVisibleLeafColumns().map((column) => (
-                <col
-                  key={column.id}
-                  style={{
-                    width: column.getSize(),
-                    minWidth: column.columnDef.minSize,
-                    maxWidth: column.columnDef.maxSize,
-                  }}
-                />
-              ))}
-              {shouldRenderTableFillerColumn && (
-                <col
-                  style={{
-                    width: tableFillerColumnWidth,
-                  }}
-                />
-              )}
-            </colgroup>
-            <thead>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id} className="text-left text-foreground/70">
-                  {headerGroup.headers.map((header) => {
-                    const columnIdentifier =
-                      header.column.id ??
-                      (hasStringAccessorKey(header.column.columnDef)
-                        ? header.column.columnDef.accessorKey
-                        : header.id);
-                    const sortingHandler = header.column.getCanSort()
-                      ? header.column.getToggleSortingHandler()
-                      : undefined;
-                    const isDragSourceEnabled = columnIdentifier !== "select";
-                    const columnMeta = header.column.columnDef.meta as
-                      | { label?: string }
-                      | undefined;
-                    const columnDisplayLabel =
-                      typeof header.column.columnDef.header === "string" &&
-                      header.column.columnDef.header.trim().length > 0
-                        ? header.column.columnDef.header
-                        : columnMeta?.label && columnMeta.label.trim().length > 0
-                          ? columnMeta.label
-                          : formatColumnIdentifier(columnIdentifier);
-                    const canResizeColumn = header.column.getCanResize();
-                    const shouldShowResizeHandle = shouldRenderRsvpTableResizeHandle({
-                      columnIdentifier,
-                      canResize: canResizeColumn,
-                    });
-                    const isColumnResizing = header.column.getIsResizing();
-                    const resizeHandler = header.getResizeHandler();
-
-                    return (
-                      <th
-                        key={header.id}
-                        className={cn(
-                          "group relative select-none overflow-hidden border-b border-r border-foreground/10 py-1 pl-2 pr-4 last:border-r-0",
-                          isDraggingColumn ? "cursor-grabbing" : "cursor-pointer",
-                          dragHoverDetails?.columnId === columnIdentifier &&
-                            dragHoverDetails.position === "before" &&
-                            "border-l-2 border-l-foreground/40",
-                          dragHoverDetails?.columnId === columnIdentifier &&
-                            dragHoverDetails.position === "after" &&
-                            "border-r-2 border-r-foreground/40",
-                          draggedColumnIdentifier === columnIdentifier && "opacity-60",
-                        )}
-                        style={{
-                          width: header.getSize(),
-                          minWidth: header.column.columnDef.minSize,
-                          maxWidth: header.column.columnDef.maxSize,
-                        }}
-                        title={columnDisplayLabel}
-                        onDragOver={(event) => {
-                          event.preventDefault();
-                          handleColumnDragOver(event, columnIdentifier);
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          handleColumnDrop(event, columnIdentifier);
-                        }}
-                        onClick={(event) => {
-                          if (isDraggingColumn) {
+                      return (
+                        <th
+                          key={header.id}
+                          className={cn(
+                            "group relative select-none overflow-hidden border-b border-r border-foreground/10 py-1 pl-2 pr-4 last:border-r-0",
+                            isDraggingColumn ? "cursor-grabbing" : "cursor-pointer",
+                            dragHoverDetails?.columnId === columnIdentifier &&
+                              dragHoverDetails.position === "before" &&
+                              "border-l-2 border-l-foreground/40",
+                            dragHoverDetails?.columnId === columnIdentifier &&
+                              dragHoverDetails.position === "after" &&
+                              "border-r-2 border-r-foreground/40",
+                            draggedColumnIdentifier === columnIdentifier && "opacity-60",
+                          )}
+                          style={{
+                            width: header.getSize(),
+                            minWidth: header.column.columnDef.minSize,
+                            maxWidth: header.column.columnDef.maxSize,
+                          }}
+                          title={columnDisplayLabel}
+                          onDragOver={(event) => {
                             event.preventDefault();
-                            event.stopPropagation();
-                            return;
-                          }
+                            handleColumnDragOver(event, columnIdentifier);
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            handleColumnDrop(event, columnIdentifier);
+                          }}
+                          onClick={(event) => {
+                            if (isDraggingColumn) {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              return;
+                            }
 
-                          if (sortingHandler) {
-                            sortingHandler(event);
-                          }
-                        }}
-                      >
-                        <div
-                          className="flex min-w-0 items-center gap-1"
-                          draggable={isDragSourceEnabled}
-                          onDragStart={
-                            isDragSourceEnabled
-                              ? (event) => {
-                                  // Get the header element since we're dragging from a div
-                                  const headerElement = event.currentTarget.closest(
-                                    "th",
-                                  ) as HTMLTableHeaderCellElement | null;
-                                  if (!headerElement) return;
-
-                                  // Create a synthetic event with the header element as currentTarget
-                                  const syntheticEvent = {
-                                    ...event,
-                                    currentTarget: headerElement,
-                                  } as React.DragEvent<HTMLTableHeaderCellElement>;
-                                  handleColumnDragStart(
-                                    syntheticEvent,
-                                    columnIdentifier,
-                                    columnDisplayLabel,
-                                  );
-                                }
-                              : undefined
-                          }
-                          onDragEnd={handleColumnDragEnd}
+                            if (sortingHandler) {
+                              sortingHandler(event);
+                            }
+                          }}
                         >
-                          {isDragSourceEnabled && (
-                            <GripVertical
-                              aria-hidden="true"
+                          <div
+                            className="flex min-w-0 items-center gap-1"
+                            draggable={isDragSourceEnabled}
+                            onDragStart={
+                              isDragSourceEnabled
+                                ? (event) => {
+                                    // Get the header element since we're dragging from a div
+                                    const headerElement = event.currentTarget.closest(
+                                      "th",
+                                    ) as HTMLTableHeaderCellElement | null;
+                                    if (!headerElement) return;
+
+                                    // Create a synthetic event with the header element as currentTarget
+                                    const syntheticEvent = {
+                                      ...event,
+                                      currentTarget: headerElement,
+                                    } as React.DragEvent<HTMLTableHeaderCellElement>;
+                                    handleColumnDragStart(
+                                      syntheticEvent,
+                                      columnIdentifier,
+                                      columnDisplayLabel,
+                                    );
+                                  }
+                                : undefined
+                            }
+                            onDragEnd={handleColumnDragEnd}
+                          >
+                            {isDragSourceEnabled && (
+                              <GripVertical
+                                aria-hidden="true"
+                                className={cn(
+                                  "h-3 w-3 flex-shrink-0 text-muted-foreground transition-opacity",
+                                  "opacity-0 group-hover:opacity-100",
+                                )}
+                              />
+                            )}
+                            <div className="flex min-w-0 items-center gap-1 whitespace-nowrap">
+                              <span className="min-w-0 truncate">
+                                {flexRender(header.column.columnDef.header, header.getContext())}
+                              </span>
+                              {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ??
+                                null}
+                            </div>
+                          </div>
+                          {shouldShowResizeHandle && (
+                            <div
+                              role="separator"
+                              aria-label={`Resize ${columnDisplayLabel} column`}
+                              aria-orientation="vertical"
+                              data-testid={RSVP_TABLE_RESIZE_HANDLE_TEST_ID}
+                              draggable={false}
                               className={cn(
-                                "h-3 w-3 flex-shrink-0 text-muted-foreground transition-opacity",
-                                "opacity-0 group-hover:opacity-100",
+                                "absolute top-0 right-0 z-10 h-full w-3 translate-x-1/2 cursor-col-resize touch-none select-none",
+                                "after:absolute after:inset-y-1 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-foreground/20 after:transition-colors",
+                                "hover:after:bg-foreground/50",
+                                isColumnResizing && "after:bg-foreground/70",
                               )}
+                              onMouseDown={(resizeStartEvent) => {
+                                resizeStartEvent.preventDefault();
+                                resizeStartEvent.stopPropagation();
+                                resizeHandler(resizeStartEvent);
+                              }}
+                              onTouchStart={(resizeStartEvent) => {
+                                resizeStartEvent.preventDefault();
+                                resizeStartEvent.stopPropagation();
+                                resizeHandler(resizeStartEvent);
+                              }}
+                              onClick={(resizeClickEvent) => {
+                                resizeClickEvent.preventDefault();
+                                resizeClickEvent.stopPropagation();
+                              }}
+                              onDoubleClick={(resizeDoubleClickEvent) => {
+                                resizeDoubleClickEvent.preventDefault();
+                                resizeDoubleClickEvent.stopPropagation();
+                                header.column.resetSize();
+                              }}
+                              onDragStart={(resizeDragStartEvent) => {
+                                resizeDragStartEvent.preventDefault();
+                                resizeDragStartEvent.stopPropagation();
+                              }}
                             />
                           )}
-                          <div className="flex min-w-0 items-center gap-1 whitespace-nowrap">
-                            <span className="min-w-0 truncate">
-                              {flexRender(header.column.columnDef.header, header.getContext())}
-                            </span>
-                            {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ??
-                              null}
-                          </div>
-                        </div>
-                        {shouldShowResizeHandle && (
-                          <div
-                            role="separator"
-                            aria-label={`Resize ${columnDisplayLabel} column`}
-                            aria-orientation="vertical"
-                            data-testid={RSVP_TABLE_RESIZE_HANDLE_TEST_ID}
-                            draggable={false}
-                            className={cn(
-                              "absolute top-0 right-0 z-10 h-full w-3 translate-x-1/2 cursor-col-resize touch-none select-none",
-                              "after:absolute after:inset-y-1 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-foreground/20 after:transition-colors",
-                              "hover:after:bg-foreground/50",
-                              isColumnResizing && "after:bg-foreground/70",
-                            )}
-                            onMouseDown={(resizeStartEvent) => {
-                              resizeStartEvent.preventDefault();
-                              resizeStartEvent.stopPropagation();
-                              resizeHandler(resizeStartEvent);
-                            }}
-                            onTouchStart={(resizeStartEvent) => {
-                              resizeStartEvent.preventDefault();
-                              resizeStartEvent.stopPropagation();
-                              resizeHandler(resizeStartEvent);
-                            }}
-                            onClick={(resizeClickEvent) => {
-                              resizeClickEvent.preventDefault();
-                              resizeClickEvent.stopPropagation();
-                            }}
-                            onDoubleClick={(resizeDoubleClickEvent) => {
-                              resizeDoubleClickEvent.preventDefault();
-                              resizeDoubleClickEvent.stopPropagation();
-                              header.column.resetSize();
-                            }}
-                            onDragStart={(resizeDragStartEvent) => {
-                              resizeDragStartEvent.preventDefault();
-                              resizeDragStartEvent.stopPropagation();
-                            }}
-                          />
-                        )}
-                      </th>
-                    );
-                  })}
-                  {shouldRenderTableFillerColumn && (
-                    <th
-                      aria-hidden="true"
-                      className="border-b border-foreground/10 p-0"
-                      style={{ width: tableFillerColumnWidth }}
-                    />
-                  )}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map((row) => {
-                const rsvp = row.original;
-                const changes = pendingChanges[rsvp.id];
-                const hasChanges =
-                  changes &&
-                  (changes.currentApprovalStatus !== changes.originalApprovalStatus ||
-                    changes.currentTicketStatus !== changes.originalTicketStatus);
+                        </th>
+                      );
+                    })}
+                    {shouldRenderTableFillerColumn && (
+                      <th
+                        aria-hidden="true"
+                        className="border-b border-foreground/10 p-0"
+                        style={{ width: tableFillerColumnWidth }}
+                      />
+                    )}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.getRowModel().rows.map((row) => {
+                  const rsvp = row.original;
+                  const changes = pendingChanges[rsvp.id];
+                  const hasChanges =
+                    changes &&
+                    (changes.currentApprovalStatus !== changes.originalApprovalStatus ||
+                      changes.currentTicketStatus !== changes.originalTicketStatus);
 
-                const isSelected = selectedRows.has(rsvp.id);
+                  const isSelected = selectedRows.has(rsvp.id);
 
-                return (
-                  <ContextMenu key={row.id}>
-                    <ContextMenuTrigger asChild>
-                      <tr
-                        className={cn(
-                          "border-t border-foreground/10 transition-colors hover:bg-muted/50",
-                          hasChanges && "bg-yellow-50 border-yellow-200",
-                          isSelected &&
-                            "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800",
-                        )}
-                      >
-                        {row.getVisibleCells().map((cell) => {
-                          const columnIdentifier = cell.column.id;
-                          const canToggleRowFromCell = canToggleRsvpTableRowFromBodyCell({
-                            columnIdentifier,
-                            isReadOnly,
-                          });
-
-                          return (
+                  return (
+                    <ContextMenu key={row.id}>
+                      <ContextMenuTrigger asChild>
+                        <tr
+                          className={cn(
+                            "border-t border-foreground/10 transition-colors hover:bg-muted/50",
+                            hasChanges && "bg-yellow-50 border-yellow-200",
+                            isSelected &&
+                              "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800",
+                          )}
+                        >
+                          {row.getVisibleCells().map((cell) => {
+                            const columnIdentifier = cell.column.id;
+                            return (
+                              <td
+                                key={cell.id}
+                                className={getRsvpTableBodyCellClassName({
+                                  columnIdentifier,
+                                  isReadOnly,
+                                })}
+                                style={{
+                                  width: cell.column.getSize(),
+                                  minWidth: cell.column.columnDef.minSize,
+                                  maxWidth: cell.column.columnDef.maxSize,
+                                }}
+                              >
+                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                              </td>
+                            );
+                          })}
+                          {shouldRenderTableFillerColumn && (
                             <td
-                              key={cell.id}
-                              className={getRsvpTableBodyCellClassName({
-                                columnIdentifier,
-                                isReadOnly,
-                              })}
-                              style={{
-                                width: cell.column.getSize(),
-                                minWidth: cell.column.columnDef.minSize,
-                                maxWidth: cell.column.columnDef.maxSize,
-                              }}
-                              onClick={
-                                canToggleRowFromCell ? () => toggleSelectRow(rsvp.id) : undefined
-                              }
-                            >
-                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                            </td>
-                          );
-                        })}
-                        {shouldRenderTableFillerColumn && (
-                          <td
-                            aria-hidden="true"
-                            className="p-0"
-                            style={{ width: tableFillerColumnWidth }}
-                          />
-                        )}
-                      </tr>
-                    </ContextMenuTrigger>
-                    {renderRowContextMenuContent(rsvp)}
-                  </ContextMenu>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {!isLoading && rsvpsPaginated && (
-        <div className="flex items-center justify-between gap-3 pt-4 border-t">
-          <div className="flex items-center gap-4">
-            <div className="text-sm text-foreground/70">
-              {!rsvps || rsvps.length === 0 ? (
-                <span>No RSVPs found{hasActiveFilters && " (filtered)"}</span>
-              ) : (
-                <span>
-                  Showing {startItem}-{endItem} of {totalCount || "?"} RSVPs
-                  {hasActiveFilters && " (filtered)"}
-                </span>
-              )}
-            </div>
-            <Select
-              value={String(pageSize)}
-              onValueChange={(value) => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("pageSize", value);
-                router.replace(`${rsvpsPath}?${params.toString()}`, {
-                  scroll: false,
-                });
-                setCursor(null);
-                setCursorHistory([]);
-              }}
-            >
-              {[10, 20, 50, 100].map((number) => (
-                <SelectOption key={number} value={String(number)}>
-                  {number} per page
-                </SelectOption>
-              ))}
-            </Select>
+                              aria-hidden="true"
+                              className="p-0"
+                              style={{ width: tableFillerColumnWidth }}
+                            />
+                          )}
+                        </tr>
+                      </ContextMenuTrigger>
+                      {renderRowContextMenuContent(rsvp)}
+                    </ContextMenu>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-          <div className="flex items-center gap-4">
-            <Pagination className="justify-end">
-              <PaginationContent className="gap-1 sm:gap-2">
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={goToPreviousPage}
-                    className={cn(
-                      "h-8 w-8 sm:h-9 sm:w-auto sm:px-3",
-                      cursor === null && cursorHistory.length === 0
-                        ? "pointer-events-none opacity-50"
-                        : "cursor-pointer",
-                    )}
-                  />
-                </PaginationItem>
+        )}
 
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Page {currentPage}</span>
-                </div>
-
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={goToNextPage}
-                    className={cn(
-                      "h-8 w-8 sm:h-9 sm:w-auto sm:px-3",
-                      rsvpsPaginated?.isDone || !rsvpsPaginated?.nextCursor
-                        ? "pointer-events-none opacity-50"
-                        : "cursor-pointer",
-                    )}
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        </div>
-      )}
-
-      <AlertDialog
-        open={pendingDeletionCount > 0}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRsvpsPendingDeletion([]);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{pendingDeletionTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{pendingDeletionDescription}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmPendingDelete}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
-              disabled={deletionMutationIsPending}
-            >
-              {deletionMutationIsPending && <Spinner className="mr-1 h-3 w-3" />}
-              {pendingDeletionActionLabel}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Dialog open={showQR} onOpenChange={setShowQR}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Guest QR Code</DialogTitle>
-            <DialogDescription>
-              QR code for guest entry. Show this at the door for admission.
-            </DialogDescription>
-          </DialogHeader>
-          {qr && (
-            <div className="flex flex-col items-center gap-3 py-2">
-              <QRCode value={qr.url} size={200} />
-
-              {/* Status and List Key Info */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Status:</span>
-                  <span
-                    className={`inline-block rounded px-2 py-0.5 text-xs ${
-                      qr.status === "disabled"
-                        ? "bg-gray-200 text-gray-800"
-                        : qr.status === "redeemed"
-                          ? "bg-blue-100 text-blue-800"
-                          : qr.status === "issued"
-                            ? "bg-purple-100 text-purple-800"
-                            : "bg-foreground/10 text-foreground/80"
-                    }`}
-                  >
-                    {qr.status === "disabled"
-                      ? "Disabled"
-                      : qr.status === "redeemed"
-                        ? "Redeemed"
-                        : qr.status === "issued"
-                          ? "Issued"
-                          : "Unknown"}
+        {!isLoading && rsvpsPaginated && (
+          <div className="flex items-center justify-between gap-3 pt-4 border-t">
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-foreground/70">
+                {!rsvps || rsvps.length === 0 ? (
+                  <span>No RSVPs found{hasActiveFilters && " (filtered)"}</span>
+                ) : (
+                  <span>
+                    Showing {startItem}-{endItem} of {totalCount || "?"} RSVPs
+                    {hasActiveFilters && " (filtered)"}
                   </span>
-                </div>
-
-                {qr.listKey && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">List:</span>
-                    <span className="text-sm">{qr.listKey.toUpperCase()}</span>
-                  </div>
                 )}
               </div>
-
-              <div className="text-xs break-all text-center text-foreground/70">{qr.url}</div>
-
-              {qr.status === "disabled" && (
-                <div className="text-xs text-red-600 text-center font-medium">
-                  ⚠️ This QR code is disabled and cannot be redeemed
-                </div>
-              )}
-
-              {qr.status === "redeemed" && (
-                <div className="text-xs text-blue-600 text-center font-medium">
-                  ✅ This QR code has already been redeemed
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(qr.url);
-                    toast.success("Link copied");
-                  }}
-                >
-                  Copy link
-                </Button>
-                <Button size="sm" onClick={() => setShowQR(false)}>
-                  Close
-                </Button>
-              </div>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => {
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.set("pageSize", value);
+                  router.replace(`${rsvpsPath}?${params.toString()}`, {
+                    scroll: false,
+                  });
+                  setCursor(null);
+                  setCursorHistory([]);
+                }}
+              >
+                {[10, 20, 50, 100].map((number) => (
+                  <SelectOption key={number} value={String(number)}>
+                    {number} per page
+                  </SelectOption>
+                ))}
+              </Select>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+            <div className="flex items-center gap-4">
+              <Pagination className="justify-end">
+                <PaginationContent className="gap-1 sm:gap-2">
+                  <PaginationItem>
+                    <PaginationPrevious
+                      onClick={goToPreviousPage}
+                      className={cn(
+                        "h-8 w-8 sm:h-9 sm:w-auto sm:px-3",
+                        cursor === null && cursorHistory.length === 0
+                          ? "pointer-events-none opacity-50"
+                          : "cursor-pointer",
+                      )}
+                    />
+                  </PaginationItem>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Page {currentPage}</span>
+                  </div>
+
+                  <PaginationItem>
+                    <PaginationNext
+                      onClick={goToNextPage}
+                      className={cn(
+                        "h-8 w-8 sm:h-9 sm:w-auto sm:px-3",
+                        rsvpsPaginated?.isDone || !rsvpsPaginated?.nextCursor
+                          ? "pointer-events-none opacity-50"
+                          : "cursor-pointer",
+                      )}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          </div>
+        )}
+
+        <AlertDialog
+          open={pendingDeletionCount > 0}
+          onOpenChange={(open) => {
+            if (!open) {
+              setRsvpsPendingDeletion([]);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{pendingDeletionTitle}</AlertDialogTitle>
+              <AlertDialogDescription>{pendingDeletionDescription}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmPendingDelete}
+                className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                disabled={deletionMutationIsPending}
+              >
+                {deletionMutationIsPending && <Spinner className="mr-1 h-3 w-3" />}
+                {pendingDeletionActionLabel}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <Dialog open={showQR} onOpenChange={setShowQR}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Guest QR Code</DialogTitle>
+              <DialogDescription>
+                QR code for guest entry. Show this at the door for admission.
+              </DialogDescription>
+            </DialogHeader>
+            {qr && (
+              <div className="flex flex-col items-center gap-3 py-2">
+                <QRCode value={qr.url} size={200} />
+
+                {/* Status and List Key Info */}
+                <div className="flex flex-col items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Status:</span>
+                    <span
+                      className={`inline-block rounded px-2 py-0.5 text-xs ${
+                        qr.status === "disabled"
+                          ? "bg-gray-200 text-gray-800"
+                          : qr.status === "redeemed"
+                            ? "bg-blue-100 text-blue-800"
+                            : qr.status === "issued"
+                              ? "bg-purple-100 text-purple-800"
+                              : "bg-foreground/10 text-foreground/80"
+                      }`}
+                    >
+                      {qr.status === "disabled"
+                        ? "Disabled"
+                        : qr.status === "redeemed"
+                          ? "Redeemed"
+                          : qr.status === "issued"
+                            ? "Issued"
+                            : "Unknown"}
+                    </span>
+                  </div>
+
+                  {qr.listKey && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">List:</span>
+                      <span className="text-sm">{qr.listKey.toUpperCase()}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-xs break-all text-center text-foreground/70">{qr.url}</div>
+
+                {qr.status === "disabled" && (
+                  <div className="text-xs text-red-600 text-center font-medium">
+                    ⚠️ This QR code is disabled and cannot be redeemed
+                  </div>
+                )}
+
+                {qr.status === "redeemed" && (
+                  <div className="text-xs text-blue-600 text-center font-medium">
+                    ✅ This QR code has already been redeemed
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(qr.url);
+                      toast.success("Link copied");
+                    }}
+                  >
+                    Copy link
+                  </Button>
+                  <Button size="sm" onClick={() => setShowQR(false)}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {currentEvent && !isReadOnly && (
+          <EditEventDialog
+            event={currentEvent}
+            open={showEditEventDialog}
+            onOpenChange={setShowEditEventDialog}
+            showTrigger={false}
+          />
+        )}
+
+        <AlertDialog open={showDeleteEventDialog} onOpenChange={setShowDeleteEventDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this event?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently remove the event and its list credentials. RSVPs will be
+                preserved but can no longer be redeemed.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(deleteEventClick) => {
+                  deleteEventClick.preventDefault();
+                  void handleDeleteCurrentEvent();
+                }}
+                className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              >
+                Delete Event
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </RsvpTableContext.Provider>
   );
 }

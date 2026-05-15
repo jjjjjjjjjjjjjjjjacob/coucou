@@ -3,6 +3,14 @@
  * Handles bulk SMS campaigns for events
  */
 
+import {
+  applyMessageTemplateVariables,
+  formatEventDateForMessageTemplate,
+  formatEventTitleForMessageTemplate,
+  messageContainsMultiEventRestrictedVariables,
+  messageContainsQrCodeUrlVariable,
+  resolveMessageTemplateFirstName,
+} from "@coucou/sdk/shared/message-template";
 import type { UserIdentity } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -57,11 +65,6 @@ const recipientHistoryFilterValidator = v.optional(
   }),
 );
 
-const MULTI_EVENT_RESTRICTED_VARIABLE_PATTERN =
-  /\{\{\s*(eventName|eventDate|eventLocation|qrCodeUrl)\s*\}\}/;
-const QR_CODE_URL_VARIABLE_PATTERN = /\{\{\s*qrCodeUrl\s*\}\}/;
-const QR_CODE_URL_VARIABLE_REPLACEMENT_PATTERN = /\{\{\s*qrCodeUrl\s*\}\}/g;
-
 const getUniqueIds = <T extends string>(ids: T[]): T[] => Array.from(new Set(ids));
 
 const getBlastTargetEventIds = (
@@ -82,12 +85,6 @@ const normalizeTargetEventIds = (args: {
     args.targetEventIds && args.targetEventIds.length > 0 ? args.targetEventIds : [args.eventId];
   return getUniqueIds([args.eventId, ...rawTargetEventIds]);
 };
-
-const messageContainsMultiEventRestrictedVariables = (message: string): boolean =>
-  MULTI_EVENT_RESTRICTED_VARIABLE_PATTERN.test(message);
-
-const messageContainsQrCodeUrlVariable = (message: string): boolean =>
-  QR_CODE_URL_VARIABLE_PATTERN.test(message);
 
 const resolveEffectiveIncludeQrCodes = (args: {
   message: string;
@@ -258,7 +255,7 @@ async function ensureEventsInSiteScope(
 }
 
 function eventTitleMap(events: Doc<"events">[]): Map<Id<"events">, string> {
-  return new Map(events.map((event) => [event._id, formatEventTitleInlineForSms(event)]));
+  return new Map(events.map((event) => [event._id, formatEventTitleForMessageTemplate(event)]));
 }
 
 function blastTargetsEvent(blast: Doc<"textBlasts">, eventId: Id<"events">): boolean {
@@ -541,51 +538,12 @@ type TemplateVariables = {
 
 const FIRST_NAME_FALLBACK = "there";
 
-const formatEventDateForSms = (timestamp: number, timezone?: string): string => {
-  if (!Number.isFinite(timestamp)) {
-    return "";
-  }
-  const date = new Date(timestamp);
-  return date
-    .toLocaleDateString("en-US", {
-      month: "2-digit",
-      day: "2-digit",
-      year: "numeric",
-      timeZone: timezone ?? "UTC",
-    })
-    .replace(/\//g, ".");
-};
-
-const applyTemplateVariables = (template: string, variables: TemplateVariables): string => {
-  return template
-    .replace(/\{\{firstName\}\}/g, variables.firstName)
-    .replace(/\{\{eventName\}\}/g, variables.eventName)
-    .replace(/\{\{eventDate\}\}/g, variables.eventDate)
-    .replace(/\{\{eventLocation\}\}/g, variables.eventLocation)
-    .replace(QR_CODE_URL_VARIABLE_REPLACEMENT_PATTERN, variables.qrCodeUrl || "");
-};
-
 const resolveRecipientFirstName = (recipient: BlastRecipient): string => {
-  const userFirstName = recipient.firstName?.trim();
-  if (userFirstName) return userFirstName;
-
-  const derivedFromUserName = recipient.userName?.trim().split(/\s+/)[0];
-  if (derivedFromUserName) return derivedFromUserName;
-
-  return FIRST_NAME_FALLBACK;
-};
-
-const formatEventTitleInlineForSms = (
-  event: Pick<Doc<"events">, "name" | "secondaryTitle"> | null,
-): string => {
-  const name = event?.name?.trim();
-  const secondaryTitle = event?.secondaryTitle?.trim();
-  if (name && secondaryTitle) {
-    return `${name}: ${secondaryTitle}`;
-  }
-  if (name) return name;
-  if (secondaryTitle) return secondaryTitle;
-  return "Event";
+  return resolveMessageTemplateFirstName({
+    firstName: recipient.firstName,
+    fullName: recipient.userName,
+    fallback: FIRST_NAME_FALLBACK,
+  });
 };
 
 type SelectionRecipient = {
@@ -854,8 +812,11 @@ async function createSmsRecipientsForBlast(args: {
   includeQrCodes: boolean;
 }): Promise<SmsRecipientPayload[]> {
   const templateBase: Omit<TemplateVariables, "firstName"> = {
-    eventName: formatEventTitleInlineForSms(args.primaryEvent),
-    eventDate: formatEventDateForSms(args.primaryEvent.eventDate, args.primaryEvent.eventTimezone),
+    eventName: formatEventTitleForMessageTemplate(args.primaryEvent),
+    eventDate: formatEventDateForMessageTemplate(
+      args.primaryEvent.eventDate,
+      args.primaryEvent.eventTimezone,
+    ),
     eventLocation: args.primaryEvent.location?.trim() ?? "",
   };
   const baseUrl = getEventBaseUrl(args.primaryEvent);
@@ -889,7 +850,7 @@ async function createSmsRecipientsForBlast(args: {
       }
     }
 
-    const personalizedMessage = applyTemplateVariables(args.message, {
+    const personalizedMessage = applyMessageTemplateVariables(args.message, {
       ...templateBase,
       firstName: resolveRecipientFirstName(recipient),
       qrCodeUrl: redemptionLink || "",

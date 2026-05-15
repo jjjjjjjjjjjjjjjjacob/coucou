@@ -4,6 +4,7 @@ export * from "./shared/approval-messages";
 export * from "./shared/event-availability";
 export * from "./shared/event-branding";
 export * from "./shared/event-routes";
+export * from "./shared/message-template";
 export * from "./shared/primary-fields";
 export * from "./shared/qr-code-colors";
 export * from "./site-config";

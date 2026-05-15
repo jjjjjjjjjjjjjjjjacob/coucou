@@ -7,6 +7,7 @@ import { Eye, MessageSquare, Save, Search, Send, Users, X } from "lucide-react";
 import posthog from "posthog-js";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { MessageTemplateVariableButtons } from "@/components/message-template-variable-buttons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,9 +54,12 @@ import {
   recipientHistoryFilterIsConfigured,
 } from "@/lib/text-blast-filters";
 import {
+  applyMessageTemplateVariables,
+  formatEventDateForMessageTemplate,
+  formatEventTitleForMessageTemplate,
+  MESSAGE_TEMPLATE_VARIABLES,
   messageContainsMultiEventRestrictedVariables,
   messageContainsQrCodeUrlVariable,
-  replaceQrCodeUrlVariable,
   resolveEffectiveIncludeQrCodes,
 } from "@/lib/text-blast-message";
 import type { Event, TextBlast } from "@/lib/types";
@@ -80,6 +84,7 @@ interface FormData {
 
 const SMS_CHAR_LIMIT = 160;
 const SMS_CONCAT_LIMIT = 320;
+type MessageTemplateVariableName = (typeof MESSAGE_TEMPLATE_VARIABLES)[number];
 type SendBlastResult = {
   success: boolean;
   sentCount?: number;
@@ -353,11 +358,12 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
   // Template variables for message preview
   const sampleData = {
     firstName: "John",
-    eventName: primaryEvent?.name || "Sample Event",
+    eventName: primaryEvent ? formatEventTitleForMessageTemplate(primaryEvent) : "Sample Event",
     eventDate: primaryEvent
-      ? new Date(primaryEvent.eventDate).toLocaleDateString()
-      : "Dec 31, 2024",
+      ? formatEventDateForMessageTemplate(primaryEvent.eventDate, primaryEvent.eventTimezone)
+      : "12.31.2024",
     eventLocation: primaryEvent?.location || "Sample Location",
+    qrCodeUrl: "https://example.com/ticket",
   };
 
   const hasMultiEventRestrictedVariables =
@@ -369,15 +375,19 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
     includeQrCodes: formData.includeQrCodes,
     message: formData.message,
   });
+  const availableMessageTemplateVariables: readonly MessageTemplateVariableName[] =
+    isMultiEventBlast ? ["firstName"] : MESSAGE_TEMPLATE_VARIABLES;
+  const qrImageCheckboxDisabled = !primaryEventId || isMultiEventBlast || qrCodesAreForcedByMessage;
+  const qrImageCheckboxChecked = Boolean(primaryEventId) && effectiveIncludeQrCodes;
+  const qrImageHelperText = !primaryEventId
+    ? "Select one event to enable QR code image attachments."
+    : isMultiEventBlast
+      ? "QR attachments are only available for single-event blasts."
+      : qrCodesAreForcedByMessage
+        ? "The {{qrCodeUrl}} variable automatically enables QR code image delivery for recipients with redemption codes."
+        : "When enabled, QR code images will be generated and sent as MMS attachments for recipients with redemption codes. Use {{qrCodeUrl}} in your message to include the QR code URL in the text.";
 
-  const previewMessage = replaceQrCodeUrlVariable(
-    formData.message
-      .replace(/\{\{firstName\}\}/g, sampleData.firstName)
-      .replace(/\{\{eventName\}\}/g, sampleData.eventName)
-      .replace(/\{\{eventDate\}\}/g, sampleData.eventDate)
-      .replace(/\{\{eventLocation\}\}/g, sampleData.eventLocation),
-    "https://example.com/ticket",
-  );
+  const previewMessage = applyMessageTemplateVariables(formData.message, sampleData);
 
   const handleEventToggle = (eventId: Id<"events">, checked: boolean) => {
     setFormData((prev) => {
@@ -754,11 +764,16 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                 rows={6}
                 className={isMessageTooLong ? "border-destructive" : ""}
               />
-              <div className="text-xs text-muted-foreground">
-                {isMultiEventBlast
-                  ? "Available variable: {{firstName}}"
-                  : "Available variables: {{firstName}}, {{eventName}}, {{eventDate}}, {{eventLocation}}, {{qrCodeUrl}}"}
-              </div>
+              <MessageTemplateVariableButtons
+                message={formData.message}
+                variableNames={availableMessageTemplateVariables}
+                onMessageChange={(message) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    message,
+                  }))
+                }
+              />
               {hasMultiEventRestrictedVariables && (
                 <div className="text-xs text-destructive">
                   Multi-event blasts cannot use event-specific variables.
@@ -769,6 +784,27 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                   Message is too long. Please keep it under {SMS_CONCAT_LIMIT} characters.
                 </div>
               )}
+            </div>
+
+            <div className="space-y-2 rounded-md border border-border/70 p-3">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="includeQrCodes"
+                  checked={qrImageCheckboxChecked}
+                  disabled={qrImageCheckboxDisabled}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      includeQrCodes:
+                        primaryEventId && !isMultiEventBlast ? checked === true : false,
+                    }))
+                  }
+                />
+                <Label htmlFor="includeQrCodes" className="cursor-pointer">
+                  Include QR Code Images
+                </Label>
+              </div>
+              <div className="text-xs text-muted-foreground">{qrImageHelperText}</div>
             </div>
 
             {formData.message && (
@@ -969,32 +1005,6 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                   Select at least one tracked text blast.
                 </div>
               )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="includeQrCodes"
-                  checked={effectiveIncludeQrCodes}
-                  disabled={isMultiEventBlast || qrCodesAreForcedByMessage}
-                  onCheckedChange={(checked) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      includeQrCodes: isMultiEventBlast ? false : checked === true,
-                    }))
-                  }
-                />
-                <Label htmlFor="includeQrCodes" className="cursor-pointer">
-                  Include QR Code Images
-                </Label>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {isMultiEventBlast
-                  ? "QR attachments are only available for single-event blasts."
-                  : qrCodesAreForcedByMessage
-                    ? "The {{qrCodeUrl}} variable automatically enables QR code image delivery for recipients with redemption codes."
-                    : "When enabled, QR code images will be generated and sent as MMS attachments for recipients with redemption codes. Use {{qrCodeUrl}} in your message to include the QR code URL in the text."}
-              </div>
             </div>
 
             <div className="space-y-2">

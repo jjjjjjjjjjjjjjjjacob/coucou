@@ -40,6 +40,8 @@ interface RsvpTableWidthOptions {
   columnTotalWidth: number;
 }
 
+type RsvpTableInteractiveTarget = EventTarget | null;
+
 interface RsvpContextActionTargetOptions<TargetRow extends { id: string }> {
   contextRow: TargetRow;
   rows: TargetRow[];
@@ -56,20 +58,30 @@ export const RSVP_SELECT_COLUMN_SIZING: RsvpSelectColumnSizing = {
   maxSize: 70,
 };
 
-const RSVP_ROW_SELECTION_EXCLUDED_COLUMN_IDS = new Set([
-  "select",
-  "listKey",
-  "approvalStatus",
-  "attendanceStatus",
-  "ticketStatus",
-  "actions",
-]);
+export const RSVP_ROW_SELECTION_COLUMN_ID = "select" as const;
 
 const RSVP_TABLE_COLUMN_MIN_WIDTH_FLOOR = 72;
 const RSVP_TABLE_HEADER_CHARACTER_WIDTH = 8;
 const RSVP_TABLE_HEADER_AFFORDANCE_WIDTH = 52;
 const RSVP_TABLE_BODY_HORIZONTAL_AFFORDANCE_WIDTH = 32;
 const RSVP_TABLE_BODY_CHARACTER_WIDTH = 8;
+const RSVP_TABLE_INTERACTIVE_TARGET_SELECTOR = [
+  "a[href]",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "[role='button']",
+  "[role='checkbox']",
+  "[role='combobox']",
+  "[role='menuitem']",
+  "[role='menuitemcheckbox']",
+  "[role='menuitemradio']",
+  "[data-slot='dropdown-menu-content']",
+  "[data-slot='dropdown-menu-item']",
+  "[data-slot='dropdown-menu-radio-item']",
+  "[data-rsvp-table-interactive='true']",
+].join(",");
 
 function getRsvpTableContentValueText(contentValue: RsvpTableContentValue): string {
   if (contentValue === null || contentValue === undefined) {
@@ -122,7 +134,17 @@ export function canToggleRsvpTableRowFromBodyCell({
   columnIdentifier,
   isReadOnly,
 }: RsvpTableBodyCellClassNameOptions): boolean {
-  return !isReadOnly && !RSVP_ROW_SELECTION_EXCLUDED_COLUMN_IDS.has(columnIdentifier);
+  return !isReadOnly && columnIdentifier === RSVP_ROW_SELECTION_COLUMN_ID;
+}
+
+export function isRsvpTableInteractiveEventTarget(
+  eventTarget: RsvpTableInteractiveTarget,
+): boolean {
+  return (
+    typeof Element !== "undefined" &&
+    eventTarget instanceof Element &&
+    eventTarget.closest(RSVP_TABLE_INTERACTIVE_TARGET_SELECTOR) !== null
+  );
 }
 
 export function getRsvpTableBodyCellClassName({
@@ -168,4 +190,19 @@ export function getRsvpContextActionTargets<TargetRow extends { id: string }>({
 
   const selectedRows = rows.filter((row) => selectedRowIds.has(row.id));
   return selectedRows.length > 1 ? selectedRows : [contextRow];
+}
+
+export function getRsvpSelectionRangeIds(
+  orderedRowIds: readonly string[],
+  anchorRowId: string,
+  focusRowId: string,
+): string[] {
+  const anchorIndex = orderedRowIds.indexOf(anchorRowId);
+  const focusIndex = orderedRowIds.indexOf(focusRowId);
+  if (anchorIndex === -1 || focusIndex === -1) {
+    return [];
+  }
+  const startIndex = Math.min(anchorIndex, focusIndex);
+  const endIndex = Math.max(anchorIndex, focusIndex);
+  return orderedRowIds.slice(startIndex, endIndex + 1);
 }
