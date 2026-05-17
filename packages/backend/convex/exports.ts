@@ -31,6 +31,8 @@ type ExportRsvpsCsvArgs = {
   includeNote?: boolean;
   includeCustomFields?: boolean;
   includePrimaryFields?: boolean;
+  includeSocialPlatformKeys?: string[];
+  includeInvitedBy?: boolean;
   includePhone?: boolean;
   exportTimestamp?: string;
 };
@@ -51,6 +53,8 @@ export const exportRsvpsCsv = action({
     includeNote: v.optional(v.boolean()),
     includeCustomFields: v.optional(v.boolean()),
     includePrimaryFields: v.optional(v.boolean()),
+    includeSocialPlatformKeys: v.optional(v.array(v.string())),
+    includeInvitedBy: v.optional(v.boolean()),
     includePhone: v.optional(v.boolean()),
     exportTimestamp: v.optional(v.string()),
   },
@@ -66,6 +70,8 @@ export const exportRsvpsCsv = action({
       includeNote = true,
       includeCustomFields = true,
       includePrimaryFields = true,
+      includeSocialPlatformKeys,
+      includeInvitedBy = true,
       includePhone = true,
       exportTimestamp,
     }: ExportRsvpsCsvArgs,
@@ -173,11 +179,18 @@ export const exportRsvpsCsv = action({
     const customFieldLabels = includeCustomFields
       ? (event.customFields ?? []).map((field) => field.label)
       : [];
+    const selectedSocialPlatformKeys = new Set(includeSocialPlatformKeys);
     const socialPlatforms = includePrimaryFields
-      ? (event.primaryFieldConfig?.socialPlatforms ?? [])
+      ? (event.primaryFieldConfig?.socialPlatforms ?? []).filter(
+          (platform) =>
+            includeSocialPlatformKeys === undefined ||
+            selectedSocialPlatformKeys.has(platform.platformKey),
+        )
       : [];
-    const includeInvitedBy =
-      includePrimaryFields && event.primaryFieldConfig?.invitedBy?.enabled === true;
+    const shouldIncludeInvitedBy =
+      includePrimaryFields &&
+      includeInvitedBy &&
+      event.primaryFieldConfig?.invitedBy?.enabled === true;
 
     const groupedByList = enrichedRsvps.reduce<Record<string, ExportRsvpRow[]>>(
       (accumulator, rsvp) => {
@@ -204,7 +217,7 @@ export const exportRsvpsCsv = action({
 
       const headerRow: string[] = ["Name"];
       if (includePhone) headerRow.push("Phone");
-      if (includeInvitedBy) {
+      if (shouldIncludeInvitedBy) {
         headerRow.push(event.primaryFieldConfig?.invitedBy?.label ?? "Invited By");
       }
       headerRow.push("Referred By");
@@ -218,7 +231,7 @@ export const exportRsvpsCsv = action({
       for (const rsvp of rsvps) {
         const row: string[] = [rsvp.name];
         if (includePhone) row.push(rsvp.phoneNumber);
-        if (includeInvitedBy) row.push(rsvp.invitedByName);
+        if (shouldIncludeInvitedBy) row.push(rsvp.invitedByName);
         row.push(rsvp.referredByName);
         row.push(
           ...socialPlatforms.map((platform) => rsvp.socialProfiles[platform.platformKey] ?? ""),

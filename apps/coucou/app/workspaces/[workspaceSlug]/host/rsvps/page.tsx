@@ -66,6 +66,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -145,6 +146,7 @@ const hasStringAccessorKey = <TData extends RowData>(
 };
 
 const EXPORT_STATUS_OPTIONS: ExportableApprovalStatusOption[] = ["pending", "approved", "denied"];
+const DEFAULT_EXPORT_STATUS_OPTIONS: ExportableApprovalStatusOption[] = ["approved"];
 const APPROVAL_STATUS_OPTIONS: ApprovalStatusOption[] = ["pending", "approved", "denied"];
 const ATTENDANCE_STATUS_OPTIONS: AttendanceStatusOption[] = ["yes", "maybe", "no"];
 const TICKET_STATUS_OPTIONS: TicketStatusOption[] = ["not-issued", "issued", "disabled"];
@@ -929,6 +931,11 @@ export default function RsvpsPage() {
     () => currentEvent?.primaryFieldConfig?.socialPlatforms ?? [],
     [currentEvent?.primaryFieldConfig?.socialPlatforms],
   );
+  const currentEventInvitedByPrimaryFieldConfig = currentEvent?.primaryFieldConfig?.invitedBy;
+  const currentEventSocialPlatformKeys = React.useMemo(
+    () => currentEventSocialPlatforms.map((platform) => platform.platformKey),
+    [currentEventSocialPlatforms],
+  );
   const shouldShowSocialPlatformFilter = currentEventSocialPlatforms.length > 1;
 
   React.useEffect(() => {
@@ -946,8 +953,12 @@ export default function RsvpsPage() {
 
   const [exportOptionsOpen, setExportOptionsOpen] = React.useState(false);
   const [selectedListsForExport, setSelectedListsForExport] = React.useState<string[]>([]);
-  const [selectedStatusesForExport, setSelectedStatusesForExport] =
-    React.useState<ExportableApprovalStatusOption[]>(EXPORT_STATUS_OPTIONS);
+  const [selectedStatusesForExport, setSelectedStatusesForExport] = React.useState<
+    ExportableApprovalStatusOption[]
+  >(DEFAULT_EXPORT_STATUS_OPTIONS);
+  const [selectedSocialPlatformKeysForExport, setSelectedSocialPlatformKeysForExport] =
+    React.useState<string[]>([]);
+  const [includeInvitedBy, setIncludeInvitedBy] = React.useState(true);
   const [includeAttendees, setIncludeAttendees] = React.useState(true);
   const [includeNote, setIncludeNote] = React.useState(true);
   const [includeCustomFields, setIncludeCustomFields] = React.useState(true);
@@ -1057,9 +1068,16 @@ export default function RsvpsPage() {
 
   React.useEffect(() => {
     if (listCredentials && selectedListsForExport.length === 0) {
-      setSelectedListsForExport(listCredentials.map((cred) => cred.listKey) || []);
+      setSelectedListsForExport(
+        listCredentials.map((listCredential) => listCredential.listKey) || [],
+      );
     }
   }, [listCredentials, selectedListsForExport.length]);
+
+  React.useEffect(() => {
+    setSelectedSocialPlatformKeysForExport(currentEventSocialPlatformKeys);
+    setIncludeInvitedBy(true);
+  }, [currentEventSocialPlatformKeys, eventId]);
 
   // Convert mutations to TanStack Query
   const updateRsvpCompleteMutation = useMutation({
@@ -3203,6 +3221,8 @@ export default function RsvpsPage() {
         includeNote,
         includeCustomFields,
         includePhone,
+        includeSocialPlatformKeys: selectedSocialPlatformKeysForExport,
+        includeInvitedBy,
         ...workspaceScope.queryArgs,
         exportTimestamp: new Date().toLocaleString("en-US", {
           month: "long",
@@ -3236,10 +3256,12 @@ export default function RsvpsPage() {
     eventId,
     includeAttendees,
     includeCustomFields,
+    includeInvitedBy,
     includeNote,
     includePhone,
     runExportRsvpsCsv,
     selectedListsForExport,
+    selectedSocialPlatformKeysForExport,
     selectedStatusesForExport,
     workspaceScope,
   ]);
@@ -3553,12 +3575,11 @@ export default function RsvpsPage() {
     ],
   );
 
-  // Hidden anchor refs used to keep the Share and Export popovers anchored to the (...) trigger
-  // after the dropdown menu closes. Each invisible button shares the (...) button's bounding box
-  // (via `absolute inset-0`), so popovers render in the same place as if the user had clicked a
-  // visible Share/Export button.
+  // Hidden anchor ref used to keep the Share popover anchored to the (...) trigger after the
+  // dropdown menu closes. The invisible button shares the (...) button's bounding box (via
+  // `absolute inset-0`), so the popover renders in the same place as if the user had clicked a
+  // visible Share button.
   const shareEventTriggerRef = React.useRef<HTMLButtonElement>(null);
-  const exportCsvTriggerRef = React.useRef<HTMLButtonElement>(null);
 
   return (
     <RsvpTableContext.Provider value={rsvpTableContextValue}>
@@ -3652,13 +3673,7 @@ export default function RsvpsPage() {
                     {currentEvent?.isFeatured ? "Already Featured" : "Set as Featured"}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(menuEvent) => {
-                      menuEvent.preventDefault();
-                      requestAnimationFrame(() => exportCsvTriggerRef.current?.click());
-                    }}
-                    disabled={!eventId}
-                  >
+                  <DropdownMenuItem onSelect={() => setExportOptionsOpen(true)} disabled={!eventId}>
                     <Download className="h-4 w-4 mr-2" />
                     Export CSV
                   </DropdownMenuItem>
@@ -3689,8 +3704,8 @@ export default function RsvpsPage() {
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-              {/* Hidden popover anchors sit on top of the (...) button so Share/Export popovers
-                  position cleanly after the menu closes. */}
+              {/* Hidden popover anchor sits on top of the (...) button so Share positions cleanly
+                  after the menu closes. */}
               {currentEvent && canShareCurrentEvent && (
                 <ShareEventPopover
                   eventId={currentEvent._id}
@@ -3707,163 +3722,222 @@ export default function RsvpsPage() {
                   />
                 </ShareEventPopover>
               )}
-              <Popover open={exportOptionsOpen} onOpenChange={setExportOptionsOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    ref={exportCsvTriggerRef}
-                    type="button"
-                    aria-hidden="true"
-                    tabIndex={-1}
-                    className="pointer-events-none absolute inset-0 opacity-0"
-                  />
-                </PopoverTrigger>
-                <PopoverContent className="w-80" align="end">
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="font-medium text-sm mb-2">Export Options</h4>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">Select Lists</label>
-                      <div className="space-y-2">
-                        {(listCredentials || []).map((cred) => (
-                          <div key={cred.listKey} className="flex items-center">
-                            <Checkbox
-                              id={`list-${cred.listKey}`}
-                              checked={selectedListsForExport.includes(cred.listKey)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setSelectedListsForExport([
-                                    ...selectedListsForExport,
-                                    cred.listKey,
-                                  ]);
-                                } else {
-                                  setSelectedListsForExport(
-                                    selectedListsForExport.filter((k) => k !== cred.listKey),
-                                  );
-                                }
-                              }}
-                            />
-                            <label
-                              htmlFor={`list-${cred.listKey}`}
-                              className="ml-2 text-sm cursor-pointer"
-                            >
-                              {cred.listKey.toUpperCase()}
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">Select Statuses</label>
-                      <div className="space-y-2">
-                        {EXPORT_STATUS_OPTIONS.map((statusOption) => (
-                          <div key={statusOption} className="flex items-center">
-                            <Checkbox
-                              id={`status-${statusOption}`}
-                              checked={selectedStatusesForExport.includes(statusOption)}
-                              onCheckedChange={(checked) => {
-                                setSelectedStatusesForExport((previous) => {
-                                  if (checked === true) {
-                                    if (previous.includes(statusOption)) {
-                                      return previous;
-                                    }
-                                    const next = [...previous, statusOption];
-                                    return EXPORT_STATUS_OPTIONS.filter((option) =>
-                                      next.includes(option),
-                                    );
-                                  }
-                                  return previous.filter((option) => option !== statusOption);
-                                });
-                              }}
-                            />
-                            <label
-                              htmlFor={`status-${statusOption}`}
-                              className="ml-2 text-sm cursor-pointer"
-                            >
-                              {statusOption.charAt(0).toUpperCase() + statusOption.slice(1)}
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">Select Columns</label>
-                      <div className="space-y-2">
-                        <div className="flex items-center">
-                          <Checkbox
-                            id="col-attendees"
-                            checked={includeAttendees}
-                            onCheckedChange={(checked) => setIncludeAttendees(checked === true)}
-                          />
-                          <label htmlFor="col-attendees" className="ml-2 text-sm cursor-pointer">
-                            Attendees
-                          </label>
-                        </div>
-                        <div className="flex items-center">
-                          <Checkbox
-                            id="col-note"
-                            checked={includeNote}
-                            onCheckedChange={(checked) => setIncludeNote(checked === true)}
-                          />
-                          <label htmlFor="col-note" className="ml-2 text-sm cursor-pointer">
-                            Note
-                          </label>
-                        </div>
-                        <div className="flex items-center">
-                          <Checkbox
-                            id="col-phone"
-                            checked={includePhone}
-                            onCheckedChange={(checked) => setIncludePhone(checked === true)}
-                          />
-                          <label htmlFor="col-phone" className="ml-2 text-sm cursor-pointer">
-                            Phone
-                          </label>
-                        </div>
-                        <div className="flex items-center">
-                          <Checkbox
-                            id="col-custom"
-                            checked={includeCustomFields}
-                            onCheckedChange={(checked) => setIncludeCustomFields(checked === true)}
-                          />
-                          <label htmlFor="col-custom" className="ml-2 text-sm cursor-pointer">
-                            Custom Fields
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-
-                    <Button
-                      onClick={async () => {
-                        const exported = await handleExportCsv();
-                        if (exported) {
-                          setExportOptionsOpen(false);
-                        }
-                      }}
-                      disabled={
-                        isLoading ||
-                        isExportingCsv ||
-                        selectedListsForExport.length === 0 ||
-                        selectedStatusesForExport.length === 0
-                      }
-                      className="w-full"
-                      size="sm"
-                    >
-                      {isExportingCsv ? (
-                        <Spinner className="h-4 w-4 mr-2" />
-                      ) : (
-                        <Download className="h-4 w-4 mr-2" />
-                      )}
-                      {isExportingCsv ? "Exporting..." : "Export"}
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
             </div>
           </div>
         </div>
+        <Dialog open={exportOptionsOpen} onOpenChange={setExportOptionsOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Export CSV</DialogTitle>
+              <DialogDescription>
+                Choose lists, statuses, and columns before exporting.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <fieldset>
+                <legend className="mb-2 block text-sm font-medium">Select Lists</legend>
+                <div className="space-y-2">
+                  {(listCredentials || []).map((listCredential) => (
+                    <div key={listCredential.listKey} className="flex items-center">
+                      <Checkbox
+                        id={`list-${listCredential.listKey}`}
+                        checked={selectedListsForExport.includes(listCredential.listKey)}
+                        onCheckedChange={(checkedState) => {
+                          setSelectedListsForExport((previousSelectedListKeys) => {
+                            if (checkedState === true) {
+                              if (previousSelectedListKeys.includes(listCredential.listKey)) {
+                                return previousSelectedListKeys;
+                              }
+                              return [...previousSelectedListKeys, listCredential.listKey];
+                            }
+                            return previousSelectedListKeys.filter(
+                              (selectedListKey) => selectedListKey !== listCredential.listKey,
+                            );
+                          });
+                        }}
+                      />
+                      <label
+                        htmlFor={`list-${listCredential.listKey}`}
+                        className="ml-2 cursor-pointer text-sm"
+                      >
+                        {listCredential.listKey.toUpperCase()}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend className="mb-2 block text-sm font-medium">Select Statuses</legend>
+                <div className="space-y-2">
+                  {EXPORT_STATUS_OPTIONS.map((statusOption) => (
+                    <div key={statusOption} className="flex items-center">
+                      <Checkbox
+                        id={`status-${statusOption}`}
+                        checked={selectedStatusesForExport.includes(statusOption)}
+                        onCheckedChange={(checkedState) => {
+                          setSelectedStatusesForExport((previousStatuses) => {
+                            if (checkedState === true) {
+                              if (previousStatuses.includes(statusOption)) {
+                                return previousStatuses;
+                              }
+                              const nextStatuses = [...previousStatuses, statusOption];
+                              return EXPORT_STATUS_OPTIONS.filter((option) =>
+                                nextStatuses.includes(option),
+                              );
+                            }
+                            return previousStatuses.filter((option) => option !== statusOption);
+                          });
+                        }}
+                      />
+                      <label
+                        htmlFor={`status-${statusOption}`}
+                        className="ml-2 cursor-pointer text-sm"
+                      >
+                        {getApprovalStatusLabel(statusOption)}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend className="mb-2 block text-sm font-medium">Select Columns</legend>
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="col-phone"
+                      checked={includePhone}
+                      onCheckedChange={(checkedState) => setIncludePhone(checkedState === true)}
+                    />
+                    <label htmlFor="col-phone" className="ml-2 cursor-pointer text-sm">
+                      Phone
+                    </label>
+                  </div>
+                  {currentEventInvitedByPrimaryFieldConfig?.enabled === true && (
+                    <div className="flex items-center">
+                      <Checkbox
+                        id="col-invited-by"
+                        checked={includeInvitedBy}
+                        onCheckedChange={(checkedState) =>
+                          setIncludeInvitedBy(checkedState === true)
+                        }
+                      />
+                      <label htmlFor="col-invited-by" className="ml-2 cursor-pointer text-sm">
+                        {currentEventInvitedByPrimaryFieldConfig.label ?? "Invited By"}
+                      </label>
+                    </div>
+                  )}
+                  {currentEventSocialPlatforms.map((socialPlatform) => (
+                    <div key={socialPlatform.platformKey} className="flex items-center">
+                      <Checkbox
+                        id={`col-social-${socialPlatform.platformKey}`}
+                        checked={selectedSocialPlatformKeysForExport.includes(
+                          socialPlatform.platformKey,
+                        )}
+                        onCheckedChange={(checkedState) => {
+                          setSelectedSocialPlatformKeysForExport(
+                            (previousSelectedSocialPlatformKeys) => {
+                              if (checkedState === true) {
+                                if (
+                                  previousSelectedSocialPlatformKeys.includes(
+                                    socialPlatform.platformKey,
+                                  )
+                                ) {
+                                  return previousSelectedSocialPlatformKeys;
+                                }
+                                return [
+                                  ...previousSelectedSocialPlatformKeys,
+                                  socialPlatform.platformKey,
+                                ];
+                              }
+                              return previousSelectedSocialPlatformKeys.filter(
+                                (selectedSocialPlatformKey) =>
+                                  selectedSocialPlatformKey !== socialPlatform.platformKey,
+                              );
+                            },
+                          );
+                        }}
+                      />
+                      <label
+                        htmlFor={`col-social-${socialPlatform.platformKey}`}
+                        className="ml-2 cursor-pointer text-sm"
+                      >
+                        {socialPlatform.label}
+                      </label>
+                    </div>
+                  ))}
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="col-attendees"
+                      checked={includeAttendees}
+                      onCheckedChange={(checkedState) => setIncludeAttendees(checkedState === true)}
+                    />
+                    <label htmlFor="col-attendees" className="ml-2 cursor-pointer text-sm">
+                      Attendees
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="col-note"
+                      checked={includeNote}
+                      onCheckedChange={(checkedState) => setIncludeNote(checkedState === true)}
+                    />
+                    <label htmlFor="col-note" className="ml-2 cursor-pointer text-sm">
+                      Note
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="col-custom"
+                      checked={includeCustomFields}
+                      onCheckedChange={(checkedState) =>
+                        setIncludeCustomFields(checkedState === true)
+                      }
+                    />
+                    <label htmlFor="col-custom" className="ml-2 cursor-pointer text-sm">
+                      Custom Fields
+                    </label>
+                  </div>
+                </div>
+              </fieldset>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setExportOptionsOpen(false)}
+                disabled={isExportingCsv}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={async () => {
+                  const exported = await handleExportCsv();
+                  if (exported) {
+                    setExportOptionsOpen(false);
+                  }
+                }}
+                disabled={
+                  isLoading ||
+                  isExportingCsv ||
+                  selectedListsForExport.length === 0 ||
+                  selectedStatusesForExport.length === 0
+                }
+              >
+                {isExportingCsv ? (
+                  <Spinner className="h-4 w-4 mr-2" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                {isExportingCsv ? "Exporting..." : "Export"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         {/* Event Selector */}
         <div className="flex gap-2 items-center flex-wrap">
           <span className="text-sm text-foreground/70">Event:</span>
