@@ -113,6 +113,7 @@ describe("guest RSVP handoff", () => {
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Ava",
+      lastName: "Green",
       phone: "(310) 499-6272",
       shareContact: true,
       attendees: 1,
@@ -136,6 +137,7 @@ describe("guest RSVP handoff", () => {
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Ava",
+      lastName: "Green",
       phone: "3104996272",
       shareContact: true,
       attendees: 1,
@@ -215,8 +217,14 @@ describe("guest RSVP handoff", () => {
     await testBackend.run(async (databaseContext) => {
       const claimedRsvp = await databaseContext.db.get(result.rsvpId);
       expect(claimedRsvp?.clerkUserId).toBe("user_ava");
+      expect(claimedRsvp?.userName).toBe("Ava Green");
       expect(claimedRsvp?.ticketStatus).toBe("issued");
       expect(claimedRsvp?.guestPhoneHash).toBeUndefined();
+
+      const users = await databaseContext.db.query("users").collect();
+      const claimedUser = users.find((userRecord) => userRecord.clerkUserId === "user_ava");
+      expect(claimedUser?.firstName).toBe("Ava");
+      expect(claimedUser?.lastName).toBe("Green");
 
       const approvals = await databaseContext.db.query("approvals").collect();
       const approval = approvals.find((approvalRecord) => approvalRecord.eventId === eventId);
@@ -229,6 +237,230 @@ describe("guest RSVP handoff", () => {
           redemptionRecord.eventId === eventId && redemptionRecord.clerkUserId === "user_ava",
       );
       expect(redemption?.code).toBe("VIP12345");
+    });
+  });
+
+  it("uses submitted authenticated names for new RSVP user records", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_authenticated_name", "+13104996272"),
+    );
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Mina",
+      lastName: "Park",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    await testBackend.run(async (databaseContext) => {
+      const rsvps = await databaseContext.db.query("rsvps").collect();
+      const rsvp = rsvps.find(
+        (rsvpRecord) =>
+          rsvpRecord.eventId === eventId && rsvpRecord.clerkUserId === "user_authenticated_name",
+      );
+      expect(rsvp?.userName).toBe("Mina Park");
+
+      const users = await databaseContext.db.query("users").collect();
+      const user = users.find((userRecord) => userRecord.clerkUserId === "user_authenticated_name");
+      expect(user?.firstName).toBe("Mina");
+      expect(user?.lastName).toBe("Park");
+      expect(user?.phone).toBe("+13104996272");
+    });
+  });
+
+  it("rejects RSVP submissions without both first and last names", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_missing_name", "+13104996272"),
+    );
+
+    await expect(
+      authedBackend.mutation(api.rsvps.submitRequest, {
+        eventId,
+        siteKey: "club-chlorine",
+        listKey: "ga",
+        firstName: "Mina",
+        lastName: "",
+        phone: "+13104996272",
+        shareContact: true,
+        attendees: 1,
+        customFields: {},
+        socialProfiles: [],
+      }),
+    ).rejects.toThrow("Last name is required");
+
+    await expect(
+      testBackend.mutation(api.rsvps.submitGuestRequest, {
+        eventId,
+        siteKey: "club-chlorine",
+        listKey: "ga",
+        firstName: "Ava",
+        lastName: "",
+        phone: "+13104996272",
+        shareContact: true,
+        attendees: 1,
+        customFields: {},
+        socialProfiles: [],
+      }),
+    ).rejects.toThrow("Last name is required");
+  });
+
+  it("does not overwrite existing entered user names with later RSVP names", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_existing_name", "+13104996272"),
+    );
+
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: "user_existing_name",
+        phone: "+13104996272",
+        firstName: "Existing",
+        lastName: "Person",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Mina",
+      lastName: "Park",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    await testBackend.run(async (databaseContext) => {
+      const users = await databaseContext.db.query("users").collect();
+      const user = users.find((userRecord) => userRecord.clerkUserId === "user_existing_name");
+      expect(user?.firstName).toBe("Existing");
+      expect(user?.lastName).toBe("Person");
+
+      const rsvps = await databaseContext.db.query("rsvps").collect();
+      const rsvp = rsvps.find(
+        (rsvpRecord) =>
+          rsvpRecord.eventId === eventId && rsvpRecord.clerkUserId === "user_existing_name",
+      );
+      expect(rsvp?.userName).toBe("Existing Person");
+    });
+  });
+
+  it("fills missing stored name pieces from RSVP submissions without later overwrites", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_partial_name", "+13104996272"),
+    );
+
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: "user_partial_name",
+        phone: "+13104996272",
+        firstName: "Existing",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Mina",
+      lastName: "Park",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Nova",
+      lastName: "Stone",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    await testBackend.run(async (databaseContext) => {
+      const users = await databaseContext.db.query("users").collect();
+      const user = users.find((userRecord) => userRecord.clerkUserId === "user_partial_name");
+      expect(user?.firstName).toBe("Existing");
+      expect(user?.lastName).toBe("Park");
+
+      const rsvps = await databaseContext.db.query("rsvps").collect();
+      const rsvp = rsvps.find(
+        (rsvpRecord) =>
+          rsvpRecord.eventId === eventId && rsvpRecord.clerkUserId === "user_partial_name",
+      );
+      expect(rsvp?.userName).toBe("Existing Park");
+    });
+  });
+
+  it("does not let phone-like profile data overwrite a claimed guest RSVP name", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+
+    const result = await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Ava",
+      lastName: "Green",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: "user_phone_metadata",
+        phone: "+13104996272",
+        firstName: "+13104996272",
+        metadata: { name: "+13104996272" },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_phone_metadata", "+13104996272"),
+    );
+    await authedBackend.mutation(api.rsvps.claimGuestRsvpsForCurrentUser, {});
+
+    await testBackend.run(async (databaseContext) => {
+      const claimedRsvp = await databaseContext.db.get(result.rsvpId);
+      expect(claimedRsvp?.clerkUserId).toBe("user_phone_metadata");
+      expect(claimedRsvp?.userName).toBe("Ava Green");
+
+      const users = await databaseContext.db.query("users").collect();
+      const user = users.find((userRecord) => userRecord.clerkUserId === "user_phone_metadata");
+      expect(user?.firstName).toBe("Ava");
+      expect(user?.lastName).toBe("Green");
+      expect(user?.phone).toBe("+13104996272");
     });
   });
 });

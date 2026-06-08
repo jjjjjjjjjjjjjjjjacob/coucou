@@ -120,6 +120,8 @@ export function RsvpPageClient({ params }: RsvpPageClientProps) {
             listKey: resolvedListKey,
             referralCode,
             phone: phone || undefined,
+            firstName,
+            lastName,
             ...submissionArgs,
           });
         } else {

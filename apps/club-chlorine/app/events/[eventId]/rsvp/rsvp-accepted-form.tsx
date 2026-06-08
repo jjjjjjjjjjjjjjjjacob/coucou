@@ -311,7 +311,7 @@ function writeRsvpDraftStorage(storageKey: string, draft: RsvpDraftStorage): voi
 
 export type RsvpCollectedArgs = {
   firstName: string;
-  lastName?: string;
+  lastName: string;
   phone: string;
   requiresPhoneVerification: boolean;
   note?: string;
@@ -842,6 +842,7 @@ export function RsvpAcceptedForm({
       const errs = [
         ...validateRequiredWithFirstName(
           firstName,
+          lastName,
           custom,
           eventCustomFields.map((customField) => ({
             key: customField.key,
@@ -870,6 +871,9 @@ export function RsvpAcceptedForm({
         for (const e of errs) {
           if (e.toLowerCase().includes("first name")) {
             form.setError("firstName", { type: "required", message: e });
+          }
+          if (e.toLowerCase().includes("last name")) {
+            form.setError("lastName", { type: "required", message: e });
           }
         }
         for (const customField of eventCustomFields) {
@@ -961,7 +965,7 @@ export function RsvpAcceptedForm({
 
       const collectedArgs: RsvpCollectedArgs = {
         firstName: firstName.trim(),
-        lastName: lastName.trim() || undefined,
+        lastName: lastName.trim(),
         phone: effectivePhone,
         requiresPhoneVerification,
         note: note || undefined,
@@ -1004,6 +1008,8 @@ export function RsvpAcceptedForm({
         smsConsent: collectedArgs.smsConsent,
         smsConsentIpAddress: collectedArgs.smsConsentIpAddress,
         phone: collectedArgs.phone,
+        firstName: collectedArgs.firstName,
+        lastName: collectedArgs.lastName,
         customFields: collectedArgs.customFields,
         socialProfiles: collectedArgs.socialProfiles,
         invitedByName: collectedArgs.invitedByName,

@@ -42,6 +42,7 @@ import type * as lib_qrCodeGenerator from "../lib/qrCodeGenerator.js";
 import type * as lib_rsvpAggregate from "../lib/rsvpAggregate.js";
 import type * as lib_rsvpFilters from "../lib/rsvpFilters.js";
 import type * as lib_rsvpStatus from "../lib/rsvpStatus.js";
+import type * as lib_rsvpUserName from "../lib/rsvpUserName.js";
 import type * as lib_siteScope from "../lib/siteScope.js";
 import type * as lib_socialProfileRecords from "../lib/socialProfileRecords.js";
 import type * as lib_types from "../lib/types.js";
@@ -115,6 +116,7 @@ declare const fullApi: ApiFromModules<{
   "lib/rsvpAggregate": typeof lib_rsvpAggregate;
   "lib/rsvpFilters": typeof lib_rsvpFilters;
   "lib/rsvpStatus": typeof lib_rsvpStatus;
+  "lib/rsvpUserName": typeof lib_rsvpUserName;
   "lib/siteScope": typeof lib_siteScope;
   "lib/socialProfileRecords": typeof lib_socialProfileRecords;
   "lib/types": typeof lib_types;

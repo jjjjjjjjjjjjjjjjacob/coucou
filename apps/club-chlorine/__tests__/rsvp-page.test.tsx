@@ -192,7 +192,7 @@ mock.module("posthog-js", () => ({
 
 interface MockRsvpCollectedArgs {
   firstName: string;
-  lastName?: string;
+  lastName: string;
   phone: string;
   requiresPhoneVerification: boolean;
   shareContact: true;
@@ -403,6 +403,8 @@ describe("RSVP page reservation-status gate", () => {
     expect(locationAssignCalls).toEqual([]);
     expect(routerReplaceCalls).toEqual(["/events/club/status"]);
     expect(submitRsvpCalls[0]?.phone).toBe("+15555550123");
+    expect(submitRsvpCalls[0]?.firstName).toBe("Test");
+    expect(submitRsvpCalls[0]?.lastName).toBe("Guest");
   });
 
   it("submits a handoff RSVP and signs out when a signed-in RSVP changes phone", async () => {

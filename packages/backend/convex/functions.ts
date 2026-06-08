@@ -15,6 +15,7 @@ import { Triggers } from "convex-helpers/server/triggers";
 import { internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { cascadeListKeyUpdate, shouldBatchCascade } from "./lib/cascadeHelpers";
+import { resolveStoredUserDisplayName } from "./lib/rsvpUserName";
 
 // Initialize triggers with our data model types
 export const triggers = new Triggers<DataModel>();
@@ -116,8 +117,10 @@ triggers.register("users", async (ctx, change) => {
     // Skip if user doesn't have a clerkUserId (shouldn't happen but be safe)
     if (!user.clerkUserId) return;
 
-    // Construct userName from users table data
-    const userName = [user.firstName, user.lastName].filter(Boolean).join(" ") || "";
+    // Construct userName from users table data. If a Clerk/user update
+    // has no name fields, leave existing RSVP names intact.
+    const userName = resolveStoredUserDisplayName(user);
+    if (!userName) return;
 
     console.log(
       `[TRIGGER] User name changed for ${user.clerkUserId}: updating RSVPs with userName: ${userName}`,

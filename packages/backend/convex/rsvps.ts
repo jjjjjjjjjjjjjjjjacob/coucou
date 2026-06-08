@@ -38,6 +38,7 @@ import {
   resolveApprovalStatus,
   sanitizeAttendanceStatus,
 } from "./lib/rsvpStatus";
+import { isPhoneNumberLikeDisplayName, resolveStoredUserDisplayName } from "./lib/rsvpUserName";
 import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";
 import {
   replaceRsvpSocialProfileSnapshots,
@@ -139,19 +140,154 @@ async function canAutoSendGuestRsvpHandoffCode(
   return rsvpsWithPhone.some((rsvp) => !isGuestClerkUserId(rsvp.clerkUserId));
 }
 
-function resolveSubmittedGuestName(firstName: string, lastName: string): string {
-  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ").trim();
+function normalizeOptionalText(value: string | null | undefined): string | undefined {
+  const trimmedValue = value?.trim();
+  return trimmedValue ? trimmedValue : undefined;
+}
+
+function splitSubmittedDisplayName(displayName: string | null | undefined): {
+  firstName?: string;
+  lastName?: string;
+} {
+  const normalizedDisplayName = normalizeOptionalText(displayName);
+  if (!normalizedDisplayName) return {};
+
+  const nameParts = normalizedDisplayName.split(/\s+/);
+  return {
+    firstName: nameParts[0],
+    lastName: normalizeOptionalText(nameParts.slice(1).join(" ")),
+  };
+}
+
+function resolveSubmittedGuestName(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+): string {
+  return [normalizeOptionalText(firstName), normalizeOptionalText(lastName)]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
+function resolveMetadataDisplayName(user: Doc<"users">): string | undefined {
+  const metadataName = normalizeOptionalText(user.metadata?.name);
+  if (!metadataName) return undefined;
+  return isPhoneNumberLikeDisplayName(metadataName, user.phone) ? undefined : metadataName;
 }
 
 function resolveUserDisplayName(user: Doc<"users"> | null | undefined, fallback: string): string {
-  const nameFromUser = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
-  return nameFromUser || user?.metadata?.name || fallback;
+  const fallbackName = normalizeOptionalText(fallback) ?? "";
+  return (
+    resolveStoredUserDisplayName(user) ||
+    (user ? resolveMetadataDisplayName(user) : undefined) ||
+    fallbackName
+  );
+}
+
+async function mergeSubmittedUserProfile(
+  ctx: MutationCtx,
+  {
+    user,
+    clerkUserId,
+    identityPhoneNumber,
+    submittedPhoneNumber,
+    submittedFirstName,
+    submittedLastName,
+    fallbackDisplayName,
+    imageUrl,
+    now,
+  }: {
+    user: Doc<"users"> | null;
+    clerkUserId: string;
+    identityPhoneNumber?: string;
+    submittedPhoneNumber?: string;
+    submittedFirstName?: string;
+    submittedLastName?: string;
+    fallbackDisplayName?: string;
+    imageUrl?: string;
+    now: number;
+  },
+): Promise<Doc<"users"> | null> {
+  const normalizedSubmittedFirstName = normalizeOptionalText(submittedFirstName);
+  const normalizedSubmittedLastName = normalizeOptionalText(submittedLastName);
+  const fallbackNameParts = splitSubmittedDisplayName(fallbackDisplayName);
+  const existingFirstName = normalizeOptionalText(user?.firstName);
+  const existingLastName = normalizeOptionalText(user?.lastName);
+  const existingDisplayName = [existingFirstName, existingLastName].filter(Boolean).join(" ");
+  const existingDisplayNameIsPhoneLike =
+    !!existingDisplayName && isPhoneNumberLikeDisplayName(existingDisplayName, user?.phone);
+  const existingFirstNameIsPhoneLike =
+    !!existingFirstName && isPhoneNumberLikeDisplayName(existingFirstName, user?.phone);
+  const existingLastNameIsPhoneLike =
+    !!existingLastName && isPhoneNumberLikeDisplayName(existingLastName, user?.phone);
+  const usableExistingFirstName =
+    existingDisplayNameIsPhoneLike || existingFirstNameIsPhoneLike ? undefined : existingFirstName;
+  const usableExistingLastName =
+    existingDisplayNameIsPhoneLike || existingLastNameIsPhoneLike ? undefined : existingLastName;
+  const nextFirstName =
+    usableExistingFirstName ?? normalizedSubmittedFirstName ?? fallbackNameParts.firstName;
+  const nextLastName =
+    usableExistingLastName ?? normalizedSubmittedLastName ?? fallbackNameParts.lastName;
+  const nextPhoneNumber =
+    normalizeOptionalText(submittedPhoneNumber) ??
+    normalizeOptionalText(identityPhoneNumber) ??
+    normalizeOptionalText(user?.phone);
+
+  if (!user) {
+    if (!nextFirstName && !nextLastName && !nextPhoneNumber) return null;
+
+    const userId = await ctx.db.insert("users", {
+      clerkUserId,
+      phone: nextPhoneNumber,
+      firstName: nextFirstName,
+      lastName: nextLastName,
+      imageUrl,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return await ctx.db.get(userId);
+  }
+
+  const userPatch: {
+    phone?: string;
+    firstName?: string;
+    lastName?: string;
+    imageUrl?: string;
+    updatedAt: number;
+  } = {
+    updatedAt: now,
+  };
+  let shouldPatchUser = false;
+
+  if (nextPhoneNumber && nextPhoneNumber !== user.phone) {
+    userPatch.phone = nextPhoneNumber;
+    shouldPatchUser = true;
+  }
+  if (nextFirstName && nextFirstName !== user.firstName) {
+    userPatch.firstName = nextFirstName;
+    shouldPatchUser = true;
+  }
+  if (nextLastName && nextLastName !== user.lastName) {
+    userPatch.lastName = nextLastName;
+    shouldPatchUser = true;
+  }
+  if (imageUrl && imageUrl !== user.imageUrl) {
+    userPatch.imageUrl = imageUrl;
+    shouldPatchUser = true;
+  }
+
+  if (!shouldPatchUser) return user;
+
+  await ctx.db.patch(user._id, userPatch);
+  return await ctx.db.get(user._id);
 }
 
 type RsvpSubmissionInput = {
   eventId: Id<"events">;
   siteKey?: string;
   listKey: string;
+  firstName: string;
+  lastName: string;
   note?: string;
   shareContact: boolean;
   attendees?: number;
@@ -272,6 +408,8 @@ export const submitRequest = mutation({
     // Contact is optional because the user may already have a phone on file.
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
+    firstName: v.string(),
+    lastName: v.string(),
     customFields: v.optional(v.record(v.string(), v.string())),
     socialProfiles: v.optional(v.array(submittedSocialProfileValidator)),
     invitedByName: v.optional(v.string()),
@@ -283,13 +421,10 @@ export const submitRequest = mutation({
     if (!identity) throw new Error("Unauthorized");
     const clerkUserId = identity.subject;
 
-    // Fetch user to populate userName for search
-    const user = await ctx.db
+    let user = await ctx.db
       .query("users")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
       .unique();
-
-    const userName = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") || "" : "";
 
     const {
       event,
@@ -303,6 +438,27 @@ export const submitRequest = mutation({
       submittedAttendanceStatus,
       sanitizedSmsConsentIpAddress,
     } = await prepareRsvpSubmission(ctx, args, clerkUserId);
+    const submittedFirstName = args.firstName.trim();
+    const submittedLastName = args.lastName.trim();
+    if (!submittedFirstName) {
+      throw new Error("First name is required");
+    }
+    if (!submittedLastName) {
+      throw new Error("Last name is required");
+    }
+    const submittedUserName = resolveSubmittedGuestName(submittedFirstName, submittedLastName);
+    user = await mergeSubmittedUserProfile(ctx, {
+      user,
+      clerkUserId,
+      identityPhoneNumber: identity.phoneNumber,
+      submittedPhoneNumber: args.phone,
+      submittedFirstName,
+      submittedLastName,
+      fallbackDisplayName: submittedUserName,
+      imageUrl: identity.pictureUrl ?? undefined,
+      now,
+    });
+    const userName = resolveUserDisplayName(user, submittedUserName);
 
     // Upsert RSVP per (eventId, clerkUserId)
     const existing = await ctx.db
@@ -451,7 +607,7 @@ export const submitGuestRequest = mutation({
     siteKey: v.optional(v.string()),
     listKey: v.string(),
     firstName: v.string(),
-    lastName: v.optional(v.string()),
+    lastName: v.string(),
     phone: v.string(),
     note: v.optional(v.string()),
     shareContact: v.boolean(),
@@ -466,9 +622,12 @@ export const submitGuestRequest = mutation({
   },
   handler: async (ctx, args) => {
     const submittedFirstName = args.firstName.trim();
-    const submittedLastName = args.lastName?.trim() ?? "";
+    const submittedLastName = args.lastName.trim();
     if (!submittedFirstName) {
       throw new Error("First name is required");
+    }
+    if (!submittedLastName) {
+      throw new Error("Last name is required");
     }
 
     const { normalizedPhoneNumber, phoneHash } = await normalizeAndHashPhoneNumber(args.phone);
@@ -843,7 +1002,16 @@ async function claimGuestRsvpsForPhone(
 
   let pairedCount = 0;
   let mergedCount = 0;
+  let mergedUser = user;
   for (const guestRsvp of guestRsvps) {
+    mergedUser = await mergeSubmittedUserProfile(ctx, {
+      user: mergedUser,
+      clerkUserId,
+      identityPhoneNumber: phoneNumber,
+      submittedPhoneNumber: phoneNumber,
+      fallbackDisplayName: guestRsvp.userName,
+      now,
+    });
     const existingUserRsvp = await ctx.db
       .query("rsvps")
       .withIndex("by_event_user", (queryBuilder) =>
@@ -861,7 +1029,7 @@ async function claimGuestRsvpsForPhone(
       await ctx.db.patch(existingUserRsvp._id, {
         listKey: statusSource.listKey,
         userName: resolveUserDisplayName(
-          user,
+          mergedUser,
           guestRsvp.userName ?? existingUserRsvp.userName ?? "",
         ),
         note: guestRsvp.note ?? existingUserRsvp.note,
@@ -903,7 +1071,7 @@ async function claimGuestRsvpsForPhone(
         guestRsvp,
         targetRsvpId: existingUserRsvp._id,
         targetClerkUserId: clerkUserId,
-        targetUserId: user?._id,
+        targetUserId: mergedUser?._id,
         now,
       });
 
@@ -922,7 +1090,7 @@ async function claimGuestRsvpsForPhone(
     const oldGuestRsvp = await ctx.db.get(guestRsvp._id);
     await ctx.db.patch(guestRsvp._id, {
       clerkUserId,
-      userName: resolveUserDisplayName(user, guestRsvp.userName ?? ""),
+      userName: resolveUserDisplayName(mergedUser, guestRsvp.userName ?? ""),
       guestPhoneHash: undefined,
       pairedAt: now,
       updatedAt: now,
@@ -936,7 +1104,7 @@ async function claimGuestRsvpsForPhone(
       guestRsvp,
       targetRsvpId: guestRsvp._id,
       targetClerkUserId: clerkUserId,
-      targetUserId: user?._id,
+      targetUserId: mergedUser?._id,
       now,
     });
     await maybeSendPairedApprovalSms(ctx, {

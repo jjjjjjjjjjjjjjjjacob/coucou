@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { cascadeListKeyUpdate, nullifyCredentialReferences } from "../convex/lib/cascadeHelpers";
+import { resolveStoredUserDisplayName } from "../convex/lib/rsvpUserName";
 
 describe("Database Triggers", () => {
   it("should validate trigger function structure", () => {
@@ -50,6 +51,23 @@ describe("Database Triggers", () => {
     expect(mockChange).toHaveProperty("oldDoc");
     expect(mockChange).toHaveProperty("newDoc");
     expect(mockChange.operation).toBe("update");
+  });
+
+  it("does not resolve phone-only user data as an RSVP userName", () => {
+    expect(
+      resolveStoredUserDisplayName({
+        firstName: "+13104996272",
+        phone: "+13104996272",
+      }),
+    ).toBeUndefined();
+    expect(resolveStoredUserDisplayName({ phone: "+13104996272" })).toBeUndefined();
+    expect(
+      resolveStoredUserDisplayName({
+        firstName: "Ava",
+        lastName: "Green",
+        phone: "+13104996272",
+      }),
+    ).toBe("Ava Green");
   });
 
   it("should validate batch operation parameters", () => {

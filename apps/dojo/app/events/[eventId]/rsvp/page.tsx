@@ -358,6 +358,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
       const errs = [
         ...validateRequiredWithFirstName(
           firstName,
+          lastName,
           custom,
           eventCustomFields.map((customField) => ({
             key: customField.key,
@@ -388,6 +389,10 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
           if (e.toLowerCase().includes("first name")) {
             perField.firstName = e;
             form.setError("firstName", { type: "required", message: e });
+          }
+          if (e.toLowerCase().includes("last name")) {
+            perField.lastName = e;
+            form.setError("lastName", { type: "required", message: e });
           }
         }
         for (const customField of eventCustomFields) {
@@ -475,6 +480,8 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
         attendanceStatus: event?.attendanceQuestionEnabled ? attendanceStatus : "yes",
         smsConsent: smsConsentEnabled,
         smsConsentIpAddress: smsConsentEnabled && consentIpAddress ? consentIpAddress : undefined,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         customFields: filteredCustomFields,
         socialProfiles: (event?.primaryFieldConfig?.socialPlatforms ?? [])
           .map((platform) => ({

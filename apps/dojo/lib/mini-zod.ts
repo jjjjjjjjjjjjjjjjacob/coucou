@@ -21,11 +21,13 @@ export function validateRequired(
 
 export function validateRequiredWithFirstName(
   firstName: string,
+  lastName: string,
   custom: Record<string, string>,
   rules: FieldRule[] = [],
 ) {
   const errors: string[] = [];
   if (!firstName?.trim()) errors.push("First name is required");
+  if (!lastName?.trim()) errors.push("Last name is required");
   for (const r of rules) {
     if (r.required && !(custom?.[r.key] || "").trim()) {
       errors.push(`${r.label} is required`);
