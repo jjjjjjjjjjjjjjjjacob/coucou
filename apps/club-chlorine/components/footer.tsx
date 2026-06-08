@@ -1,27 +1,12 @@
 import { TenantLegalFooter } from "@coucou/ui/tenant-template";
-import Image from "next/image";
 import { siteConfiguration } from "@/lib/site";
 
 /**
  * Club Chlorine's footer is the shared editorial scaffolding. The legal
- * links + brand line are themed via the chlorine preset's --tt-* tokens.
- * The swimmer mark sits in the right slot so the brand carries through to
- * the bottom of the page.
+ * links are themed via the chlorine preset's --tt-* tokens. The brand line
+ * and swimmer mark are intentionally hidden so the bottom of the page only
+ * carries the legal nav.
  */
 export function Footer() {
-  return (
-    <TenantLegalFooter
-      preset={siteConfiguration.preset}
-      brandName={siteConfiguration.brandName}
-      contact={
-        <Image
-          src="/icon.svg"
-          width={36}
-          height={21}
-          alt={siteConfiguration.brandName}
-          priority={false}
-        />
-      }
-    />
-  );
+  return <TenantLegalFooter preset={siteConfiguration.preset} showBrand={false} />;
 }

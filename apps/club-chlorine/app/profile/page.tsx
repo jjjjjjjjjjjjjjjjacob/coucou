@@ -35,8 +35,8 @@ const displayHeadingStyle: React.CSSProperties = {
   lineHeight: 1.05,
 };
 
-const monoBodyStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+const textBodyStyle: React.CSSProperties = {
+  fontFamily: "var(--tt-text)",
 };
 
 const sectionEyebrowClassName = "text-[11px] font-medium uppercase tracking-[0.12em] text-primary";
@@ -153,7 +153,7 @@ export default function ProfilePage() {
         <h2 className="text-2xl text-primary" style={displayHeadingStyle}>
           Not signed in
         </h2>
-        <p className="mt-4 text-sm text-primary/70" style={monoBodyStyle}>
+        <p className="mt-4 text-sm text-primary/70" style={textBodyStyle}>
           Please sign in to view your profile.
         </p>
         <div className="mt-6 flex justify-center">
@@ -191,7 +191,7 @@ export default function ProfilePage() {
   const joinedLabel = new Date(user.createdAt!).toLocaleDateString();
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6 lg:px-8" style={monoBodyStyle}>
+    <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6 lg:px-8" style={textBodyStyle}>
       <div className="mb-12 flex items-center gap-5">
         <Avatar className="size-14">
           <AvatarImage src={user.imageUrl} alt={user.fullName || ""} />
@@ -449,7 +449,7 @@ export default function ProfilePage() {
           }
         }}
       >
-        <DialogContent className="max-w-lg" style={monoBodyStyle}>
+        <DialogContent className="max-w-lg" style={textBodyStyle}>
           <DialogHeader>
             <DialogTitle style={displayHeadingStyle}>Update shared details</DialogTitle>
             <DialogDescription>

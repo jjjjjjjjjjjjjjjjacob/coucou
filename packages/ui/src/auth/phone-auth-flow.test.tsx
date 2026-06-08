@@ -9,6 +9,10 @@ GlobalRegistrator.register({ url: "http://localhost:3000" });
 
 const resendCode = mock(async () => {});
 
+function waitForReactScheduler(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 const verificationState: PhoneAuthState = {
   step: "verification",
   phoneNumber: "555 555 5555",
@@ -45,11 +49,13 @@ describe("PhoneAuthFlow", () => {
     resendCode.mockClear();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await waitForReactScheduler();
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    await waitForReactScheduler();
     GlobalRegistrator.unregister();
   });
 

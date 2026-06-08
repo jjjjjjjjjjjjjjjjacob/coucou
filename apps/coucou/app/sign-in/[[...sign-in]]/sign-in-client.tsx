@@ -2,7 +2,7 @@
 
 import { getClientSiteRedirectOrigins, type PresetKey } from "@coucou/sdk";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
-import { type AuthBrandingOverrides, PhoneAuthPage } from "@coucou/ui/auth";
+import { type AuthBrandingOverrides, PhoneAuthPage, type PhoneAuthStep } from "@coucou/ui/auth";
 import { type ReactNode, useMemo } from "react";
 import { CoucouLogoMark } from "@/components/coucou-logo";
 import { siteConfiguration } from "@/lib/site";
@@ -17,6 +17,9 @@ interface SignInClientProps {
   brandMarkSlot?: ReactNode;
   postAuthNavigation?: "router" | "document-replace";
   noShell?: boolean;
+  initialPhoneNumber?: string | null;
+  autoSendInitialCode?: boolean;
+  onPhoneAuthStepChange?: (step: PhoneAuthStep) => void;
   /**
    * Origins the post-auth redirect is allowed to point at. The workspace
    * login route resolves this server-side from the workspace's site
@@ -40,6 +43,9 @@ export function SignInClient({
   postAuthNavigation = "router",
   noShell = false,
   allowedRedirectOrigins: allowedRedirectOriginsOverride,
+  initialPhoneNumber,
+  autoSendInitialCode = false,
+  onPhoneAuthStepChange,
 }: SignInClientProps) {
   // When the user reaches sign-in via redirect from an event page, the
   // server-side page.tsx hands us the event's theme override pair so the
@@ -78,6 +84,9 @@ export function SignInClient({
       allowedRedirectOrigins={allowedRedirectOrigins}
       event={eventThemeOverride}
       postAuthNavigation={postAuthNavigation}
+      initialPhoneNumber={initialPhoneNumber}
+      autoSendInitialCode={autoSendInitialCode}
+      onPhoneAuthStepChange={onPhoneAuthStepChange}
       noShell={noShell}
     />
   );

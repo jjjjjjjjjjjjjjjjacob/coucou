@@ -28,6 +28,12 @@ type ThemedEvent = {
   themeTextColor?: string | null;
 };
 
+type RsvpHandoffResolution = {
+  phoneNumber: string;
+  expiresAt: number;
+  canAutoSendCode: boolean;
+} | null;
+
 function ensureString(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) {
     return value[0];
@@ -75,6 +81,19 @@ async function loadEventForTheme({
   }
 }
 
+async function resolveRsvpHandoffPhone(token: string | undefined): Promise<RsvpHandoffResolution> {
+  if (!token) return null;
+
+  try {
+    return await fetchQuery(api.rsvps.resolveGuestRsvpHandoff, {
+      token,
+    });
+  } catch (error) {
+    console.error("Failed to resolve RSVP auth handoff", error);
+    return null;
+  }
+}
+
 /**
  * Dedicated client/satellite auth handoff. Lives outside `/workspaces/...`
  * so post-auth navigation never falls back to a workspace dashboard
@@ -99,6 +118,7 @@ export default async function ClientAuthSignInPage({
 
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const redirectUrlParam = ensureString(resolvedSearchParams.redirect_url);
+  const rsvpHandoffToken = ensureString(resolvedSearchParams.rsvp_handoff);
 
   // Pull the inbound origin signals so the allow-list and satellite-
   // home fallback track whatever environment the satellite is actually
@@ -131,6 +151,10 @@ export default async function ClientAuthSignInPage({
     eventId: extractEventIdFromRedirectUrl(redirectUrl),
     siteKey,
   });
+  const rsvpHandoff = await resolveRsvpHandoffPhone(rsvpHandoffToken);
+  const shouldAutoSendInitialCode = Boolean(
+    rsvpHandoff?.phoneNumber && rsvpHandoff.canAutoSendCode,
+  );
 
   // No workspace authBranding overrides — those were a workspace-document
   // concept that doesn't apply to client/satellite handoffs. Defaults
@@ -154,6 +178,8 @@ export default async function ClientAuthSignInPage({
         eventThemeTextColor={themedEvent?.themeTextColor ?? null}
         authBranding={loginAuthBranding}
         allowedRedirectOrigins={allowedRedirectOrigins}
+        initialPhoneNumber={rsvpHandoff?.phoneNumber ?? null}
+        autoSendInitialCode={shouldAutoSendInitialCode}
       />
     );
   }
@@ -167,6 +193,8 @@ export default async function ClientAuthSignInPage({
       eventThemeTextColor={themedEvent?.themeTextColor ?? null}
       authBranding={loginAuthBranding}
       allowedRedirectOrigins={allowedRedirectOrigins}
+      initialPhoneNumber={rsvpHandoff?.phoneNumber ?? null}
+      autoSendInitialCode={shouldAutoSendInitialCode}
     />
   );
 }

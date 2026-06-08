@@ -6,10 +6,14 @@ function bytesToHex(bytes: Uint8Array): string {
     .join("");
 }
 
-export async function hashNormalizedPhoneNumber(normalizedPhoneNumber: string): Promise<string> {
-  const encodedValue = new TextEncoder().encode(normalizedPhoneNumber);
+export async function hashOpaqueValue(value: string): Promise<string> {
+  const encodedValue = new TextEncoder().encode(value);
   const digest = await globalThis.crypto.subtle.digest("SHA-256", encodedValue);
   return bytesToHex(new Uint8Array(digest));
+}
+
+export async function hashNormalizedPhoneNumber(normalizedPhoneNumber: string): Promise<string> {
+  return await hashOpaqueValue(normalizedPhoneNumber);
 }
 
 export async function normalizeAndHashPhoneNumber(phoneNumber: string): Promise<{

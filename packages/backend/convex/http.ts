@@ -9,6 +9,7 @@ import {
   parseClerkWebhookEvent,
 } from "./lib/clerkWebhookPayloads";
 import { getCoucouOrganizationSlug } from "./lib/platformAuth";
+import { handleDeliveryStatus, handleIncomingSms, handleOptOut } from "./webhooks";
 
 async function upsertTenantWorkspaceFromOrganizationPayload(
   ctx: ActionCtx,
@@ -89,6 +90,12 @@ export const clerkWebhook = httpAction(async (ctx, request) => {
         phone: userProfile.phone,
         imageUrl: userProfile.imageUrl,
       });
+      if (userProfile.phone) {
+        await ctx.runMutation(internal.rsvps.claimGuestRsvpsForClerkPhoneInternal, {
+          clerkUserId: userProfile.clerkUserId,
+          phone: userProfile.phone,
+        });
+      }
     } else if (type === "organization.created" || type === "organization.updated") {
       const organizationPayload = extractClerkOrganizationWorkspacePayload(data);
       if (organizationPayload) {
@@ -131,4 +138,7 @@ export const clerkWebhook = httpAction(async (ctx, request) => {
 
 const http = httpRouter();
 http.route({ path: "/webhooks/clerk", method: "POST", handler: clerkWebhook });
+http.route({ path: "/webhooks/twilio/status", method: "POST", handler: handleDeliveryStatus });
+http.route({ path: "/webhooks/twilio/opt-out", method: "POST", handler: handleOptOut });
+http.route({ path: "/webhooks/twilio/incoming", method: "POST", handler: handleIncomingSms });
 export default http;

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { api } from "@convex/_generated/api";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type React from "react";
 import type { Event } from "../lib/types";
 
 type ActionCall = {
+  actionName: "create" | "update" | "updateAndPublish" | "unknown";
   args: unknown;
 };
 
@@ -23,21 +25,27 @@ type CreateEventActionArgs = {
 type CredentialQueryResult = Array<{
   _id: string;
   listKey: string;
+  password?: string;
   hasPassword?: boolean;
   generateQR?: boolean;
+  defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
 }>;
 
 const actionCalls: ActionCall[] = [];
 let credentialQueryResult: CredentialQueryResult | undefined;
-const workspaceQueryResult = {
+let draftEventQueryResult: Event | null | undefined;
+let currentSearchParams = new URLSearchParams();
+let draftEventQueryFallbackIndex = 0;
+let actionHookFallbackIndex = 0;
+let workspaceQueryResult = {
   slug: "dojo",
   name: "Dojo",
   eventDefaults: {},
   sites: [{ siteKey: "dojo" }],
 };
-const workspaceScope = {
+let workspaceScope = {
   workspaceSlug: "dojo",
   siteKey: "dojo",
   brandName: "Dojo",
@@ -64,21 +72,63 @@ function getCreateEventActionArgs(): CreateEventActionArgs {
   return matchingCall.args;
 }
 
-const mockUseQuery = mock((_queryReference: unknown, args: unknown) => {
+const mockUseQuery = mock((queryReference: unknown, args: unknown) => {
   if (args === "skip") return undefined;
-  if (isRecord(args) && "eventId" in args) return credentialQueryResult;
   if (isRecord(args) && "slug" in args) return workspaceQueryResult;
+  if (isRecord(args) && "eventId" in args && queryReference === api.events.get) {
+    return draftEventQueryResult;
+  }
+  if (
+    isRecord(args) &&
+    "eventId" in args &&
+    queryReference === api.credentials.getHostCredsForEvent
+  ) {
+    return credentialQueryResult;
+  }
+  if (isRecord(args) && "eventId" in args) {
+    if (draftEventQueryResult !== undefined && credentialQueryResult !== undefined) {
+      const fallbackIndex = draftEventQueryFallbackIndex;
+      draftEventQueryFallbackIndex += 1;
+      return fallbackIndex % 2 === 0 ? draftEventQueryResult : credentialQueryResult;
+    }
+    return credentialQueryResult ?? draftEventQueryResult;
+  }
   return undefined;
 });
 
-const mockActionHandler = mock(async (args: unknown) => {
-  actionCalls.push({ args });
-  if (isRecord(args) && "eventId" in args && !("lists" in args) && !("patch" in args)) {
-    return [];
-  }
+function recordActionCall(
+  actionName: ActionCall["actionName"],
+  args: unknown,
+): { ok: true; eventId: string } {
+  actionCalls.push({ actionName, args });
   return { ok: true, eventId: "event_created" };
+}
+
+const mockCreateActionHandler = mock(async (args: unknown) => recordActionCall("create", args));
+const mockUpdateActionHandler = mock(async (args: unknown) => recordActionCall("update", args));
+const mockUpdateAndPublishActionHandler = mock(async (args: unknown) =>
+  recordActionCall("updateAndPublish", args),
+);
+const mockGetStoredPasswordsActionHandler = mock(async () => []);
+const mockUnknownActionHandler = mock(async (args: unknown) => recordActionCall("unknown", args));
+let actionHookFallbackHandlers: Array<(args: unknown) => Promise<unknown>> = [
+  mockCreateActionHandler,
+  mockUpdateActionHandler,
+  mockUpdateAndPublishActionHandler,
+];
+const mockUseAction = mock((actionReference: unknown) => {
+  const fallbackIndex = actionHookFallbackIndex;
+  actionHookFallbackIndex += 1;
+  if (actionReference === api.eventsNode.create) return mockCreateActionHandler;
+  if (actionReference === api.eventsNode.update) return mockUpdateActionHandler;
+  if (actionReference === api.eventsNode.updateAndPublish) {
+    return mockUpdateAndPublishActionHandler;
+  }
+  return (
+    actionHookFallbackHandlers[fallbackIndex % actionHookFallbackHandlers.length] ??
+    mockUnknownActionHandler
+  );
 });
-const mockUseAction = mock(() => mockActionHandler);
 
 const mockUseMutation = mock(() =>
   mock(async () => ({
@@ -90,6 +140,24 @@ mock.module("convex/react", () => ({
   useAction: mockUseAction,
   useMutation: mockUseMutation,
   useQuery: mockUseQuery,
+}));
+
+mock.module("next/navigation", () => ({
+  useRouter: () => ({
+    push: () => {},
+    replace: () => {},
+    prefetch: () => {},
+    back: () => {},
+    forward: () => {},
+    refresh: () => {},
+  }),
+  usePathname: () => `/workspaces/${workspaceScope.workspaceSlug}/host/new`,
+  useSearchParams: () => currentSearchParams,
+  useParams: () => ({
+    workspaceSlug: workspaceScope.workspaceSlug,
+  }),
+  redirect: () => null,
+  notFound: () => null,
 }));
 
 mock.module("@/lib/use-workspace-scope", () => ({
@@ -185,10 +253,259 @@ describe("event confirmation texts", () => {
   beforeEach(() => {
     actionCalls.length = 0;
     credentialQueryResult = undefined;
-    mockActionHandler.mockClear();
+    draftEventQueryResult = undefined;
+    currentSearchParams = new URLSearchParams();
+    draftEventQueryFallbackIndex = 0;
+    actionHookFallbackIndex = 0;
+    workspaceQueryResult = {
+      slug: "dojo",
+      name: "Dojo",
+      eventDefaults: {},
+      sites: [{ siteKey: "dojo" }],
+    };
+    workspaceScope = {
+      workspaceSlug: "dojo",
+      siteKey: "dojo",
+      brandName: "Dojo",
+      queryArgs: {
+        siteKey: "dojo",
+        workspaceSlug: "dojo",
+      },
+    };
+    mockCreateActionHandler.mockClear();
+    mockUpdateActionHandler.mockClear();
+    mockUpdateAndPublishActionHandler.mockClear();
+    mockGetStoredPasswordsActionHandler.mockClear();
+    mockUnknownActionHandler.mockClear();
     mockUseAction.mockClear();
     mockUseMutation.mockClear();
     mockUseQuery.mockClear();
+    actionHookFallbackHandlers = [
+      mockCreateActionHandler,
+      mockUpdateActionHandler,
+      mockUpdateAndPublishActionHandler,
+    ];
+  });
+
+  it("prefills new event colors and lists from workspace defaults", async () => {
+    workspaceQueryResult = {
+      slug: "club-chlorine",
+      name: "Club Chlorine",
+      eventDefaults: {
+        themeBackgroundColor: "#101820",
+        themeTextColor: "#FEE715",
+        listKeys: ["pool", "cabana"],
+      },
+      sites: [{ siteKey: "club-chlorine" }],
+    };
+    workspaceScope = {
+      workspaceSlug: "club-chlorine",
+      siteKey: "club-chlorine",
+      brandName: "Club Chlorine",
+      queryArgs: {
+        siteKey: "club-chlorine",
+        workspaceSlug: "club-chlorine",
+      },
+    };
+
+    render(<EventCreateWizard />);
+
+    fireEvent.change(screen.getByPlaceholderText("Pomodoro 14"), {
+      target: { value: "Pool Night" },
+    });
+    await clickContinue();
+    await screen.findByText("Where, when, how many.");
+    fireEvent.change(screen.getByPlaceholderText(/Bushwick/), {
+      target: { value: "Pool Deck" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set event date" }));
+    await clickContinue();
+    await screen.findByText("Pick the colors.");
+
+    expect(screen.getAllByDisplayValue("#101820").length).toBeGreaterThan(0);
+    expect(screen.getAllByDisplayValue("#FEE715").length).toBeGreaterThan(0);
+
+    await clickContinue();
+    await screen.findByText("Drop the flyer.");
+    await clickContinue();
+    await screen.findByText("Status & ticket details.");
+    await clickContinue();
+    await screen.findByText("How they get in.");
+
+    expect(screen.getByDisplayValue("pool")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("cabana")).toBeInTheDocument();
+  });
+
+  it("uses the tenant site preset when workspace event colors are absent", async () => {
+    workspaceQueryResult = {
+      slug: "club-chlorine",
+      name: "Club Chlorine",
+      eventDefaults: {},
+      sites: [{ siteKey: "club-chlorine" }],
+    };
+    workspaceScope = {
+      workspaceSlug: "club-chlorine",
+      siteKey: "club-chlorine",
+      brandName: "Club Chlorine",
+      queryArgs: {
+        siteKey: "club-chlorine",
+        workspaceSlug: "club-chlorine",
+      },
+    };
+
+    render(<EventCreateWizard />);
+
+    fireEvent.change(screen.getByPlaceholderText("Pomodoro 14"), {
+      target: { value: "Pool Night" },
+    });
+    await clickContinue();
+    await screen.findByText("Where, when, how many.");
+    fireEvent.change(screen.getByPlaceholderText(/Bushwick/), {
+      target: { value: "Pool Deck" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set event date" }));
+    await clickContinue();
+    await screen.findByText("Pick the colors.");
+
+    expect(screen.getAllByDisplayValue("#FFFFFF").length).toBeGreaterThan(0);
+    expect(screen.getAllByDisplayValue("#1E3CFF").length).toBeGreaterThan(0);
+  });
+
+  it("disables draft save while an existing draft is loading", () => {
+    currentSearchParams = new URLSearchParams("draftId=draft_event");
+    credentialQueryResult = undefined;
+    draftEventQueryResult = undefined;
+
+    render(<EventCreateWizard />);
+
+    expect(screen.getByRole("button", { name: "save & finish later" })).toBeDisabled();
+  });
+
+  it("hydrates an existing draft before saving so stored event and list values win", async () => {
+    currentSearchParams = new URLSearchParams("draftId=draft_event");
+    draftEventQueryResult = {
+      _id: "draft_event",
+      name: "Stored Draft",
+      hosts: ["Stored Host"],
+      location: "Stored Room",
+      eventDate: Date.UTC(2030, 4, 1, 22, 0),
+      eventTimezone: "UTC",
+      maxAttendees: 2,
+      status: "inactive",
+      lifecycle: "draft",
+      themeBackgroundColor: "#0A0B0C",
+      themeTextColor: "#DDEEFF",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    } as unknown as Event;
+    credentialQueryResult = [
+      {
+        _id: "credential_press",
+        listKey: "press",
+        password: "blue-door",
+        generateQR: true,
+        sendQrOnApproval: true,
+        approvalMessage: "Press approved.",
+      },
+    ];
+
+    render(<EventCreateWizard />);
+
+    await screen.findByDisplayValue("Stored Draft");
+    await waitFor(() => {
+      const saveDraftButton = screen.getByRole("button", {
+        name: "save & finish later",
+      }) as HTMLButtonElement;
+      expect(saveDraftButton.disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "save & finish later" }));
+
+    await waitFor(() => {
+      const updateCall = actionCalls.find((actionCall) => actionCall.actionName === "update");
+      expect(updateCall).toBeDefined();
+      const updateArgs = updateCall?.args as {
+        patch: { location: string; themeBackgroundColor: string; themeTextColor: string };
+        lists: ListPayload[];
+      };
+      expect(updateArgs.patch.location).toBe("Stored Room");
+      expect(updateArgs.patch.themeBackgroundColor).toBe("#0A0B0C");
+      expect(updateArgs.patch.themeTextColor).toBe("#DDEEFF");
+      expect(updateArgs.lists).toContainEqual({
+        id: "credential_press",
+        listKey: "press",
+        password: "blue-door",
+        generateQR: true,
+        sendQrOnApproval: true,
+        approvalMessage: "Press approved.",
+      });
+    });
+  });
+
+  it("publishes existing drafts through updateAndPublish with the full patch and lists", async () => {
+    currentSearchParams = new URLSearchParams("draftId=draft_event");
+    draftEventQueryResult = {
+      _id: "draft_event",
+      name: "Stored Draft",
+      hosts: ["Stored Host"],
+      location: "Stored Room",
+      eventDate: Date.UTC(2030, 4, 1, 22, 0),
+      eventTimezone: "UTC",
+      maxAttendees: 2,
+      status: "inactive",
+      lifecycle: "draft",
+      themeBackgroundColor: "#0A0B0C",
+      themeTextColor: "#DDEEFF",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    } as unknown as Event;
+    credentialQueryResult = [
+      {
+        _id: "credential_press",
+        listKey: "press",
+        password: "blue-door",
+        generateQR: true,
+        sendQrOnApproval: true,
+        approvalMessage: "Press approved.",
+      },
+    ];
+
+    render(<EventCreateWizard />);
+
+    await screen.findByDisplayValue("Stored Draft");
+    await waitFor(() => {
+      const saveDraftButton = screen.getByRole("button", {
+        name: "save & finish later",
+      }) as HTMLButtonElement;
+      expect(saveDraftButton.disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByText("Review"));
+    await screen.findByText("Last look.");
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+
+    await waitFor(() => {
+      const publishCall = actionCalls.find(
+        (actionCall) => actionCall.actionName === "updateAndPublish",
+      );
+      expect(publishCall).toBeDefined();
+      const publishArgs = publishCall?.args as {
+        eventId: string;
+        patch: { location: string; themeBackgroundColor: string; themeTextColor: string };
+        lists: ListPayload[];
+      };
+      expect(publishArgs.eventId).toBe("draft_event");
+      expect(publishArgs.patch.location).toBe("Stored Room");
+      expect(publishArgs.patch.themeBackgroundColor).toBe("#0A0B0C");
+      expect(publishArgs.patch.themeTextColor).toBe("#DDEEFF");
+      expect(publishArgs.lists).toContainEqual({
+        id: "credential_press",
+        listKey: "press",
+        password: "blue-door",
+        generateQR: true,
+        sendQrOnApproval: true,
+        approvalMessage: "Press approved.",
+      });
+    });
+    expect(actionCalls.some((actionCall) => actionCall.actionName === "update")).toBe(false);
   });
 
   it("adds a creation wizard step for per-list confirmation texts and submits them", async () => {
@@ -257,6 +574,8 @@ describe("event confirmation texts", () => {
   });
 
   it("adds an edit dialog tab that hydrates per-list and fallback confirmation texts", async () => {
+    actionHookFallbackHandlers = [mockUpdateActionHandler, mockGetStoredPasswordsActionHandler];
+    actionHookFallbackIndex = 0;
     credentialQueryResult = [
       {
         _id: "credential_vip",

@@ -13,6 +13,10 @@ type QueryArgs = Record<string, unknown> | "skip";
 
 const routerReplaceCalls: string[] = [];
 const postHogFeatureFlagCalls: string[] = [];
+const submitRsvpCalls: Array<Record<string, unknown>> = [];
+const submitGuestRsvpCalls: Array<Record<string, unknown>> = [];
+const clerkSignOutCalls: string[] = [];
+const locationAssignCalls: string[] = [];
 let clerkIsLoaded = true;
 let clerkIsSignedIn = true;
 let convexIsAuthenticated = true;
@@ -40,6 +44,13 @@ function createMatchMediaResult(query: string): MediaQueryList {
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => createMatchMediaResult(query),
+});
+
+Object.defineProperty(window.location, "assign", {
+  configurable: true,
+  value: (nextUrl: string | URL) => {
+    locationAssignCalls.push(String(nextUrl));
+  },
 });
 
 function createEvent(overrides: Partial<Event> = {}): Event {
@@ -82,10 +93,15 @@ mock.module("@clerk/nextjs", () => ({
   useAuth: () => ({
     isLoaded: clerkIsLoaded,
     isSignedIn: clerkIsSignedIn,
+    signOut: async () => {
+      clerkSignOutCalls.push("signOut");
+    },
   }),
   useClerk: () => ({
     openUserProfile: mock(() => {}),
-    signOut: mock(async () => undefined),
+    signOut: async () => {
+      clerkSignOutCalls.push("signOut");
+    },
   }),
   useUser: () => ({
     user: clerkIsSignedIn
@@ -119,7 +135,24 @@ mock.module("convex/react", () => ({
     if (queryFunctionName === "socialProfiles:listForCurrentUser") return [];
     return undefined;
   },
-  useMutation: () => mock(async () => undefined),
+  useMutation: (mutationReference: unknown) => {
+    const mutationFunctionName = getQueryFunctionName(mutationReference);
+    return mock(async (mutationArgs: Record<string, unknown>) => {
+      if (mutationFunctionName === "rsvps:submitRequest") {
+        submitRsvpCalls.push(mutationArgs);
+      }
+      if (mutationFunctionName === "rsvps:submitGuestRequest") {
+        submitGuestRsvpCalls.push(mutationArgs);
+        return {
+          ok: true,
+          rsvpId: "rsvp_guest_123",
+          rsvpHandoffToken: "handoff_123",
+          expiresAt: Date.now() + 900_000,
+        };
+      }
+      return undefined;
+    });
+  },
   useAction: () => mock(async () => ({ ok: true, listKey: "vip", matched: "fallback" })),
 }));
 
@@ -157,8 +190,72 @@ mock.module("posthog-js", () => ({
   },
 }));
 
+interface MockRsvpCollectedArgs {
+  firstName: string;
+  lastName?: string;
+  phone: string;
+  requiresPhoneVerification: boolean;
+  shareContact: true;
+  attendees: number;
+  attendanceStatus: "yes" | "no" | "maybe";
+  smsConsent: boolean;
+  customFields: Record<string, string>;
+  socialProfiles: Array<{ platformKey: string; handle: string }>;
+  resolvedListKey: string;
+}
+
+interface MockRsvpAcceptedFormProps {
+  onCollect?: (args: MockRsvpCollectedArgs) => void | Promise<void>;
+}
+
+function createCollectedRsvpArgs(
+  overrides: Partial<MockRsvpCollectedArgs> = {},
+): MockRsvpCollectedArgs {
+  return {
+    firstName: "Test",
+    lastName: "Guest",
+    phone: "+15555550123",
+    requiresPhoneVerification: false,
+    shareContact: true,
+    attendees: 1,
+    attendanceStatus: "yes",
+    smsConsent: false,
+    customFields: {},
+    socialProfiles: [],
+    resolvedListKey: "vip",
+    ...overrides,
+  };
+}
+
 mock.module("../app/events/[eventId]/rsvp/rsvp-accepted-form", () => ({
-  RsvpAcceptedForm: () => <div data-testid="rsvp-form">RSVP form</div>,
+  RsvpAcceptedForm: ({ onCollect }: MockRsvpAcceptedFormProps) => (
+    <div data-testid="rsvp-form">
+      RSVP form
+      <button
+        type="button"
+        data-testid="submit-matching-phone"
+        onClick={() => {
+          void onCollect?.(createCollectedRsvpArgs());
+        }}
+      >
+        Submit matching phone
+      </button>
+      <button
+        type="button"
+        data-testid="submit-changed-phone"
+        onClick={() => {
+          void onCollect?.(
+            createCollectedRsvpArgs({
+              phone: "+15555550999",
+              requiresPhoneVerification: true,
+            }),
+          );
+        }}
+      >
+        Submit changed phone
+      </button>
+    </div>
+  ),
 }));
 
 const { RsvpPageClient } = await import("../app/events/[eventId]/rsvp/rsvp-page-client");
@@ -170,17 +267,7 @@ async function renderRsvpPage() {
   await act(async () => {
     render(
       <Suspense fallback={<div>Loading route</div>}>
-        <RsvpPageClient params={Promise.resolve({ eventId: "club" })} formVariant="stepped" />
-      </Suspense>,
-    );
-  });
-}
-
-async function renderFullRsvpPage() {
-  await act(async () => {
-    render(
-      <Suspense fallback={<div>Loading route</div>}>
-        <RsvpPageClient params={Promise.resolve({ eventId: "club" })} formVariant="full" />
+        <RsvpPageClient params={Promise.resolve({ eventId: "club" })} />
       </Suspense>,
     );
   });
@@ -206,6 +293,10 @@ describe("RSVP page reservation-status gate", () => {
   beforeEach(() => {
     routerReplaceCalls.length = 0;
     postHogFeatureFlagCalls.length = 0;
+    submitRsvpCalls.length = 0;
+    submitGuestRsvpCalls.length = 0;
+    clerkSignOutCalls.length = 0;
+    locationAssignCalls.length = 0;
     clerkIsLoaded = true;
     clerkIsSignedIn = true;
     convexIsAuthenticated = true;
@@ -295,16 +386,43 @@ describe("RSVP page reservation-status gate", () => {
     expect(routerReplaceCalls).toEqual([]);
   });
 
-  it("redirects mobile full-form RSVP URLs back to the segmented flow", async () => {
-    viewportIsMobile = true;
+  it("submits directly when a signed-in RSVP keeps the Clerk phone", async () => {
+    routeRsvpStatus = null;
 
-    await renderFullRsvpPage();
+    await renderRsvpPage();
+
+    await act(async () => {
+      screen.getByTestId("submit-matching-phone").click();
+    });
 
     await waitFor(() => {
-      expect(routerReplaceCalls).toContain("/events/club/rsvp/info?step=info");
+      expect(submitRsvpCalls).toHaveLength(1);
     });
-    expect(screen.queryByTestId("rsvp-form")).toBeNull();
-    expect(postHogFeatureFlagCalls).toEqual([]);
+    expect(submitGuestRsvpCalls).toEqual([]);
+    expect(clerkSignOutCalls).toEqual([]);
+    expect(locationAssignCalls).toEqual([]);
+    expect(routerReplaceCalls).toEqual(["/events/club/status"]);
+    expect(submitRsvpCalls[0]?.phone).toBe("+15555550123");
+  });
+
+  it("submits a handoff RSVP and signs out when a signed-in RSVP changes phone", async () => {
+    routeRsvpStatus = null;
+
+    await renderRsvpPage();
+
+    await act(async () => {
+      screen.getByTestId("submit-changed-phone").click();
+    });
+
+    await waitFor(() => {
+      expect(submitGuestRsvpCalls).toHaveLength(1);
+    });
+    expect(submitRsvpCalls).toEqual([]);
+    expect(submitGuestRsvpCalls[0]?.phone).toBe("+15555550999");
+    expect(clerkSignOutCalls).toEqual(["signOut"]);
+    expect(locationAssignCalls).toHaveLength(1);
+    expect(locationAssignCalls[0]).toContain("rsvp_handoff=handoff_123");
+    expect(locationAssignCalls[0]).not.toContain("5555550999");
   });
 
   it("uses segmented RSVP links on mobile homepage events without evaluating the experiment", async () => {

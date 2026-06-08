@@ -65,25 +65,16 @@ function formatExpandedDate(timestamp: number, timezone?: string): string {
   return `${day} ${formatted} · ${time}`;
 }
 
-function formatEndTime(timestamp: number, timezone?: string): string {
-  return new Date(timestamp).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: timezone ?? "UTC",
-  });
-}
-
-const monoLabelStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+const textLabelStyle: React.CSSProperties = {
+  fontFamily: "var(--tt-text)",
   fontSize: 11,
   letterSpacing: "0.1em",
   textTransform: "uppercase",
   color: "var(--tt-fg-mute)",
 };
 
-const monoBodyStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+const textBodyStyle: React.CSSProperties = {
+  fontFamily: "var(--tt-text)",
   fontSize: 12,
   letterSpacing: "0.04em",
   color: "var(--tt-fg-dim)",
@@ -141,7 +132,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     return (
       <div
         style={{
-          fontFamily: 'var(--font-geist-mono), "Geist Mono", ui-monospace, monospace',
+          fontFamily: "var(--tt-text)",
           fontSize: 12,
           letterSpacing: "0.08em",
           color: "var(--tt-fg-mute)",
@@ -189,33 +180,26 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   const expandedContent = (
     <div className="flex flex-col gap-5">
       <dl className="grid gap-x-6 gap-y-2" style={{ gridTemplateColumns: "min-content 1fr" }}>
-        <dt style={monoLabelStyle}>When</dt>
-        <dd style={monoBodyStyle}>
+        <dt style={textLabelStyle}>When</dt>
+        <dd style={textBodyStyle}>
           {formatExpandedDate(resolvedFocusedEvent.eventDate, resolvedFocusedEvent.eventTimezone)}
-          {resolvedFocusedEvent.eventEndDate ? (
-            <span>
-              {" "}
-              — until{" "}
-              {formatEndTime(resolvedFocusedEvent.eventEndDate, resolvedFocusedEvent.eventTimezone)}
-            </span>
-          ) : null}
         </dd>
         {resolvedFocusedEvent.location ? (
           <>
-            <dt style={monoLabelStyle}>Where</dt>
-            <dd style={monoBodyStyle}>{resolvedFocusedEvent.location}</dd>
+            <dt style={textLabelStyle}>Where</dt>
+            <dd style={textBodyStyle}>{resolvedFocusedEvent.location}</dd>
           </>
         ) : null}
         {resolvedFocusedEvent.hosts && resolvedFocusedEvent.hosts.length > 0 ? (
           <>
-            <dt style={monoLabelStyle}>Hosts</dt>
-            <dd style={monoBodyStyle}>{resolvedFocusedEvent.hosts.join(", ")}</dd>
+            <dt style={textLabelStyle}>Hosts</dt>
+            <dd style={textBodyStyle}>{resolvedFocusedEvent.hosts.join(", ")}</dd>
           </>
         ) : null}
         {resolvedFocusedEvent.productionCompany ? (
           <>
-            <dt style={monoLabelStyle}>Presented by</dt>
-            <dd style={monoBodyStyle}>{resolvedFocusedEvent.productionCompany}</dd>
+            <dt style={textLabelStyle}>Presented by</dt>
+            <dd style={textBodyStyle}>{resolvedFocusedEvent.productionCompany}</dd>
           </>
         ) : null}
       </dl>
@@ -319,8 +303,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
               <Link
                 href={buildPathWithPreservedQuery("/", searchParams, ["step"])}
                 style={{
-                  fontFamily:
-                    'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+                  fontFamily: "var(--tt-text)",
                   fontSize: 10,
                   fontWeight: 600,
                   letterSpacing: "0.08em",

@@ -37,6 +37,27 @@ import React from "react";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
 import EditEventDialog from "@/app/workspaces/[workspaceSlug]/host/events/edit-event-dialog";
+import {
+  APPROVAL_STATUS_OPTIONS,
+  type ApprovalStatusOption,
+  ATTENDANCE_STATUS_OPTIONS,
+  type AttendanceStatusOption,
+  formatTicketViewedTimestamp,
+  getApprovalStatusLabel,
+  getAttendanceStatusLabel,
+  getHostRsvpCustomFieldValue,
+  getHostRsvpGuestDisplayValue,
+  getTicketStatusLabel,
+  getTimestampDateTimeLabels,
+  normalizeTicketStatus,
+  RsvpApprovalStatusControl,
+  RsvpAttendanceStatusControl,
+  RsvpListKeyControl,
+  RsvpTicketStatusControl,
+  TICKET_STATUS_OPTIONS,
+  type TicketDisplayStatus,
+  type TicketStatusOption,
+} from "@/components/rsvps/rsvp-controls";
 import { ShareEventPopover } from "@/components/share-event-popover";
 import {
   AlertDialog,
@@ -74,8 +95,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -110,6 +129,7 @@ import {
 } from "@/lib/event-lifecycle-actions";
 import { buildPublicEventUrl } from "@/lib/event-public-url";
 import { useDebounce } from "@/lib/hooks/use-debounce";
+import { buildRsvpReviewFeedSearchParams } from "@/lib/rsvp-review-feed";
 import {
   getRsvpContextActionTargets,
   getRsvpSelectionRangeIds,
@@ -131,11 +151,7 @@ type PaginatedHostRsvpResult = {
   isDone: boolean;
 };
 
-type ApprovalStatusOption = "pending" | "approved" | "denied";
 type ApprovalFilterOption = "all" | ApprovalStatusOption;
-type AttendanceStatusOption = "yes" | "no" | "maybe";
-type TicketStatusOption = "issued" | "not-issued" | "disabled";
-type TicketDisplayStatus = TicketStatusOption | "redeemed";
 type ExportableApprovalStatusOption = "pending" | "approved" | "denied";
 
 const hasStringAccessorKey = <TData extends RowData>(
@@ -147,107 +163,6 @@ const hasStringAccessorKey = <TData extends RowData>(
 
 const EXPORT_STATUS_OPTIONS: ExportableApprovalStatusOption[] = ["pending", "approved", "denied"];
 const DEFAULT_EXPORT_STATUS_OPTIONS: ExportableApprovalStatusOption[] = ["approved"];
-const APPROVAL_STATUS_OPTIONS: ApprovalStatusOption[] = ["pending", "approved", "denied"];
-const ATTENDANCE_STATUS_OPTIONS: AttendanceStatusOption[] = ["yes", "maybe", "no"];
-const TICKET_STATUS_OPTIONS: TicketStatusOption[] = ["not-issued", "issued", "disabled"];
-
-function getApprovalStatusLabel(status: ApprovalStatusOption): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function getAttendanceStatusLabel(status: AttendanceStatusOption): string {
-  switch (status) {
-    case "yes":
-      return "Yes";
-    case "maybe":
-      return "Maybe";
-    case "no":
-      return "No";
-  }
-}
-
-function getAttendanceStatusClassName(status: AttendanceStatusOption): string {
-  switch (status) {
-    case "yes":
-      return "text-green-700 border-green-200 bg-green-50 hover:bg-green-10 hover:text-green-700";
-    case "maybe":
-      return "text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-10 hover:text-amber-700";
-    case "no":
-      return "text-red-700 border-red-200 bg-red-50 hover:bg-red-10 hover:text-red-700";
-  }
-}
-
-function getTicketStatusLabel(status: TicketDisplayStatus): string {
-  switch (status) {
-    case "issued":
-      return "Issued";
-    case "redeemed":
-      return "Redeemed";
-    case "disabled":
-      return "Disabled";
-    case "not-issued":
-    default:
-      return "None";
-  }
-}
-
-function formatTicketViewedTimestamp(timestamp: number): string {
-  const date = new Date(timestamp);
-  return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
-}
-
-function normalizeTicketStatus(status: HostRsvp["redemptionStatus"]): TicketDisplayStatus {
-  if (status === "none") {
-    return "not-issued";
-  }
-  return status;
-}
-
-function normalizeFieldKey(key: string): string {
-  return key
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "")
-    .trim();
-}
-
-function getHostRsvpCustomFieldValue(rsvp: HostRsvp, fieldKey: string): string {
-  if (!rsvp.customFieldValues) {
-    return "";
-  }
-
-  const exactValue = rsvp.customFieldValues[fieldKey];
-  if (exactValue) {
-    return exactValue;
-  }
-
-  const normalizedFieldKey = normalizeFieldKey(fieldKey);
-  for (const [customFieldKey, customFieldValue] of Object.entries(rsvp.customFieldValues)) {
-    if (normalizeFieldKey(customFieldKey) === normalizedFieldKey) {
-      return customFieldValue;
-    }
-  }
-
-  return "";
-}
-
-function getHostRsvpGuestDisplayValue(rsvp: HostRsvp): string {
-  const displayName = `${rsvp.firstName || ""} ${rsvp.lastName || ""}`.trim();
-  return displayName || rsvp.contact?.email || rsvp.contact?.phone || "(no contact)";
-}
-
-function getTimestampDateTimeLabels(timestamp: number): [string, string] {
-  const date = new Date(timestamp);
-  return [
-    date.toLocaleDateString(),
-    date.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-  ];
-}
 
 function stopRsvpTableInteractiveEventPropagation(event: React.SyntheticEvent): void {
   event.stopPropagation();
@@ -290,112 +205,29 @@ function RsvpListKeyCell({ row }: CellContext<HostRsvp, unknown>) {
   const { isReadOnly, listCredentials, loadingListUpdates, handleSingleListKeyChange } =
     useRsvpTableContext();
   const rsvp = row.original;
-  const currentListKey = rsvp.listKey;
-  const availableListKeys = listCredentials?.map((credential) => credential.listKey) || [];
-  const isUpdatingList = loadingListUpdates.has(rsvp.id);
-
-  if (isReadOnly || availableListKeys.length <= 1) {
-    return <span className="block max-w-full truncate">{currentListKey?.toUpperCase()}</span>;
-  }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="xs"
-          className="h-6 max-w-full min-w-0 shrink overflow-hidden px-2 text-xs"
-          disabled={isUpdatingList}
-          onClick={stopRsvpTableInteractiveEventPropagation}
-          onPointerDown={stopRsvpTableInteractiveEventPropagation}
-        >
-          {isUpdatingList && <Spinner className="mr-1 h-3 w-3" />}
-          {!isUpdatingList && (
-            <span className="min-w-0 truncate">{currentListKey?.toUpperCase()}</span>
-          )}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent onClick={stopRsvpTableInteractiveEventPropagation}>
-        <DropdownMenuRadioGroup
-          value={currentListKey}
-          onValueChange={(newListKey) => handleSingleListKeyChange(rsvp, newListKey)}
-        >
-          {availableListKeys.map((listKey) => (
-            <DropdownMenuRadioItem key={listKey} value={listKey}>
-              {listKey.toUpperCase()}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <RsvpListKeyControl
+      rsvp={rsvp}
+      isReadOnly={isReadOnly}
+      listCredentials={listCredentials}
+      isUpdating={loadingListUpdates.has(rsvp.id)}
+      onChange={handleSingleListKeyChange}
+    />
   );
 }
 
 function RsvpApprovalStatusCell({ row }: CellContext<HostRsvp, unknown>) {
   const { isReadOnly, loadingApprovalUpdates, handleSingleApprovalChange } = useRsvpTableContext();
   const rsvp = row.original;
-  const currentApprovalStatus = rsvp.approvalStatus;
-  const isUpdatingApproval = loadingApprovalUpdates.has(rsvp.id);
-
-  const getStatusColor = (currentStatus: ApprovalStatusOption): string => {
-    switch (currentStatus) {
-      case "approved":
-        return "text-green-700 border-green-200 bg-green-50 hover:bg-green-10 hover:text-green-700";
-      case "denied":
-        return "text-red-700 border-red-200 bg-red-50 hover:bg-red-10 hover:text-red-700";
-      case "pending":
-      default:
-        return "text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-10 hover:text-amber-700";
-    }
-  };
-
-  if (isReadOnly) {
-    return (
-      <Badge variant="secondary" className="text-xs">
-        {getApprovalStatusLabel(currentApprovalStatus)}
-      </Badge>
-    );
-  }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="xs"
-          className={cn(
-            "max-w-full min-w-0 shrink overflow-hidden",
-            getStatusColor(currentApprovalStatus),
-          )}
-          disabled={isUpdatingApproval}
-          onClick={stopRsvpTableInteractiveEventPropagation}
-          onPointerDown={stopRsvpTableInteractiveEventPropagation}
-        >
-          {isUpdatingApproval && <Spinner className="mr-1 h-3 w-3" />}
-          {!isUpdatingApproval && (
-            <span className="min-w-0 truncate">
-              {getApprovalStatusLabel(currentApprovalStatus)}
-            </span>
-          )}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent onClick={stopRsvpTableInteractiveEventPropagation}>
-        <DropdownMenuRadioGroup
-          value={currentApprovalStatus}
-          onValueChange={(value) => handleSingleApprovalChange(rsvp, value as ApprovalStatusOption)}
-        >
-          <DropdownMenuRadioItem value="pending" disabled={rsvp.redemptionStatus === "redeemed"}>
-            <span className="text-amber-700">Pending</span>
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="approved">
-            <span className="text-green-700">Approved</span>
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="denied">
-            <span className="text-red-700">Denied</span>
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <RsvpApprovalStatusControl
+      rsvp={rsvp}
+      isReadOnly={isReadOnly}
+      isUpdating={loadingApprovalUpdates.has(rsvp.id)}
+      onChange={handleSingleApprovalChange}
+    />
   );
 }
 
@@ -403,67 +235,14 @@ function RsvpAttendanceStatusCell({ row }: CellContext<HostRsvp, unknown>) {
   const { isReadOnly, loadingAttendanceUpdates, handleSingleAttendanceStatusChange } =
     useRsvpTableContext();
   const rsvp = row.original;
-  const currentAttendanceStatus = rsvp.attendanceStatus;
-  const isUpdatingAttendance = loadingAttendanceUpdates.has(rsvp.id);
-
-  if (isReadOnly) {
-    return (
-      <Badge
-        variant="secondary"
-        className={cn("text-xs", getAttendanceStatusClassName(currentAttendanceStatus))}
-      >
-        {getAttendanceStatusLabel(currentAttendanceStatus)}
-      </Badge>
-    );
-  }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="xs"
-          className={cn(
-            "max-w-full min-w-0 shrink overflow-hidden",
-            getAttendanceStatusClassName(currentAttendanceStatus),
-          )}
-          disabled={isUpdatingAttendance}
-          onClick={stopRsvpTableInteractiveEventPropagation}
-          onPointerDown={stopRsvpTableInteractiveEventPropagation}
-        >
-          {isUpdatingAttendance && <Spinner className="mr-1 h-3 w-3" />}
-          {!isUpdatingAttendance && (
-            <span className="min-w-0 truncate">
-              {getAttendanceStatusLabel(currentAttendanceStatus)}
-            </span>
-          )}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent onClick={stopRsvpTableInteractiveEventPropagation}>
-        <DropdownMenuRadioGroup
-          value={currentAttendanceStatus}
-          onValueChange={(value) =>
-            handleSingleAttendanceStatusChange(rsvp, value as AttendanceStatusOption)
-          }
-        >
-          {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => (
-            <DropdownMenuRadioItem key={attendanceStatusOption} value={attendanceStatusOption}>
-              <span
-                className={
-                  attendanceStatusOption === "yes"
-                    ? "text-green-700"
-                    : attendanceStatusOption === "maybe"
-                      ? "text-amber-700"
-                      : "text-red-700"
-                }
-              >
-                {getAttendanceStatusLabel(attendanceStatusOption)}
-              </span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <RsvpAttendanceStatusControl
+      rsvp={rsvp}
+      isReadOnly={isReadOnly}
+      isUpdating={loadingAttendanceUpdates.has(rsvp.id)}
+      onChange={handleSingleAttendanceStatusChange}
+    />
   );
 }
 
@@ -476,100 +255,16 @@ function RsvpTicketStatusCell({ row }: CellContext<HostRsvp, unknown>) {
     openRsvpQrCode,
   } = useRsvpTableContext();
   const rsvp = row.original;
-  const originalTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
-  const currentTicketStatus = originalTicketStatus;
-  const isRedeemed = originalTicketStatus === "redeemed";
-  const ticketEditingIsAllowed = canEditTicketForRsvp(rsvp);
-  const isUpdatingTicket = loadingTicketUpdates.has(rsvp.id);
-
-  const getTicketStatusColor = (status: TicketDisplayStatus): string => {
-    switch (status) {
-      case "issued":
-        return "text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-10 hover:text-purple-700";
-      case "redeemed":
-        return "text-blue-700 border-blue-200 bg-blue-50 hover:text-blue-700 hover:bg-blue-10";
-      case "disabled":
-        return "text-red-700 border-red-200 bg-red-50 hover:bg-red-10 hover:text-red-700";
-      case "not-issued":
-      default:
-        return "text-gray-700 border-gray-200 bg-gray-50";
-    }
-  };
-
-  if (isReadOnly) {
-    const canViewQrCode =
-      (currentTicketStatus === "issued" || currentTicketStatus === "redeemed") &&
-      Boolean(rsvp.redemptionCode);
-
-    return (
-      <Button
-        variant="outline"
-        size="xs"
-        className={cn(
-          "max-w-full min-w-0 shrink overflow-hidden",
-          getTicketStatusColor(currentTicketStatus),
-        )}
-        disabled={!canViewQrCode}
-        onClick={(event) => {
-          stopRsvpTableInteractiveEventPropagation(event);
-          openRsvpQrCode(rsvp);
-        }}
-        onPointerDown={stopRsvpTableInteractiveEventPropagation}
-      >
-        <span className="min-w-0 truncate">{getTicketStatusLabel(currentTicketStatus)}</span>
-      </Button>
-    );
-  }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="xs"
-          className={cn(
-            "max-w-full min-w-0 shrink overflow-hidden",
-            getTicketStatusColor(currentTicketStatus),
-          )}
-          disabled={isRedeemed || isUpdatingTicket || !ticketEditingIsAllowed}
-          onClick={stopRsvpTableInteractiveEventPropagation}
-          onPointerDown={stopRsvpTableInteractiveEventPropagation}
-        >
-          {isUpdatingTicket && <Spinner className="mr-1 h-3 w-3" />}
-          {!isUpdatingTicket && (
-            <span className="min-w-0 truncate">{getTicketStatusLabel(currentTicketStatus)}</span>
-          )}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent onClick={stopRsvpTableInteractiveEventPropagation}>
-        <DropdownMenuRadioGroup
-          value={currentTicketStatus}
-          onValueChange={(value) =>
-            handleSingleTicketStatusChange(rsvp, value as TicketStatusOption)
-          }
-        >
-          <DropdownMenuRadioItem value="not-issued">
-            <span className="text-gray-700">None</span>
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="issued">
-            <span className="text-purple-700">Issued</span>
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="disabled">
-            <span className="text-red-700">Disabled</span>
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-        {(currentTicketStatus === "issued" || currentTicketStatus === "redeemed") &&
-          rsvp.redemptionCode && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => openRsvpQrCode(rsvp)}>
-                <QrCode className="w-4 h-4 mr-2" />
-                View QR Code
-              </DropdownMenuItem>
-            </>
-          )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <RsvpTicketStatusControl
+      rsvp={rsvp}
+      isReadOnly={isReadOnly}
+      isUpdating={loadingTicketUpdates.has(rsvp.id)}
+      canEditTicketForRsvp={canEditTicketForRsvp}
+      onChange={handleSingleTicketStatusChange}
+      onOpenQrCode={openRsvpQrCode}
+    />
   );
 }
 
@@ -617,13 +312,20 @@ function RsvpActionsCell({ row }: CellContext<HostRsvp, unknown>) {
 
 function RsvpSelectHeaderCell(_context: HeaderContext<HostRsvp, unknown>) {
   const { allSelected, someSelected, toggleSelectAllCurrent } = useRsvpTableContext();
+  const selectAllCheckboxLabel = allSelected
+    ? "Clear selected RSVPs on this page"
+    : "Select all RSVPs on this page";
 
   return (
     <Checkbox
       checked={allSelected || someSelected ? true : false}
       onCheckedChange={toggleSelectAllCurrent}
-      aria-label="Select all"
+      aria-label={selectAllCheckboxLabel}
+      title={selectAllCheckboxLabel}
       className="ml-2"
+      data-rsvp-table-interactive="true"
+      onClick={stopRsvpTableInteractiveEventPropagation}
+      onPointerDown={stopRsvpTableInteractiveEventPropagation}
       ref={(checkboxRootElement: HTMLButtonElement | null) => {
         if (checkboxRootElement) {
           const innerInputElement = checkboxRootElement.querySelector(
@@ -681,6 +383,7 @@ export default function RsvpsPage() {
   const workspaceAccess = useWorkspaceAccess();
   const isReadOnly = workspaceAccess?.canWrite === false;
   const rsvpsPath = useWorkspaceOperationPath("host", "rsvps");
+  const rsvpReviewFeedPath = useWorkspaceOperationPath("host", "rsvps/review");
   const workspace = useQuery(
     api.workspaces.getWorkspaceBySlug,
     workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
@@ -2000,6 +1703,10 @@ export default function RsvpsPage() {
   // (adds every row in the range), a checked anchor paints "deselect" (removes every row in
   // the range). The pre-drag selection is preserved for rows not touched by the drag.
   const orderedRsvpIds = React.useMemo(() => rsvps.map((rsvp) => rsvp.id), [rsvps]);
+  const selectedRsvpIdsInCurrentOrder = React.useMemo(
+    () => orderedRsvpIds.filter((rsvpId) => selectedRows.has(rsvpId)),
+    [orderedRsvpIds, selectedRows],
+  );
   const dragAnchorRsvpIdRef = React.useRef<string | null>(null);
   const dragStartSelectionRef = React.useRef<Set<string> | null>(null);
   const dragModeRef = React.useRef<"select" | "deselect" | null>(null);
@@ -2443,7 +2150,19 @@ export default function RsvpsPage() {
     }
   };
 
-  // Create initial columns without selection functionality
+  const handleOpenReviewFeed = React.useCallback(() => {
+    if (!eventId || selectedRsvpIdsInCurrentOrder.length === 0) {
+      return;
+    }
+
+    const reviewFeedSearchParams = buildRsvpReviewFeedSearchParams({
+      eventId,
+      rsvpIds: selectedRsvpIdsInCurrentOrder,
+    });
+    router.push(`${rsvpReviewFeedPath}?${reviewFeedSearchParams.toString()}`);
+  }, [eventId, router, rsvpReviewFeedPath, selectedRsvpIdsInCurrentOrder]);
+
+  // Create initial columns with the same selection header used after table state hydrates.
   const initialCols = React.useMemo<ColumnDef<HostRsvp>[]>(
     () =>
       isReadOnly
@@ -2451,7 +2170,8 @@ export default function RsvpsPage() {
         : [
             {
               id: "select",
-              header: "Select",
+              header: RsvpSelectHeaderCell,
+              meta: { label: "Select all" },
               ...RSVP_SELECT_COLUMN_SIZING,
               cell: RsvpSelectCell,
               enableSorting: false,
@@ -3120,7 +2840,7 @@ export default function RsvpsPage() {
     return () => document.removeEventListener("keydown", handleKeydown);
   }, [isReadOnly, toggleSelectAllCurrent]);
 
-  // Create the final columns with proper header checkbox
+  // Create the final columns with the select-all header checkbox.
   const finalCols = React.useMemo<ColumnDef<HostRsvp>[]>(() => {
     if (isReadOnly) {
       return baseCols;
@@ -3131,6 +2851,7 @@ export default function RsvpsPage() {
         id: "select",
         ...RSVP_SELECT_COLUMN_SIZING,
         header: RsvpSelectHeaderCell,
+        meta: { label: "Select all" },
         cell: RsvpSelectCell,
         enableSorting: false,
         enableHiding: false,
@@ -4176,6 +3897,15 @@ export default function RsvpsPage() {
                 </Button>
               </div>
               <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleOpenReviewFeed}
+                  disabled={selectedRsvpIdsInCurrentOrder.length === 0}
+                >
+                  <Eye className="h-4 w-4" />
+                  Review feed
+                </Button>
                 <ContextMenu>
                   <ContextMenuTrigger asChild>
                     <div className="inline-block">

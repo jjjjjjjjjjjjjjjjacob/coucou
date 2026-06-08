@@ -160,7 +160,7 @@ export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
     ruleStrong: "rgba(30, 60, 255, 0.40)",
     accent: "#1E3CFF",
     display: 'var(--font-bowlby-one), "Bowlby One", "Fugaz One", "Anton", "Impact", sans-serif',
-    text: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+    text: HELVETICA_STACK,
     titleSize: 96,
     upper: true,
     ctaShape: "rounded",

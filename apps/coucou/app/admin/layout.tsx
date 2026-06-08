@@ -195,6 +195,10 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
     orgId !== coucouOrganizationId &&
     Boolean(setActive) &&
     !activationErrorMessage;
+  const canVerifyCoucouMembership =
+    !coucouOrganizationId ||
+    orgId === coucouOrganizationId ||
+    verifiedMembershipOrganizationId === coucouOrganizationId;
 
   useEffect(() => {
     if (!isSwitchingToCoucouOrganization || !coucouOrganizationId) {
@@ -291,6 +295,7 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
       !isSignedIn ||
       !hasCoucouMembership ||
       !coucouOrganizationId ||
+      !canVerifyCoucouMembership ||
       verifiedMembershipOrganizationId === coucouOrganizationId ||
       membershipVerificationInFlightOrganizationIdRef.current === coucouOrganizationId ||
       membershipVerificationErrorMessage
@@ -323,6 +328,7 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
   }, [
     coucouMembership,
     coucouOrganizationId,
+    canVerifyCoucouMembership,
     ensureOrganizationMembership,
     hasCoucouMembership,
     isLoaded,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { WorkspaceAccessGate } from "../components/workspace-access-gate";
 
 interface WorkspaceAccessGateTestGlobal {
@@ -30,6 +30,9 @@ interface WorkspaceAccessGateTestGlobal {
     id?: string | number;
   }>;
   __getClerkSetActiveCalls?: () => Array<{ organization: string }>;
+  __setClerkSetActiveDeferred?: (nextShouldDefer: boolean) => void;
+  __resolveClerkSetActive?: () => void;
+  __getConvexActionCalls?: () => unknown[];
 }
 
 function getWorkspaceAccessGateTestGlobal(): typeof globalThis & WorkspaceAccessGateTestGlobal {
@@ -119,6 +122,75 @@ describe("WorkspaceAccessGate", () => {
         id: "toast_1",
       });
     });
+  });
+
+  it("waits for tenant organization activation before verifying workspace access", async () => {
+    getWorkspaceAccessGateTestGlobal().__setClerkTestState?.({
+      orgId: "org_other",
+      orgSlug: "other",
+    });
+    getWorkspaceAccessGateTestGlobal().__setClerkTestMemberships?.([
+      {
+        id: "membership_dojo",
+        role: "org:admin",
+        organization: {
+          id: "org_dojo",
+          name: "Dojo Pomodoro",
+          slug: "dojo-pomodoro",
+        },
+      },
+    ]);
+    getWorkspaceAccessGateTestGlobal().__setConvexQueryResponse?.({
+      _id: "workspace_123",
+      slug: "dojo-pomodoro",
+      name: "Dojo Pomodoro",
+      kind: "client",
+      clerkOrganizationId: "org_dojo",
+      clerkOrganizationSlug: "dojo-pomodoro",
+      sites: [],
+    });
+    getWorkspaceAccessGateTestGlobal().__setClerkSetActiveDeferred?.(true);
+
+    const workspaceGate = (
+      <WorkspaceAccessGate workspaceSlug="dojo-pomodoro" accessKind="host">
+        <div>Workspace loaded</div>
+      </WorkspaceAccessGate>
+    );
+    const { rerender } = render(workspaceGate);
+
+    await waitFor(() => {
+      expect(getWorkspaceAccessGateTestGlobal().__getClerkSetActiveCalls?.()).toEqual([
+        { organization: "org_dojo" },
+      ]);
+    });
+    expect(screen.getByText("Verifying Dojo Pomodoro access...")).toBeTruthy();
+    expect(getWorkspaceAccessGateTestGlobal().__getConvexActionCalls?.()).toEqual([]);
+
+    await act(async () => {
+      getWorkspaceAccessGateTestGlobal().__setClerkSetActiveDeferred?.(false);
+      getWorkspaceAccessGateTestGlobal().__resolveClerkSetActive?.();
+      getWorkspaceAccessGateTestGlobal().__setClerkTestState?.({
+        orgId: "org_dojo",
+        orgSlug: "dojo-pomodoro",
+      });
+      await Promise.resolve();
+    });
+    rerender(
+      <WorkspaceAccessGate workspaceSlug="dojo-pomodoro" accessKind="host">
+        <div>Workspace loaded</div>
+      </WorkspaceAccessGate>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Workspace loaded")).toBeTruthy();
+    });
+    expect(getWorkspaceAccessGateTestGlobal().__getConvexActionCalls?.()).toEqual([
+      {
+        clerkOrganizationId: "org_dojo",
+        organizationName: "Dojo Pomodoro",
+        organizationSlug: "dojo-pomodoro",
+      },
+    ]);
   });
 
   it("allows Coucou platform members to open tenant dashboards without tenant membership", async () => {

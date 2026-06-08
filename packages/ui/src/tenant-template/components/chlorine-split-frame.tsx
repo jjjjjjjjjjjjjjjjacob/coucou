@@ -38,6 +38,10 @@ export const CHLORINE_MOBILE_BREAKPOINT_PX = 720;
 // calculation) so the breakpoint is predictable from the value alone.
 const SHORT_DESKTOP_VIEWPORT_HEIGHT_PX = 600;
 const FALLBACK_VIEWPORT_DIMENSIONS = { width: 1024, height: 768 } as const;
+export const CHLORINE_COLLAPSED_SHELL_FALLBACK_VIEWPORT_DIMENSIONS = {
+  width: 390,
+  height: 852,
+} as const;
 
 export type ChlorinePhase = 0 | 1 | 2;
 export type ChlorinePieceGroup = "top" | "bottom";
@@ -58,6 +62,7 @@ export interface LandingViewportMeasurementInput {
   elementHeight: number;
   viewportWidth?: number;
   viewportHeight?: number;
+  fallbackViewportDimensions?: ViewportDimensions;
 }
 
 export interface StableLandingViewportMeasurementInput extends LandingViewportMeasurementInput {
@@ -78,15 +83,19 @@ export function resolveLandingViewportDimensions({
   elementHeight,
   viewportWidth,
   viewportHeight,
+  fallbackViewportDimensions,
 }: LandingViewportMeasurementInput): ViewportDimensions {
+  const resolvedFallbackViewportDimensions =
+    fallbackViewportDimensions ?? FALLBACK_VIEWPORT_DIMENSIONS;
+
   return {
     width: resolvePositiveDimension(
       elementWidth,
-      resolvePositiveDimension(viewportWidth, FALLBACK_VIEWPORT_DIMENSIONS.width),
+      resolvePositiveDimension(viewportWidth, resolvedFallbackViewportDimensions.width),
     ),
     height: resolvePositiveDimension(
       viewportHeight,
-      resolvePositiveDimension(elementHeight, FALLBACK_VIEWPORT_DIMENSIONS.height),
+      resolvePositiveDimension(elementHeight, resolvedFallbackViewportDimensions.height),
     ),
   };
 }
@@ -96,6 +105,7 @@ export function resolveStableLandingViewportDimensions({
   elementHeight,
   viewportWidth,
   viewportHeight,
+  fallbackViewportDimensions,
   previousViewport,
   forceMobile,
 }: StableLandingViewportMeasurementInput): ViewportDimensions {
@@ -104,6 +114,7 @@ export function resolveStableLandingViewportDimensions({
     elementHeight,
     viewportWidth,
     viewportHeight,
+    fallbackViewportDimensions,
   });
   const isMobileViewport = forceMobile ?? measuredViewport.width < CHLORINE_MOBILE_BREAKPOINT_PX;
 
@@ -128,11 +139,12 @@ export function resolveStableLandingViewportDimensions({
 export function useLandingViewport(
   landingElementRef: RefObject<HTMLDivElement | null>,
   forceMobile?: boolean,
+  fallbackViewportDimensions: ViewportDimensions = FALLBACK_VIEWPORT_DIMENSIONS,
 ): LandingViewport {
   const [viewportState, setViewportState] = useState<
     ViewportDimensions & { hasMeasuredViewport: boolean }
   >({
-    ...FALLBACK_VIEWPORT_DIMENSIONS,
+    ...fallbackViewportDimensions,
     hasMeasuredViewport: false,
   });
 
@@ -152,6 +164,7 @@ export function useLandingViewport(
           viewportHeight: window.innerHeight || visualViewport?.height,
           previousViewport,
           forceMobile,
+          fallbackViewportDimensions,
         });
 
         if (
@@ -183,7 +196,7 @@ export function useLandingViewport(
       window.removeEventListener("resize", measureLandingElement);
       visualViewport?.removeEventListener("resize", measureLandingElement);
     };
-  }, [landingElementRef, forceMobile]);
+  }, [landingElementRef, forceMobile, fallbackViewportDimensions]);
 
   const isMobile = forceMobile ?? viewportState.width < CHLORINE_MOBILE_BREAKPOINT_PX;
   const isShortDesktop = !isMobile && shouldUseShortDesktopLayout(viewportState, isMobile);
@@ -340,8 +353,11 @@ function calculateInitialLogoWidth(landingViewport: LandingViewport) {
 }
 
 function calculateShortDesktopLogoScale(landingViewport: LandingViewport) {
-  const availableWidth = Math.max(160, landingViewport.width - 80);
-  return Math.min(220, availableWidth) / CHLORINE_MARK_SOURCE_WIDTH;
+  // Mobile gets a tighter cap so the single-page RSVP form has enough room
+  // to fit above the fold; desktop keeps the original ceiling.
+  const maxWordmarkWidth = landingViewport.isMobile ? 160 : 220;
+  const availableWidth = Math.max(120, landingViewport.width - 80);
+  return Math.min(maxWordmarkWidth, availableWidth) / CHLORINE_MARK_SOURCE_WIDTH;
 }
 
 function calculateShortDesktopOrigin(landingViewport: LandingViewport) {

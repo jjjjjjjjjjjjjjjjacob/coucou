@@ -50,8 +50,53 @@ async function seedEvent(testBackend: TestBackend, name: string) {
       name,
       location: "Test Venue",
       eventDate: Date.now() + 86_400_000,
+      status: "active",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+    });
+  });
+}
+
+async function seedEventWithCustomFields(
+  testBackend: TestBackend,
+  name: string,
+  customFields: Array<{
+    key: string;
+    label: string;
+    required?: boolean;
+    trimWhitespace?: boolean;
+  }>,
+) {
+  return await testBackend.run(async (databaseContext) => {
+    return await databaseContext.db.insert("events", {
+      workspaceSlug: WORKSPACE_SLUG,
+      siteKey: SITE_KEY,
+      name,
+      location: "Test Venue",
+      eventDate: Date.now() + 86_400_000,
+      status: "active",
+      customFields,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+async function seedListCredential(
+  testBackend: TestBackend,
+  args: {
+    eventId: Id<"events">;
+    listKey: string;
+    password?: string;
+  },
+) {
+  return await testBackend.run(async (databaseContext) => {
+    return await databaseContext.db.insert("listCredentials", {
+      eventId: args.eventId,
+      listKey: args.listKey,
+      password: args.password,
+      passwordNormalized: args.password?.trim().toLowerCase(),
+      createdAt: Date.now(),
     });
   });
 }
@@ -152,6 +197,31 @@ async function seedDelivery(
   });
 }
 
+async function seedReplyAction(
+  testBackend: TestBackend,
+  args: {
+    textBlastId: Id<"textBlasts">;
+    replyCode: string;
+    targetEventId: Id<"events">;
+    targetListKey: string;
+    isEnabled?: boolean;
+  },
+) {
+  return await testBackend.run(async (databaseContext) => {
+    const replyCodeNormalized = args.replyCode.trim().toLowerCase();
+    return await databaseContext.db.insert("textBlastReplyActions", {
+      textBlastId: args.textBlastId,
+      replyCode: args.replyCode,
+      replyCodeNormalized,
+      targetEventId: args.targetEventId,
+      targetListKey: args.targetListKey,
+      isEnabled: args.isEnabled ?? true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
 async function seedApprovalSmsNotification(
   testBackend: TestBackend,
   args: {
@@ -239,6 +309,224 @@ async function seedMultiEventRecipients(testBackend: TestBackend) {
 }
 
 describe("text blast recipient selection", () => {
+  it("stores reply actions on a draft and rejects reserved reply codes", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await seedWorkspace(testBackend);
+    const sourceEventId = await seedEvent(testBackend, "Source Event");
+    const targetEventId = await seedEvent(testBackend, "Target Event");
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+      password: "return",
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+
+    const draftId = await hostBackend.mutation(api.textBlasts.createDraft, {
+      eventId: sourceEventId,
+      targetEventIds: [sourceEventId],
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "Reply draft",
+      message: "Reply RETURN to join the next one",
+      targetLists: ["vip"],
+      replyActions: [
+        {
+          replyCode: "RETURN",
+          targetEventId,
+          targetListKey: "ga",
+          isEnabled: true,
+        },
+      ],
+    });
+
+    const storedReplyActions = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("textBlastReplyActions")
+        .withIndex("by_text_blast", (queryBuilder) => queryBuilder.eq("textBlastId", draftId))
+        .collect();
+    });
+
+    expect(storedReplyActions).toHaveLength(1);
+    expect(storedReplyActions[0]?.replyCodeNormalized).toBe("return");
+
+    await expect(
+      hostBackend.mutation(api.textBlasts.updateDraft, {
+        blastId: draftId,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+        replyActions: [
+          {
+            replyCode: "STOP",
+            targetEventId,
+            targetListKey: "ga",
+            isEnabled: true,
+          },
+        ],
+      }),
+    ).rejects.toThrow("reserved");
+  });
+
+  it("submits a pending RSVP from a matching text blast reply action", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    const sourceEventId = await seedEvent(testBackend, "Source Event");
+    const targetEventId = await seedEventWithCustomFields(testBackend, "Target Event", [
+      { key: "shirt", label: "Shirt size", required: true },
+      { key: "diet", label: "Diet" },
+    ]);
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+      password: "return",
+    });
+    await seedUser(testBackend, "user_reply", "555-555-0100", "Riley");
+    const sourceRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "user_reply",
+      listKey: "vip",
+      customFieldValues: { shirt: " Large ", ignored: "not copied" },
+    });
+    const textBlastId = await seedTextBlast(testBackend, sourceEventId, "Reply blast");
+    await seedDelivery(testBackend, {
+      textBlastId,
+      phone: "555-555-0100",
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId: sourceRsvpId,
+      clerkUserId: "user_reply",
+      listKey: "vip",
+    });
+    await seedReplyAction(testBackend, {
+      textBlastId,
+      replyCode: "RETURN",
+      targetEventId,
+      targetListKey: "ga",
+    });
+
+    const result = await testBackend.mutation(internal.textBlasts.processIncomingSmsReply, {
+      fromPhoneNumber: "555-555-0100",
+      messageBody: " return ",
+      messageSid: "SM_reply",
+      receivedAt: Date.now(),
+    });
+    const targetRsvp = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder.eq("eventId", targetEventId).eq("clerkUserId", "user_reply"),
+        )
+        .unique();
+    });
+
+    expect(result.status).toBe("submitted");
+    expect(result.shouldRespond).toBe(true);
+    expect(targetRsvp?.approvalStatus).toBe("pending");
+    expect(targetRsvp?.listKey).toBe("ga");
+    expect(targetRsvp?.smsConsent).toBe(true);
+    expect(targetRsvp?.customFieldValues).toEqual({ shirt: "Large" });
+  });
+
+  it("keeps an existing destination RSVP unchanged for reply actions", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    const sourceEventId = await seedEvent(testBackend, "Existing Source Event");
+    const targetEventId = await seedEvent(testBackend, "Existing Target Event");
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+      password: "return",
+    });
+    await seedUser(testBackend, "user_existing", "555-555-0101", "Emery");
+    const sourceRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "user_existing",
+      listKey: "vip",
+    });
+    const existingTargetRsvpId = await seedRsvp(testBackend, {
+      eventId: targetEventId,
+      clerkUserId: "user_existing",
+      listKey: "vip",
+      status: "approved",
+      customFieldValues: { preserved: "yes" },
+    });
+    const textBlastId = await seedTextBlast(testBackend, sourceEventId, "Existing reply blast");
+    await seedDelivery(testBackend, {
+      textBlastId,
+      phone: "555-555-0101",
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId: sourceRsvpId,
+      clerkUserId: "user_existing",
+      listKey: "vip",
+    });
+    await seedReplyAction(testBackend, {
+      textBlastId,
+      replyCode: "RETURN",
+      targetEventId,
+      targetListKey: "ga",
+    });
+
+    const result = await testBackend.mutation(internal.textBlasts.processIncomingSmsReply, {
+      fromPhoneNumber: "555-555-0101",
+      messageBody: "RETURN",
+    });
+    const existingTargetRsvp = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.get(existingTargetRsvpId);
+    });
+
+    expect(result.status).toBe("already_exists");
+    expect(existingTargetRsvp?.listKey).toBe("vip");
+    expect(existingTargetRsvp?.approvalStatus).toBe("approved");
+    expect(existingTargetRsvp?.customFieldValues).toEqual({ preserved: "yes" });
+  });
+
+  it("does not submit a reply action RSVP when required matching fields are missing", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    const sourceEventId = await seedEvent(testBackend, "Missing Field Source");
+    const targetEventId = await seedEventWithCustomFields(testBackend, "Missing Field Target", [
+      { key: "requiredHandle", label: "Required handle", required: true },
+    ]);
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+      password: "return",
+    });
+    await seedUser(testBackend, "user_missing", "555-555-0102", "Morgan");
+    const sourceRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "user_missing",
+      listKey: "vip",
+    });
+    const textBlastId = await seedTextBlast(testBackend, sourceEventId, "Missing field blast");
+    await seedDelivery(testBackend, {
+      textBlastId,
+      phone: "555-555-0102",
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId: sourceRsvpId,
+      clerkUserId: "user_missing",
+      listKey: "vip",
+    });
+    await seedReplyAction(testBackend, {
+      textBlastId,
+      replyCode: "RETURN",
+      targetEventId,
+      targetListKey: "ga",
+    });
+
+    const result = await testBackend.mutation(internal.textBlasts.processIncomingSmsReply, {
+      fromPhoneNumber: "555-555-0102",
+      messageBody: "RETURN",
+    });
+    const targetRsvps = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", targetEventId))
+        .collect();
+    });
+
+    expect(result.status).toBe("missing_required_fields");
+    expect(targetRsvps).toHaveLength(0);
+  });
+
   it("dedupes multi-event recipients by normalized phone across users and events", async () => {
     const testBackend = convexTest(schema, convexModules);
     const { firstEventId, secondEventId } = await seedMultiEventRecipients(testBackend);

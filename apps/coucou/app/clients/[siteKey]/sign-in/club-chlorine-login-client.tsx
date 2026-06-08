@@ -2,9 +2,10 @@
 
 import type { PresetKey } from "@coucou/sdk";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
-import type { AuthBrandingOverrides } from "@coucou/ui/auth";
+import type { AuthBrandingOverrides, PhoneAuthStep } from "@coucou/ui/auth";
 import { ChlorineAppShell } from "@coucou/ui/tenant-template";
 import Link from "next/link";
+import { useState } from "react";
 import { SignInClient } from "../../../sign-in/[[...sign-in]]/sign-in-client";
 
 interface ClubChlorineLoginClientProps {
@@ -16,6 +17,8 @@ interface ClubChlorineLoginClientProps {
   eventThemeTextColor?: string | null;
   authBranding?: AuthBrandingOverrides | null;
   allowedRedirectOrigins?: readonly string[];
+  initialPhoneNumber?: string | null;
+  autoSendInitialCode?: boolean;
 }
 
 function trimmedOrFallback(value: string | null | undefined, fallback: string): string {
@@ -36,9 +39,18 @@ export function ClubChlorineLoginClient({
   eventThemeTextColor,
   authBranding,
   allowedRedirectOrigins,
+  initialPhoneNumber,
+  autoSendInitialCode = false,
 }: ClubChlorineLoginClientProps) {
-  const heading = trimmedOrFallback(authBranding?.heading, siteAuthConfiguration.heading);
-  const sub = trimmedOrFallback(authBranding?.sub, siteAuthConfiguration.description);
+  const [phoneAuthStep, setPhoneAuthStep] = useState<PhoneAuthStep>(() =>
+    autoSendInitialCode && initialPhoneNumber ? "verification" : "phone",
+  );
+  const heading =
+    phoneAuthStep === "verification" || phoneAuthStep === "completing"
+      ? "Enter your verification code"
+      : phoneAuthStep === "captcha"
+        ? "Captcha verification"
+        : trimmedOrFallback(authBranding?.heading, siteAuthConfiguration.heading);
 
   // No eyebrow — the user wants this surface to feel like opting into
   // text updates, not a sign-in card. The chlorine wordmark anchored top/
@@ -51,6 +63,12 @@ export function ClubChlorineLoginClient({
   // resting place. `skipAnimation` keeps the wordmark from playing any
   // entrance; the satellite has already settled into collapsed before
   // triggering the cross-domain redirect.
+  const legalLinks = [
+    { href: buildTenantHref(tenantBaseUrl, "/terms"), label: "Terms" },
+    { href: buildTenantHref(tenantBaseUrl, "/privacy"), label: "Privacy" },
+    { href: buildTenantHref(tenantBaseUrl, "/data"), label: "Data" },
+  ];
+
   return (
     <ChlorineAppShell
       mode="collapsed"
@@ -58,27 +76,24 @@ export function ClubChlorineLoginClient({
       wordmarkHref={tenantBaseUrl}
       skipAnimation
       contentMaxWidthPx={390}
+      legalLinks={legalLinks}
+      yearLabel=""
     >
       <section
         aria-labelledby="club-chlorine-login-heading"
-        className="mx-auto flex w-full max-w-[360px] flex-col gap-6 text-center"
+        className="mx-auto flex w-full max-w-[360px] flex-col gap-4 text-center"
       >
-        <div className="space-y-2">
-          <h1
-            id="club-chlorine-login-heading"
-            className="m-0 text-[22px] leading-tight"
-            style={{
-              color: "var(--tt-fg)",
-              fontFamily: "var(--tt-display)",
-              fontWeight: 500,
-            }}
-          >
-            {heading}
-          </h1>
-          <p className="m-0 text-[13px] leading-relaxed" style={{ color: "var(--tt-fg-dim)" }}>
-            {sub}
-          </p>
-        </div>
+        <h1
+          id="club-chlorine-login-heading"
+          className="m-0 text-[22px] leading-tight"
+          style={{
+            color: "var(--tt-fg)",
+            fontFamily: "var(--tt-display)",
+            fontWeight: 500,
+          }}
+        >
+          {heading}
+        </h1>
 
         <SignInClient
           redirectUrl={redirectUrl}
@@ -88,39 +103,12 @@ export function ClubChlorineLoginClient({
           eventThemeTextColor={eventThemeTextColor}
           authBranding={authBranding}
           allowedRedirectOrigins={allowedRedirectOrigins}
+          initialPhoneNumber={initialPhoneNumber}
+          autoSendInitialCode={autoSendInitialCode}
+          onPhoneAuthStepChange={setPhoneAuthStep}
           brandMarkSlot={null}
           noShell
         />
-
-        <nav
-          aria-label="Legal"
-          className="flex flex-wrap items-center justify-center gap-4 text-[11px] uppercase tracking-[0.06em]"
-          style={{ color: "var(--tt-fg-mute)" }}
-        >
-          <a
-            href={buildTenantHref(tenantBaseUrl, "/terms")}
-            className="transition-opacity hover:opacity-80"
-            style={{ color: "var(--tt-fg-mute)" }}
-          >
-            Terms
-          </a>
-          <span aria-hidden="true">·</span>
-          <a
-            href={buildTenantHref(tenantBaseUrl, "/privacy")}
-            className="transition-opacity hover:opacity-80"
-            style={{ color: "var(--tt-fg-mute)" }}
-          >
-            Privacy
-          </a>
-          <span aria-hidden="true">·</span>
-          <a
-            href={buildTenantHref(tenantBaseUrl, "/cookies")}
-            className="transition-opacity hover:opacity-80"
-            style={{ color: "var(--tt-fg-mute)" }}
-          >
-            Cookies
-          </a>
-        </nav>
       </section>
     </ChlorineAppShell>
   );

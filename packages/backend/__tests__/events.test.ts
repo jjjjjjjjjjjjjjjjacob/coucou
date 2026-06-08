@@ -1,6 +1,129 @@
 import { describe, expect, it } from "bun:test";
+import type { UserIdentity } from "convex/server";
+import { convexTest } from "convex-test";
+import { api } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
+import schema from "../convex/schema";
+
+const convexModules = {
+  "../convex/_generated/api.js": () => import("../convex/_generated/api.js"),
+  "../convex/credentials.ts": () => import("../convex/credentials"),
+  "../convex/events.ts": () => import("../convex/events"),
+  "../convex/eventsNode.ts": () => import("../convex/eventsNode"),
+  "../convex/workspaces.ts": () => import("../convex/workspaces"),
+};
+
+type TestBackend = ReturnType<typeof convexTest>;
+
+const WORKSPACE_SLUG = "dojo-pomodoro";
+const SITE_KEY = "dojo";
+const CLERK_ORGANIZATION_ID = "org_dojo";
+
+function createWorkspaceIdentity(subject: string): Partial<UserIdentity> {
+  return {
+    subject,
+    org_id: CLERK_ORGANIZATION_ID,
+    role: "org:admin",
+  } as unknown as Partial<UserIdentity>;
+}
+
+async function seedWorkspace(testBackend: TestBackend) {
+  return await testBackend.run(async (databaseContext) => {
+    return await databaseContext.db.insert("workspaces", {
+      slug: WORKSPACE_SLUG,
+      name: "Dojo Pomodoro",
+      clerkOrganizationId: CLERK_ORGANIZATION_ID,
+      clerkOrganizationSlug: WORKSPACE_SLUG,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+async function getListCredentialsForEvent(testBackend: TestBackend, eventId: Id<"events">) {
+  return await testBackend.run(async (databaseContext) => {
+    return await databaseContext.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
+      .collect();
+  });
+}
 
 describe("Events Functions", () => {
+  it("publishes a draft after updateAndPublish writes required fields and lists", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await seedWorkspace(testBackend);
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+    const draftResult = await hostBackend.mutation(api.events.createDraft, {
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "Draft Night",
+    });
+    const eventDate = Date.now() + 86_400_000;
+
+    await hostBackend.action(api.eventsNode.updateAndPublish, {
+      eventId: draftResult.eventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      patch: {
+        name: "Published Night",
+        location: "Main Room",
+        eventDate,
+        eventTimezone: "America/New_York",
+        themeBackgroundColor: "#101820",
+        themeTextColor: "#FEE715",
+      },
+      lists: [
+        {
+          listKey: "press",
+          password: "blue-door",
+          generateQR: true,
+          sendQrOnApproval: true,
+          approvalMessage: "Press approved.",
+        },
+      ],
+    });
+
+    const publishedEvent = await hostBackend.query(api.events.get, {
+      eventId: draftResult.eventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    const listCredentials = await getListCredentialsForEvent(testBackend, draftResult.eventId);
+
+    expect(publishedEvent?.lifecycle).toBe("published");
+    expect(publishedEvent?.name).toBe("Published Night");
+    expect(publishedEvent?.location).toBe("Main Room");
+    expect(publishedEvent?.eventDate).toBe(eventDate);
+    expect(publishedEvent?.themeBackgroundColor).toBe("#101820");
+    expect(publishedEvent?.themeTextColor).toBe("#FEE715");
+    expect(listCredentials).toHaveLength(1);
+    expect(listCredentials[0]?.listKey).toBe("press");
+    expect(listCredentials[0]?.password).toBe("blue-door");
+    expect(listCredentials[0]?.generateQR).toBe(true);
+    expect(listCredentials[0]?.sendQrOnApproval).toBe(true);
+    expect(listCredentials[0]?.approvalMessage).toBe("Press approved.");
+  });
+
+  it("keeps publishEvent strict for incomplete drafts", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await seedWorkspace(testBackend);
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+    const draftResult = await hostBackend.mutation(api.events.createDraft, {
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "Incomplete Draft",
+    });
+
+    await expect(
+      hostBackend.mutation(api.events.publishEvent, {
+        eventId: draftResult.eventId,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+      }),
+    ).rejects.toThrow("Cannot publish: missing required fields");
+  });
+
   it("should validate event record structure", () => {
     const mockEvent = {
       _id: "event_123",

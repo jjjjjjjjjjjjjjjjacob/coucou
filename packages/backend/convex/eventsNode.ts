@@ -42,6 +42,67 @@ const eventUnsetFieldValidator = v.union(
   v.literal("primaryFieldConfig"),
 );
 
+const eventUpdatePatchValidator = v.object({
+  name: v.optional(v.string()),
+  secondaryTitle: v.optional(v.string()),
+  description: v.optional(v.string()),
+  acts: v.optional(v.array(eventActValidator)),
+  hosts: v.optional(v.array(v.string())),
+  productionCompany: v.optional(v.string()),
+  location: v.optional(v.string()),
+  flyerStorageId: v.optional(v.id("_storage")),
+  customIconStorageId: v.optional(v.union(v.id("_storage"), v.null())),
+  guestPortalImageStorageId: v.optional(v.id("_storage")),
+  guestPortalLinkLabel: v.optional(v.string()),
+  guestPortalLinkUrl: v.optional(v.string()),
+  eventDate: v.optional(v.number()),
+  eventEndDate: v.optional(v.number()),
+  eventTimezone: v.optional(v.string()),
+  maxAttendees: v.optional(v.number()),
+  status: v.optional(eventStatusValidator),
+  lifecycle: v.optional(eventLifecycleValidator),
+  defersQrDelivery: v.optional(v.boolean()),
+  sendQrOnApproval: v.optional(v.boolean()),
+  attendanceQuestionEnabled: v.optional(v.boolean()),
+  customFields: v.optional(
+    v.array(
+      v.object({
+        key: v.string(),
+        label: v.string(),
+        placeholder: v.optional(v.string()),
+        required: v.optional(v.boolean()),
+        copyEnabled: v.optional(v.boolean()),
+        prependUrl: v.optional(v.string()),
+        trimWhitespace: v.optional(v.boolean()),
+      }),
+    ),
+  ),
+  primaryFieldConfig: v.optional(primaryFieldConfigValidator),
+  themeBackgroundColor: v.optional(v.string()),
+  themeTextColor: v.optional(v.string()),
+  approvalMessage: v.optional(v.string()),
+  qrCodeColor: v.optional(v.string()),
+});
+
+const listUpdateValidator = v.object({
+  id: v.optional(v.id("listCredentials")),
+  listKey: v.string(),
+  password: v.optional(v.string()),
+  generateQR: v.optional(v.boolean()),
+  defersQrDelivery: v.optional(v.boolean()),
+  sendQrOnApproval: v.optional(v.boolean()),
+  approvalMessage: v.optional(v.string()),
+});
+
+const eventUpdateActionArgs = {
+  eventId: v.id("events"),
+  siteKey: v.optional(v.string()),
+  workspaceSlug: v.optional(v.string()),
+  patch: v.optional(eventUpdatePatchValidator),
+  unsetFields: v.optional(v.array(eventUnsetFieldValidator)),
+  lists: v.optional(v.array(listUpdateValidator)),
+};
+
 type HostCredentialData = {
   _id: Id<"listCredentials">;
   eventId: Id<"events">;
@@ -181,12 +242,6 @@ export const create = action({
     guestPortalLinkLabel: v.optional(v.string()),
     guestPortalLinkUrl: v.optional(v.string()),
     eventDate: v.number(),
-    /**
-     * @deprecated The 24-hour RSVP cutoff is derived from `eventDate`;
-     * we no longer require an explicit end timestamp. Optional for
-     * back-compat only — host UI no longer collects it.
-     */
-    eventEndDate: v.optional(v.number()),
     eventTimezone: v.optional(v.string()),
     status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()),
@@ -228,9 +283,6 @@ export const create = action({
 
     const now = Date.now();
     if (args.eventDate < now) throw new Error("Event date must be in the future");
-    if (args.eventEndDate !== undefined && args.eventEndDate <= args.eventDate) {
-      throw new Error("Event end must be after the event start");
-    }
 
     // Validate maxAttendees
     if (args.maxAttendees !== undefined) {
@@ -331,7 +383,6 @@ export const create = action({
       guestPortalLinkLabel: normalizedGuestPortalLinkLabel,
       guestPortalLinkUrl: normalizedGuestPortalLinkUrl,
       eventDate: args.eventDate,
-      eventEndDate: args.eventEndDate,
       eventTimezone: args.eventTimezone,
       status: eventStatus,
       maxAttendees: args.maxAttendees ?? 1,
@@ -350,68 +401,7 @@ export const create = action({
 });
 
 export const update = action({
-  args: {
-    eventId: v.id("events"),
-    siteKey: v.optional(v.string()),
-    workspaceSlug: v.optional(v.string()),
-    patch: v.optional(
-      v.object({
-        name: v.optional(v.string()),
-        secondaryTitle: v.optional(v.string()),
-        description: v.optional(v.string()),
-        acts: v.optional(v.array(eventActValidator)),
-        hosts: v.optional(v.array(v.string())),
-        productionCompany: v.optional(v.string()),
-        location: v.optional(v.string()),
-        flyerStorageId: v.optional(v.id("_storage")),
-        customIconStorageId: v.optional(v.union(v.id("_storage"), v.null())),
-        guestPortalImageStorageId: v.optional(v.id("_storage")),
-        guestPortalLinkLabel: v.optional(v.string()),
-        guestPortalLinkUrl: v.optional(v.string()),
-        eventDate: v.optional(v.number()),
-        eventEndDate: v.optional(v.number()),
-        eventTimezone: v.optional(v.string()),
-        maxAttendees: v.optional(v.number()),
-        status: v.optional(eventStatusValidator),
-        lifecycle: v.optional(eventLifecycleValidator),
-        defersQrDelivery: v.optional(v.boolean()),
-        sendQrOnApproval: v.optional(v.boolean()),
-        attendanceQuestionEnabled: v.optional(v.boolean()),
-        customFields: v.optional(
-          v.array(
-            v.object({
-              key: v.string(),
-              label: v.string(),
-              placeholder: v.optional(v.string()),
-              required: v.optional(v.boolean()),
-              copyEnabled: v.optional(v.boolean()),
-              prependUrl: v.optional(v.string()),
-              trimWhitespace: v.optional(v.boolean()),
-            }),
-          ),
-        ),
-        primaryFieldConfig: v.optional(primaryFieldConfigValidator),
-        themeBackgroundColor: v.optional(v.string()),
-        themeTextColor: v.optional(v.string()),
-        approvalMessage: v.optional(v.string()),
-        qrCodeColor: v.optional(v.string()),
-      }),
-    ),
-    unsetFields: v.optional(v.array(eventUnsetFieldValidator)),
-    lists: v.optional(
-      v.array(
-        v.object({
-          id: v.optional(v.id("listCredentials")),
-          listKey: v.string(),
-          password: v.optional(v.string()),
-          generateQR: v.optional(v.boolean()),
-          defersQrDelivery: v.optional(v.boolean()),
-          sendQrOnApproval: v.optional(v.boolean()),
-          approvalMessage: v.optional(v.string()),
-        }),
-      ),
-    ),
-  },
+  args: eventUpdateActionArgs,
   handler: async (ctx, args): Promise<{ ok: true }> => {
     const { eventId, patch, unsetFields, lists, siteKey, workspaceSlug } = args;
     await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
@@ -425,10 +415,13 @@ export const update = action({
       throw new ValidationError("Event not found");
     }
 
-    if (patch?.eventDate !== undefined || patch?.eventEndDate !== undefined) {
+    if (
+      patch?.eventEndDate !== undefined ||
+      (patch?.eventDate !== undefined && currentEvent.eventEndDate !== undefined)
+    ) {
       const targetEventDate = patch.eventDate ?? currentEvent.eventDate;
-      const targetEventEndDate = patch.eventEndDate ?? currentEvent.eventEndDate ?? targetEventDate;
-      if (targetEventEndDate <= targetEventDate) {
+      const targetEventEndDate = patch.eventEndDate ?? currentEvent.eventEndDate;
+      if (targetEventEndDate !== undefined && targetEventEndDate <= targetEventDate) {
         throw new ValidationError("Event end must be after the event start");
       }
     }
@@ -638,6 +631,19 @@ export const update = action({
       }
     }
 
+    return { ok: true as const };
+  },
+});
+
+export const updateAndPublish = action({
+  args: eventUpdateActionArgs,
+  handler: async (ctx, args): Promise<{ ok: true }> => {
+    await ctx.runAction(api.eventsNode.update, args);
+    await ctx.runMutation(api.events.publishEvent, {
+      eventId: args.eventId,
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
     return { ok: true as const };
   },
 });

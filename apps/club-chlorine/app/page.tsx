@@ -89,7 +89,7 @@ function HomeContent() {
     return (
       <div
         style={{
-          fontFamily: 'var(--font-geist-mono), "Geist Mono", ui-monospace, monospace',
+          fontFamily: "var(--tt-text)",
           fontSize: 12,
           letterSpacing: "0.08em",
           color: "var(--tt-fg-mute)",

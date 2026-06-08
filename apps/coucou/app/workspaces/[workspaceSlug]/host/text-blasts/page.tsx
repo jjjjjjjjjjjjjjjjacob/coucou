@@ -7,6 +7,7 @@ import {
   CheckCircle,
   Clock,
   Copy,
+  MessageSquare,
   MoreHorizontal,
   Plus,
   Search,
@@ -130,6 +131,7 @@ export default function TextBlastsPage() {
     null,
   );
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<"full" | "replyActions">("full");
   const [sendingBlastId, setSendingBlastId] = useState<Id<"textBlasts"> | null>(null);
 
   // Get unique sender names for filter dropdown
@@ -254,6 +256,7 @@ export default function TextBlastsPage() {
 
   const handleCreateNew = () => {
     setSelectedBlastForDialog(null);
+    setDialogMode("full");
     setIsDialogOpen(true);
   };
 
@@ -415,10 +418,21 @@ export default function TextBlastsPage() {
                         <DropdownMenuItem
                           onClick={() => {
                             setSelectedBlastForDialog(blast._id);
+                            setDialogMode("full");
                             setIsDialogOpen(true);
                           }}
                         >
                           Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedBlastForDialog(blast._id);
+                            setDialogMode("replyActions");
+                            setIsDialogOpen(true);
+                          }}
+                        >
+                          <MessageSquare className="h-4 w-4 mr-2" />
+                          Manage Reply Actions
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleDuplicateBlast(blast._id)}>
                           <Copy className="h-4 w-4 mr-2" />
@@ -491,6 +505,12 @@ export default function TextBlastsPage() {
                       {getStatusIcon(blast.status)}
                       {statusBadge.label}
                     </Badge>
+                    {(blast.replyActionCount ?? 0) > 0 && (
+                      <Badge variant="outline" className="flex items-center gap-1">
+                        <MessageSquare className="h-3 w-3" />
+                        {blast.replyActionCount} repl{blast.replyActionCount === 1 ? "y" : "ies"}
+                      </Badge>
+                    )}
                   </div>
 
                   {/* Message Preview */}
@@ -540,8 +560,10 @@ export default function TextBlastsPage() {
         onClose={() => {
           setIsDialogOpen(false);
           setSelectedBlastForDialog(null);
+          setDialogMode("full");
         }}
         blastId={selectedBlastForDialog}
+        mode={dialogMode}
       />
     </div>
   );

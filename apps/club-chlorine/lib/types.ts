@@ -397,6 +397,7 @@ export interface RSVPFormData extends Record<string, unknown> {
   name: string; // Keep during migration phase
   firstName: string;
   lastName: string;
+  phone: string;
   custom: Record<string, string>;
   socialProfiles?: Record<string, string>;
   invitedByName?: string;

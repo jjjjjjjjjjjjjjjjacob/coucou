@@ -5,8 +5,9 @@ import type { EventThemeColorSource, PresetKey } from "@coucou/sdk";
 import { resolveSafeRedirectUrl } from "@coucou/sdk/routes";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type AuthBrandingOverrides, AuthShell } from "./auth-shell";
+import type { PhoneAuthStep } from "./config/types";
 import { PhoneAuthFlow } from "./phone-auth-flow";
 
 function isExternalAbsoluteUrl(value: string): boolean {
@@ -62,6 +63,15 @@ export interface PhoneAuthPageProps {
    * `redirectUrl` (or `/`) using the Next.js router.
    */
   onSuccess?: () => void;
+  /** Phone number resolved from a server-side handoff token. */
+  initialPhoneNumber?: string | null;
+  /** When true, immediately request an OTP for `initialPhoneNumber`. */
+  autoSendInitialCode?: boolean;
+  /**
+   * Notifies parent chrome about the inner phone-auth state. No-shell
+   * wrappers use this to keep their own heading in sync with the OTP step.
+   */
+  onPhoneAuthStepChange?: (step: PhoneAuthStep) => void;
   /**
    * When true, skip the inner `AuthShell` chrome (brand mark, heading, sub,
    * footer). The bare `PhoneAuthFlow` is rendered directly. Use when the
@@ -87,11 +97,23 @@ export function PhoneAuthPage({
   allowedRedirectOrigins = [],
   event,
   onSuccess,
+  initialPhoneNumber,
+  autoSendInitialCode = false,
+  onPhoneAuthStepChange,
   noShell = false,
 }: PhoneAuthPageProps) {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
   const hasTriggeredAuthenticatedRedirectRef = useRef(false);
+  const [phoneAuthStep, setPhoneAuthStep] = useState<PhoneAuthStep>(() =>
+    autoSendInitialCode && initialPhoneNumber ? "verification" : "phone",
+  );
+  const phoneAuthHeadingOverride =
+    phoneAuthStep === "verification" || phoneAuthStep === "completing"
+      ? "Enter your verification code"
+      : phoneAuthStep === "captcha"
+        ? "Captcha verification"
+        : undefined;
 
   const authenticatedRedirectPath = useMemo(
     () =>
@@ -134,6 +156,14 @@ export function PhoneAuthPage({
     navigateToAuthenticatedRedirectPath();
   }, [navigateToAuthenticatedRedirectPath, onSuccess]);
 
+  const handlePhoneAuthStepChange = useCallback(
+    (nextPhoneAuthStep: PhoneAuthStep) => {
+      setPhoneAuthStep(nextPhoneAuthStep);
+      onPhoneAuthStepChange?.(nextPhoneAuthStep);
+    },
+    [onPhoneAuthStepChange],
+  );
+
   if (isLoaded && isSignedIn) {
     const redirectingNotice = (
       <div
@@ -162,7 +192,14 @@ export function PhoneAuthPage({
   }
 
   if (noShell) {
-    return <PhoneAuthFlow onSuccess={handleSuccess} />;
+    return (
+      <PhoneAuthFlow
+        onSuccess={handleSuccess}
+        initialPhoneNumber={initialPhoneNumber}
+        autoSendInitialCode={autoSendInitialCode}
+        onStepChange={handlePhoneAuthStepChange}
+      />
+    );
   }
 
   return (
@@ -172,8 +209,16 @@ export function PhoneAuthPage({
       authBranding={authBranding}
       brandMarkSlot={brandMarkSlot}
       event={event}
+      headingOverride={phoneAuthHeadingOverride}
+      hideSubCopy
+      compactFlowHeading
     >
-      <PhoneAuthFlow onSuccess={handleSuccess} />
+      <PhoneAuthFlow
+        onSuccess={handleSuccess}
+        initialPhoneNumber={initialPhoneNumber}
+        autoSendInitialCode={autoSendInitialCode}
+        onStepChange={handlePhoneAuthStepChange}
+      />
     </AuthShell>
   );
 }

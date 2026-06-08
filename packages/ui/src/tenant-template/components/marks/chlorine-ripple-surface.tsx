@@ -15,6 +15,8 @@ const DESKTOP_BASELINE_SHORT_EDGE = 800;
 const MINIMUM_RADIUS_SCALE = 0.5;
 const IDLE_DROP_STRENGTH = 0.08;
 const SEED_DROP_STRENGTH = 0.1;
+const MOVEMENT_DISTANCE_RANGE_MAXIMUM = 0.08;
+const MOVEMENT_DISTANCE_LOG_CURVE_STEEPNESS = 12;
 
 const DEFAULT_RIPPLE_SETTINGS = {
   dropRadius: 0.015,
@@ -123,6 +125,20 @@ uniform float u_clickRippleWidth;
 uniform float u_clickRippleDecay;
 varying vec2 v_textureCoordinate;
 
+const float DISTANCE_LOG_CURVE_STEEPNESS = 8.0;
+
+float curvePositiveLogarithmicRange(float value, float steepness) {
+  float positiveValue = max(value, 0.0);
+  float inRangeValue = min(positiveValue, 1.0);
+  float curvedInRangeValue = log(1.0 + inRangeValue * steepness) / log(1.0 + steepness);
+  return curvedInRangeValue + max(positiveValue - 1.0, 0.0);
+}
+
+float curveSignedLogarithmicRange(float value, float steepness) {
+  float direction = value < 0.0 ? -1.0 : 1.0;
+  return direction * curvePositiveLogarithmicRange(abs(value), steepness);
+}
+
 void main() {
   vec2 currentState = texture2D(u_buffer, v_textureCoordinate).rg;
   float height = currentState.r;
@@ -143,7 +159,10 @@ void main() {
     if (u_dropStrength > 0.0) {
       vec2 toFragment = (v_textureCoordinate - u_dropPosition) * u_viewportAspect;
       float distanceToDrop = length(toFragment);
-      float gaussian = exp(-distanceToDrop * distanceToDrop / (2.0 * u_dropRadius * u_dropRadius));
+      float normalizedDistanceToDrop = distanceToDrop / max(u_dropRadius, 0.0001);
+      float curvedDistanceToDrop =
+        curvePositiveLogarithmicRange(normalizedDistanceToDrop, DISTANCE_LOG_CURVE_STEEPNESS);
+      float gaussian = exp(-curvedDistanceToDrop * curvedDistanceToDrop * 0.5);
       height += gaussian * u_dropStrength;
       float fragmentDistance = max(distanceToDrop, 0.001);
       float directionFactor = dot(u_dropDirection, toFragment / fragmentDistance);
@@ -163,7 +182,11 @@ void main() {
     vec2 toFragment = (v_textureCoordinate - ripple.xy) * u_viewportAspect;
     float distanceToRipple = length(toFragment);
     float rippleWidth = max(u_clickRippleWidth, 0.0001);
-    float ringDistance = (distanceToRipple - radius) / rippleWidth;
+    float uncurvedRingDistance = (distanceToRipple - radius) / rippleWidth;
+    float ringDistance = curveSignedLogarithmicRange(
+      uncurvedRingDistance,
+      DISTANCE_LOG_CURVE_STEEPNESS
+    );
     float crest = exp(-ringDistance * ringDistance);
     float innerWakeDistance = ringDistance + 1.15;
     float outerWakeDistance = ringDistance - 1.15;
@@ -192,12 +215,36 @@ uniform float u_heightTint;
 uniform float u_waveLength;
 varying vec2 v_textureCoordinate;
 
+const float POSITIVE_HEIGHT_RANGE = 0.18;
+const float NEGATIVE_HEIGHT_RANGE = 0.75;
+const float HEIGHT_LOG_CURVE_STEEPNESS = 8.0;
+
+float curveHeightSample(float heightValue) {
+  if (heightValue >= 0.0) {
+    float normalizedHeight = clamp(heightValue / POSITIVE_HEIGHT_RANGE, 0.0, 1.0);
+    float curvedHeight =
+      log(1.0 + normalizedHeight * HEIGHT_LOG_CURVE_STEEPNESS) /
+      log(1.0 + HEIGHT_LOG_CURVE_STEEPNESS);
+    return curvedHeight * POSITIVE_HEIGHT_RANGE;
+  }
+
+  float normalizedHeight = clamp(abs(heightValue) / NEGATIVE_HEIGHT_RANGE, 0.0, 1.0);
+  float curvedHeight =
+    log(1.0 + normalizedHeight * HEIGHT_LOG_CURVE_STEEPNESS) /
+    log(1.0 + HEIGHT_LOG_CURVE_STEEPNESS);
+  return -curvedHeight * NEGATIVE_HEIGHT_RANGE;
+}
+
 void main() {
   vec2 texel = u_texel * u_waveLength;
-  float leftHeight = texture2D(u_buffer, v_textureCoordinate - vec2(texel.x, 0.0)).r;
-  float rightHeight = texture2D(u_buffer, v_textureCoordinate + vec2(texel.x, 0.0)).r;
-  float topHeight = texture2D(u_buffer, v_textureCoordinate + vec2(0.0, texel.y)).r;
-  float bottomHeight = texture2D(u_buffer, v_textureCoordinate - vec2(0.0, texel.y)).r;
+  float leftHeight =
+    curveHeightSample(texture2D(u_buffer, v_textureCoordinate - vec2(texel.x, 0.0)).r);
+  float rightHeight =
+    curveHeightSample(texture2D(u_buffer, v_textureCoordinate + vec2(texel.x, 0.0)).r);
+  float topHeight =
+    curveHeightSample(texture2D(u_buffer, v_textureCoordinate + vec2(0.0, texel.y)).r);
+  float bottomHeight =
+    curveHeightSample(texture2D(u_buffer, v_textureCoordinate - vec2(0.0, texel.y)).r);
 
   vec2 normal = vec2(leftHeight - rightHeight, topHeight - bottomHeight);
   vec2 refractedCoordinate = vec2(
@@ -210,8 +257,7 @@ void main() {
   float specular = pow(normalMagnitude * 10.0, u_specularPower) * u_specularStrength;
   color.rgb += vec3(0.96, 0.84, 0.6) * specular * color.a;
 
-  float height = texture2D(u_buffer, v_textureCoordinate).r;
-  float litHeight = clamp(height, -0.75, 0.18);
+  float litHeight = curveHeightSample(texture2D(u_buffer, v_textureCoordinate).r);
   color.rgb *= 1.0 + litHeight * u_heightTint;
 
   gl_FragColor = vec4(color.rgb, color.a);
@@ -221,6 +267,21 @@ const imagePromiseCache = new Map<string, Promise<HTMLImageElement>>();
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function curveLogarithmicRange(
+  value: number,
+  rangeMinimum: number,
+  rangeMaximum: number,
+  steepness: number,
+) {
+  const rangeLength = rangeMaximum - rangeMinimum;
+  if (rangeLength <= 0) return value;
+
+  const normalizedValue = clamp((value - rangeMinimum) / rangeLength, 0, 1);
+  const curvedNormalizedValue = Math.log1p(normalizedValue * steepness) / Math.log1p(steepness);
+  const inRangeValue = rangeMinimum + curvedNormalizedValue * rangeLength;
+  return inRangeValue + Math.max(value - rangeMaximum, 0);
 }
 
 function getViewportScale(width: number, height: number): ViewportScale {
@@ -589,6 +650,21 @@ export function ChlorineRippleSurface({
 
     function getSeedDropStrength() {
       return SEED_DROP_STRENGTH * viewportScaleRef.current.strengthScale;
+    }
+
+    function getMovementDropStrength(
+      distance: number,
+      elapsedMs: number,
+      settings: RippleSettings,
+    ) {
+      const curvedDistance = curveLogarithmicRange(
+        distance,
+        MINIMUM_MOVE_DISTANCE,
+        MOVEMENT_DISTANCE_RANGE_MAXIMUM,
+        MOVEMENT_DISTANCE_LOG_CURVE_STEEPNESS,
+      );
+      const velocity = (curvedDistance / Math.max(elapsedMs, 1)) * 1000;
+      return Math.min(velocity * settings.dropStrengthMultiplier, settings.dropStrengthMaximum);
     }
 
     function queueDrop(
@@ -1025,11 +1101,7 @@ export function ChlorineRippleSurface({
         const scaledDelta = toShortEdgeSpace(deltaX, deltaY);
         const distance = Math.hypot(scaledDelta.x, scaledDelta.y);
         if (distance > MINIMUM_MOVE_DISTANCE) {
-          const velocity = (distance / Math.max(now - lastDropTimeMs, 1)) * 1000;
-          const strength = Math.min(
-            velocity * settings.dropStrengthMultiplier,
-            settings.dropStrengthMaximum,
-          );
+          const strength = getMovementDropStrength(distance, now - lastDropTimeMs, settings);
           if (strength > 0.005) {
             queueDrop(
               normalizedX,
@@ -1075,11 +1147,7 @@ export function ChlorineRippleSurface({
         const distance = Math.hypot(scaledDelta.x, scaledDelta.y);
         if (distance > MINIMUM_MOVE_DISTANCE) {
           touchMoved = true;
-          const velocity = (distance / Math.max(now - lastDropTimeMs, 1)) * 1000;
-          const strength = Math.min(
-            velocity * settings.dropStrengthMultiplier,
-            settings.dropStrengthMaximum,
-          );
+          const strength = getMovementDropStrength(distance, now - lastDropTimeMs, settings);
           if (strength > 0.005) {
             queueDrop(
               normalizedX,

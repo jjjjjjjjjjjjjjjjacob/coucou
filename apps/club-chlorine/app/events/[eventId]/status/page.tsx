@@ -10,7 +10,7 @@ import { useQuery as useConvexQuery, useMutation } from "convex/react";
 import { CheckCircle2, CircleDashed } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Badge } from "@/components/ui/badge";
@@ -39,8 +39,11 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
   const searchParams = useSearchParams();
   const { isSignedIn, isLoaded } = useAuth();
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
+  const claimGuestRsvps = useMutation(api.rsvps.claimGuestRsvpsForCurrentUser);
   const [isUpdatingSmsPreference, setIsUpdatingSmsPreference] = useState(false);
+  const [hasAttemptedGuestRsvpClaim, setHasAttemptedGuestRsvpClaim] = useState(false);
   const [smsConsentIpAddress, setSmsConsentIpAddress] = useState<string | undefined>(undefined);
+  const hasStartedGuestRsvpClaimRef = useRef(false);
 
   const statusQuery = useQuery(
     convexQuery(
@@ -62,6 +65,19 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
 
   const status = statusQuery.data as CurrentUserEventStatus | null | undefined;
   const event = eventQuery.data as ClubEvent | null | undefined;
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || hasStartedGuestRsvpClaimRef.current) return;
+    hasStartedGuestRsvpClaimRef.current = true;
+    void claimGuestRsvps()
+      .then(() => statusQuery.refetch())
+      .catch((error) => {
+        console.error("Failed to claim guest RSVPs:", error);
+      })
+      .finally(() => {
+        setHasAttemptedGuestRsvpClaim(true);
+      });
+  }, [claimGuestRsvps, isLoaded, isSignedIn, statusQuery]);
 
   const smsSenderDisplayName = useMemo(
     () =>
@@ -144,7 +160,13 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
     }
   };
 
-  if (!isLoaded || eventQuery.isLoading || statusQuery.isLoading || !event) {
+  if (
+    !isLoaded ||
+    eventQuery.isLoading ||
+    statusQuery.isLoading ||
+    (isSignedIn && !hasAttemptedGuestRsvpClaim) ||
+    !event
+  ) {
     return (
       <main className="flex min-h-screen items-center justify-center p-6">
         <Spinner />
@@ -249,9 +271,6 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
             )}
 
             <section className="flex w-full flex-col items-center gap-3 text-center">
-              <p className="text-sm font-medium" style={{ color: "var(--tt-fg)" }}>
-                Share with your friends.
-              </p>
               <EventReferralShareButton event={event} variant="prominent" className="h-auto p-3" />
             </section>
 

@@ -7,6 +7,62 @@
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 
+function base64FromArrayBuffer(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binaryString = "";
+  for (const byte of bytes) {
+    binaryString += String.fromCharCode(byte);
+  }
+  return btoa(binaryString);
+}
+
+function timingSafeEqual(firstValue: string, secondValue: string): boolean {
+  if (firstValue.length !== secondValue.length) {
+    return false;
+  }
+
+  let difference = 0;
+  for (let characterIndex = 0; characterIndex < firstValue.length; characterIndex++) {
+    difference |= firstValue.charCodeAt(characterIndex) ^ secondValue.charCodeAt(characterIndex);
+  }
+  return difference === 0;
+}
+
+function buildTwilioSignaturePayload(requestUrl: string, params: URLSearchParams): string {
+  const payloadParts = [requestUrl];
+  const parameterNames = Array.from(new Set(params.keys())).sort();
+  for (const parameterName of parameterNames) {
+    for (const parameterValue of params.getAll(parameterName)) {
+      payloadParts.push(parameterName, parameterValue);
+    }
+  }
+  return payloadParts.join("");
+}
+
+export async function verifyTwilioRequestSignature(
+  request: Request,
+  rawBody: string,
+): Promise<boolean> {
+  const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+  const providedSignature = request.headers.get("x-twilio-signature");
+  if (!twilioAuthToken || !providedSignature) {
+    return false;
+  }
+
+  const signaturePayload = buildTwilioSignaturePayload(request.url, new URLSearchParams(rawBody));
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(twilioAuthToken),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+  const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(signaturePayload));
+  const expectedSignature = base64FromArrayBuffer(signatureBuffer);
+  return timingSafeEqual(expectedSignature, providedSignature);
+}
+
 /**
  * Handle SMS delivery status webhooks from Twilio
  * Configure this endpoint in your Twilio Console under Messaging > Settings > Webhook URL
@@ -14,6 +70,9 @@ import { httpAction } from "./_generated/server";
 export const handleDeliveryStatus = httpAction(async (ctx, request) => {
   // Parse webhook data
   const body = await request.text();
+  if (!(await verifyTwilioRequestSignature(request, body))) {
+    return new Response("Invalid Twilio signature", { status: 403 });
+  }
   const params = new URLSearchParams(body);
   const messageSid = params.get("MessageSid");
   const messageStatus = params.get("MessageStatus");
@@ -53,6 +112,9 @@ export const handleDeliveryStatus = httpAction(async (ctx, request) => {
  */
 export const handleOptOut = httpAction(async (ctx, request) => {
   const body = await request.text();
+  if (!(await verifyTwilioRequestSignature(request, body))) {
+    return new Response("Invalid Twilio signature", { status: 403 });
+  }
   const params = new URLSearchParams(body);
 
   const from = params.get("From"); // User's phone number
@@ -97,13 +159,18 @@ export const handleOptOut = httpAction(async (ctx, request) => {
  */
 export const handleIncomingSms = httpAction(async (ctx, request) => {
   const body = await request.text();
+  if (!(await verifyTwilioRequestSignature(request, body))) {
+    return new Response("Invalid Twilio signature", { status: 403 });
+  }
   const params = new URLSearchParams(body);
 
   const from = params.get("From");
-  const messageBody = params.get("Body")?.toLowerCase().trim();
+  const rawMessageBody = params.get("Body")?.trim();
+  const messageBody = rawMessageBody?.toLowerCase();
   const to = params.get("To"); // Your Twilio phone number
+  const messageSid = params.get("MessageSid") ?? undefined;
 
-  if (!from || !messageBody) {
+  if (!from || !rawMessageBody || !messageBody) {
     return new Response("Missing required parameters", { status: 400 });
   }
 
@@ -141,6 +208,24 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error("Failed to send help response:", errorMessage);
         // Don't throw - webhook should still return 200 even if help response fails
+      }
+    } else {
+      const replyResult = await ctx.runMutation(internal.textBlasts.processIncomingSmsReply, {
+        fromPhoneNumber: from,
+        messageBody: rawMessageBody,
+        messageSid,
+      });
+      if (replyResult.shouldRespond && replyResult.responseMessage) {
+        try {
+          await ctx.runAction(internal.smsActions.sendSmsInternal, {
+            phoneNumber: from,
+            message: replyResult.responseMessage,
+            messageType: "Transactional",
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error("Failed to send reply action response:", errorMessage);
+        }
       }
     }
 

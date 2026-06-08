@@ -52,8 +52,8 @@ describe("SignInClient", () => {
 
     expect(screen.getByRole("heading", { name: "Sign in to Coucou" })).toBeTruthy();
     expect(
-      screen.getByText("Access your workspaces, event operations, and organizer tools."),
-    ).toBeTruthy();
+      screen.queryByText("Access your workspaces, event operations, and organizer tools."),
+    ).toBeNull();
     // Phone-only flow: country chip + phone input + submit button.
     expect(screen.getByLabelText("Phone number")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Text me a code" })).toBeTruthy();
@@ -81,8 +81,8 @@ describe("SignInClient", () => {
     expect(screen.getByRole("heading", { name: "Sign in to Coucou admin" })).toBeTruthy();
     expect(screen.getByText("Super-admin")).toBeTruthy();
     expect(
-      screen.getByText("Use the Coucou organization to open platform-wide tenant operations."),
-    ).toBeTruthy();
+      screen.queryByText("Use the Coucou organization to open platform-wide tenant operations."),
+    ).toBeNull();
   });
 
   it("renders tenant organization sign-in copy", () => {
@@ -154,12 +154,13 @@ describe("SignInClient", () => {
 
     expect(document.querySelector('[data-preset="chlorine"]')).toBeTruthy();
     // The new copy frames the surface as a text-update opt-in, not a
-    // sign-in card. The heading and subtitle live in site-config.ts.
+    // sign-in card. The heading lives in site-config.ts; subtitle copy is hidden.
     expect(
       screen.getByRole("heading", {
         name: clubChlorineSiteConfiguration.auth.heading,
       }),
     ).toBeTruthy();
+    expect(screen.queryByText(clubChlorineSiteConfiguration.auth.description)).toBeNull();
     expect(screen.getByLabelText("Phone number")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute(
       "href",

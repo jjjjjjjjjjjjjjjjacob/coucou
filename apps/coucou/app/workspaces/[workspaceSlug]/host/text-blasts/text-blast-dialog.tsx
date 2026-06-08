@@ -3,7 +3,7 @@
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Eye, MessageSquare, Save, Search, Send, Users, X } from "lucide-react";
+import { Eye, MessageSquare, Plus, Save, Search, Send, Trash2, Users, X } from "lucide-react";
 import posthog from "posthog-js";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -62,13 +62,14 @@ import {
   messageContainsQrCodeUrlVariable,
   resolveEffectiveIncludeQrCodes,
 } from "@/lib/text-blast-message";
-import type { Event, TextBlast } from "@/lib/types";
+import type { Event, TextBlast, TextBlastReplyAction } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 interface TextBlastDialogProps {
   isOpen: boolean;
   onClose: () => void;
   blastId?: Id<"textBlasts"> | null;
+  mode?: "full" | "replyActions";
 }
 
 interface FormData {
@@ -80,6 +81,24 @@ interface FormData {
   recipientHistoryFilter: RecipientHistoryFilterState;
   includeQrCodes: boolean;
   selectedRsvpIds: Id<"rsvps">[]; // For testing: filter to specific recipients
+  replyActions: ReplyActionFormRow[];
+}
+
+interface ReplyActionFormRow {
+  clientId: string;
+  replyCode: string;
+  targetEventId: Id<"events"> | "";
+  targetListKey: string;
+  isEnabled: boolean;
+}
+
+interface ReplyActionTargetOption {
+  eventId: Id<"events">;
+  eventName: string;
+  eventSecondaryTitle?: string;
+  eventDate: number;
+  eventTimezone?: string;
+  lists: Array<{ listKey: string; password?: string }>;
 }
 
 const SMS_CHAR_LIMIT = 160;
@@ -91,8 +110,32 @@ type SendBlastResult = {
   message?: string;
 };
 
-export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastDialogProps) {
+function createReplyActionClientId(): string {
+  return `reply-action-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function mapStoredReplyActionToFormRow(replyAction: TextBlastReplyAction): ReplyActionFormRow {
+  return {
+    clientId: replyAction._id ?? createReplyActionClientId(),
+    replyCode: replyAction.replyCode,
+    targetEventId: replyAction.targetEventId,
+    targetListKey: replyAction.targetListKey,
+    isEnabled: replyAction.isEnabled,
+  };
+}
+
+function normalizeReplyCodeForValidation(replyCode: string): string {
+  return replyCode.trim().toLowerCase();
+}
+
+export default function TextBlastDialog({
+  isOpen,
+  onClose,
+  blastId,
+  mode = "full",
+}: TextBlastDialogProps) {
   const workspaceScope = useWorkspaceScope();
+  const isReplyActionsOnlyMode = mode === "replyActions";
   const events = useQuery(api.events.listAll, {
     ...(workspaceScope?.queryArgs ?? {}),
   }) as Event[] | undefined;
@@ -102,8 +145,13 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
   ) as TextBlast | null | undefined;
   const createDraftMutation = useMutation(api.textBlasts.createDraft);
   const updateDraftMutation = useMutation(api.textBlasts.updateDraft);
+  const updateReplyActionsMutation = useMutation(api.textBlasts.updateReplyActions);
   const sendBlastAction = useAction(api.textBlasts.sendBlast);
   const sendBlastDirectAction = useAction(api.textBlasts.sendBlastDirect);
+  const replyActionTargetOptions = useQuery(
+    api.textBlasts.getReplyActionTargetOptions,
+    workspaceScope ? { ...workspaceScope.queryArgs } : "skip",
+  ) as ReplyActionTargetOption[] | undefined;
 
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<FormData>({
@@ -115,6 +163,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
     recipientHistoryFilter: { type: "none", textBlastIds: [] },
     includeQrCodes: false,
     selectedRsvpIds: [],
+    replyActions: [],
   });
   const [recipientCount, setRecipientCount] = useState(0);
   const [previewMode, setPreviewMode] = useState(false);
@@ -212,6 +261,34 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
     formData.recipientHistoryFilter.type === "none"
       ? []
       : formData.recipientHistoryFilter.textBlastIds;
+  const replyActionTargetOptionMap = useMemo(
+    () => new Map((replyActionTargetOptions ?? []).map((option) => [option.eventId, option])),
+    [replyActionTargetOptions],
+  );
+  const replyActionValidationMessage = useMemo(() => {
+    const normalizedReplyCodes = new Set<string>();
+
+    for (const replyAction of formData.replyActions) {
+      const replyCode = replyAction.replyCode.trim();
+      const normalizedReplyCode = normalizeReplyCodeForValidation(replyCode);
+      if (!replyCode) {
+        return "Reply action code is required.";
+      }
+      if (!replyAction.targetEventId) {
+        return "Reply action destination event is required.";
+      }
+      if (!replyAction.targetListKey.trim()) {
+        return "Reply action destination list is required.";
+      }
+      if (normalizedReplyCodes.has(normalizedReplyCode)) {
+        return "Reply action codes must be unique.";
+      }
+      normalizedReplyCodes.add(normalizedReplyCode);
+    }
+
+    return null;
+  }, [formData.replyActions]);
+  const replyActionsAreValid = replyActionValidationMessage === null;
 
   // Get available lists for selected event from query result
   const availableLists = useMemo(() => {
@@ -321,6 +398,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
             : { type: "none", textBlastIds: [] },
           includeQrCodes: existingBlast.includeQrCodes ?? false,
           selectedRsvpIds: [],
+          replyActions: (existingBlast.replyActions ?? []).map(mapStoredReplyActionToFormRow),
         });
         // Recipient count will be calculated by the useEffect above when targetLists are set
         setCurrentStep(1);
@@ -334,6 +412,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           recipientHistoryFilter: { type: "none", textBlastIds: [] },
           includeQrCodes: false,
           selectedRsvpIds: [],
+          replyActions: [],
         });
         setRecipientCount(0);
         setCurrentStep(1);
@@ -419,6 +498,93 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       targetLists: checked
         ? [...prev.targetLists, listKey]
         : prev.targetLists.filter((key) => key !== listKey),
+    }));
+  };
+
+  const getReplyActionListOptions = (targetEventId: Id<"events"> | "") => {
+    if (!targetEventId) return [];
+    return replyActionTargetOptionMap.get(targetEventId)?.lists ?? [];
+  };
+
+  const buildReplyActionPayload = () =>
+    formData.replyActions.map((replyAction) => ({
+      replyCode: replyAction.replyCode.trim(),
+      targetEventId: replyAction.targetEventId as Id<"events">,
+      targetListKey: replyAction.targetListKey.trim(),
+      isEnabled: replyAction.isEnabled,
+    }));
+
+  const addReplyAction = () => {
+    const firstTargetOption = replyActionTargetOptions?.[0];
+    const firstListOption = firstTargetOption?.lists[0];
+    setFormData((prev) => ({
+      ...prev,
+      replyActions: [
+        ...prev.replyActions,
+        {
+          clientId: createReplyActionClientId(),
+          replyCode: firstListOption?.password ?? "",
+          targetEventId: firstTargetOption?.eventId ?? "",
+          targetListKey: firstListOption?.listKey ?? "",
+          isEnabled: true,
+        },
+      ],
+    }));
+  };
+
+  const removeReplyAction = (clientId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      replyActions: prev.replyActions.filter((replyAction) => replyAction.clientId !== clientId),
+    }));
+  };
+
+  const setReplyAction = (
+    clientId: string,
+    patch: Partial<Omit<ReplyActionFormRow, "clientId">>,
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      replyActions: prev.replyActions.map((replyAction) =>
+        replyAction.clientId === clientId ? { ...replyAction, ...patch } : replyAction,
+      ),
+    }));
+  };
+
+  const handleReplyActionTargetEventChange = (
+    clientId: string,
+    targetEventId: Id<"events"> | "",
+  ) => {
+    const targetOption = targetEventId ? replyActionTargetOptionMap.get(targetEventId) : undefined;
+    const firstListOption = targetOption?.lists[0];
+    setFormData((prev) => ({
+      ...prev,
+      replyActions: prev.replyActions.map((replyAction) => {
+        if (replyAction.clientId !== clientId) return replyAction;
+        return {
+          ...replyAction,
+          targetEventId,
+          targetListKey: firstListOption?.listKey ?? "",
+          replyCode: replyAction.replyCode.trim() || firstListOption?.password || "",
+        };
+      }),
+    }));
+  };
+
+  const handleReplyActionTargetListChange = (clientId: string, targetListKey: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      replyActions: prev.replyActions.map((replyAction) => {
+        if (replyAction.clientId !== clientId) return replyAction;
+        const listOption = getReplyActionListOptions(replyAction.targetEventId).find(
+          (option) => option.listKey === targetListKey,
+        );
+        return {
+          ...replyAction,
+          targetListKey,
+          replyCode: replyAction.replyCode.trim() || listOption?.password || "",
+        };
+      }),
     }));
   };
 
@@ -521,6 +687,10 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       toast.error("Remove event-specific variables before saving a multi-event blast.");
       return;
     }
+    if (!replyActionsAreValid) {
+      toast.error(replyActionValidationMessage ?? "Complete reply action details before saving.");
+      return;
+    }
     try {
       if (!workspaceScope) {
         toast.error("Workspace scope is required to save text blasts");
@@ -542,6 +712,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           recipientHistoryFilter: encodedRecipientHistoryFilter,
           clearRecipientHistoryFilter: encodedRecipientHistoryFilter === undefined,
           includeQrCodes: effectiveIncludeQrCodes,
+          replyActions: buildReplyActionPayload(),
           ...workspaceScope.queryArgs,
         });
         posthog.capture("text_blast_draft_saved", {
@@ -566,6 +737,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           recipientFilter: encodedRecipientFilter,
           recipientHistoryFilter: encodedRecipientHistoryFilter,
           includeQrCodes: effectiveIncludeQrCodes,
+          replyActions: buildReplyActionPayload(),
           ...workspaceScope.queryArgs,
         });
         posthog.capture("text_blast_draft_saved", {
@@ -582,6 +754,39 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
     } catch (error: unknown) {
       posthog.captureException(error);
       toast.error(error instanceof Error ? error.message : "Failed to save text blast");
+    }
+  };
+
+  const handleSaveReplyActions = async () => {
+    if (!blastId) {
+      toast.error("Select a text blast before updating reply actions.");
+      return;
+    }
+    if (!workspaceScope) {
+      toast.error("Workspace scope is required to update reply actions");
+      return;
+    }
+    if (!replyActionsAreValid) {
+      toast.error(replyActionValidationMessage ?? "Complete reply action details before saving.");
+      return;
+    }
+
+    try {
+      await updateReplyActionsMutation({
+        blastId,
+        replyActions: buildReplyActionPayload(),
+        ...workspaceScope.queryArgs,
+      });
+      posthog.capture("text_blast_reply_actions_saved", {
+        blast_id: blastId,
+        reply_action_count: formData.replyActions.length,
+        workspace_slug: workspaceScope.workspaceSlug,
+      });
+      toast.success("Reply actions updated.");
+      onClose();
+    } catch (error: unknown) {
+      posthog.captureException(error);
+      toast.error(error instanceof Error ? error.message : "Failed to update reply actions");
     }
   };
 
@@ -617,6 +822,11 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
       setIsSending(false);
       return;
     }
+    if (!replyActionsAreValid) {
+      toast.error(replyActionValidationMessage ?? "Complete reply action details before sending.");
+      setIsSending(false);
+      return;
+    }
     try {
       let result: SendBlastResult;
       if (blastId && isEditMode) {
@@ -638,6 +848,7 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
           includeQrCodes: effectiveIncludeQrCodes,
           selectedRsvpIds:
             formData.selectedRsvpIds.length > 0 ? formData.selectedRsvpIds : undefined,
+          replyActions: buildReplyActionPayload(),
           ...workspaceScope.queryArgs,
         });
       }
@@ -671,13 +882,152 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
     formData.eventIds.length > 0 &&
     formData.name &&
     formData.message &&
-    !hasMultiEventRestrictedVariables;
+    !hasMultiEventRestrictedVariables &&
+    replyActionsAreValid;
   const canProceedToStep3 =
     canProceedToStep2 &&
     formData.targetLists.length > 0 &&
     recipientFilterIsConfigured &&
     historyFilterIsConfigured;
   const canSave = canProceedToStep3 && !isMessageTooLong;
+
+  const renderReplyActionsEditor = () => (
+    <div className="space-y-3 rounded-md border border-border/70 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <Label>Reply Actions</Label>
+          <p className="text-xs text-muted-foreground">
+            Let guests reply with a code to submit a pending RSVP for another event.
+          </p>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={addReplyAction}>
+          <Plus className="h-4 w-4 mr-1" />
+          Add
+        </Button>
+      </div>
+
+      {formData.replyActions.length === 0 ? (
+        <div className="rounded-md border border-dashed border-border/80 px-3 py-4 text-sm text-muted-foreground">
+          No reply actions configured.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {formData.replyActions.map((replyAction, index) => {
+            const listOptions = getReplyActionListOptions(replyAction.targetEventId);
+            const selectedListOption = listOptions.find(
+              (listOption) => listOption.listKey === replyAction.targetListKey,
+            );
+            return (
+              <div
+                key={replyAction.clientId}
+                className="grid gap-3 rounded-md border border-border/60 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium">Action {index + 1}</div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={`reply-action-enabled-${replyAction.clientId}`}
+                      checked={replyAction.isEnabled}
+                      onCheckedChange={(checked) =>
+                        setReplyAction(replyAction.clientId, { isEnabled: checked === true })
+                      }
+                    />
+                    <Label
+                      htmlFor={`reply-action-enabled-${replyAction.clientId}`}
+                      className="text-xs"
+                    >
+                      Enabled
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeReplyAction(replyAction.clientId)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-[1fr_0.8fr_0.7fr]">
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`reply-action-event-${replyAction.clientId}`}>
+                      Destination Event
+                    </Label>
+                    <Select
+                      id={`reply-action-event-${replyAction.clientId}`}
+                      value={replyAction.targetEventId}
+                      onValueChange={(value) =>
+                        handleReplyActionTargetEventChange(
+                          replyAction.clientId,
+                          value ? (value as Id<"events">) : "",
+                        )
+                      }
+                    >
+                      <SelectOption value="">Select event</SelectOption>
+                      {(replyActionTargetOptions ?? []).map((targetOption) => (
+                        <SelectOption key={targetOption.eventId} value={targetOption.eventId}>
+                          {targetOption.eventName}
+                          {targetOption.eventSecondaryTitle
+                            ? `: ${targetOption.eventSecondaryTitle}`
+                            : ""}
+                        </SelectOption>
+                      ))}
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`reply-action-list-${replyAction.clientId}`}>
+                      Destination List
+                    </Label>
+                    <Select
+                      id={`reply-action-list-${replyAction.clientId}`}
+                      value={replyAction.targetListKey}
+                      disabled={!replyAction.targetEventId}
+                      onValueChange={(value) =>
+                        handleReplyActionTargetListChange(replyAction.clientId, value)
+                      }
+                    >
+                      <SelectOption value="">Select list</SelectOption>
+                      {listOptions.map((listOption) => (
+                        <SelectOption key={listOption.listKey} value={listOption.listKey}>
+                          {listOption.listKey.toUpperCase()}
+                        </SelectOption>
+                      ))}
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`reply-action-code-${replyAction.clientId}`}>Reply Code</Label>
+                    <Input
+                      id={`reply-action-code-${replyAction.clientId}`}
+                      value={replyAction.replyCode}
+                      placeholder={selectedListOption?.password ? "List password" : "Reply code"}
+                      onChange={(event) =>
+                        setReplyAction(replyAction.clientId, {
+                          replyCode: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                {selectedListOption && !selectedListOption.password && !replyAction.replyCode && (
+                  <div className="text-xs text-muted-foreground">
+                    Open lists need a manual reply code.
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {replyActionValidationMessage && (
+        <div className="text-xs text-destructive">{replyActionValidationMessage}</div>
+      )}
+    </div>
+  );
 
   const renderStepContent = () => {
     switch (currentStep) {
@@ -806,6 +1156,8 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
               </div>
               <div className="text-xs text-muted-foreground">{qrImageHelperText}</div>
             </div>
+
+            {renderReplyActionsEditor()}
 
             {formData.message && (
               <div className="space-y-2">
@@ -1293,6 +1645,12 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
                       {formData.selectedRsvpIds.length !== 1 ? "s" : ""} selected
                     </p>
                   )}
+                  {formData.replyActions.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Reply Actions: {formData.replyActions.length} code
+                      {formData.replyActions.length !== 1 ? "s" : ""} configured
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1308,95 +1666,121 @@ export default function TextBlastDialog({ isOpen, onClose, blastId }: TextBlastD
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditMode ? "Edit Text Blast" : "Create Text Blast"}</DialogTitle>
+          <DialogTitle>
+            {isReplyActionsOnlyMode
+              ? "Manage Reply Actions"
+              : isEditMode
+                ? "Edit Text Blast"
+                : "Create Text Blast"}
+          </DialogTitle>
           <DialogDescription>
-            Send bulk SMS messages to event attendees. Step {currentStep} of 3.
+            {isReplyActionsOnlyMode
+              ? "Update the SMS reply codes attached to this text blast."
+              : `Send bulk SMS messages to event attendees. Step ${currentStep} of 3.`}
           </DialogDescription>
         </DialogHeader>
 
         {/* Step Indicators */}
-        <div className="flex items-center justify-center space-x-4 py-4">
-          {[1, 2, 3].map((step) => (
-            <div key={step} className="flex items-center">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  step === currentStep
-                    ? "bg-primary text-primary-foreground"
-                    : step < currentStep
-                      ? "bg-green-500 text-white"
-                      : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {step}
-              </div>
-              {step < 3 && (
+        {!isReplyActionsOnlyMode && (
+          <div className="flex items-center justify-center space-x-4 py-4">
+            {[1, 2, 3].map((step) => (
+              <div key={step} className="flex items-center">
                 <div
-                  className={`w-12 h-0.5 mx-2 ${step < currentStep ? "bg-green-500" : "bg-muted"}`}
-                />
-              )}
-            </div>
-          ))}
-        </div>
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                    step === currentStep
+                      ? "bg-primary text-primary-foreground"
+                      : step < currentStep
+                        ? "bg-green-500 text-white"
+                        : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {step}
+                </div>
+                {step < 3 && (
+                  <div
+                    className={`w-12 h-0.5 mx-2 ${step < currentStep ? "bg-green-500" : "bg-muted"}`}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         <Separator />
 
         {/* Step Content */}
-        <div className="py-4">{renderStepContent()}</div>
+        <div className="py-4">
+          {isReplyActionsOnlyMode ? renderReplyActionsEditor() : renderStepContent()}
+        </div>
 
         <DialogFooter className="flex justify-between">
-          <div className="flex gap-2">
-            {currentStep > 1 && (
-              <Button variant="outline" onClick={() => setCurrentStep(currentStep - 1)}>
-                Back
+          {isReplyActionsOnlyMode ? (
+            <>
+              <Button variant="outline" onClick={onClose}>
+                Cancel
               </Button>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            {currentStep < 3 ? (
-              <Button
-                onClick={() => setCurrentStep(currentStep + 1)}
-                disabled={
-                  (currentStep === 1 && !canProceedToStep2) ||
-                  (currentStep === 2 && !canProceedToStep3)
-                }
-              >
-                Next
+              <Button onClick={handleSaveReplyActions} disabled={!replyActionsAreValid}>
+                Save Reply Actions
               </Button>
-            ) : (
+            </>
+          ) : (
+            <>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={handleSaveDraft} disabled={!canSave}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Draft
-                </Button>
-
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button disabled={!canSave || isSending || recipientCount === 0}>
-                      <Send className="h-4 w-4 mr-2" />
-                      {isSending ? "Sending..." : "Send Now"}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Send Text Blast</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Are you sure you want to send this text blast to {recipientCount} recipient
-                        {recipientCount !== 1 ? "s" : ""}? This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleSendBlast}>
-                        Send {recipientCount} Message
-                        {recipientCount !== 1 ? "s" : ""}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                {currentStep > 1 && (
+                  <Button variant="outline" onClick={() => setCurrentStep(currentStep - 1)}>
+                    Back
+                  </Button>
+                )}
               </div>
-            )}
-          </div>
+
+              <div className="flex gap-2">
+                {currentStep < 3 ? (
+                  <Button
+                    onClick={() => setCurrentStep(currentStep + 1)}
+                    disabled={
+                      (currentStep === 1 && !canProceedToStep2) ||
+                      (currentStep === 2 && !canProceedToStep3)
+                    }
+                  >
+                    Next
+                  </Button>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={handleSaveDraft} disabled={!canSave}>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Draft
+                    </Button>
+
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button disabled={!canSave || isSending || recipientCount === 0}>
+                          <Send className="h-4 w-4 mr-2" />
+                          {isSending ? "Sending..." : "Send Now"}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Send Text Blast</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to send this text blast to {recipientCount}{" "}
+                            recipient
+                            {recipientCount !== 1 ? "s" : ""}? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleSendBlast}>
+                            Send {recipientCount} Message
+                            {recipientCount !== 1 ? "s" : ""}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

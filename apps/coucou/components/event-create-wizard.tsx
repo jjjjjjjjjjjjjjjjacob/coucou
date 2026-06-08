@@ -1,10 +1,12 @@
 "use client";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { resolvePreset, siteConfigurations } from "@coucou/sdk";
 import {
   getDefaultApprovalMessage,
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
+import type { PrimaryFieldConfig } from "@coucou/sdk/shared/primary-fields";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -76,6 +78,74 @@ type WizardStep = {
   description: string;
   validate: WizardField[];
 };
+
+type DraftEventPatchPayload = {
+  name: string;
+  secondaryTitle?: string;
+  description: string;
+  acts: EventAct[];
+  hosts: string[];
+  productionCompany?: string;
+  location: string;
+  flyerStorageId?: Id<"_storage">;
+  customIconStorageId?: Id<"_storage"> | null;
+  guestPortalImageStorageId?: Id<"_storage">;
+  guestPortalLinkLabel?: string;
+  guestPortalLinkUrl?: string;
+  eventDate?: number;
+  eventTimezone: string;
+  maxAttendees?: number;
+  themeBackgroundColor?: string;
+  themeTextColor?: string;
+  qrCodeColor?: string;
+  customFields: Array<{
+    key: string;
+    label: string;
+    placeholder?: string;
+    required: boolean;
+    copyEnabled: boolean;
+    prependUrl?: string;
+    trimWhitespace: boolean;
+  }>;
+  primaryFieldConfig?: PrimaryFieldConfig;
+  sendQrOnApproval: boolean;
+  attendanceQuestionEnabled: boolean;
+};
+
+type DraftListPayload = {
+  id?: Id<"listCredentials">;
+  listKey: string;
+  password?: string;
+  generateQR?: boolean;
+  sendQrOnApproval?: boolean;
+  approvalMessage?: string;
+};
+
+type DraftPayload = {
+  patch: DraftEventPatchPayload;
+  lists: DraftListPayload[];
+};
+
+type EventWizardWorkspaceDefaults = {
+  themeBackgroundColor?: string | null;
+  themeTextColor?: string | null;
+  listKeys?: readonly string[] | null;
+};
+
+type EventWizardWorkspace = {
+  preset?: string | null;
+  eventDefaults?: EventWizardWorkspaceDefaults | null;
+};
+
+type EventWizardDefaults = {
+  themeBackgroundColor: string;
+  themeTextColor: string;
+  listKeys: readonly string[];
+};
+
+type KnownSiteKey = keyof typeof siteConfigurations;
+
+const DEFAULT_LIST_KEYS = ["vip", "ga"] as const;
 
 const STEPS: WizardStep[] = [
   {
@@ -162,6 +232,86 @@ function validateColors(values: EventFormData): string[] {
   return errors;
 }
 
+function isKnownSiteKey(value: string | null | undefined): value is KnownSiteKey {
+  return typeof value === "string" && value in siteConfigurations;
+}
+
+function resolveEventWizardDefaults({
+  workspace,
+  siteKey,
+}: {
+  workspace: EventWizardWorkspace | null | undefined;
+  siteKey: string | null | undefined;
+}): EventWizardDefaults {
+  const siteConfiguration = isKnownSiteKey(siteKey) ? siteConfigurations[siteKey] : null;
+  const resolvedPreset = resolvePreset({
+    workspacePreset: workspace?.preset ?? null,
+    siteConfigurationPreset: siteConfiguration?.preset ?? null,
+  });
+  const eventDefaults = workspace?.eventDefaults;
+  const themeBackgroundColor =
+    normalizeHexColorInput(eventDefaults?.themeBackgroundColor) ?? resolvedPreset.effective.bg;
+  const themeTextColor =
+    normalizeHexColorInput(eventDefaults?.themeTextColor) ?? resolvedPreset.effective.fg;
+  const listKeys =
+    eventDefaults?.listKeys && eventDefaults.listKeys.length > 0
+      ? eventDefaults.listKeys
+      : DEFAULT_LIST_KEYS;
+
+  return {
+    themeBackgroundColor,
+    themeTextColor,
+    listKeys,
+  };
+}
+
+function createListRows(listKeys: readonly string[]): ListRow[] {
+  return listKeys.map((listKey) => ({
+    listKey,
+    password: "",
+    shouldGenerateQrCode: false,
+    approvalMessage: "",
+  }));
+}
+
+function areListRowsPristine(currentLists: readonly ListRow[], defaultListKeys: readonly string[]) {
+  if (currentLists.length !== defaultListKeys.length) return false;
+  return currentLists.every((list, index) => {
+    return (
+      list.listKey === defaultListKeys[index] &&
+      list.password === "" &&
+      list.shouldGenerateQrCode === false &&
+      list.sendQrOnApprovalOverride === undefined &&
+      list.approvalMessage === ""
+    );
+  });
+}
+
+function createDefaultEventFormValues(defaults: EventWizardDefaults): EventFormData {
+  return {
+    name: "",
+    secondaryTitle: "",
+    description: "",
+    hosts: "",
+    productionCompany: "",
+    location: "",
+    eventDate: "",
+    eventTime: "19:00",
+    eventTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    flyerStorageId: null,
+    customIconStorageId: null,
+    guestPortalImageStorageId: null,
+    guestPortalLinkLabel: "",
+    guestPortalLinkUrl: "",
+    maxAttendees: 1,
+    status: "inactive",
+    themeBackgroundColor: defaults.themeBackgroundColor,
+    themeTextColor: defaults.themeTextColor,
+    qrCodeColor: "#000000",
+    attendanceQuestionEnabled: false,
+  };
+}
+
 export default function EventCreateWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -174,65 +324,45 @@ export default function EventCreateWizard() {
   const draftsPath = useWorkspaceOperationPath("host", "events?saved=1");
   const create = useAction(api.eventsNode.create);
   const updateEventAction = useAction(api.eventsNode.update);
+  const updateAndPublishEventAction = useAction(api.eventsNode.updateAndPublish);
   const createDraft = useMutation(api.events.createDraft);
-  const publishEvent = useMutation(api.events.publishEvent);
-  const hasAppliedWorkspaceDefaults = React.useRef(false);
-  const hasHydratedFromDraft = React.useRef(false);
+  const hasAppliedNewEventDefaults = React.useRef(false);
 
   const draftIdParam = searchParams?.get("draftId") ?? null;
   const [draftEventId, setDraftEventId] = React.useState<Id<"events"> | null>(
     draftIdParam as Id<"events"> | null,
   );
+  const [hydratedDraftEventId, setHydratedDraftEventId] = React.useState<Id<"events"> | null>(null);
   const draftQueryArgs = React.useMemo(() => {
     if (!draftEventId || !workspaceScope) return null;
     return { eventId: draftEventId, ...workspaceScope.queryArgs };
   }, [draftEventId, workspaceScope]);
   const draftEvent = useQuery(api.events.get, draftQueryArgs ?? "skip");
   const draftCredentials = useQuery(api.credentials.getHostCredsForEvent, draftQueryArgs ?? "skip");
+  const eventWizardDefaults = React.useMemo(
+    () =>
+      resolveEventWizardDefaults({
+        workspace,
+        siteKey: workspaceScope?.siteKey,
+      }),
+    [workspace, workspaceScope?.siteKey],
+  );
+  const initialFormValues = React.useMemo(
+    () => createDefaultEventFormValues(eventWizardDefaults),
+    [eventWizardDefaults],
+  );
 
   const form = useForm<EventFormData>({
-    defaultValues: {
-      name: "",
-      secondaryTitle: "",
-      description: "",
-      hosts: "",
-      productionCompany: "",
-      location: "",
-      eventDate: "",
-      eventTime: "19:00",
-      eventTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      flyerStorageId: null,
-      customIconStorageId: null,
-      guestPortalImageStorageId: null,
-      guestPortalLinkLabel: "",
-      guestPortalLinkUrl: "",
-      maxAttendees: 1,
-      status: "inactive",
-      themeBackgroundColor: EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
-      themeTextColor: EVENT_THEME_DEFAULT_TEXT_COLOR,
-      qrCodeColor: "#000000",
-      attendanceQuestionEnabled: false,
-    },
+    defaultValues: initialFormValues,
     mode: "onTouched",
   });
 
   const [stepIndex, setStepIndex] = React.useState(0);
   const [furthest, setFurthest] = React.useState(0);
   const [submitting, setSubmitting] = React.useState(false);
-  const [lists, setLists] = React.useState<ListRow[]>([
-    {
-      listKey: "vip",
-      password: "",
-      shouldGenerateQrCode: false,
-      approvalMessage: "",
-    },
-    {
-      listKey: "ga",
-      password: "",
-      shouldGenerateQrCode: false,
-      approvalMessage: "",
-    },
-  ]);
+  const [lists, setLists] = React.useState<ListRow[]>(() =>
+    createListRows(eventWizardDefaults.listKeys),
+  );
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>([]);
   const [acts, setActs] = React.useState<EventAct[]>([]);
   const [usePrimaryFieldDefaults, setUsePrimaryFieldDefaults] = React.useState(true);
@@ -317,33 +447,34 @@ export default function EventCreateWizard() {
   );
 
   React.useEffect(() => {
-    const eventDefaults = workspace?.eventDefaults;
-    if (!eventDefaults || hasAppliedWorkspaceDefaults.current) return;
+    const nextDraftEventId = draftIdParam as Id<"events"> | null;
+    setDraftEventId((currentDraftEventId) =>
+      currentDraftEventId === nextDraftEventId ? currentDraftEventId : nextDraftEventId,
+    );
+  }, [draftIdParam]);
 
-    if (eventDefaults.themeBackgroundColor) {
-      form.setValue("themeBackgroundColor", eventDefaults.themeBackgroundColor);
-    }
-    if (eventDefaults.themeTextColor) {
-      form.setValue("themeTextColor", eventDefaults.themeTextColor);
-    }
-    if (eventDefaults.listKeys && eventDefaults.listKeys.length > 0) {
-      setLists(
-        eventDefaults.listKeys.map((listKey) => ({
-          listKey,
-          password: "",
-          shouldGenerateQrCode: false,
-          approvalMessage: "",
-        })),
-      );
-    }
+  React.useEffect(() => {
+    if (draftEventId || workspace === undefined || hasAppliedNewEventDefaults.current) return;
 
-    hasAppliedWorkspaceDefaults.current = true;
-  }, [form, workspace?.eventDefaults]);
+    if (!form.getFieldState("themeBackgroundColor").isDirty) {
+      form.setValue("themeBackgroundColor", eventWizardDefaults.themeBackgroundColor);
+    }
+    if (!form.getFieldState("themeTextColor").isDirty) {
+      form.setValue("themeTextColor", eventWizardDefaults.themeTextColor);
+    }
+    setLists((currentLists) =>
+      areListRowsPristine(currentLists, DEFAULT_LIST_KEYS)
+        ? createListRows(eventWizardDefaults.listKeys)
+        : currentLists,
+    );
+
+    hasAppliedNewEventDefaults.current = true;
+  }, [draftEventId, eventWizardDefaults, form, workspace]);
 
   React.useEffect(() => {
     if (!draftEventId) return;
-    if (hasHydratedFromDraft.current) return;
-    if (!draftEvent || draftCredentials === undefined) return;
+    if (hydratedDraftEventId === draftEventId) return;
+    if (workspace === undefined || !draftEvent || draftCredentials === undefined) return;
 
     const timezone = draftEvent.eventTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
     const formatTimestampDate = (timestamp: number | undefined | null) => {
@@ -381,21 +512,27 @@ export default function EventCreateWizard() {
       eventTimezone: timezone,
       maxAttendees: draftEvent.maxAttendees ?? 1,
       status: draftEvent.status ?? "inactive",
-      themeBackgroundColor: draftEvent.themeBackgroundColor ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
-      themeTextColor: draftEvent.themeTextColor ?? EVENT_THEME_DEFAULT_TEXT_COLOR,
+      themeBackgroundColor:
+        normalizeHexColorInput(draftEvent.themeBackgroundColor) ??
+        eventWizardDefaults.themeBackgroundColor,
+      themeTextColor:
+        normalizeHexColorInput(draftEvent.themeTextColor) ?? eventWizardDefaults.themeTextColor,
       qrCodeColor: draftEvent.qrCodeColor ?? "#000000",
       attendanceQuestionEnabled: draftEvent.attendanceQuestionEnabled ?? false,
     });
 
-    if (draftEvent.acts && draftEvent.acts.length > 0) {
-      setActs(draftEvent.acts as EventAct[]);
-    }
-    if (draftEvent.customFields && draftEvent.customFields.length > 0) {
-      setCustomFields(draftEvent.customFields as CustomFieldDef[]);
-    }
+    setActs(draftEvent.acts && draftEvent.acts.length > 0 ? (draftEvent.acts as EventAct[]) : []);
+    setCustomFields(
+      draftEvent.customFields && draftEvent.customFields.length > 0
+        ? (draftEvent.customFields as CustomFieldDef[])
+        : [],
+    );
     if (draftEvent.primaryFieldConfig) {
       setUsePrimaryFieldDefaults(false);
       setPrimaryFieldConfigDraft(primaryFieldConfigToDraft(draftEvent.primaryFieldConfig));
+    } else {
+      setUsePrimaryFieldDefaults(true);
+      setPrimaryFieldConfigDraft(workspacePrimaryFieldDefaultsDraft);
     }
     // Hydrate the new opt-in toggle from a v(n+1) draft (`sendQrOnApproval`).
     // Drafts written before this change only carry `defersQrDelivery`;
@@ -405,6 +542,8 @@ export default function EventCreateWizard() {
       setSendQrOnApproval(draftEvent.sendQrOnApproval);
     } else if (typeof draftEvent.defersQrDelivery === "boolean") {
       setSendQrOnApproval(!draftEvent.defersQrDelivery);
+    } else {
+      setSendQrOnApproval(false);
     }
     if (draftCredentials.length > 0) {
       setLists(
@@ -421,16 +560,28 @@ export default function EventCreateWizard() {
           approvalMessage: credential.approvalMessage ?? "",
         })),
       );
+    } else {
+      setLists(createListRows(eventWizardDefaults.listKeys));
     }
 
-    hasAppliedWorkspaceDefaults.current = true;
-    hasHydratedFromDraft.current = true;
+    hasAppliedNewEventDefaults.current = true;
+    setHydratedDraftEventId(draftEventId);
     setFurthest(STEPS.length - 1);
-  }, [draftEventId, draftEvent, draftCredentials, form]);
+  }, [
+    draftEventId,
+    draftEvent,
+    draftCredentials,
+    eventWizardDefaults,
+    form,
+    hydratedDraftEventId,
+    workspace,
+    workspacePrimaryFieldDefaultsDraft,
+  ]);
 
   const step = STEPS[stepIndex];
   const isLast = stepIndex === STEPS.length - 1;
   const isFirst = stepIndex === 0;
+  const isDraftHydrating = Boolean(draftEventId) && hydratedDraftEventId !== draftEventId;
 
   const goTo = (index: number) => {
     if (index <= furthest) setStepIndex(index);
@@ -487,17 +638,7 @@ export default function EventCreateWizard() {
     setFurthest((current) => Math.max(current, nextIndex));
   };
 
-  const buildDraftPayload = (): {
-    patch: Record<string, unknown>;
-    lists: Array<{
-      id?: Id<"listCredentials">;
-      listKey: string;
-      password?: string;
-      generateQR?: boolean;
-      sendQrOnApproval?: boolean;
-      approvalMessage?: string;
-    }>;
-  } => {
+  const buildDraftPayload = (): DraftPayload => {
     const values = form.getValues();
     const trimmedSecondaryTitle = values.secondaryTitle?.trim() ?? "";
     const trimmedProductionCompany = values.productionCompany?.trim() ?? "";
@@ -512,10 +653,13 @@ export default function EventCreateWizard() {
       ? createTimestamp(values.eventDate, values.eventTime, values.eventTimezone)
       : undefined;
 
-    const themeBackground = normalizeHexColorInput(values.themeBackgroundColor) ?? undefined;
-    const themeText = normalizeHexColorInput(values.themeTextColor) ?? undefined;
+    const themeBackground =
+      normalizeHexColorInput(values.themeBackgroundColor) ??
+      eventWizardDefaults.themeBackgroundColor;
+    const themeText =
+      normalizeHexColorInput(values.themeTextColor) ?? eventWizardDefaults.themeTextColor;
 
-    const patch: Record<string, unknown> = {
+    const patch: DraftEventPatchPayload = {
       name: values.name?.trim() || "Untitled event",
       secondaryTitle: trimmedSecondaryTitle || undefined,
       description: values.description?.trim() ?? "",
@@ -602,6 +746,10 @@ export default function EventCreateWizard() {
       toast.error("Workspace scope is required to save drafts");
       return;
     }
+    if (draftEventId && isDraftHydrating) {
+      toast.error("Draft is still loading");
+      return;
+    }
     setSubmitting(true);
     try {
       const eventId = await ensureDraftEventId();
@@ -609,8 +757,8 @@ export default function EventCreateWizard() {
       await updateEventAction({
         eventId,
         ...workspaceScope.queryArgs,
-        patch: patch as never,
-        lists: listsForPatch as never,
+        patch,
+        lists: listsForPatch,
       });
       toast.success("Draft saved");
       router.replace(draftsPath);
@@ -623,6 +771,10 @@ export default function EventCreateWizard() {
   };
 
   const handleSubmit = async () => {
+    if (draftEventId && isDraftHydrating) {
+      toast.error("Draft is still loading");
+      return;
+    }
     const values = form.getValues();
     const baseValid = await form.trigger(["name", "location", "eventDate"]);
     const colorErrors = validateColors(values);
@@ -661,15 +813,11 @@ export default function EventCreateWizard() {
 
       if (draftEventId) {
         const { patch, lists: listsForPatch } = buildDraftPayload();
-        await updateEventAction({
+        await updateAndPublishEventAction({
           eventId: draftEventId,
           ...workspaceScope.queryArgs,
-          patch: patch as never,
-          lists: listsForPatch as never,
-        });
-        await publishEvent({
-          eventId: draftEventId,
-          ...workspaceScope.queryArgs,
+          patch,
+          lists: listsForPatch,
         });
         toast.success("Event published");
         router.replace(eventsPath);
@@ -694,9 +842,10 @@ export default function EventCreateWizard() {
         }))
         .filter((list) => list.listKey);
       const themeBackground =
-        normalizeHexColorInput(values.themeBackgroundColor) ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
+        normalizeHexColorInput(values.themeBackgroundColor) ??
+        eventWizardDefaults.themeBackgroundColor;
       const themeText =
-        normalizeHexColorInput(values.themeTextColor) ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
+        normalizeHexColorInput(values.themeTextColor) ?? eventWizardDefaults.themeTextColor;
       await create({
         name: values.name.trim(),
         secondaryTitle: trimmedSecondaryTitle || undefined,
@@ -750,6 +899,7 @@ export default function EventCreateWizard() {
   };
 
   const handleAdvance = isLast ? handleSubmit : next;
+  const actionsDisabled = submitting || isDraftHydrating;
 
   return (
     <Form {...form}>
@@ -776,7 +926,7 @@ export default function EventCreateWizard() {
             type="button"
             className="text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
             onClick={saveAsDraft}
-            disabled={submitting}
+            disabled={actionsDisabled}
           >
             save & finish later
           </button>
@@ -942,7 +1092,7 @@ export default function EventCreateWizard() {
           <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground/70">
             autosaved locally
           </span>
-          <Button type="button" size="sm" onClick={handleAdvance} disabled={submitting}>
+          <Button type="button" size="sm" onClick={handleAdvance} disabled={actionsDisabled}>
             {isLast ? (submitting ? "Publishing…" : "Publish") : "Continue"}
             {!isLast && <ArrowRight className="h-4 w-4" />}
           </Button>

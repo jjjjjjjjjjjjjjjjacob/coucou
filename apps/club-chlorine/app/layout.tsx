@@ -1,22 +1,12 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import { buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import type { Metadata } from "next";
-import { Bowlby_One, Geist, Geist_Mono, Noto_Emoji } from "next/font/google";
+import { Bowlby_One, Noto_Emoji } from "next/font/google";
 import "./globals.css";
 import { DevColorTweakPanel } from "@/components/dev-color-tweak-panel";
 import { clubChlorineIconPaths, siteConfiguration } from "@/lib/site";
 import { AppChrome } from "./app-chrome";
 import Providers from "./providers";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 // Bowlby One is the free fallback for Adobe's Alfarn — heavy rounded display
 // sans used across Club Chlorine's wordmark and event lineup type. Loading
@@ -111,9 +101,7 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} ${bowlbyOne.variable} ${notoEmoji.variable} antialiased`}
-      >
+      <body className={`${bowlbyOne.variable} ${notoEmoji.variable} antialiased`}>
         <ClerkProvider
           isSatellite
           domain={clerkSatelliteDomain}

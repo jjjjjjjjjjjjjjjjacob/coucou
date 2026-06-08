@@ -2,17 +2,63 @@
 
 import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronDown, Search } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import {
+  type ComponentPropsWithoutRef,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 import { usePresetOptional } from "../tenant-template/use-preset";
 import { countries, findCountryByCode } from "./config/countries";
 import type { CountryOption } from "./config/types";
 import { combineClassNames } from "./internal-utils";
 
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 interface CountrySelectorProps {
   value: string;
   onChange: (code: string) => void;
   disabled?: boolean;
+  compact?: boolean;
 }
+
+interface CountrySelectorTriggerButtonProps extends ComponentPropsWithoutRef<"button"> {
+  selectedCountry: CountryOption;
+  compact?: boolean;
+}
+
+const CountrySelectorTriggerButton = forwardRef<
+  HTMLButtonElement,
+  CountrySelectorTriggerButtonProps
+>(({ selectedCountry, className, compact = false, disabled, style, ...buttonProps }, ref) => (
+  <button
+    {...buttonProps}
+    ref={ref}
+    type="button"
+    disabled={disabled}
+    className={combineClassNames(
+      "flex h-full items-center gap-1.5 px-3 transition-opacity",
+      compact ? "py-1.5" : "py-3",
+      "focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+      "hover:opacity-80",
+      className,
+    )}
+    style={{
+      color: "var(--tt-fg)",
+      borderRight: "1px solid var(--tt-rule-strong)",
+      background: "transparent",
+      ...style,
+    }}
+  >
+    <span className="text-base">{selectedCountry.flag}</span>
+    <span className="text-sm font-medium tabular-nums">{selectedCountry.code}</span>
+    <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--tt-fg-dim)" }} />
+  </button>
+));
+CountrySelectorTriggerButton.displayName = "CountrySelectorTriggerButton";
 
 /**
  * Country code picker with searchable list. Triggers as a flag + dial code
@@ -20,14 +66,24 @@ interface CountrySelectorProps {
  * tenant-template-themed via the same `var(--tt-*)` tokens the rest of
  * the auth shell uses.
  */
-export function CountrySelector({ value, onChange, disabled }: CountrySelectorProps) {
+export function CountrySelector({
+  value,
+  onChange,
+  disabled,
+  compact = false,
+}: CountrySelectorProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [hasMounted, setHasMounted] = useState(false);
   // Radix Popover renders into a Portal at document.body, which escapes
   // <TenantTemplateProvider>'s CSS-var scope. Resolve concrete preset
   // colors here and apply them inline so the popover content stays
   // opaque and on-brand.
   const { preset } = usePresetOptional();
+
+  useIsomorphicLayoutEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   const selectedCountry: CountryOption = useMemo(
     () => findCountryByCode(value) ?? countries[0],
@@ -54,27 +110,24 @@ export function CountrySelector({ value, onChange, disabled }: CountrySelectorPr
     [onChange],
   );
 
+  if (!hasMounted) {
+    return (
+      <CountrySelectorTriggerButton
+        selectedCountry={selectedCountry}
+        compact={compact}
+        disabled={disabled}
+      />
+    );
+  }
+
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <button
-          type="button"
+        <CountrySelectorTriggerButton
+          selectedCountry={selectedCountry}
+          compact={compact}
           disabled={disabled}
-          className={combineClassNames(
-            "flex h-full items-center gap-1.5 px-3 py-3 transition-opacity",
-            "focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
-            "hover:opacity-80",
-          )}
-          style={{
-            color: "var(--tt-fg)",
-            borderRight: "1px solid var(--tt-rule-strong)",
-            background: "transparent",
-          }}
-        >
-          <span className="text-base">{selectedCountry.flag}</span>
-          <span className="text-sm font-medium tabular-nums">{selectedCountry.code}</span>
-          <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--tt-fg-dim)" }} />
-        </button>
+        />
       </Popover.Trigger>
 
       <Popover.Portal>

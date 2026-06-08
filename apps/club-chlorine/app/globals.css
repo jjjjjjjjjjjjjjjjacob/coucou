@@ -10,8 +10,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Helvetica Neue", "Helvetica", "Arial", system-ui, sans-serif;
+  --font-mono: "Helvetica Neue", "Helvetica", "Arial", system-ui, sans-serif;
   --font-bowlby-one: var(--font-bowlby-one);
   --font-noto-emoji: var(--font-noto-emoji);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -145,6 +145,7 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: "Helvetica Neue", "Helvetica", "Arial", system-ui, sans-serif;
     max-width: 100%;
     overflow-x: hidden;
   }

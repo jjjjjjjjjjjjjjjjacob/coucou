@@ -23,7 +23,7 @@ export interface HeaderMenuTriggerProps extends React.ButtonHTMLAttributes<HTMLB
  *   - dojo:   filled-circle, fg-on-bg
  *   - maison: square outline with italic serif initials
  *   - atrium: square outline (italic serif)
- *   - coucou: thin-ring circle with mono initials
+ *   - coucou/chlorine: thin-ring circle with preset text initials
  *
  * Uses the active preset from `<TenantTemplateProvider>` via
  * `usePresetOptional()`. When rendered outside a provider it falls back to
@@ -96,7 +96,7 @@ export const HeaderMenuTrigger = forwardRef<HTMLButtonElement, HeaderMenuTrigger
       );
     }
 
-    // coucou (and any preset we haven't enumerated): thin-ring circle.
+    // coucou, chlorine, and any preset we haven't enumerated: thin-ring circle.
     return (
       <button
         ref={ref}
@@ -109,7 +109,8 @@ export const HeaderMenuTrigger = forwardRef<HTMLButtonElement, HeaderMenuTrigger
           color: "var(--tt-fg)",
           border: "1px solid var(--tt-fg)",
           borderRadius: "50%",
-          fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+          fontFamily:
+            'var(--tt-text, "Helvetica Neue", "Helvetica", "Arial", system-ui, sans-serif)',
           fontSize: size * 0.32,
           letterSpacing: "0.08em",
         }}

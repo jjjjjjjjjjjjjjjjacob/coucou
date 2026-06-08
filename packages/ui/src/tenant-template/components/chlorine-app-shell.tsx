@@ -10,6 +10,7 @@ import {
 } from "react";
 import { TenantTemplateProvider } from "../provider";
 import {
+  CHLORINE_COLLAPSED_SHELL_FALLBACK_VIEWPORT_DIMENSIONS,
   CHLORINE_PHASE_CASCADE_MS,
   CHLORINE_PHASE_SPLIT_MS,
   ChlorineComposedLogo,
@@ -55,6 +56,12 @@ export interface ChlorineAppShellProps {
   contactEmail?: string;
   /** Footer right text. Defaults to the current year. */
   yearLabel?: string;
+  /**
+   * Optional legal nav (Terms · Privacy · …) rendered centered in the
+   * absolute footer band. Provided as an array so the shell can render
+   * the dot separators consistently with the rest of the editorial chrome.
+   */
+  legalLinks?: ReadonlyArray<{ href: string; label: string }>;
   /** Extra vertical padding after the shell's first viewport section. */
   postViewportBottomPaddingPx?: number;
   /** Force the mobile breakpoint regardless of viewport width. */
@@ -106,6 +113,7 @@ export function ChlorineAppShell({
   tagline = "",
   contactEmail = "",
   yearLabel = "2026",
+  legalLinks,
   postViewportBottomPaddingPx = 0,
   mobile: forceMobile,
   contentMaxWidthPx,
@@ -115,7 +123,15 @@ export function ChlorineAppShell({
   applyChlorinePreset = true,
 }: ChlorineAppShellProps) {
   const shellElementRef = useRef<HTMLDivElement | null>(null);
-  const landingViewport = useLandingViewport(shellElementRef, forceMobile);
+  const shouldUseCollapsedFallbackViewport = mode === "collapsed" && forceMobile !== false;
+  const fallbackViewportDimensions = shouldUseCollapsedFallbackViewport
+    ? CHLORINE_COLLAPSED_SHELL_FALLBACK_VIEWPORT_DIMENSIONS
+    : undefined;
+  const landingViewport = useLandingViewport(
+    shellElementRef,
+    forceMobile,
+    fallbackViewportDimensions,
+  );
   const isMobile = landingViewport.isMobile;
 
   // The intro (centered → split → content) only plays when mounting into
@@ -189,7 +205,8 @@ export function ChlorineAppShell({
   const hasTagline = isExpanded && tagline.length > 0;
   const hasContactEmail = contactEmail.length > 0;
   const hasYearLabel = yearLabel.length > 0;
-  const shouldRenderFooter = hasContactEmail || hasYearLabel;
+  const hasLegalLinks = Boolean(legalLinks && legalLinks.length > 0);
+  const shouldRenderFooter = hasContactEmail || hasYearLabel || hasLegalLinks;
   const resolvedPostViewportBottomPadding = Math.max(0, postViewportBottomPaddingPx);
 
   // Vertical reserves keep page content clear of the wordmark anchors.
@@ -339,12 +356,16 @@ export function ChlorineAppShell({
               right: 0,
               padding: isMobile ? "0 24px" : "0 40px",
               display: "flex",
+              alignItems: "center",
               justifyContent:
                 hasContactEmail && hasYearLabel
                   ? "space-between"
                   : hasContactEmail
                     ? "flex-start"
-                    : "flex-end",
+                    : hasYearLabel
+                      ? "flex-end"
+                      : "center",
+              gap: 16,
               fontSize: 10,
               color: "var(--tt-fg-mute)",
               letterSpacing: "0.08em",
@@ -356,6 +377,36 @@ export function ChlorineAppShell({
             }}
           >
             {hasContactEmail ? <span style={{ pointerEvents: "auto" }}>{contactEmail}</span> : null}
+            {hasLegalLinks ? (
+              <nav
+                aria-label="Legal"
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 12,
+                  pointerEvents: "auto",
+                  flex: hasContactEmail || hasYearLabel ? "1 1 auto" : "0 1 auto",
+                }}
+              >
+                {legalLinks!.map((link, index) => (
+                  <span
+                    key={link.href}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 12 }}
+                  >
+                    <a
+                      href={link.href}
+                      style={{ color: "var(--tt-fg-mute)" }}
+                      className="transition-opacity hover:opacity-80"
+                    >
+                      {link.label}
+                    </a>
+                    {index < legalLinks!.length - 1 ? <span aria-hidden="true">·</span> : null}
+                  </span>
+                ))}
+              </nav>
+            ) : null}
             {hasYearLabel ? <span style={{ pointerEvents: "auto" }}>{yearLabel}</span> : null}
           </div>
         ) : null}

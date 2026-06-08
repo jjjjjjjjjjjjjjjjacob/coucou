@@ -3,6 +3,7 @@
  * Handles bulk SMS campaigns for events
  */
 
+import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import {
   applyMessageTemplateVariables,
   formatEventDateForMessageTemplate,
@@ -26,8 +27,19 @@ import {
 } from "./_generated/server";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
+import {
+  assertRequiredPrimaryFieldValues,
+  buildInvitedByPatch,
+  sanitizeSubmittedSocialProfiles,
+} from "./lib/primaryFields";
+import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./lib/profileValueRecords";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
-import { type ApprovalStatus, resolveApprovalStatus } from "./lib/rsvpStatus";
+import { insertRsvpIntoAggregate } from "./lib/rsvpAggregate";
+import {
+  type ApprovalStatus,
+  resolveApprovalStatus,
+  sanitizeAttendanceStatus,
+} from "./lib/rsvpStatus";
 import {
   ensureEventInSiteScope,
   ensureTextBlastInSiteScope,
@@ -35,6 +47,7 @@ import {
   getEventInSiteScope,
   getTextBlastInSiteScope,
 } from "./lib/siteScope";
+import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 function getErrorMessage(error: unknown): string {
@@ -65,7 +78,77 @@ const recipientHistoryFilterValidator = v.optional(
   }),
 );
 
+const replyActionInputValidator = v.object({
+  replyCode: v.string(),
+  targetEventId: v.id("events"),
+  targetListKey: v.string(),
+  isEnabled: v.optional(v.boolean()),
+});
+
+type ReplyActionInput = {
+  replyCode: string;
+  targetEventId: Id<"events">;
+  targetListKey: string;
+  isEnabled?: boolean;
+};
+
+type StoredReplyActionInput = {
+  replyCode: string;
+  replyCodeNormalized: string;
+  targetEventId: Id<"events">;
+  targetListKey: string;
+  isEnabled: boolean;
+};
+
+type ReplyActionAttemptStatus =
+  | "submitted"
+  | "already_exists"
+  | "ambiguous_recipient"
+  | "invalid_code"
+  | "missing_required_fields"
+  | "target_unavailable"
+  | "unknown_sender"
+  | "error";
+
+const RESERVED_REPLY_CODES = new Set([
+  "stop",
+  "stopall",
+  "unsubscribe",
+  "cancel",
+  "end",
+  "quit",
+  "start",
+  "yes",
+  "unstop",
+  "help",
+  "info",
+]);
+
 const getUniqueIds = <T extends string>(ids: T[]): T[] => Array.from(new Set(ids));
+
+function normalizeReplyCode(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function sanitizeReplyCode(value: string): { replyCode: string; replyCodeNormalized: string } {
+  const replyCode = value.trim();
+  const replyCodeNormalized = normalizeReplyCode(replyCode);
+
+  if (!replyCodeNormalized) {
+    throw new Error("Reply action code is required");
+  }
+  if (replyCodeNormalized.length > 64) {
+    throw new Error("Reply action code must be 64 characters or fewer");
+  }
+  if (replyCode.includes("\n") || replyCode.includes("\r")) {
+    throw new Error("Reply action code must fit in one SMS line");
+  }
+  if (RESERVED_REPLY_CODES.has(replyCodeNormalized)) {
+    throw new Error(`"${replyCode}" is reserved for SMS compliance replies`);
+  }
+
+  return { replyCode, replyCodeNormalized };
+}
 
 const getBlastTargetEventIds = (
   blast: Pick<Doc<"textBlasts">, "eventId" | "targetEventIds">,
@@ -254,6 +337,101 @@ async function ensureEventsInSiteScope(
   return events;
 }
 
+async function ensureListExistsForEvent(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  eventId: Id<"events">,
+  targetListKey: string,
+): Promise<Doc<"listCredentials">> {
+  const listCredential = await ctx.db
+    .query("listCredentials")
+    .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
+    .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("listKey"), targetListKey))
+    .unique();
+
+  if (!listCredential) {
+    throw new Error(`Destination list "${targetListKey}" was not found for the selected event`);
+  }
+
+  return listCredential;
+}
+
+async function normalizeReplyActionsForStorage(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  replyActions: ReplyActionInput[] | undefined,
+  scope: SiteScopeArgs,
+): Promise<StoredReplyActionInput[]> {
+  const normalizedReplyCodeSet = new Set<string>();
+  const storedReplyActions: StoredReplyActionInput[] = [];
+
+  for (const replyAction of replyActions ?? []) {
+    const { replyCode, replyCodeNormalized } = sanitizeReplyCode(replyAction.replyCode);
+    if (normalizedReplyCodeSet.has(replyCodeNormalized)) {
+      throw new Error(`Duplicate reply action code "${replyCode}"`);
+    }
+    normalizedReplyCodeSet.add(replyCodeNormalized);
+
+    const targetEvent = await ensureEventInSiteScope(ctx, replyAction.targetEventId, scope);
+    if (!isEventOpenForRsvp(targetEvent, Date.now())) {
+      throw new Error(`Destination event "${targetEvent.name}" is not open for RSVPs`);
+    }
+
+    const targetListKey = replyAction.targetListKey.trim();
+    if (!targetListKey) {
+      throw new Error("Reply action destination list is required");
+    }
+    await ensureListExistsForEvent(ctx, targetEvent._id, targetListKey);
+
+    storedReplyActions.push({
+      replyCode,
+      replyCodeNormalized,
+      targetEventId: targetEvent._id,
+      targetListKey,
+      isEnabled: replyAction.isEnabled !== false,
+    });
+  }
+
+  return storedReplyActions;
+}
+
+async function listReplyActionsForBlast(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  textBlastId: Id<"textBlasts">,
+): Promise<Doc<"textBlastReplyActions">[]> {
+  return await ctx.db
+    .query("textBlastReplyActions")
+    .withIndex("by_text_blast", (queryBuilder) => queryBuilder.eq("textBlastId", textBlastId))
+    .collect();
+}
+
+async function replaceReplyActionsForBlast(
+  ctx: MutationCtx,
+  args: {
+    textBlastId: Id<"textBlasts">;
+    replyActions?: ReplyActionInput[];
+    scope: SiteScopeArgs;
+  },
+): Promise<void> {
+  const storedReplyActions = await normalizeReplyActionsForStorage(
+    ctx,
+    args.replyActions,
+    args.scope,
+  );
+  const existingReplyActions = await listReplyActionsForBlast(ctx, args.textBlastId);
+  for (const existingReplyAction of existingReplyActions) {
+    await ctx.db.delete(existingReplyAction._id);
+  }
+
+  const now = Date.now();
+  for (const replyAction of storedReplyActions) {
+    await ctx.db.insert("textBlastReplyActions", {
+      textBlastId: args.textBlastId,
+      ...replyAction,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
 function eventTitleMap(events: Doc<"events">[]): Map<Id<"events">, string> {
   return new Map(events.map((event) => [event._id, formatEventTitleForMessageTemplate(event)]));
 }
@@ -277,6 +455,7 @@ export const createDraft = mutation({
     recipientFilter: v.optional(v.string()),
     recipientHistoryFilter: recipientHistoryFilterValidator,
     includeQrCodes: v.optional(v.boolean()),
+    replyActions: v.optional(v.array(replyActionInputValidator)),
   },
   handler: async (ctx, args): Promise<Id<"textBlasts">> => {
     const identity = await ctx.auth.getUserIdentity();
@@ -320,7 +499,7 @@ export const createDraft = mutation({
     });
 
     const now = Date.now();
-    return await ctx.db.insert("textBlasts", {
+    const blastId = await ctx.db.insert("textBlasts", {
       eventId: args.eventId,
       targetEventIds,
       name: args.name,
@@ -338,6 +517,15 @@ export const createDraft = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await replaceReplyActionsForBlast(ctx, {
+      textBlastId: blastId,
+      replyActions: args.replyActions,
+      scope: {
+        siteKey: args.siteKey,
+        workspaceSlug: args.workspaceSlug,
+      },
+    });
+    return blastId;
   },
 });
 
@@ -358,6 +546,7 @@ export const updateDraft = mutation({
     recipientHistoryFilter: recipientHistoryFilterValidator,
     clearRecipientHistoryFilter: v.optional(v.boolean()),
     includeQrCodes: v.optional(v.boolean()),
+    replyActions: v.optional(v.array(replyActionInputValidator)),
   },
   handler: async (ctx, args): Promise<Doc<"textBlasts"> | null> => {
     const identity = await ctx.auth.getUserIdentity();
@@ -460,6 +649,16 @@ export const updateDraft = mutation({
     }
 
     await ctx.db.patch(args.blastId, updateData);
+    if (args.replyActions !== undefined) {
+      await replaceReplyActionsForBlast(ctx, {
+        textBlastId: args.blastId,
+        replyActions: args.replyActions,
+        scope: {
+          siteKey: args.siteKey,
+          workspaceSlug: args.workspaceSlug,
+        },
+      });
+    }
     return await ctx.db.get(args.blastId);
   },
 });
@@ -1106,6 +1305,7 @@ export const sendBlastDirect = action({
     recipientHistoryFilter: recipientHistoryFilterValidator,
     includeQrCodes: v.optional(v.boolean()),
     selectedRsvpIds: v.optional(v.array(v.id("rsvps"))), // Filter to specific RSVP IDs for testing
+    replyActions: v.optional(v.array(replyActionInputValidator)),
   },
   handler: async (ctx, args): Promise<SendBlastResult> => {
     const identity = await ctx.auth.getUserIdentity();
@@ -1175,6 +1375,9 @@ export const sendBlastDirect = action({
       sentBy: identity.subject,
       createdAt: now,
       updatedAt: now,
+      replyActions: args.replyActions,
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
     });
 
     await ctx.runMutation(internal.textBlasts.startBlastSend, {
@@ -1294,7 +1497,10 @@ export const getBlastsByEventWithSenderNames = query({
     limit: v.optional(v.number()),
     status: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<(Doc<"textBlasts"> & { sentByName: string })[]> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<(Doc<"textBlasts"> & { sentByName: string; replyActionCount: number })[]> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -1335,10 +1541,13 @@ export const getBlastsByEventWithSenderNames = query({
       }
     }
 
-    return blasts.map((blast) => ({
-      ...blast,
-      sentByName: senderNameMap.get(blast.sentBy) || "Unknown",
-    })) as (Doc<"textBlasts"> & { sentByName: string })[];
+    return await Promise.all(
+      blasts.map(async (blast) => ({
+        ...blast,
+        sentByName: senderNameMap.get(blast.sentBy) || "Unknown",
+        replyActionCount: (await listReplyActionsForBlast(ctx, blast._id)).length,
+      })),
+    );
   },
 });
 
@@ -1349,7 +1558,10 @@ export const getBlastsByWorkspaceWithSenderNames = query({
     limit: v.optional(v.number()),
     status: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<(Doc<"textBlasts"> & { sentByName: string })[]> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<(Doc<"textBlasts"> & { sentByName: string; replyActionCount: number })[]> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -1394,10 +1606,13 @@ export const getBlastsByWorkspaceWithSenderNames = query({
       }
     }
 
-    return blasts.map((blast) => ({
-      ...blast,
-      sentByName: senderNameMap.get(blast.sentBy) || "Unknown",
-    })) as (Doc<"textBlasts"> & { sentByName: string })[];
+    return await Promise.all(
+      blasts.map(async (blast) => ({
+        ...blast,
+        sentByName: senderNameMap.get(blast.sentBy) || "Unknown",
+        replyActionCount: (await listReplyActionsForBlast(ctx, blast._id)).length,
+      })),
+    );
   },
 });
 
@@ -1436,7 +1651,10 @@ export const getBlastById = query({
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<Doc<"textBlasts"> | null> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<(Doc<"textBlasts"> & { replyActions: Doc<"textBlastReplyActions">[] }) | null> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
@@ -1456,7 +1674,10 @@ export const getBlastById = query({
       throw new Error("Not authorized to view this text blast");
     }
 
-    return blast;
+    return {
+      ...blast,
+      replyActions: await listReplyActionsForBlast(ctx, blast._id),
+    };
   },
 });
 
@@ -1714,7 +1935,7 @@ export const duplicateBlast = mutation({
     });
 
     const now = Date.now();
-    return await ctx.db.insert("textBlasts", {
+    const newBlastId = await ctx.db.insert("textBlasts", {
       eventId: originalBlast.eventId,
       targetEventIds,
       name: `${originalBlast.name} (Copy)`,
@@ -1732,6 +1953,21 @@ export const duplicateBlast = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    const originalReplyActions = await listReplyActionsForBlast(ctx, args.blastId);
+    await replaceReplyActionsForBlast(ctx, {
+      textBlastId: newBlastId,
+      replyActions: originalReplyActions.map((replyAction) => ({
+        replyCode: replyAction.replyCode,
+        targetEventId: replyAction.targetEventId,
+        targetListKey: replyAction.targetListKey,
+        isEnabled: replyAction.isEnabled,
+      })),
+      scope: {
+        siteKey: args.siteKey,
+        workspaceSlug: args.workspaceSlug,
+      },
+    });
+    return newBlastId;
   },
 });
 
@@ -1768,8 +2004,121 @@ export const deleteBlast = mutation({
       throw new Error("Cannot delete a text blast that is currently being sent");
     }
 
+    const replyActions = await listReplyActionsForBlast(ctx, args.blastId);
+    for (const replyAction of replyActions) {
+      await ctx.db.delete(replyAction._id);
+    }
+
     await ctx.db.delete(args.blastId);
     return { success: true };
+  },
+});
+
+export const updateReplyActions = mutation({
+  args: {
+    blastId: v.id("textBlasts"),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+    replyActions: v.array(replyActionInputValidator),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const identityWithRole = identity as IdentityWithRole;
+
+    const { blast } = await ensureTextBlastInSiteScope(ctx, args.blastId, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+
+    if (!identityCanManageBlast(identityWithRole, blast.sentBy)) {
+      throw new Error("Not authorized to update this text blast");
+    }
+    if (blast.status === "sending") {
+      throw new Error("Cannot update reply actions while the blast is sending");
+    }
+
+    await replaceReplyActionsForBlast(ctx, {
+      textBlastId: args.blastId,
+      replyActions: args.replyActions,
+      scope: {
+        siteKey: args.siteKey,
+        workspaceSlug: args.workspaceSlug,
+      },
+    });
+
+    return {
+      ok: true as const,
+      replyActionCount: args.replyActions.length,
+    };
+  },
+});
+
+export const getReplyActionTargetOptions = query({
+  args: {
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    Array<{
+      eventId: Id<"events">;
+      eventName: string;
+      eventSecondaryTitle?: string;
+      eventDate: number;
+      eventTimezone?: string;
+      lists: Array<{ listKey: string; password?: string }>;
+    }>
+  > => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const identityWithRole = identity as IdentityWithRole;
+    if (!identityHasHostRole(identityWithRole)) {
+      throw new Error("Not authorized for this workspace");
+    }
+
+    const events = (await ctx.db.query("events").collect())
+      .filter((event) =>
+        eventMatchesSiteScope(event, {
+          siteKey: args.siteKey,
+          workspaceSlug: args.workspaceSlug,
+        }),
+      )
+      .filter((event) => isEventOpenForRsvp(event, Date.now()))
+      .sort((firstEvent, secondEvent) => secondEvent.eventDate - firstEvent.eventDate);
+
+    const options = [];
+    for (const event of events) {
+      const credentials = await ctx.db
+        .query("listCredentials")
+        .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
+        .collect();
+      options.push({
+        eventId: event._id,
+        eventName: event.name,
+        eventSecondaryTitle: event.secondaryTitle,
+        eventDate: event.eventDate,
+        eventTimezone: event.eventTimezone,
+        lists: credentials
+          .map((credential) => ({
+            listKey: credential.listKey,
+            password: credential.password?.trim() || undefined,
+          }))
+          .sort((firstList, secondList) => firstList.listKey.localeCompare(secondList.listKey)),
+      });
+    }
+
+    return options;
   },
 });
 
@@ -1827,9 +2176,12 @@ export const createBlastInternal = internalMutation({
     sentBy: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
+    replyActions: v.optional(v.array(replyActionInputValidator)),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("textBlasts", {
+    const blastId = await ctx.db.insert("textBlasts", {
       eventId: args.eventId,
       targetEventIds: args.targetEventIds ?? [args.eventId],
       name: args.name,
@@ -1850,6 +2202,15 @@ export const createBlastInternal = internalMutation({
       createdAt: args.createdAt,
       updatedAt: args.updatedAt,
     });
+    await replaceReplyActionsForBlast(ctx, {
+      textBlastId: blastId,
+      replyActions: args.replyActions,
+      scope: {
+        siteKey: args.siteKey,
+        workspaceSlug: args.workspaceSlug,
+      },
+    });
+    return blastId;
   },
 });
 
@@ -1937,6 +2298,456 @@ export const startBlastSend = internalMutation({
       throw new Error("Text blast not found");
     }
     return updatedBlast;
+  },
+});
+
+async function logReplyAttempt(
+  ctx: MutationCtx,
+  args: {
+    textBlastId?: Id<"textBlasts">;
+    textBlastRecipientId?: Id<"textBlastRecipients">;
+    replyActionId?: Id<"textBlastReplyActions">;
+    phoneHash: string;
+    fromPhoneObfuscated: string;
+    inboundMessage: string;
+    normalizedReplyCode: string;
+    targetEventId?: Id<"events">;
+    targetListKey?: string;
+    sourceRsvpId?: Id<"rsvps">;
+    destinationRsvpId?: Id<"rsvps">;
+    status: ReplyActionAttemptStatus;
+    responseMessage?: string;
+    errorMessage?: string;
+    messageSid?: string;
+    receivedAt: number;
+  },
+): Promise<void> {
+  await ctx.db.insert("textBlastReplyAttempts", {
+    ...args,
+    createdAt: Date.now(),
+  });
+}
+
+async function findLatestReplyActionCandidate(
+  ctx: MutationCtx,
+  phoneHash: string,
+): Promise<{
+  delivery: Doc<"textBlastRecipients">;
+  blast: Doc<"textBlasts">;
+  replyActions: Doc<"textBlastReplyActions">[];
+} | null> {
+  const deliveries = (
+    await ctx.db
+      .query("textBlastRecipients")
+      .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
+      .collect()
+  )
+    .filter((delivery) => delivery.status === "sent")
+    .sort((firstDelivery, secondDelivery) => {
+      const firstTimestamp = firstDelivery.sentAt ?? firstDelivery.updatedAt;
+      const secondTimestamp = secondDelivery.sentAt ?? secondDelivery.updatedAt;
+      return secondTimestamp - firstTimestamp;
+    });
+
+  for (const delivery of deliveries) {
+    const blast = await ctx.db.get(delivery.textBlastId);
+    if (!blast) {
+      continue;
+    }
+    const replyActions = (await listReplyActionsForBlast(ctx, blast._id)).filter(
+      (replyAction) => replyAction.isEnabled,
+    );
+    if (replyActions.length === 0) {
+      continue;
+    }
+
+    return { delivery, blast, replyActions };
+  }
+
+  return null;
+}
+
+function selectSourceRsvpForReplyAction(
+  sourceRsvps: Doc<"rsvps">[],
+  clerkUserId: string,
+): Doc<"rsvps"> | null {
+  const matchingRsvps = sourceRsvps
+    .filter((rsvp) => rsvp.clerkUserId === clerkUserId)
+    .sort((firstRsvp, secondRsvp) => secondRsvp.updatedAt - firstRsvp.updatedAt);
+  return matchingRsvps[0] ?? null;
+}
+
+function copyMatchingCustomFieldValues(args: {
+  sourceRsvp: Doc<"rsvps">;
+  targetEvent: Doc<"events">;
+}): { customFieldValues?: Record<string, string>; missingRequiredLabels: string[] } {
+  const copiedValues: Record<string, string> = {};
+  const missingRequiredLabels: string[] = [];
+  const sourceValues = args.sourceRsvp.customFieldValues ?? {};
+
+  for (const targetField of args.targetEvent.customFields ?? []) {
+    const sourceValue = sourceValues[targetField.key];
+    const stringValue = typeof sourceValue === "string" ? sourceValue : "";
+    const finalValue = targetField.trimWhitespace === false ? stringValue : stringValue.trim();
+    if (finalValue) {
+      copiedValues[targetField.key] = finalValue;
+      continue;
+    }
+    if (targetField.required === true) {
+      missingRequiredLabels.push(targetField.label);
+    }
+  }
+
+  return {
+    customFieldValues: Object.keys(copiedValues).length > 0 ? copiedValues : undefined,
+    missingRequiredLabels,
+  };
+}
+
+async function copyMatchingPrimaryFields(args: {
+  ctx: MutationCtx;
+  sourceRsvp: Doc<"rsvps">;
+  targetEvent: Doc<"events">;
+}): Promise<{
+  socialProfiles: Array<{ platformKey: string; handle: string }>;
+  invitedByName?: string;
+  missingRequiredMessage?: string;
+}> {
+  const targetPrimaryFieldConfig = args.targetEvent.primaryFieldConfig;
+  const sourceSocialProfiles = await args.ctx.db
+    .query("rsvpSocialProfiles")
+    .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", args.sourceRsvp._id))
+    .collect();
+  const sourceSocialProfileByPlatform = new Map(
+    sourceSocialProfiles.map((socialProfile) => [socialProfile.platformKey, socialProfile]),
+  );
+  const socialProfiles = (targetPrimaryFieldConfig?.socialPlatforms ?? [])
+    .map((platform) => {
+      const sourceSocialProfile = sourceSocialProfileByPlatform.get(platform.platformKey);
+      if (!sourceSocialProfile) {
+        return null;
+      }
+      return {
+        platformKey: platform.platformKey,
+        handle: sourceSocialProfile.handle,
+      };
+    })
+    .filter((profile): profile is { platformKey: string; handle: string } => profile !== null);
+  const sanitizedSocialProfiles = sanitizeSubmittedSocialProfiles(
+    socialProfiles,
+    targetPrimaryFieldConfig,
+  );
+  const invitedByName =
+    targetPrimaryFieldConfig?.invitedBy?.enabled === true
+      ? args.sourceRsvp.invitedByName
+      : undefined;
+
+  try {
+    assertRequiredPrimaryFieldValues({
+      primaryFieldConfig: targetPrimaryFieldConfig,
+      submittedProfiles: sanitizedSocialProfiles,
+      invitedByName,
+    });
+  } catch (error) {
+    return {
+      socialProfiles,
+      invitedByName,
+      missingRequiredMessage: getErrorMessage(error),
+    };
+  }
+
+  return { socialProfiles, invitedByName };
+}
+
+function buildMissingFieldsResponse(missingFields: string[]): string {
+  const missingFieldsLabel = missingFields.join(", ");
+  return `We could not submit this RSVP by text because ${missingFieldsLabel} still needs to be filled out.`;
+}
+
+function formatReplyActionEventName(event: Doc<"events">): string {
+  return formatEventTitleForMessageTemplate(event);
+}
+
+export const processIncomingSmsReply = internalMutation({
+  args: {
+    fromPhoneNumber: v.string(),
+    messageBody: v.string(),
+    messageSid: v.optional(v.string()),
+    receivedAt: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    shouldRespond: boolean;
+    responseMessage?: string;
+    status: ReplyActionAttemptStatus;
+  }> => {
+    const receivedAt = args.receivedAt ?? Date.now();
+    const inboundMessage = args.messageBody.trim().slice(0, 512);
+    const normalizedReplyCode = normalizeReplyCode(inboundMessage);
+    const phoneResolution = await normalizeAndHashPhoneNumber(args.fromPhoneNumber);
+    const fromPhoneObfuscated = obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber);
+
+    const candidate = await findLatestReplyActionCandidate(ctx, phoneResolution.phoneHash);
+    if (!candidate) {
+      await logReplyAttempt(ctx, {
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        inboundMessage,
+        normalizedReplyCode,
+        status: "unknown_sender",
+        messageSid: args.messageSid,
+        receivedAt,
+      });
+      return { shouldRespond: false, status: "unknown_sender" };
+    }
+
+    const matchingReplyAction = candidate.replyActions.find(
+      (replyAction) => replyAction.replyCodeNormalized === normalizedReplyCode,
+    );
+    if (!matchingReplyAction) {
+      const responseMessage = "We could not match that reply code. Check the text and try again.";
+      await logReplyAttempt(ctx, {
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        inboundMessage,
+        normalizedReplyCode,
+        status: "invalid_code",
+        responseMessage,
+        messageSid: args.messageSid,
+        receivedAt,
+      });
+      return { shouldRespond: true, responseMessage, status: "invalid_code" };
+    }
+
+    const uniqueRecipientClerkUserIds = getUniqueIds(candidate.delivery.recipientClerkUserIds);
+    if (uniqueRecipientClerkUserIds.length !== 1) {
+      const responseMessage =
+        "We could not submit this RSVP by text because this phone matches more than one guest.";
+      await logReplyAttempt(ctx, {
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyActionId: matchingReplyAction._id,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        inboundMessage,
+        normalizedReplyCode,
+        targetEventId: matchingReplyAction.targetEventId,
+        targetListKey: matchingReplyAction.targetListKey,
+        status: "ambiguous_recipient",
+        responseMessage,
+        messageSid: args.messageSid,
+        receivedAt,
+      });
+      return { shouldRespond: true, responseMessage, status: "ambiguous_recipient" };
+    }
+
+    const clerkUserId = uniqueRecipientClerkUserIds[0];
+    const sourceRsvps = (
+      await Promise.all(
+        candidate.delivery.sourceRsvpIds.map((sourceRsvpId) => ctx.db.get(sourceRsvpId)),
+      )
+    ).filter((sourceRsvp): sourceRsvp is Doc<"rsvps"> => sourceRsvp !== null);
+    const sourceRsvp = selectSourceRsvpForReplyAction(sourceRsvps, clerkUserId);
+    if (!sourceRsvp) {
+      const responseMessage = "We could not find the original RSVP needed for this text reply.";
+      await logReplyAttempt(ctx, {
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyActionId: matchingReplyAction._id,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        inboundMessage,
+        normalizedReplyCode,
+        targetEventId: matchingReplyAction.targetEventId,
+        targetListKey: matchingReplyAction.targetListKey,
+        status: "error",
+        responseMessage,
+        errorMessage: "Source RSVP not found",
+        messageSid: args.messageSid,
+        receivedAt,
+      });
+      return { shouldRespond: true, responseMessage, status: "error" };
+    }
+
+    const targetEvent = await ctx.db.get(matchingReplyAction.targetEventId);
+    const targetListCredential = targetEvent
+      ? await ctx.db
+          .query("listCredentials")
+          .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", targetEvent._id))
+          .filter((queryBuilder) =>
+            queryBuilder.eq(queryBuilder.field("listKey"), matchingReplyAction.targetListKey),
+          )
+          .unique()
+      : null;
+    if (!targetEvent || !targetListCredential || !isEventOpenForRsvp(targetEvent, receivedAt)) {
+      const responseMessage = "This reply code is no longer accepting RSVPs.";
+      await logReplyAttempt(ctx, {
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyActionId: matchingReplyAction._id,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        inboundMessage,
+        normalizedReplyCode,
+        targetEventId: matchingReplyAction.targetEventId,
+        targetListKey: matchingReplyAction.targetListKey,
+        sourceRsvpId: sourceRsvp._id,
+        status: "target_unavailable",
+        responseMessage,
+        messageSid: args.messageSid,
+        receivedAt,
+      });
+      return { shouldRespond: true, responseMessage, status: "target_unavailable" };
+    }
+
+    const existingDestinationRsvp = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event_user", (queryBuilder) =>
+        queryBuilder.eq("eventId", targetEvent._id).eq("clerkUserId", clerkUserId),
+      )
+      .unique();
+    if (existingDestinationRsvp) {
+      const existingStatus = resolveApprovalStatus(existingDestinationRsvp);
+      const responseMessage = `You already have an RSVP for ${formatReplyActionEventName(targetEvent)} (${existingStatus}).`;
+      await logReplyAttempt(ctx, {
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyActionId: matchingReplyAction._id,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        inboundMessage,
+        normalizedReplyCode,
+        targetEventId: targetEvent._id,
+        targetListKey: matchingReplyAction.targetListKey,
+        sourceRsvpId: sourceRsvp._id,
+        destinationRsvpId: existingDestinationRsvp._id,
+        status: "already_exists",
+        responseMessage,
+        messageSid: args.messageSid,
+        receivedAt,
+      });
+      return { shouldRespond: true, responseMessage, status: "already_exists" };
+    }
+
+    const copiedCustomFields = copyMatchingCustomFieldValues({ sourceRsvp, targetEvent });
+    const copiedPrimaryFields = await copyMatchingPrimaryFields({ ctx, sourceRsvp, targetEvent });
+    const missingRequiredFields = [...copiedCustomFields.missingRequiredLabels];
+    if (copiedPrimaryFields.missingRequiredMessage) {
+      missingRequiredFields.push(copiedPrimaryFields.missingRequiredMessage);
+    }
+    if (missingRequiredFields.length > 0) {
+      const responseMessage = buildMissingFieldsResponse(missingRequiredFields);
+      await logReplyAttempt(ctx, {
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyActionId: matchingReplyAction._id,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        inboundMessage,
+        normalizedReplyCode,
+        targetEventId: targetEvent._id,
+        targetListKey: matchingReplyAction.targetListKey,
+        sourceRsvpId: sourceRsvp._id,
+        status: "missing_required_fields",
+        responseMessage,
+        errorMessage: missingRequiredFields.join(", "),
+        messageSid: args.messageSid,
+        receivedAt,
+      });
+      return { shouldRespond: true, responseMessage, status: "missing_required_fields" };
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+      .unique();
+    const userName = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") || "" : "";
+    const configuredSocialPlatformKeys = new Set(
+      (targetEvent.primaryFieldConfig?.socialPlatforms ?? []).map(
+        (platform) => platform.platformKey,
+      ),
+    );
+    const sanitizedSocialProfiles = sanitizeSubmittedSocialProfiles(
+      copiedPrimaryFields.socialProfiles,
+      targetEvent.primaryFieldConfig,
+    );
+    const invitedByPatch =
+      targetEvent.primaryFieldConfig?.invitedBy?.enabled === true
+        ? buildInvitedByPatch(copiedPrimaryFields.invitedByName)
+        : {};
+    const now = Date.now();
+    const destinationRsvpId = await ctx.db.insert("rsvps", {
+      eventId: targetEvent._id,
+      clerkUserId,
+      listKey: matchingReplyAction.targetListKey,
+      ticketStatus: "not-issued",
+      userName,
+      shareContact: sourceRsvp.shareContact,
+      attendees: 1,
+      smsConsent: true,
+      smsConsentTimestamp: now,
+      customFieldValues: copiedCustomFields.customFieldValues,
+      ...invitedByPatch,
+      status: "pending",
+      approvalStatus: "pending",
+      attendanceStatus: targetEvent.attendanceQuestionEnabled
+        ? sanitizeAttendanceStatus("yes")
+        : "yes",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (configuredSocialPlatformKeys.size > 0) {
+      await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+        event: targetEvent,
+        rsvpId: destinationRsvpId,
+        clerkUserId,
+        userId: user?._id,
+        submittedProfiles: sanitizedSocialProfiles,
+      });
+      await replaceRsvpSocialProfileSnapshots(ctx, {
+        eventId: targetEvent._id,
+        rsvpId: destinationRsvpId,
+        clerkUserId,
+        userId: user?._id,
+        configuredPlatformKeys: configuredSocialPlatformKeys,
+        submittedProfiles: sanitizedSocialProfiles,
+      });
+    }
+
+    const destinationRsvp = await ctx.db.get(destinationRsvpId);
+    if (destinationRsvp) {
+      try {
+        await insertRsvpIntoAggregate(ctx, destinationRsvp);
+      } catch (error) {
+        console.error("[processIncomingSmsReply] Failed to sync RSVP aggregate", error);
+      }
+    }
+
+    const responseMessage = `RSVP submitted for ${formatReplyActionEventName(targetEvent)}. Your request is pending approval.`;
+    await logReplyAttempt(ctx, {
+      textBlastId: candidate.blast._id,
+      textBlastRecipientId: candidate.delivery._id,
+      replyActionId: matchingReplyAction._id,
+      phoneHash: phoneResolution.phoneHash,
+      fromPhoneObfuscated,
+      inboundMessage,
+      normalizedReplyCode,
+      targetEventId: targetEvent._id,
+      targetListKey: matchingReplyAction.targetListKey,
+      sourceRsvpId: sourceRsvp._id,
+      destinationRsvpId,
+      status: "submitted",
+      responseMessage,
+      messageSid: args.messageSid,
+      receivedAt,
+    });
+
+    return { shouldRespond: true, responseMessage, status: "submitted" };
   },
 });
 

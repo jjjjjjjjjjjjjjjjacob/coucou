@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
-import { mutation, query } from "./functions";
+import { internalMutation, mutation, query } from "./functions";
 import { generateEventShortId } from "./lib/codeGenerators";
 import { applyEventUnsetFields } from "./lib/eventPatch";
 import {
@@ -67,6 +67,75 @@ const eventUnsetFieldValidator = v.union(
   v.literal("guestPortalLinkUrl"),
   v.literal("primaryFieldConfig"),
 );
+
+const publicInstagramDevSeedSocialPlatform = {
+  platformKey: "instagram",
+  label: "Instagram",
+  placeholder: "@handle",
+  profileUrlPrefix: "https://instagram.com/",
+  required: true,
+};
+
+const publicInstagramDevSeedCustomFields = [
+  {
+    key: "profile_category",
+    label: "Profile category",
+    placeholder: "Music, fashion, sports, creator...",
+    copyEnabled: false,
+  },
+  {
+    key: "public_profile_url",
+    label: "Public profile URL",
+    placeholder: "https://instagram.com/handle",
+    copyEnabled: true,
+    trimWhitespace: true,
+  },
+];
+
+const publicInstagramDevSeedListCredentials = [
+  { listKey: "creator", password: "creator", generateQR: true },
+  { listKey: "vip", password: "vip", generateQR: true },
+  { listKey: "press", password: "press", generateQR: true },
+  { listKey: "friends", password: "friends", generateQR: false },
+];
+
+function mergePublicInstagramDevSeedCustomFields(
+  customFields: Doc<"events">["customFields"],
+): NonNullable<Doc<"events">["customFields"]> {
+  const mergedCustomFields = [...(customFields ?? [])];
+  const existingCustomFieldKeys = new Set(mergedCustomFields.map((field) => field.key));
+
+  for (const seedCustomField of publicInstagramDevSeedCustomFields) {
+    if (!existingCustomFieldKeys.has(seedCustomField.key)) {
+      mergedCustomFields.push(seedCustomField);
+    }
+  }
+
+  return mergedCustomFields;
+}
+
+function mergePublicInstagramDevSeedPrimaryFieldConfig(
+  primaryFieldConfig: Doc<"events">["primaryFieldConfig"],
+): NonNullable<Doc<"events">["primaryFieldConfig"]> {
+  const existingSocialPlatforms = primaryFieldConfig?.socialPlatforms ?? [];
+  const hasInstagramPlatform = existingSocialPlatforms.some(
+    (platform) => platform.platformKey === "instagram",
+  );
+
+  return {
+    socialPlatforms: hasInstagramPlatform
+      ? existingSocialPlatforms
+      : [...existingSocialPlatforms, publicInstagramDevSeedSocialPlatform],
+    invitedBy:
+      primaryFieldConfig?.invitedBy?.enabled === true
+        ? primaryFieldConfig.invitedBy
+        : {
+            enabled: true,
+            label: "Invited by",
+            placeholder: "Who invited you?",
+          },
+  };
+}
 
 function normalizeEventShortId(value: string): string {
   return value.trim().toLowerCase();
@@ -133,7 +202,6 @@ export const insertWithCreds = mutation({
     guestPortalLinkLabel: v.optional(v.string()),
     guestPortalLinkUrl: v.optional(v.string()),
     eventDate: v.number(),
-    eventEndDate: v.optional(v.number()),
     eventTimezone: v.optional(v.string()),
     status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()),
@@ -197,7 +265,6 @@ export const insertWithCreds = mutation({
       guestPortalLinkLabel: args.guestPortalLinkLabel,
       guestPortalLinkUrl: args.guestPortalLinkUrl,
       eventDate: args.eventDate,
-      eventEndDate: args.eventEndDate,
       eventTimezone: args.eventTimezone,
       status: args.status ?? "inactive",
       lifecycle: "published",
@@ -223,6 +290,88 @@ export const insertWithCreds = mutation({
       });
     }
     return { eventId };
+  },
+});
+
+export const insertPublicInstagramDevSeedEvent = internalMutation({
+  args: {
+    workspaceSlug: v.optional(v.string()),
+    siteKey: v.optional(v.string()),
+    name: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const shortId = await generateUniqueEventShortId(ctx);
+    const eventId = await ctx.db.insert("events", {
+      workspaceSlug: args.workspaceSlug,
+      siteKey: args.siteKey,
+      shortId,
+      name: args.name?.trim() || "Public Instagram Dev Seed",
+      secondaryTitle: "100 public-profile seed guests",
+      description:
+        "Development-only event seeded with synthetic users and public Instagram handles.",
+      hosts: ["Coucou Dev"],
+      location: "Local Dev Room",
+      eventDate: now + 14 * 24 * 60 * 60 * 1000,
+      eventTimezone: "America/Los_Angeles",
+      status: "active",
+      lifecycle: "published",
+      publishedAt: now,
+      sendQrOnApproval: false,
+      attendanceQuestionEnabled: true,
+      maxAttendees: 2,
+      customFields: mergePublicInstagramDevSeedCustomFields(undefined),
+      primaryFieldConfig: mergePublicInstagramDevSeedPrimaryFieldConfig(undefined),
+      themeBackgroundColor: "#111827",
+      themeTextColor: "#F9FAFB",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    for (const credential of publicInstagramDevSeedListCredentials) {
+      await ctx.db.insert("listCredentials", {
+        eventId,
+        ...credential,
+        createdAt: now,
+      });
+    }
+
+    return { eventId };
+  },
+});
+
+export const ensurePublicInstagramDevSeedFields = internalMutation({
+  args: {
+    eventId: v.id("events"),
+  },
+  handler: async (ctx, { eventId }) => {
+    const event = await ctx.db.get(eventId);
+    if (!event) {
+      throw new Error("Event not found");
+    }
+
+    const customFields = mergePublicInstagramDevSeedCustomFields(event.customFields);
+    const primaryFieldConfig = mergePublicInstagramDevSeedPrimaryFieldConfig(
+      event.primaryFieldConfig,
+    );
+    const shouldPatchCustomFields =
+      JSON.stringify(customFields) !== JSON.stringify(event.customFields ?? []);
+    const shouldPatchPrimaryFieldConfig =
+      JSON.stringify(primaryFieldConfig) !== JSON.stringify(event.primaryFieldConfig ?? {});
+
+    if (!shouldPatchCustomFields && !shouldPatchPrimaryFieldConfig) {
+      return { updated: false as const };
+    }
+
+    await ctx.db.patch(eventId, {
+      customFields: shouldPatchCustomFields ? customFields : event.customFields,
+      primaryFieldConfig: shouldPatchPrimaryFieldConfig
+        ? primaryFieldConfig
+        : event.primaryFieldConfig,
+      updatedAt: Date.now(),
+    });
+
+    return { updated: true as const };
   },
 });
 
@@ -378,7 +527,6 @@ export const update = mutation({
     flyerUrl: v.optional(v.string()),
     flyerStorageId: v.optional(v.id("_storage")),
     eventDate: v.optional(v.number()),
-    eventEndDate: v.optional(v.number()),
     eventTimezone: v.optional(v.string()),
     guestPortalImageStorageId: v.optional(v.id("_storage")),
     guestPortalLinkLabel: v.optional(v.string()),
@@ -473,7 +621,6 @@ export const update = mutation({
       "guestPortalLinkLabel",
       "guestPortalLinkUrl",
       "eventDate",
-      "eventEndDate",
       "eventTimezone",
       "maxAttendees",
       "status",

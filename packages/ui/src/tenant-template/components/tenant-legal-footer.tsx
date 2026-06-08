@@ -21,6 +21,10 @@ export interface TenantLegalFooterProps {
    * Terms · Privacy · Cookies · Data set.
    */
   links?: Array<{ href: string; label: string }>;
+  /**
+   * When false, suppresses the brand · year line on the left.
+   */
+  showBrand?: boolean;
 }
 
 const DEFAULT_LINKS: Array<{ href: string; label: string }> = [
@@ -40,10 +44,16 @@ export function TenantLegalFooter({
   brandName,
   contact,
   links = DEFAULT_LINKS,
+  showBrand = true,
 }: TenantLegalFooterProps) {
   return (
     <TenantTemplateProvider siteConfigurationPreset={preset} applyToBody>
-      <LegalFooterInner brandName={brandName} contact={contact} links={links} />
+      <LegalFooterInner
+        brandName={brandName}
+        contact={contact}
+        links={links}
+        showBrand={showBrand}
+      />
     </TenantTemplateProvider>
   );
 }
@@ -52,9 +62,10 @@ interface LegalFooterInnerProps {
   brandName?: string;
   contact?: ReactNode;
   links: Array<{ href: string; label: string }>;
+  showBrand: boolean;
 }
 
-function LegalFooterInner({ brandName, contact, links }: LegalFooterInnerProps) {
+function LegalFooterInner({ brandName, contact, links, showBrand }: LegalFooterInnerProps) {
   const { preset } = usePreset();
   const resolvedBrand = brandName ?? preset.name;
 
@@ -68,9 +79,11 @@ function LegalFooterInner({ brandName, contact, links }: LegalFooterInnerProps) 
       }}
     >
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-6 py-8 text-[12px] sm:px-12">
-        <span style={{ color: "var(--tt-fg)" }}>
-          {preset.upper ? resolvedBrand.toUpperCase() : resolvedBrand} · 2026
-        </span>
+        {showBrand ? (
+          <span style={{ color: "var(--tt-fg)" }}>
+            {preset.upper ? resolvedBrand.toUpperCase() : resolvedBrand} · 2026
+          </span>
+        ) : null}
         <nav
           aria-label="Legal"
           className="flex flex-wrap items-center gap-5 text-[11px] uppercase tracking-[0.06em]"

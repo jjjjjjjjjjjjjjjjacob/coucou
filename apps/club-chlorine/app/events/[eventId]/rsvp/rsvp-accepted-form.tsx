@@ -1,15 +1,14 @@
 "use client";
 
-import { useClerk, useUser } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
+import { CountrySelector, countries } from "@coucou/ui/auth";
 import { TenantButton } from "@coucou/ui/tenant-template";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { CheckCircle2 } from "lucide-react";
-import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { type Path, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { GuestInfoFields, NoteForHostsField } from "@/components/guest-info-form";
@@ -24,21 +23,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Form } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { validateRequiredPrimaryFields, validateRequiredWithFirstName } from "@/lib/mini-zod";
-import {
-  buildEventDetailPathWithPreservedQuery,
-  buildPathWithPreservedQuery,
-  buildPathWithQueryString,
-  buildQueryStringWithRsvpStep,
-  getRsvpStepQueryValue,
-  parseRsvpStepQueryValue,
-  type RsvpStepNumber,
-} from "@/lib/rsvp-url-state";
-import { coucouBaseUrl, siteConfiguration } from "@/lib/site";
+import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
+import { siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
 import type {
   ApplicationError,
@@ -49,7 +47,6 @@ import type {
   RSVPFormData,
   User,
 } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 // Buttons in the RSVP / post-RSVP flow render transparent with just a
 // border so they never paint a solid block on top of the chlorine wordmark
@@ -60,109 +57,263 @@ const ghostButtonStyle: React.CSSProperties = {
   border: "1px solid var(--tt-fg)",
 };
 
-export type AttendanceStatusOption = "yes" | "no" | "maybe";
+const defaultPhoneCountryCode = "+1";
+const rsvpDraftStorageVersion = 1;
+const rsvpDraftStorageMaxAgeMs = 30 * 24 * 60 * 60 * 1000;
+const rsvpDraftStorageDebounceMs = 250;
 
-const ATTENDANCE_STATUS_OPTIONS: AttendanceStatusOption[] = ["yes", "maybe", "no"];
-
-const RSVP_STEPPER_STEPS: Array<{ step: RsvpStepNumber; label: string }> = [
-  { step: 1, label: "You" },
-  { step: 2, label: "Details" },
-  { step: 3, label: "Submit" },
-];
-
-function getAttendanceStatusLabel(status: AttendanceStatusOption): string {
-  switch (status) {
-    case "yes":
-      return "Yes";
-    case "maybe":
-      return "Maybe";
-    case "no":
-      return "No";
-  }
+interface RsvpDraftStorage {
+  version: typeof rsvpDraftStorageVersion;
+  updatedAt: number;
+  name: string;
+  firstName: string;
+  lastName: string;
+  phoneCountryCode: string;
+  phoneNationalNumber: string;
+  custom: Record<string, string>;
+  socialProfiles: Record<string, string>;
+  invitedByName: string;
+  note: string;
+  attendanceStatus: AttendanceStatusOption;
+  attendees: number;
+  accessPassword: string;
+  smsConsentEnabled: boolean;
+  hasAcknowledgedSmsOptOutPrompt: boolean;
 }
 
-function RsvpStepper({
-  currentStep,
-  onCompletedStepClick,
-}: {
-  currentStep: RsvpStepNumber;
-  onCompletedStepClick: (step: RsvpStepNumber) => void;
-}) {
-  return (
-    <nav aria-label="RSVP progress" className="pb-3">
-      <ol className="mx-auto flex w-full max-w-2xl items-center justify-center">
-        {RSVP_STEPPER_STEPS.map((stepEntry, stepIndex) => {
-          const isCompleted = stepEntry.step < currentStep;
-          const isCurrent = stepEntry.step === currentStep;
-          const isFuture = stepEntry.step > currentStep;
-          const sharedClassName = cn(
-            "group inline-flex min-w-0 items-center gap-2 px-1 py-2 text-center transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-            isCurrent
-              ? "text-primary"
-              : isCompleted
-                ? "text-primary hover:text-primary/80"
-                : "text-primary/40",
-          );
-          const markerClassName = cn(
-            "flex size-5 shrink-0 items-center justify-center border text-[10px] font-semibold leading-none",
-            isCurrent
-              ? "border-primary bg-primary text-background"
-              : isCompleted
-                ? "border-primary/70 text-primary"
-                : "border-primary/20 text-primary/40",
-          );
-          const content = (
-            <>
-              <span className={markerClassName}>{stepEntry.step}</span>
-              <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-normal">
-                {stepEntry.label}
-              </span>
-            </>
-          );
-          const connectorClassName = cn(
-            "mx-2 h-px min-w-4 flex-1 transition-colors sm:mx-8",
-            stepEntry.step < currentStep ? "bg-primary/70" : "bg-primary/20",
-          );
+const countriesByDescendingDialCodeLength = [...countries].sort(
+  (leftCountry, rightCountry) =>
+    digitsOnly(rightCountry.code).length - digitsOnly(leftCountry.code).length,
+);
 
-          return (
-            <li
-              key={stepEntry.step}
-              className={cn(
-                "flex min-w-0 items-center",
-                stepIndex < RSVP_STEPPER_STEPS.length - 1 ? "flex-1" : "shrink-0",
-              )}
-            >
-              {isCompleted ? (
-                <button
-                  type="button"
-                  className={sharedClassName}
-                  onClick={() => onCompletedStepClick(stepEntry.step)}
-                >
-                  {content}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={sharedClassName}
-                  aria-current={isCurrent ? "step" : undefined}
-                  disabled={isFuture}
-                >
-                  {content}
-                </button>
-              )}
-              {stepIndex < RSVP_STEPPER_STEPS.length - 1 ? (
-                <span aria-hidden="true" className={connectorClassName} />
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
+interface PhoneNumberInputState {
+  countryCode: string;
+  nationalNumber: string;
+}
+
+interface RestoredRsvpDraftFields {
+  name: boolean;
+  phone: boolean;
+}
+
+function digitsOnly(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function formatPhoneNumberForDisplay(value: string, countryCode: string): string {
+  const digits = digitsOnly(value);
+  if (countryCode === "+1") {
+    let formattedPhoneNumber = "";
+    if (digits.length > 0) {
+      formattedPhoneNumber = digits.substring(0, 3);
+    }
+    if (digits.length > 3) {
+      formattedPhoneNumber += ` ${digits.substring(3, 6)}`;
+    }
+    if (digits.length > 6) {
+      formattedPhoneNumber += ` ${digits.substring(6, 10)}`;
+    }
+    return formattedPhoneNumber;
+  }
+  return digits.replace(/(\d{3})(?=\d)/g, "$1 ").trim();
+}
+
+function isPhoneNumberLikelyValid(value: string, countryCode: string): boolean {
+  const digits = digitsOnly(value);
+  if (countryCode === "+1") {
+    return digits.length >= 10;
+  }
+  return digits.length >= 8;
+}
+
+function resolvePhoneNumberInputState(
+  phoneNumber: string | null | undefined,
+): PhoneNumberInputState {
+  const phoneNumberDigits = digitsOnly(phoneNumber ?? "");
+  if (!phoneNumberDigits) {
+    return {
+      countryCode: defaultPhoneCountryCode,
+      nationalNumber: "",
+    };
+  }
+
+  const matchedCountry = countriesByDescendingDialCodeLength.find((country) =>
+    phoneNumberDigits.startsWith(digitsOnly(country.code)),
+  );
+  const countryCode =
+    matchedCountry?.code ?? (phoneNumberDigits.length === 10 ? defaultPhoneCountryCode : "");
+  const effectiveCountryCode = countryCode || defaultPhoneCountryCode;
+  const countryCodeDigits = digitsOnly(effectiveCountryCode);
+  const nationalNumberDigits =
+    phoneNumberDigits.startsWith(countryCodeDigits) &&
+    phoneNumberDigits.length > countryCodeDigits.length
+      ? phoneNumberDigits.slice(countryCodeDigits.length)
+      : phoneNumberDigits;
+
+  return {
+    countryCode: effectiveCountryCode,
+    nationalNumber: formatPhoneNumberForDisplay(nationalNumberDigits, effectiveCountryCode),
+  };
+}
+
+function buildFullPhoneNumber(countryCode: string, nationalNumber: string): string {
+  const nationalNumberDigits = digitsOnly(nationalNumber);
+  if (!nationalNumberDigits) {
+    return "";
+  }
+
+  const countryCodeDigits = digitsOnly(countryCode);
+  const correctedNationalNumberDigits =
+    nationalNumber.trim().startsWith("+") &&
+    nationalNumberDigits.startsWith(countryCodeDigits) &&
+    nationalNumberDigits.length > countryCodeDigits.length
+      ? nationalNumberDigits.slice(countryCodeDigits.length)
+      : countryCode === "+1" &&
+          nationalNumberDigits.length === 11 &&
+          nationalNumberDigits.startsWith("1")
+        ? nationalNumberDigits.slice(1)
+        : nationalNumberDigits;
+
+  return `${countryCode}${correctedNationalNumberDigits}`;
+}
+
+function phoneNumbersMatch(leftPhoneNumber: string, rightPhoneNumber: string): boolean {
+  return digitsOnly(leftPhoneNumber) === digitsOnly(rightPhoneNumber);
+}
+
+export type AttendanceStatusOption = "yes" | "no" | "maybe";
+
+function buildRsvpDraftStorageKey(eventRouteId: string, clerkUserId?: string): string {
+  const baseStorageKey = `club-chlorine:rsvp-draft:v${rsvpDraftStorageVersion}:${eventRouteId}`;
+  return clerkUserId ? `${baseStorageKey}:user:${clerkUserId}` : baseStorageKey;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringFromUnknown(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function booleanFromUnknown(value: unknown): boolean {
+  return value === true;
+}
+
+function stringRecordFromUnknown(value: unknown): Record<string, string> {
+  if (!isObjectRecord(value)) return {};
+
+  const result: Record<string, string> = {};
+  for (const [key, recordValue] of Object.entries(value)) {
+    if (typeof recordValue === "string") {
+      result[key] = recordValue;
+    }
+  }
+  return result;
+}
+
+function attendanceStatusFromUnknown(value: unknown): AttendanceStatusOption {
+  return value === "no" || value === "maybe" || value === "yes" ? value : "yes";
+}
+
+function attendeesFromUnknown(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
+}
+
+function phoneCountryCodeFromUnknown(value: unknown): string {
+  const candidateCountryCode = stringFromUnknown(value);
+  return countries.some((country) => country.code === candidateCountryCode)
+    ? candidateCountryCode
+    : defaultPhoneCountryCode;
+}
+
+function hasStoredStringValue(values: Record<string, string>): boolean {
+  return Object.values(values).some((value) => value.trim().length > 0);
+}
+
+function hasMeaningfulRsvpDraft(draft: RsvpDraftStorage): boolean {
+  return (
+    draft.firstName.trim().length > 0 ||
+    draft.lastName.trim().length > 0 ||
+    draft.phoneNationalNumber.trim().length > 0 ||
+    hasStoredStringValue(draft.custom) ||
+    hasStoredStringValue(draft.socialProfiles) ||
+    draft.invitedByName.trim().length > 0 ||
+    draft.note.trim().length > 0 ||
+    draft.attendanceStatus !== "yes" ||
+    draft.attendees !== 1 ||
+    draft.accessPassword.trim().length > 0 ||
+    draft.smsConsentEnabled ||
+    draft.hasAcknowledgedSmsOptOutPrompt
   );
 }
 
+function readRsvpDraftStorage(storageKey: string): RsvpDraftStorage | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const rawDraft = window.localStorage.getItem(storageKey);
+    if (!rawDraft) return null;
+
+    const parsedDraft: unknown = JSON.parse(rawDraft);
+    if (!isObjectRecord(parsedDraft) || parsedDraft.version !== rsvpDraftStorageVersion) {
+      window.localStorage.removeItem(storageKey);
+      return null;
+    }
+
+    const updatedAt =
+      typeof parsedDraft.updatedAt === "number" && Number.isFinite(parsedDraft.updatedAt)
+        ? parsedDraft.updatedAt
+        : 0;
+    if (Date.now() - updatedAt > rsvpDraftStorageMaxAgeMs) {
+      window.localStorage.removeItem(storageKey);
+      return null;
+    }
+
+    return {
+      version: rsvpDraftStorageVersion,
+      updatedAt,
+      name: stringFromUnknown(parsedDraft.name),
+      firstName: stringFromUnknown(parsedDraft.firstName),
+      lastName: stringFromUnknown(parsedDraft.lastName),
+      phoneCountryCode: phoneCountryCodeFromUnknown(parsedDraft.phoneCountryCode),
+      phoneNationalNumber: stringFromUnknown(parsedDraft.phoneNationalNumber),
+      custom: stringRecordFromUnknown(parsedDraft.custom),
+      socialProfiles: stringRecordFromUnknown(parsedDraft.socialProfiles),
+      invitedByName: stringFromUnknown(parsedDraft.invitedByName),
+      note: stringFromUnknown(parsedDraft.note),
+      attendanceStatus: attendanceStatusFromUnknown(parsedDraft.attendanceStatus),
+      attendees: attendeesFromUnknown(parsedDraft.attendees),
+      accessPassword: stringFromUnknown(parsedDraft.accessPassword),
+      smsConsentEnabled: booleanFromUnknown(parsedDraft.smsConsentEnabled),
+      hasAcknowledgedSmsOptOutPrompt: booleanFromUnknown(
+        parsedDraft.hasAcknowledgedSmsOptOutPrompt,
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeRsvpDraftStorage(storageKey: string, draft: RsvpDraftStorage): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    if (hasMeaningfulRsvpDraft(draft)) {
+      window.localStorage.setItem(storageKey, JSON.stringify(draft));
+    } else {
+      window.localStorage.removeItem(storageKey);
+    }
+  } catch {
+    // localStorage can be unavailable or full; RSVP submission still works.
+  }
+}
+
 export type RsvpCollectedArgs = {
+  firstName: string;
+  lastName?: string;
+  phone: string;
+  requiresPhoneVerification: boolean;
   note?: string;
   shareContact: true;
   attendees: number;
@@ -197,7 +348,6 @@ interface RsvpAcceptedFormProps {
   event: Event;
   listKey?: string;
   submitMode?: "submit" | "collect";
-  formVariant?: "stepped" | "full";
   onCollect?: (args: RsvpCollectedArgs) => void | Promise<void>;
   submitLabel?: string;
   /**
@@ -208,13 +358,15 @@ interface RsvpAcceptedFormProps {
   hasNoPasswordList?: boolean;
   /**
    * When true, the event has at least one list that requires a password.
-   * The password field is rendered on step 3 so guests on those lists can
-   * provide their access password. Defaults to true so legacy callers keep
-   * showing the field.
+   * The password field is rendered so guests on those lists can provide
+   * their access password. Defaults to true so legacy callers keep showing
+   * the field.
    */
   hasPasswordList?: boolean;
   /** Optional initial password from the URL query param. */
   initialPassword?: string;
+  /** Whether this form is being completed by a Clerk-authenticated user. */
+  isSignedIn?: boolean;
 }
 
 export function RsvpAcceptedForm({
@@ -223,20 +375,21 @@ export function RsvpAcceptedForm({
   event,
   listKey,
   submitMode = "submit",
-  formVariant = "stepped",
   onCollect,
   submitLabel = "Submit Request",
   hasNoPasswordList = false,
   hasPasswordList = true,
   initialPassword = "",
+  isSignedIn = true,
 }: RsvpAcceptedFormProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const publicEventRouteId = eventRouteId ?? eventId;
-  const isFullForm = formVariant === "full";
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const { user, isLoaded: userIsLoaded } = useUser();
+  const rsvpDraftStorageKey = useMemo(
+    () => buildRsvpDraftStorageKey(publicEventRouteId, isSignedIn ? user?.id : undefined),
+    [isSignedIn, publicEventRouteId, user?.id],
+  );
 
   const status = useQuery(api.rsvps.statusForUserEvent, {
     eventId,
@@ -254,6 +407,9 @@ export function RsvpAcceptedForm({
   const [name, setName] = useState<string>("");
   const [firstName, setFirstName] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
+  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(defaultPhoneCountryCode);
+  const [phoneNationalNumber, setPhoneNationalNumber] = useState<string>("");
+  const [hasInitializedPhoneInput, setHasInitializedPhoneInput] = useState<boolean>(false);
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [socialProfiles, setSocialProfiles] = useState<Record<string, string>>({});
   const [invitedByName, setInvitedByName] = useState<string>("");
@@ -261,9 +417,6 @@ export function RsvpAcceptedForm({
   const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatusOption>("yes");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [step, setStep] = useState<RsvpStepNumber>(() =>
-    isFullForm ? 3 : parseRsvpStepQueryValue(searchParams?.get("step")),
-  );
   const [accessPassword, setAccessPassword] = useState<string>(initialPassword);
   const debouncedAccessPassword = useDebounce(accessPassword, 300);
   const [resolvedListKey, setResolvedListKey] = useState<string | null>(null);
@@ -277,7 +430,12 @@ export function RsvpAcceptedForm({
   const [hasAcknowledgedSmsOptOutPrompt, setHasAcknowledgedSmsOptOutPrompt] =
     useState<boolean>(false);
   const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<"encourage" | null>(null);
-  const [phoneUpdatePending, setPhoneUpdatePending] = useState<boolean>(false);
+  const [hasHydratedRsvpDraft, setHasHydratedRsvpDraft] = useState<boolean>(false);
+  const hydratedRsvpDraftStorageKeyRef = useRef<string | null>(null);
+  const restoredRsvpDraftFieldsRef = useRef<RestoredRsvpDraftFields>({
+    name: false,
+    phone: false,
+  });
 
   const smsSenderDisplayName = useMemo(
     () =>
@@ -297,31 +455,6 @@ export function RsvpAcceptedForm({
   const submitRsvp = useMutation(api.rsvps.submitRequest);
   const updateProfileMeta = useMutation(api.users.updateProfileMeta);
   const resolveListByPassword = useAction(api.credentialsNode.resolveListByPassword);
-
-  const replaceStepInUrl = useCallback(
-    (nextStep: RsvpStepNumber) => {
-      if (isFullForm) return;
-      const queryString = buildQueryStringWithRsvpStep(searchParams, nextStep);
-      const rsvpPathname = pathname ?? `/events/${publicEventRouteId}/rsvp`;
-      router.replace(buildPathWithQueryString(rsvpPathname, queryString), { scroll: false });
-    },
-    [isFullForm, pathname, publicEventRouteId, router, searchParams],
-  );
-
-  const stepQueryValue = searchParams?.get("step");
-
-  useEffect(() => {
-    if (isFullForm) {
-      setStep(3);
-      return;
-    }
-    const parsedStep = parseRsvpStepQueryValue(stepQueryValue);
-    setStep((currentStep) => (currentStep === parsedStep ? currentStep : parsedStep));
-
-    if (stepQueryValue !== getRsvpStepQueryValue(parsedStep)) {
-      replaceStepInUrl(parsedStep);
-    }
-  }, [isFullForm, replaceStepInUrl, stepQueryValue]);
 
   useEffect(() => {
     const trimmed = debouncedAccessPassword.trim();
@@ -388,33 +521,87 @@ export function RsvpAcceptedForm({
       custom: {},
       socialProfiles: {},
       invitedByName: "",
+      phone: "",
       attendees: 1,
       attendanceStatus: "yes",
     },
   });
+  const watchedAttendees = form.watch("attendees");
+
+  useEffect(() => {
+    if (isSignedIn && (!userIsLoaded || !user?.id)) {
+      return;
+    }
+
+    const hydrationKey = `${rsvpDraftStorageKey}:${isSignedIn ? "signed-in" : "guest"}`;
+    if (hydratedRsvpDraftStorageKeyRef.current === hydrationKey) {
+      return;
+    }
+
+    setHasHydratedRsvpDraft(false);
+    restoredRsvpDraftFieldsRef.current = {
+      name: false,
+      phone: false,
+    };
+    const storedDraft = readRsvpDraftStorage(rsvpDraftStorageKey);
+    if (storedDraft) {
+      const restoredFirstName = storedDraft.firstName;
+      const restoredLastName = storedDraft.lastName;
+      const restoredName = storedDraft.name || `${restoredFirstName} ${restoredLastName}`.trim();
+      const restoredDraftHasName =
+        restoredFirstName.trim().length > 0 || restoredLastName.trim().length > 0;
+      const restoredDraftHasPhone =
+        storedDraft.phoneNationalNumber.trim().length > 0 ||
+        storedDraft.phoneCountryCode !== defaultPhoneCountryCode;
+
+      setName(restoredName);
+      setFirstName(restoredFirstName);
+      setLastName(restoredLastName);
+      setPhoneCountryCode(storedDraft.phoneCountryCode);
+      setPhoneNationalNumber(storedDraft.phoneNationalNumber);
+      if (restoredDraftHasPhone) {
+        setHasInitializedPhoneInput(true);
+      }
+      setCustom(storedDraft.custom);
+      setSocialProfiles(storedDraft.socialProfiles);
+      setInvitedByName(storedDraft.invitedByName);
+      setNote(storedDraft.note);
+      setAttendanceStatus(storedDraft.attendanceStatus);
+      setAccessPassword(storedDraft.accessPassword || initialPassword);
+      setSmsConsentEnabled(storedDraft.smsConsentEnabled);
+      setHasAcknowledgedSmsOptOutPrompt(storedDraft.hasAcknowledgedSmsOptOutPrompt);
+      form.setValue("attendees", storedDraft.attendees, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+      restoredRsvpDraftFieldsRef.current = {
+        name: restoredDraftHasName,
+        phone: restoredDraftHasPhone,
+      };
+    } else if (initialPassword) {
+      setAccessPassword(initialPassword);
+    }
+
+    hydratedRsvpDraftStorageKeyRef.current = hydrationKey;
+    setHasHydratedRsvpDraft(true);
+  }, [form, initialPassword, isSignedIn, rsvpDraftStorageKey, user?.id, userIsLoaded]);
 
   // Prefill from existing RSVP data and Clerk profile
   useEffect(() => {
     if (!event) return;
-    if (!firstName && !lastName) {
-      let first = "";
-      let last = "";
-      let fullName = "";
-
-      if (userDoc?.firstName || userDoc?.lastName) {
-        first = userDoc.firstName || "";
-        last = userDoc.lastName || "";
-        fullName = `${first} ${last}`.trim();
-      } else if (user?.firstName || user?.lastName) {
-        first = user.firstName || "";
-        last = user.lastName || "";
-        fullName = user.fullName || `${first} ${last}`.trim();
-      }
-
-      if (first || last) {
-        setFirstName(first);
-        setLastName(last);
-        setName(fullName);
+    const userDocFirstName = userDoc?.firstName?.trim() ?? "";
+    const userDocLastName = userDoc?.lastName?.trim() ?? "";
+    if (userDocFirstName || userDocLastName) {
+      setFirstName(userDocFirstName);
+      setLastName(userDocLastName);
+      setName(`${userDocFirstName} ${userDocLastName}`.trim());
+    } else if (!restoredRsvpDraftFieldsRef.current.name && !firstName && !lastName) {
+      const clerkFirstName = user?.firstName?.trim() ?? "";
+      const clerkLastName = user?.lastName?.trim() ?? "";
+      if (clerkFirstName || clerkLastName) {
+        setFirstName(clerkFirstName);
+        setLastName(clerkLastName);
+        setName(user?.fullName?.trim() || `${clerkFirstName} ${clerkLastName}`.trim());
       }
     }
 
@@ -424,10 +611,11 @@ export function RsvpAcceptedForm({
         for (const customField of event.customFields || []) {
           const key = customField.key;
           const existing = next[key];
-          if (existing) continue;
           const fromStatus = status?.customFieldValues?.[key];
-          if (fromStatus) {
+          if (fromStatus?.trim()) {
             next[key] = fromStatus;
+          } else if (!existing) {
+            delete next[key];
           }
         }
         return next;
@@ -438,14 +626,13 @@ export function RsvpAcceptedForm({
       setSocialProfiles((previousSocialProfiles) => {
         const nextSocialProfiles = { ...previousSocialProfiles };
         for (const platform of configuredSocialPlatforms) {
-          if (nextSocialProfiles[platform.platformKey]) continue;
           const fromStatus = status?.socialProfiles?.find(
             (profile) => profile.platformKey === platform.platformKey,
           )?.handle;
           const fromProfile = userSocialProfiles?.find(
             (profile) => profile.platformKey === platform.platformKey,
           )?.handle;
-          const value = fromStatus ?? fromProfile;
+          const value = fromStatus?.trim() || fromProfile?.trim() || "";
           if (value) {
             nextSocialProfiles[platform.platformKey] = value;
           }
@@ -453,7 +640,7 @@ export function RsvpAcceptedForm({
         return nextSocialProfiles;
       });
     }
-    if (!invitedByName && status?.invitedByName) {
+    if (status?.invitedByName?.trim()) {
       setInvitedByName(status.invitedByName);
     }
     if (status?.attendanceStatus) {
@@ -512,7 +699,7 @@ export function RsvpAcceptedForm({
     JSON.stringify(socialProfiles),
   ]);
 
-  const phone = useMemo(() => {
+  const clerkPhone = useMemo(() => {
     const clerkUser = user as ClerkUser | undefined;
     return (
       (clerkUser?.primaryPhoneNumber?.phoneNumber || clerkUser?.phoneNumbers?.[0]?.phoneNumber) ??
@@ -520,35 +707,110 @@ export function RsvpAcceptedForm({
     );
   }, [user]);
 
+  useEffect(() => {
+    if (hasInitializedPhoneInput) return;
+    if (!hasHydratedRsvpDraft) return;
+    if (isSignedIn && !userIsLoaded) return;
+
+    const initialPhoneState = resolvePhoneNumberInputState(isSignedIn ? clerkPhone : undefined);
+    setPhoneCountryCode(initialPhoneState.countryCode);
+    setPhoneNationalNumber(initialPhoneState.nationalNumber);
+    setHasInitializedPhoneInput(true);
+  }, [clerkPhone, hasHydratedRsvpDraft, hasInitializedPhoneInput, isSignedIn, userIsLoaded]);
+
+  const effectivePhone = useMemo(
+    () => buildFullPhoneNumber(phoneCountryCode, phoneNationalNumber),
+    [phoneCountryCode, phoneNationalNumber],
+  );
+  const phoneMatchesSignedInUser = useMemo(
+    () => isSignedIn && !!clerkPhone && phoneNumbersMatch(effectivePhone, clerkPhone),
+    [clerkPhone, effectivePhone, isSignedIn],
+  );
+  const requiresPhoneVerification = !isSignedIn || !phoneMatchesSignedInUser;
+
+  useEffect(() => {
+    form.setValue("phone", effectivePhone, {
+      shouldValidate: false,
+      shouldDirty: false,
+    });
+  }, [effectivePhone, form]);
+
+  const currentRsvpDraft = useMemo<RsvpDraftStorage>(
+    () => ({
+      version: rsvpDraftStorageVersion,
+      updatedAt: Date.now(),
+      name,
+      firstName,
+      lastName,
+      phoneCountryCode,
+      phoneNationalNumber,
+      custom,
+      socialProfiles,
+      invitedByName,
+      note,
+      attendanceStatus,
+      attendees: attendeesFromUnknown(watchedAttendees),
+      accessPassword,
+      smsConsentEnabled,
+      hasAcknowledgedSmsOptOutPrompt,
+    }),
+    [
+      accessPassword,
+      attendanceStatus,
+      custom,
+      firstName,
+      hasAcknowledgedSmsOptOutPrompt,
+      invitedByName,
+      lastName,
+      name,
+      note,
+      phoneCountryCode,
+      phoneNationalNumber,
+      smsConsentEnabled,
+      socialProfiles,
+      watchedAttendees,
+    ],
+  );
+
+  useEffect(() => {
+    if (!hasHydratedRsvpDraft) return;
+
+    const saveTimer = window.setTimeout(() => {
+      writeRsvpDraftStorage(rsvpDraftStorageKey, {
+        ...currentRsvpDraft,
+        updatedAt: Date.now(),
+      });
+    }, rsvpDraftStorageDebounceMs);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [currentRsvpDraft, hasHydratedRsvpDraft, rsvpDraftStorageKey]);
+
+  useEffect(() => {
+    if (!hasHydratedRsvpDraft) return;
+
+    const flushDraftBeforeUnload = () => {
+      writeRsvpDraftStorage(rsvpDraftStorageKey, {
+        ...currentRsvpDraft,
+        updatedAt: Date.now(),
+      });
+    };
+
+    window.addEventListener("pagehide", flushDraftBeforeUnload);
+    return () => window.removeEventListener("pagehide", flushDraftBeforeUnload);
+  }, [currentRsvpDraft, hasHydratedRsvpDraft, rsvpDraftStorageKey]);
+
+  const flushRsvpDraft = React.useCallback(() => {
+    if (!hasHydratedRsvpDraft) return;
+    writeRsvpDraftStorage(rsvpDraftStorageKey, {
+      ...currentRsvpDraft,
+      updatedAt: Date.now(),
+    });
+  }, [currentRsvpDraft, hasHydratedRsvpDraft, rsvpDraftStorageKey]);
+
   const deniedForThisList = useMemo(() => {
     const effectiveListKey = listKey ?? resolvedListKey;
     return status?.status === "denied" && !!effectiveListKey && status.listKey === effectiveListKey;
   }, [status?.status, status?.listKey, listKey, resolvedListKey]);
-
-  const handlePhoneUpdate = useCallback(async () => {
-    if (typeof window === "undefined") return;
-    setMessage("");
-    setPhoneUpdatePending(true);
-    const fallbackRsvpPathname = isFullForm
-      ? `/events/${publicEventRouteId}/rsvp/full`
-      : `/events/${publicEventRouteId}/rsvp`;
-    const returnPath = buildPathWithPreservedQuery(pathname ?? fallbackRsvpPathname, searchParams);
-    const primarySignInUrl = buildTenantPrimarySignInUrl({
-      primaryBaseUrl: coucouBaseUrl,
-      siteConfiguration,
-      redirectUrl: buildSatelliteReturnUrl(window.location.origin, returnPath),
-    });
-
-    try {
-      await signOut({ redirectUrl: primarySignInUrl });
-    } catch (error: unknown) {
-      const errorDetails = error as ApplicationError | Error;
-      const errorMessage = errorDetails?.message || "Failed to start phone update.";
-      setMessage(errorMessage);
-      toast.error("Phone update failed", { description: errorMessage });
-      setPhoneUpdatePending(false);
-    }
-  }, [isFullForm, pathname, publicEventRouteId, searchParams, signOut]);
 
   const handleSmsConsentChange = React.useCallback(
     async (checked: boolean | "indeterminate") => {
@@ -645,8 +907,10 @@ export function RsvpAcceptedForm({
         toast.error("Missing required fields", { description: summary });
         return;
       }
-      if (!phone) {
-        setMessage("Add a phone in your profile.");
+      if (!effectivePhone || !isPhoneNumberLikelyValid(phoneNationalNumber, phoneCountryCode)) {
+        const phoneError = "Enter a valid phone number.";
+        form.setError("phone", { type: "required", message: phoneError });
+        setMessage(phoneError);
         return;
       }
       if (searchStatus === "searching") {
@@ -666,10 +930,12 @@ export function RsvpAcceptedForm({
         return;
       }
       setSubmitting(true);
-      await updateProfileMeta({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-      });
+      if (isSignedIn && !requiresPhoneVerification) {
+        await updateProfileMeta({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+        });
+      }
       const filteredCustomFields = eventCustomFields.reduce<Record<string, string>>(
         (accumulator, customField) => {
           const value = custom[customField.key];
@@ -680,7 +946,9 @@ export function RsvpAcceptedForm({
         },
         {},
       );
-      await upsertContact({ phone: phone || undefined });
+      if (isSignedIn && !requiresPhoneVerification) {
+        await upsertContact({ phone: effectivePhone || undefined });
+      }
 
       const effectiveSmsConsentEnabled = options.smsConsentOverride ?? smsConsentEnabled;
       let consentIpAddress = options.smsConsentIpAddressOverride ?? smsConsentIpAddress;
@@ -692,6 +960,10 @@ export function RsvpAcceptedForm({
       }
 
       const collectedArgs: RsvpCollectedArgs = {
+        firstName: firstName.trim(),
+        lastName: lastName.trim() || undefined,
+        phone: effectivePhone,
+        requiresPhoneVerification,
         note: note || undefined,
         shareContact: true,
         attendees: form.getValues("attendees") || 1,
@@ -725,7 +997,16 @@ export function RsvpAcceptedForm({
         eventId,
         siteKey: siteConfiguration.siteKey,
         listKey,
-        ...collectedArgs,
+        note: collectedArgs.note,
+        shareContact: collectedArgs.shareContact,
+        attendees: collectedArgs.attendees,
+        attendanceStatus: collectedArgs.attendanceStatus,
+        smsConsent: collectedArgs.smsConsent,
+        smsConsentIpAddress: collectedArgs.smsConsentIpAddress,
+        phone: collectedArgs.phone,
+        customFields: collectedArgs.customFields,
+        socialProfiles: collectedArgs.socialProfiles,
+        invitedByName: collectedArgs.invitedByName,
       });
 
       toast.success("RSVP submitted");
@@ -748,119 +1029,6 @@ export function RsvpAcceptedForm({
       return;
     }
     await performSubmission();
-  };
-
-  const goBack = () => {
-    setMessage("");
-    if (step <= 1) return;
-    const previousStep = (step - 1) as RsvpStepNumber;
-    setStep(previousStep);
-    replaceStepInUrl(previousStep);
-  };
-
-  const goToCompletedStep = (targetStep: RsvpStepNumber) => {
-    if (isFullForm || targetStep >= step) return;
-    setMessage("");
-    setStep(targetStep);
-    replaceStepInUrl(targetStep);
-  };
-
-  const goNext = async () => {
-    setMessage("");
-    if (step === 1) {
-      const valid = await form.trigger(["firstName", "lastName"]);
-      if (!valid) return;
-      if (!firstName.trim()) {
-        form.setError("firstName", {
-          type: "required",
-          message: "First name is required",
-        });
-        return;
-      }
-      if (!phone) {
-        const phoneError = "Add a phone number to your profile to continue.";
-        setMessage(phoneError);
-        toast.error(phoneError);
-        return;
-      }
-      setStep(2);
-      replaceStepInUrl(2);
-      return;
-    }
-    if (step === 2) {
-      const eventCustomFields: CustomField[] = event?.customFields ?? [];
-      const eventSocialPlatforms = event.primaryFieldConfig?.socialPlatforms ?? [];
-      const invitedByConfig = event.primaryFieldConfig?.invitedBy;
-      const errs = [
-        ...validateRequiredWithFirstName(
-          firstName,
-          custom,
-          eventCustomFields.map((customField) => ({
-            key: customField.key,
-            label: customField.label || customField.key,
-            required: customField.required,
-          })),
-        ),
-        ...validateRequiredPrimaryFields(
-          socialProfiles,
-          eventSocialPlatforms.map((platform) => ({
-            key: platform.platformKey,
-            label: platform.label,
-            required: platform.required,
-          })),
-          invitedByName,
-          invitedByConfig?.enabled === true
-            ? {
-                key: "invitedByName",
-                label: invitedByConfig.label ?? "Invited by",
-                required: invitedByConfig.required,
-              }
-            : undefined,
-        ),
-      ];
-      // Drop the first-name error from step 2 — it was caught on step 1.
-      const stepErrs = errs.filter(
-        (errorMessage) => !errorMessage.toLowerCase().includes("first name"),
-      );
-      if (stepErrs.length) {
-        for (const customField of eventCustomFields) {
-          const label = customField.label || customField.key;
-          const errorMessage = `${label} is required`;
-          if (stepErrs.includes(errorMessage)) {
-            const fieldPath = `custom.${customField.key}` as Path<RSVPFormData>;
-            form.setError(fieldPath, {
-              type: "required",
-              message: errorMessage,
-            });
-          }
-        }
-        for (const platform of eventSocialPlatforms) {
-          const errorMessage = `${platform.label} is required`;
-          if (stepErrs.includes(errorMessage)) {
-            const fieldPath = `socialProfiles.${platform.platformKey}` as Path<RSVPFormData>;
-            form.setError(fieldPath, {
-              type: "required",
-              message: errorMessage,
-            });
-          }
-        }
-        if (invitedByConfig?.enabled === true) {
-          const errorMessage = `${invitedByConfig.label ?? "Invited by"} is required`;
-          if (stepErrs.includes(errorMessage)) {
-            form.setError("invitedByName", {
-              type: "required",
-              message: errorMessage,
-            });
-          }
-        }
-        const summary = stepErrs.join("\n");
-        setMessage(summary);
-        toast.error("Missing required fields", { description: summary });
-        return;
-      }
-      setStep(3);
-      replaceStepInUrl(3);
-    }
   };
 
   const handleEncourageEnable = async () => {
@@ -905,234 +1073,209 @@ export function RsvpAcceptedForm({
 
   const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isFullForm && step < 3) {
-      void goNext();
-      return;
-    }
+    flushRsvpDraft();
     void form.handleSubmit(onSubmit)(event);
   };
 
-  const isFinalStep = isFullForm || step === 3;
-  const showGuestInfoFields = isFullForm || step !== 3;
-  const guestInfoStep = isFullForm ? undefined : step === 1 || step === 2 ? step : undefined;
-  const showSubmitButton = isFullForm || step === 3;
+  const phoneNumberField = (
+    <FormField
+      control={form.control}
+      name="phone"
+      rules={{ required: "Phone number is required" }}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel className="text-primary text-xs font-medium">
+            PHONE <span className="text-xs text-primary/70">(required)</span>
+          </FormLabel>
+          <FormControl>
+            <div className="flex h-9 items-stretch border border-primary/20 bg-transparent transition-colors focus-within:border-primary/40">
+              <CountrySelector
+                value={phoneCountryCode}
+                compact
+                onChange={(nextCountryCode) => {
+                  const nextNationalNumber = formatPhoneNumberForDisplay(
+                    phoneNationalNumber,
+                    nextCountryCode,
+                  );
+                  setPhoneCountryCode(nextCountryCode);
+                  setPhoneNationalNumber(nextNationalNumber);
+                  field.onChange(buildFullPhoneNumber(nextCountryCode, nextNationalNumber));
+                }}
+              />
+              <input
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel"
+                placeholder="000 000 0000"
+                value={phoneNationalNumber}
+                aria-label="Phone number"
+                onBlur={field.onBlur}
+                onChange={(phoneInputChangeEvent) => {
+                  const nextPhoneInputValue = phoneInputChangeEvent.target.value;
+                  const nextPhoneState = nextPhoneInputValue.trim().startsWith("+")
+                    ? resolvePhoneNumberInputState(nextPhoneInputValue)
+                    : {
+                        countryCode: phoneCountryCode,
+                        nationalNumber: formatPhoneNumberForDisplay(
+                          nextPhoneInputValue,
+                          phoneCountryCode,
+                        ),
+                      };
+                  setPhoneCountryCode(nextPhoneState.countryCode);
+                  setPhoneNationalNumber(nextPhoneState.nationalNumber);
+                  field.onChange(
+                    buildFullPhoneNumber(nextPhoneState.countryCode, nextPhoneState.nationalNumber),
+                  );
+                }}
+                className="flex-1 bg-transparent px-3 py-1 text-primary text-sm outline-none placeholder:text-primary/50"
+                style={{
+                  fontFamily: "var(--tt-text)",
+                }}
+              />
+            </div>
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
 
   return (
     <>
       <Form {...form}>
         <form onSubmit={handleFormSubmit} className="space-y-3">
-          {!isFullForm ? (
-            <RsvpStepper currentStep={step} onCompletedStepClick={goToCompletedStep} />
-          ) : null}
+          <GuestInfoFields
+            form={form}
+            event={event}
+            name={name}
+            setName={setName}
+            firstName={firstName}
+            setFirstName={setFirstName}
+            lastName={lastName}
+            setLastName={setLastName}
+            custom={custom}
+            setCustom={setCustom}
+            socialProfiles={socialProfiles}
+            setSocialProfiles={setSocialProfiles}
+            invitedByName={invitedByName}
+            setInvitedByName={setInvitedByName}
+            afterNameFields={phoneNumberField}
+          />
 
-          {showGuestInfoFields ? (
-            <GuestInfoFields
-              form={form}
-              event={event}
-              name={name}
-              setName={setName}
-              firstName={firstName}
-              setFirstName={setFirstName}
-              lastName={lastName}
-              setLastName={setLastName}
-              custom={custom}
-              setCustom={setCustom}
-              socialProfiles={socialProfiles}
-              setSocialProfiles={setSocialProfiles}
-              invitedByName={invitedByName}
-              setInvitedByName={setInvitedByName}
-              phone={phone}
-              onPhoneUpdate={handlePhoneUpdate}
-              isPhoneUpdatePending={phoneUpdatePending}
-              isSignedIn={!!user}
-              step={guestInfoStep}
-            />
-          ) : null}
+          <NoteForHostsField note={note} setNote={setNote} />
 
-          {isFinalStep ? (
-            <>
-              {event.attendanceQuestionEnabled ? (
-                <fieldset className="space-y-2 border border-primary/20 p-3">
-                  <legend className="px-1 text-sm font-medium text-primary">Attending?</legend>
-                  <div className="grid grid-cols-3 gap-2">
-                    {ATTENDANCE_STATUS_OPTIONS.map((attendanceStatusOption) => {
-                      const selected = attendanceStatus === attendanceStatusOption;
-                      return (
-                        <button
-                          key={attendanceStatusOption}
-                          type="button"
-                          onClick={() => setAttendanceStatus(attendanceStatusOption)}
-                          className="px-3 py-2 text-sm uppercase"
-                          style={{
-                            ...ghostButtonStyle,
-                            background: selected ? "var(--tt-fg)" : "transparent",
-                            color: selected ? "var(--tt-bg)" : "var(--tt-fg)",
-                          }}
-                        >
-                          {getAttendanceStatusLabel(attendanceStatusOption)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ) : null}
-
-              <NoteForHostsField note={note} setNote={setNote} />
-
-              {hasPasswordList ? (
-                <div className="flex flex-col gap-2 pt-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <label
-                      htmlFor="rsvp-access-password"
-                      className="text-xs font-medium text-primary"
-                    >
-                      PASSWORD{" "}
-                      <span className="text-primary/70">
-                        {hasNoPasswordList ? "(optional)" : "(required)"}
-                      </span>
-                    </label>
-                    {searchStatus === "miss-no-fallback" ? (
-                      <span className="text-[11px] font-medium text-destructive">
-                        Not recognized
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="relative">
-                    <input
-                      id="rsvp-access-password"
-                      type="password"
-                      autoComplete="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      value={accessPassword}
-                      onChange={(event) => setAccessPassword(event.target.value)}
-                      placeholder="•••••••"
-                      className="w-full border border-primary/20 bg-transparent px-3 py-2 pr-28 text-primary outline-none placeholder:text-primary/50"
-                      style={{
-                        fontFamily: "var(--tt-text)",
-                        letterSpacing: "0.2em",
-                      }}
-                    />
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-                      {searchStatus === "searching" ? (
-                        <Spinner size={16} />
-                      ) : searchStatus === "matched" && resolvedListKey ? (
-                        <Badge
-                          variant="success"
-                          className="gap-1"
-                          style={{ letterSpacing: "0.05em" }}
-                        >
-                          <CheckCircle2 className="h-3 w-3" />
-                          {resolvedListKey.toUpperCase()}
-                        </Badge>
-                      ) : searchStatus === "miss-with-fallback" && resolvedListKey ? (
-                        <Badge variant="outline" style={{ letterSpacing: "0.05em" }}>
-                          {resolvedListKey.toUpperCase()}
-                        </Badge>
-                      ) : null}
-                    </div>
-                  </div>
-                  {searchStatus === "miss-with-fallback" && resolvedListKey ? (
-                    <p className="text-[11px] text-amber-500">
-                      Password not recognized — RSVP will be submitted to{" "}
-                      {resolvedListKey.toUpperCase()}.
-                    </p>
-                  ) : searchStatus === "miss-no-fallback" ? (
-                    <p className="text-[11px] text-destructive">Password not recognized.</p>
-                  ) : (
-                    <p className="text-[11px] text-primary/60">
-                      {hasNoPasswordList
-                        ? "Have an access password from your host? Enter it here. Otherwise leave blank."
-                        : "Enter the password your host shared with you. Case insensitive."}
-                    </p>
-                  )}
-                </div>
-              ) : null}
-
-              <div className="flex flex-col items-start gap-3 pt-2">
-                <label
-                  htmlFor="sms-opt-in"
-                  className="flex max-w-xl items-start gap-2 text-sm text-foreground"
-                >
-                  <input
-                    id="sms-opt-in"
-                    type="checkbox"
-                    checked={smsConsentEnabled}
-                    onChange={(e) => handleSmsConsentChange(e.target.checked)}
-                    className="mt-1"
-                  />
-                  {/*
-                  <Checkbox
-                    id="sms-opt-in"
-                    checked={smsConsentEnabled}
-                    onCheckedChange={handleSmsConsentChange}
-                    className="mt-0.5"
-                  />
-                  */}
-                  <span className="flex flex-col gap-0.5 text-left">
-                    <span className="text-sm font-medium text-foreground">
-                      I consent to receive SMS messages from {smsSenderDisplayName}.
-                    </span>
-                    <span className="text-[10px] leading-tight text-muted-foreground">
-                      RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-                      {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply.
-                      Reply STOP to cancel. Consent not required for purchase.{" "}
-                      <a href="/terms" className="underline">
-                        Terms
-                      </a>{" "}
-                      &amp;{" "}
-                      <a href="/privacy" className="underline">
-                        Privacy
-                      </a>
-                      .
-                    </span>
+          {hasPasswordList ? (
+            <div className="flex flex-col gap-2 pt-2">
+              <div className="flex items-center justify-between gap-2">
+                <label htmlFor="rsvp-access-password" className="text-xs font-medium text-primary">
+                  PASSWORD{" "}
+                  <span className="text-primary/70">
+                    {hasNoPasswordList ? "(optional)" : "(required)"}
                   </span>
                 </label>
+                {searchStatus === "miss-no-fallback" ? (
+                  <span className="text-[11px] font-medium text-destructive">Not recognized</span>
+                ) : null}
               </div>
-            </>
+              <div className="relative">
+                <input
+                  id="rsvp-access-password"
+                  type="password"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  value={accessPassword}
+                  onChange={(event) => setAccessPassword(event.target.value)}
+                  placeholder="•••••••"
+                  className="w-full border border-primary/20 bg-transparent px-3 py-2 pr-28 text-primary outline-none placeholder:text-primary/50"
+                  style={{
+                    fontFamily: "var(--tt-text)",
+                    letterSpacing: "0.2em",
+                  }}
+                />
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                  {searchStatus === "searching" ? (
+                    <Spinner size={16} />
+                  ) : searchStatus === "matched" && resolvedListKey ? (
+                    <Badge variant="success" className="gap-1" style={{ letterSpacing: "0.05em" }}>
+                      <CheckCircle2 className="h-3 w-3" />
+                      {resolvedListKey.toUpperCase()}
+                    </Badge>
+                  ) : searchStatus === "miss-with-fallback" && resolvedListKey ? (
+                    <Badge variant="outline" style={{ letterSpacing: "0.05em" }}>
+                      {resolvedListKey.toUpperCase()}
+                    </Badge>
+                  ) : null}
+                </div>
+              </div>
+              {searchStatus === "miss-with-fallback" && resolvedListKey ? (
+                <p className="text-[11px] text-amber-500">
+                  Password not recognized — RSVP will be submitted to{" "}
+                  {resolvedListKey.toUpperCase()}.
+                </p>
+              ) : searchStatus === "miss-no-fallback" ? (
+                <p className="text-[11px] text-destructive">Password not recognized.</p>
+              ) : (
+                <p className="text-[11px] text-primary/60">
+                  {hasNoPasswordList
+                    ? "Have an access password from your host? Enter it here. Otherwise leave blank."
+                    : "Enter the password your host shared with you. Case insensitive."}
+                </p>
+              )}
+            </div>
           ) : null}
 
-          <div className="flex items-center justify-between gap-3 pt-3">
-            {!isFullForm && step > 1 ? (
-              <button
-                type="button"
-                onClick={goBack}
-                className="text-[12px] underline underline-offset-4"
-                style={{ color: "var(--tt-fg-dim)" }}
-              >
-                Back
-              </button>
-            ) : (
-              <Link
-                href={buildEventDetailPathWithPreservedQuery(publicEventRouteId, searchParams)}
-                className="text-[12px] underline underline-offset-4"
-                style={{ color: "var(--tt-fg-dim)" }}
-              >
-                Back
-              </Link>
-            )}
-
-            {!showSubmitButton ? (
-              <TenantButton type="submit" style={ghostButtonStyle}>
-                Continue
-              </TenantButton>
-            ) : (
-              <TenantButton
-                type="submit"
-                style={ghostButtonStyle}
-                disabled={
-                  submitting ||
-                  !phone ||
-                  deniedForThisList ||
-                  searchStatus === "searching" ||
-                  !resolvedListKey ||
-                  form.formState.isSubmitting
-                }
-              >
-                {submitting ? "Submitting…" : submitLabel}
-              </TenantButton>
-            )}
+          <div className="flex items-center justify-between gap-4 pt-2">
+            <label
+              htmlFor="sms-opt-in"
+              className="flex min-w-0 items-center gap-2 text-sm text-foreground"
+            >
+              <input
+                id="sms-opt-in"
+                type="checkbox"
+                checked={smsConsentEnabled}
+                onChange={(event) => handleSmsConsentChange(event.target.checked)}
+                className="shrink-0"
+              />
+              <span className="truncate text-sm font-medium text-foreground">Enable SMS</span>
+            </label>
+            <TenantButton
+              type="submit"
+              className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap"
+              style={ghostButtonStyle}
+              disabled={
+                submitting ||
+                !effectivePhone ||
+                deniedForThisList ||
+                searchStatus === "searching" ||
+                !resolvedListKey ||
+                form.formState.isSubmitting
+              }
+            >
+              {submitting ? (
+                <>
+                  <Spinner size={14} title="Submitting" />
+                  Submitting…
+                </>
+              ) : (
+                submitLabel
+              )}
+            </TenantButton>
           </div>
+
+          <p className="pt-2 text-[10px] leading-tight text-muted-foreground">
+            RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+            {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply STOP
+            to cancel. Consent not required for purchase.{" "}
+            <a href="/terms" className="underline">
+              Terms
+            </a>{" "}
+            &amp;{" "}
+            <a href="/privacy" className="underline">
+              Privacy
+            </a>
+            .
+          </p>
         </form>
       </Form>
 
@@ -1203,12 +1346,6 @@ export function RsvpAcceptedForm({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {submitting ? (
-        <div className="pt-4">
-          <Spinner />
-        </div>
-      ) : null}
     </>
   );
 }

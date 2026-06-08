@@ -59,6 +59,7 @@ export async function replaceRsvpSocialProfileSnapshots(
     userId,
     configuredPlatformKeys,
     submittedProfiles,
+    persistUserProfiles = true,
   }: {
     eventId: Id<"events">;
     rsvpId: Id<"rsvps">;
@@ -66,6 +67,7 @@ export async function replaceRsvpSocialProfileSnapshots(
     userId?: Id<"users">;
     configuredPlatformKeys: Set<string>;
     submittedProfiles: SanitizedSubmittedSocialProfile[];
+    persistUserProfiles?: boolean;
   },
 ): Promise<void> {
   const submittedPlatformKeys = new Set(submittedProfiles.map((profile) => profile.platformKey));
@@ -84,13 +86,15 @@ export async function replaceRsvpSocialProfileSnapshots(
   }
 
   for (const profile of submittedProfiles) {
-    const userSocialProfileId = await upsertUserSocialProfile(ctx, {
-      clerkUserId,
-      userId,
-      platformKey: profile.platformKey,
-      handle: profile.handle,
-      normalizedHandle: profile.normalizedHandle,
-    });
+    const userSocialProfileId = persistUserProfiles
+      ? await upsertUserSocialProfile(ctx, {
+          clerkUserId,
+          userId,
+          platformKey: profile.platformKey,
+          handle: profile.handle,
+          normalizedHandle: profile.normalizedHandle,
+        })
+      : undefined;
     const existingSnapshot = await ctx.db
       .query("rsvpSocialProfiles")
       .withIndex("by_rsvp_platform", (queryBuilder) =>
@@ -101,6 +105,7 @@ export async function replaceRsvpSocialProfileSnapshots(
 
     if (existingSnapshot) {
       await ctx.db.patch(existingSnapshot._id, {
+        clerkUserId,
         userSocialProfileId,
         handle: profile.handle,
         normalizedHandle: profile.normalizedHandle,

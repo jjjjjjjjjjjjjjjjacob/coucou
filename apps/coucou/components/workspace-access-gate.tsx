@@ -178,6 +178,12 @@ export function WorkspaceAccessGate({
     : null;
   const shouldBootstrapWorkspace =
     needsWorkspaceBootstrap && workspaceBootstrapKey !== completedWorkspaceBootstrapKey;
+  const canRunTargetOrganizationMembershipAction =
+    !targetMembership ||
+    canUsePlatformWorkspaceAccess ||
+    !targetOrganizationId ||
+    orgId === targetOrganizationId ||
+    verifiedMembershipOrganizationId === targetOrganizationId;
   const isWorkspaceSwitching =
     Boolean(targetMembership) &&
     Boolean(targetOrganizationId) &&
@@ -241,6 +247,7 @@ export function WorkspaceAccessGate({
       !targetMembership ||
       !shouldBootstrapWorkspace ||
       !workspaceBootstrapKey ||
+      !canRunTargetOrganizationMembershipAction ||
       workspaceBootstrapInFlightKeyRef.current === workspaceBootstrapKey
     ) {
       return;
@@ -269,6 +276,7 @@ export function WorkspaceAccessGate({
         }
       });
   }, [
+    canRunTargetOrganizationMembershipAction,
     ensureTenantWorkspace,
     shouldBootstrapWorkspace,
     targetMembership,
@@ -282,6 +290,7 @@ export function WorkspaceAccessGate({
       !targetOrganizationId ||
       shouldBootstrapWorkspace ||
       isBootstrappingWorkspace ||
+      !canRunTargetOrganizationMembershipAction ||
       verifiedMembershipOrganizationId === targetOrganizationId ||
       membershipVerificationInFlightOrganizationIdRef.current === targetOrganizationId ||
       membershipVerificationErrorMessage
@@ -312,6 +321,7 @@ export function WorkspaceAccessGate({
         }
       });
   }, [
+    canRunTargetOrganizationMembershipAction,
     ensureOrganizationMembership,
     isBootstrappingWorkspace,
     membershipVerificationErrorMessage,
@@ -437,6 +447,15 @@ export function WorkspaceAccessGate({
         <p className="text-sm text-foreground/70">
           Your {workspaceBrandName} role does not include this workspace area.
         </p>
+      </main>
+    );
+  }
+
+  if (activationErrorMessage) {
+    return (
+      <main className="mx-auto flex min-h-[50vh] max-w-3xl flex-col items-center justify-center gap-3 p-6 text-center">
+        <h1 className="text-xl font-semibold">Could not switch workspace</h1>
+        <p className="text-sm text-foreground/70">{activationErrorMessage}</p>
       </main>
     );
   }

@@ -126,6 +126,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_clerkUserId", ["clerkUserId"])
+    .index("by_phone", ["phone"])
     .index("by_referralCode", ["referralCode"]),
 
   orgMemberships: defineTable({
@@ -266,6 +267,9 @@ export default defineSchema({
     clerkUserId: v.string(),
     listKey: v.string(), // Primary reference to list credentials
     userName: v.optional(v.string()), // Denormalized from users table
+    guestPhoneHash: v.optional(v.string()),
+    guestPhoneObfuscated: v.optional(v.string()),
+    pairedAt: v.optional(v.number()),
     ticketStatus: v.optional(v.string()), // 'not-issued' | 'issued' | 'disabled' | 'redeemed'
     shareContact: v.boolean(),
     note: v.optional(v.string()),
@@ -297,6 +301,8 @@ export default defineSchema({
     .index("by_event", ["eventId"]) // host view
     .index("by_user", ["clerkUserId"]) // user lookup
     .index("by_event_user", ["eventId", "clerkUserId"])
+    .index("by_guestPhoneHash", ["guestPhoneHash"])
+    .index("by_event_guestPhoneHash", ["eventId", "guestPhoneHash"])
     // NEW indexes for efficient filtering
     .index("by_event_status", ["eventId", "status"])
     .index("by_event_approvalStatus", ["eventId", "approvalStatus"])
@@ -308,6 +314,19 @@ export default defineSchema({
       searchField: "userName",
       filterFields: ["eventId", "status", "listKey", "ticketStatus"],
     }),
+
+  rsvpGuestHandoffs: defineTable({
+    tokenHash: v.string(),
+    rsvpId: v.id("rsvps"),
+    phoneNumber: v.string(),
+    phoneHash: v.string(),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_rsvp", ["rsvpId"])
+    .index("by_expiresAt", ["expiresAt"]),
 
   userSocialProfiles: defineTable({
     clerkUserId: v.string(),
@@ -495,6 +514,44 @@ export default defineSchema({
     .index("by_text_blast_phone", ["textBlastId", "phoneHash"])
     .index("by_text_blast_status", ["textBlastId", "status"])
     .index("by_phone", ["phoneHash"]),
+
+  textBlastReplyActions: defineTable({
+    textBlastId: v.id("textBlasts"),
+    replyCode: v.string(),
+    replyCodeNormalized: v.string(),
+    targetEventId: v.id("events"),
+    targetListKey: v.string(),
+    isEnabled: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_text_blast", ["textBlastId"])
+    .index("by_text_blast_code", ["textBlastId", "replyCodeNormalized"])
+    .index("by_target_event", ["targetEventId"]),
+
+  textBlastReplyAttempts: defineTable({
+    textBlastId: v.optional(v.id("textBlasts")),
+    textBlastRecipientId: v.optional(v.id("textBlastRecipients")),
+    replyActionId: v.optional(v.id("textBlastReplyActions")),
+    phoneHash: v.string(),
+    fromPhoneObfuscated: v.string(),
+    inboundMessage: v.string(),
+    normalizedReplyCode: v.string(),
+    targetEventId: v.optional(v.id("events")),
+    targetListKey: v.optional(v.string()),
+    sourceRsvpId: v.optional(v.id("rsvps")),
+    destinationRsvpId: v.optional(v.id("rsvps")),
+    status: v.string(),
+    responseMessage: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    messageSid: v.optional(v.string()),
+    receivedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_text_blast", ["textBlastId"])
+    .index("by_phone", ["phoneHash"])
+    .index("by_reply_action", ["replyActionId"])
+    .index("by_status", ["status"]),
 
   // SMS usage tracking for cost monitoring and analytics
   smsUsageLogs: defineTable({

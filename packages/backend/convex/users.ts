@@ -306,14 +306,20 @@ export const create = mutation({
   args: {
     clerkUserId: v.string(),
     phone: v.optional(v.string()),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    metadata: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     const userId = await ctx.db.insert("users", {
       clerkUserId: args.clerkUserId,
       phone: args.phone,
+      firstName: args.firstName,
+      lastName: args.lastName,
       imageUrl: args.imageUrl,
+      metadata: args.metadata,
       createdAt: now,
       updatedAt: now,
     });
@@ -333,6 +339,29 @@ export const deleteUser = mutation({
       .unique();
 
     if (user) {
+      const workspaceProfileValueGrants = await ctx.db
+        .query("workspaceProfileValueGrants")
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", args.clerkUserId))
+        .collect();
+      const profileFieldValues = await ctx.db
+        .query("profileFieldValues")
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", args.clerkUserId))
+        .collect();
+      const userSocialProfiles = await ctx.db
+        .query("userSocialProfiles")
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", args.clerkUserId))
+        .collect();
+
+      for (const workspaceProfileValueGrant of workspaceProfileValueGrants) {
+        await ctx.db.delete(workspaceProfileValueGrant._id);
+      }
+      for (const profileFieldValue of profileFieldValues) {
+        await ctx.db.delete(profileFieldValue._id);
+      }
+      for (const userSocialProfile of userSocialProfiles) {
+        await ctx.db.delete(userSocialProfile._id);
+      }
+
       await ctx.db.delete(user._id);
       return { deleted: true };
     }

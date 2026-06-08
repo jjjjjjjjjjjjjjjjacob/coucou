@@ -11,8 +11,8 @@ const displayHeadingStyle: CSSProperties = {
   lineHeight: 1.05,
 };
 
-const monoBodyStyle: CSSProperties = {
-  fontFamily: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+const textBodyStyle: CSSProperties = {
+  fontFamily: "var(--tt-text)",
 };
 
 // Strip the default Clerk card chrome — no rounded corners, no shadow,
@@ -48,14 +48,14 @@ const accountSettingsAppearance: Appearance = {
     accordionTriggerButton: "border-none rounded-none bg-transparent text-primary",
   },
   variables: {
-    fontFamily: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+    fontFamily: "var(--tt-text)",
     borderRadius: "0",
   },
 };
 
 export default function AccountSettingsPage() {
   return (
-    <div className="w-full pb-12 pt-10" style={monoBodyStyle}>
+    <div className="w-full pb-12 pt-10" style={textBodyStyle}>
       <div className="mx-auto flex w-full max-w-6xl flex-col space-y-8">
         <div className="px-4 sm:px-6 lg:px-8">
           <h1 className="text-3xl text-primary sm:text-4xl" style={displayHeadingStyle}>

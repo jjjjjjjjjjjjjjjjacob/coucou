@@ -6,23 +6,16 @@ import type { Id } from "@convex/_generated/dataModel";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { REFERRAL_QUERY_PARAM } from "@coucou/sdk/shared/event-routes";
-import { CHLORINE_PHASE_SPLIT_MS, RsvpPending } from "@coucou/ui/tenant-template";
+import { RsvpPending } from "@coucou/ui/tenant-template";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { use, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { isPostHogConfigured } from "@/lib/posthog";
 import { useRsvpFlowViewport } from "@/lib/rsvp-flow-routing";
-import {
-  buildInfoRsvpPath,
-  buildPathWithPreservedQuery,
-  buildPathWithQueryString,
-  buildQueryStringWithoutKeys,
-  buildQueryStringWithRsvpStep,
-  parseRsvpStepQueryValue,
-} from "@/lib/rsvp-url-state";
+import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import type { ApplicationError, Event } from "@/lib/types";
 import { RsvpAcceptedForm, type RsvpCollectedArgs } from "./rsvp-accepted-form";
@@ -34,15 +27,13 @@ const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localh
 
 export interface RsvpPageClientProps {
   params: Promise<{ eventId: string }>;
-  formVariant?: "stepped" | "full";
 }
 
-export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClientProps) {
+export function RsvpPageClient({ params }: RsvpPageClientProps) {
   const { eventId: eventRouteId } = use(params);
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded, signOut } = useAuth();
   const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
     useConvexAuth();
   const rsvpFlowViewport = useRsvpFlowViewport();
@@ -65,6 +56,7 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
   );
 
   const submitRsvp = useMutation(api.rsvps.submitRequest);
+  const submitGuestRsvp = useMutation(api.rsvps.submitGuestRequest);
 
   const hasNoPasswordList = useQuery(
     api.events.hasNoPasswordList,
@@ -76,21 +68,7 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
   );
 
   const queryParamPassword = (searchParams?.get("password") ?? "").trim();
-  const currentRsvpStep = parseRsvpStepQueryValue(searchParams?.get("step"));
-  const rsvpQueryString =
-    formVariant === "full"
-      ? buildQueryStringWithoutKeys(searchParams, ["step"])
-      : buildQueryStringWithRsvpStep(searchParams, currentRsvpStep);
-  const rsvpPathname =
-    formVariant === "full"
-      ? `/events/${eventRouteId}/rsvp/full`
-      : pathname === `/events/${eventRouteId}/rsvp/info`
-        ? `/events/${eventRouteId}/rsvp/info`
-        : `/events/${eventRouteId}/rsvp`;
   const eventIsOpenForRsvp = event ? isEventOpenForRsvp(event) : false;
-  const rsvpFlowVariant = formVariant === "full" ? "control" : "info";
-  const fullFormViewportIsLoading = formVariant === "full" && rsvpFlowViewport === "unknown";
-  const fullFormShouldUseSegmented = formVariant === "full" && rsvpFlowViewport === "mobile";
   const existingRsvpDestination =
     status?.status === "approved"
       ? buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, ["step"])
@@ -111,45 +89,6 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
     router.replace(existingRsvpDestination);
   }, [existingRsvpDestination, router]);
 
-  useEffect(() => {
-    if (!fullFormShouldUseSegmented) return;
-    if (existingRsvpDestination) return;
-    router.replace(buildInfoRsvpPath(eventRouteId, searchParams));
-  }, [eventRouteId, existingRsvpDestination, fullFormShouldUseSegmented, router, searchParams]);
-
-  // Sign-in gate. The satellite never serves its own auth surface — bounce
-  // unauthenticated visitors to the chlorine-branded phone-auth page hosted
-  // on coucou.events with a return URL pointing back to this RSVP entry.
-  // We deliberately hold the redirect until the wordmark's split→collapsed
-  // transition has had time to settle — without the delay, the user would
-  // see the wordmark mid-tween at the moment the cross-domain navigation
-  // started and the coucou page would mount with a visible position jump.
-  // The bouncing-dots Spinner below renders during the wait.
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (isSignedIn) return;
-    if (formVariant === "full" && rsvpFlowViewport !== "desktop") return;
-    if (typeof window === "undefined") return;
-    const intendedPath = buildPathWithQueryString(rsvpPathname, rsvpQueryString);
-    // Anchor the return URL at the *live* origin so the user lands back
-    // on the same satellite they came from (localhost during dev,
-    // clubchlorine.party in prod). Hard-coding `siteConfiguration.domain`
-    // here would always send the post-auth bounce to production, which is
-    // wrong on local and on Vercel preview deploys.
-    const satelliteReturnUrl = buildSatelliteReturnUrl(window.location.origin, intendedPath);
-    const primarySignInUrl = buildTenantPrimarySignInUrl({
-      primaryBaseUrl: coucouBaseUrl,
-      siteConfiguration,
-      redirectUrl: satelliteReturnUrl,
-    });
-    const redirectTimeoutId = window.setTimeout(() => {
-      window.location.assign(primarySignInUrl);
-    }, CHLORINE_PHASE_SPLIT_MS);
-    return () => {
-      window.clearTimeout(redirectTimeoutId);
-    };
-  }, [formVariant, isLoaded, isSignedIn, rsvpFlowViewport, rsvpPathname, rsvpQueryString]);
-
   const handleInfoCollected = useCallback(
     async (args: RsvpCollectedArgs) => {
       if (!eventIsOpenForRsvp) return;
@@ -162,23 +101,71 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
           toast.error("Event not found");
           return;
         }
-        const { resolvedListKey, ...submissionArgs } = args;
-        await submitRsvp({
-          eventId: canonicalEventId as Id<"events">,
-          siteKey: siteConfiguration.siteKey,
-          listKey: resolvedListKey,
-          referralCode: searchParams?.get(REFERRAL_QUERY_PARAM) ?? undefined,
-          ...submissionArgs,
-        });
+        const {
+          resolvedListKey,
+          firstName,
+          lastName,
+          phone,
+          requiresPhoneVerification,
+          ...submissionArgs
+        } = args;
+        const referralCode = searchParams?.get(REFERRAL_QUERY_PARAM) ?? undefined;
+        const shouldSubmitAuthenticatedRsvp =
+          isSignedIn && isConvexAuthenticated && !requiresPhoneVerification;
+
+        if (shouldSubmitAuthenticatedRsvp) {
+          await submitRsvp({
+            eventId: canonicalEventId as Id<"events">,
+            siteKey: siteConfiguration.siteKey,
+            listKey: resolvedListKey,
+            referralCode,
+            phone: phone || undefined,
+            ...submissionArgs,
+          });
+        } else {
+          if (!phone) {
+            toast.error("Phone number is required");
+            return;
+          }
+          const guestSubmissionResult = await submitGuestRsvp({
+            eventId: canonicalEventId as Id<"events">,
+            siteKey: siteConfiguration.siteKey,
+            listKey: resolvedListKey,
+            firstName,
+            lastName,
+            phone,
+            referralCode,
+            ...submissionArgs,
+          });
+          if (typeof window === "undefined") {
+            return;
+          }
+          const statusPath = buildPathWithPreservedQuery(
+            `/events/${eventRouteId}/status`,
+            searchParams,
+            ["step"],
+          );
+          const satelliteReturnUrl = buildSatelliteReturnUrl(window.location.origin, statusPath);
+          const primarySignInUrl = new URL(
+            buildTenantPrimarySignInUrl({
+              primaryBaseUrl: coucouBaseUrl,
+              siteConfiguration,
+              redirectUrl: satelliteReturnUrl,
+            }),
+          );
+          primarySignInUrl.searchParams.set("rsvp_handoff", guestSubmissionResult.rsvpHandoffToken);
+          toast.success("RSVP submitted");
+          if (isSignedIn) {
+            await signOut();
+          }
+          window.location.assign(primarySignInUrl.toString());
+          return;
+        }
         if (isPostHogConfigured()) {
           const postHogEventProperties = {
             event_id: canonicalEventId,
             event_route_id: eventRouteId,
-            rsvp_flow_variant: rsvpFlowVariant,
             rsvp_flow_viewport: rsvpFlowViewport,
-            ...(rsvpFlowViewport === "desktop"
-              ? { "$feature/rsvp-flow-route": rsvpFlowVariant }
-              : {}),
           };
           posthog.capture("rsvp_request_submitted", postHogEventProperties);
         }
@@ -195,12 +182,15 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
     [
       eventIsOpenForRsvp,
       submitRsvp,
+      submitGuestRsvp,
       canonicalEventId,
       eventRouteId,
       router,
       searchParams,
-      rsvpFlowVariant,
       rsvpFlowViewport,
+      isSignedIn,
+      isConvexAuthenticated,
+      signOut,
     ],
   );
 
@@ -209,15 +199,7 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
     isSignedIn &&
     (isConvexAuthLoading || !isConvexAuthenticated || status === undefined);
 
-  if (
-    !event ||
-    !isLoaded ||
-    (!isSignedIn && isLoaded) ||
-    fullFormViewportIsLoading ||
-    fullFormShouldUseSegmented ||
-    rsvpStatusIsLoading ||
-    existingRsvpDestination
-  ) {
+  if (!event || !isLoaded || rsvpStatusIsLoading || existingRsvpDestination) {
     return (
       <div className="flex w-full items-center justify-center py-10">
         <Spinner />
@@ -248,7 +230,7 @@ export function RsvpPageClient({ params, formVariant = "stepped" }: RsvpPageClie
       hasNoPasswordList={hasNoPasswordList === true}
       hasPasswordList={hasPasswordList === true}
       initialPassword={queryParamPassword}
-      formVariant={formVariant}
+      isSignedIn={isSignedIn === true}
     />
   );
 }

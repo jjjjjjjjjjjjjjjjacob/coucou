@@ -2,15 +2,26 @@
 
 import { useSignIn, useSignUp, useUser } from "@clerk/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { countries } from "../config/countries";
 import { initialPhoneAuthState, type PhoneAuthError, type PhoneAuthState } from "../config/types";
-import { digitsOnly, getClerkErrorCode, mapClerkErrorToPhoneAuth } from "../internal-utils";
+import {
+  digitsOnly,
+  formatPhoneNumberForDisplay,
+  getClerkErrorCode,
+  getClerkErrorMessage,
+  mapClerkErrorToPhoneAuth,
+} from "../internal-utils";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 const SESSION_ACTIVATION_FALLBACK_MS = 1200;
+const AUTO_SEND_CAPTCHA_FALLBACK_MINIMUM_MS = 1200;
+const AUTO_SEND_CAPTCHA_FALLBACK_CHECK_INTERVAL_MS = 250;
 
 interface UsePhoneAuthFlowOptions {
   onSuccess: () => void;
   onError?: (error: PhoneAuthError) => void;
+  initialPhoneNumber?: string | null;
+  autoSendInitialCode?: boolean;
 }
 
 interface UsePhoneAuthFlowReturn {
@@ -107,6 +118,80 @@ function buildIncompleteSignUpError(result: SignUpCompletionState): PhoneAuthErr
   };
 }
 
+function isBotProtectionError(error: unknown): boolean {
+  const errorCode = getClerkErrorCode(error)?.toLowerCase() ?? "";
+  const errorMessage = getClerkErrorMessage(error)?.toLowerCase() ?? "";
+  const searchableErrorText = `${errorCode} ${errorMessage}`;
+
+  return (
+    searchableErrorText.includes("captcha") ||
+    searchableErrorText.includes("bot") ||
+    searchableErrorText.includes("challenge") ||
+    searchableErrorText.includes("turnstile") ||
+    searchableErrorText.includes("cloudflare")
+  );
+}
+
+function buildBotProtectionRequiredError(): PhoneAuthError {
+  return {
+    type: "unknown",
+    message: "Captcha required.",
+  };
+}
+
+function buildCaptchaRequiredState(previousState: PhoneAuthState): PhoneAuthState {
+  return {
+    ...previousState,
+    step: "captcha",
+    isLoading: false,
+    authMode: null,
+    error: buildBotProtectionRequiredError(),
+    canResend: false,
+    resendCooldown: 0,
+  };
+}
+
+function hasRenderedClerkCaptchaChallenge(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const captchaElement = document.getElementById("clerk-captcha");
+  return Boolean(captchaElement && captchaElement.childElementCount > 0);
+}
+
+function resolveInitialPhoneAuthState(
+  initialPhoneNumber: string | null | undefined,
+): PhoneAuthState {
+  const initialPhoneDigits = digitsOnly(initialPhoneNumber ?? "");
+  if (!initialPhoneDigits) {
+    return initialPhoneAuthState;
+  }
+
+  const sortedCountries = [...countries].sort(
+    (leftCountry, rightCountry) =>
+      digitsOnly(rightCountry.code).length - digitsOnly(leftCountry.code).length,
+  );
+  const matchedCountry = sortedCountries.find((country) =>
+    initialPhoneDigits.startsWith(digitsOnly(country.code)),
+  );
+  const countryCode =
+    matchedCountry?.code ??
+    (initialPhoneDigits.length === 10 ? "+1" : initialPhoneAuthState.countryCode);
+  const countryCodeDigits = digitsOnly(countryCode);
+  const nationalDigits =
+    initialPhoneDigits.startsWith(countryCodeDigits) &&
+    initialPhoneDigits.length > countryCodeDigits.length
+      ? initialPhoneDigits.slice(countryCodeDigits.length)
+      : initialPhoneDigits;
+
+  return {
+    ...initialPhoneAuthState,
+    countryCode,
+    phoneNumber: formatPhoneNumberForDisplay(nationalDigits, countryCode),
+  };
+}
+
 /**
  * Phone-auth state machine + Clerk integration. Implements entry-agnostic
  * auth: tries `signIn.create()` first; on `form_identifier_not_found`,
@@ -122,15 +207,30 @@ function buildIncompleteSignUpError(result: SignUpCompletionState): PhoneAuthErr
 export function usePhoneAuthFlow({
   onSuccess,
   onError,
+  initialPhoneNumber,
+  autoSendInitialCode = false,
 }: UsePhoneAuthFlowOptions): UsePhoneAuthFlowReturn {
   const { signIn, setActive: setSignInActive, isLoaded: isSignInLoaded } = useSignIn();
   const { signUp, setActive: setSignUpActive, isLoaded: isSignUpLoaded } = useSignUp();
 
   const { isSignedIn } = useUser();
 
-  const [state, setState] = useState<PhoneAuthState>(initialPhoneAuthState);
+  const [state, setState] = useState<PhoneAuthState>(() => {
+    const resolvedInitialState = resolveInitialPhoneAuthState(initialPhoneNumber);
+    if (autoSendInitialCode && digitsOnly(resolvedInitialState.phoneNumber)) {
+      return {
+        ...resolvedInitialState,
+        isLoading: true,
+      };
+    }
+    return resolvedInitialState;
+  });
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionActivationFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSendCaptchaFallbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasAutoSentInitialCodeRef = useRef(false);
+  const autoSendRequestInFlightRef = useRef(false);
+  const autoSendLoadingStartedAtRef = useRef<number | null>(null);
 
   // Latest onSuccess for the session-watching effect to call without stale closure.
   const onSuccessRef = useRef(onSuccess);
@@ -138,6 +238,13 @@ export function usePhoneAuthFlow({
   // Whether we're waiting for Clerk to confirm the new session is live.
   const awaitingSessionRef = useRef(false);
   const hasCompletedAuthenticationRef = useRef(false);
+
+  const clearResendCooldown = useCallback(() => {
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+  }, []);
 
   const clearSessionActivationFallback = useCallback(() => {
     if (sessionActivationFallbackTimerRef.current) {
@@ -162,6 +269,46 @@ export function usePhoneAuthFlow({
     }, SESSION_ACTIVATION_FALLBACK_MS);
   }, [clearSessionActivationFallback, triggerSuccess]);
 
+  const clearAutoSendCaptchaFallbackInterval = useCallback(() => {
+    if (autoSendCaptchaFallbackIntervalRef.current) {
+      clearInterval(autoSendCaptchaFallbackIntervalRef.current);
+      autoSendCaptchaFallbackIntervalRef.current = null;
+    }
+    autoSendLoadingStartedAtRef.current = null;
+  }, []);
+
+  const enterCaptchaStep = useCallback(() => {
+    awaitingSessionRef.current = false;
+    hasCompletedAuthenticationRef.current = false;
+    clearSessionActivationFallback();
+    clearAutoSendCaptchaFallbackInterval();
+    clearResendCooldown();
+    setState((prev) => buildCaptchaRequiredState(prev));
+  }, [clearAutoSendCaptchaFallbackInterval, clearResendCooldown, clearSessionActivationFallback]);
+
+  const startAutoSendCaptchaFallbackInterval = useCallback(() => {
+    clearAutoSendCaptchaFallbackInterval();
+    autoSendLoadingStartedAtRef.current = Date.now();
+    autoSendCaptchaFallbackIntervalRef.current = setInterval(() => {
+      const loadingStartedAt = autoSendLoadingStartedAtRef.current;
+      if (!autoSendRequestInFlightRef.current || loadingStartedAt === null) {
+        clearAutoSendCaptchaFallbackInterval();
+        return;
+      }
+
+      const elapsedMilliseconds = Date.now() - loadingStartedAt;
+      if (elapsedMilliseconds < AUTO_SEND_CAPTCHA_FALLBACK_MINIMUM_MS) return;
+      if (!hasRenderedClerkCaptchaChallenge()) return;
+
+      autoSendRequestInFlightRef.current = false;
+      clearAutoSendCaptchaFallbackInterval();
+      setState((prev) => {
+        if (prev.step !== "phone" || !prev.isLoading) return prev;
+        return buildCaptchaRequiredState(prev);
+      });
+    }, AUTO_SEND_CAPTCHA_FALLBACK_CHECK_INTERVAL_MS);
+  }, [clearAutoSendCaptchaFallbackInterval]);
+
   // Don't fire onSuccess until both: (1) we've moved to "completing" and
   // (2) Clerk's useUser() reflects isSignedIn === true. Without this guard
   // the redirect can happen before the session cookie is set, looping the
@@ -174,12 +321,11 @@ export function usePhoneAuthFlow({
 
   useEffect(() => {
     return () => {
-      if (cooldownTimerRef.current) {
-        clearInterval(cooldownTimerRef.current);
-      }
+      clearResendCooldown();
       clearSessionActivationFallback();
+      clearAutoSendCaptchaFallbackInterval();
     };
-  }, [clearSessionActivationFallback]);
+  }, [clearAutoSendCaptchaFallbackInterval, clearResendCooldown, clearSessionActivationFallback]);
 
   const setPhone = useCallback((phone: string) => {
     setState((prev) => ({ ...prev, phoneNumber: phone, error: null }));
@@ -196,14 +342,17 @@ export function usePhoneAuthFlow({
   const goBack = useCallback(() => {
     awaitingSessionRef.current = false;
     hasCompletedAuthenticationRef.current = false;
+    clearResendCooldown();
     clearSessionActivationFallback();
     setState((prev) => ({
       ...prev,
       step: "phone",
       error: null,
       authMode: null,
+      canResend: false,
+      resendCooldown: 0,
     }));
-  }, [clearSessionActivationFallback]);
+  }, [clearResendCooldown, clearSessionActivationFallback]);
 
   const completeSessionActivation = useCallback(
     async (activateSession: SessionActivator, createdSessionId: string) => {
@@ -223,7 +372,7 @@ export function usePhoneAuthFlow({
     }));
 
     if (cooldownTimerRef.current) {
-      clearInterval(cooldownTimerRef.current);
+      clearResendCooldown();
     }
 
     cooldownTimerRef.current = setInterval(() => {
@@ -239,7 +388,7 @@ export function usePhoneAuthFlow({
         return { ...prev, resendCooldown: next };
       });
     }, 1000);
-  }, []);
+  }, [clearResendCooldown]);
 
   const sendVerificationCode = useCallback(async () => {
     if (!isSignInLoaded || !isSignUpLoaded || !signIn || !signUp) return;
@@ -276,11 +425,21 @@ export function usePhoneAuthFlow({
           }));
           startResendCooldown();
         } catch (signUpError) {
+          if (isBotProtectionError(signUpError)) {
+            enterCaptchaStep();
+            return;
+          }
+
           const error = mapClerkErrorToPhoneAuth(signUpError);
           setState((prev) => ({ ...prev, isLoading: false, error }));
           onError?.(error);
         }
       } else {
+        if (isBotProtectionError(signInError)) {
+          enterCaptchaStep();
+          return;
+        }
+
         const error = mapClerkErrorToPhoneAuth(signInError);
         setState((prev) => ({ ...prev, isLoading: false, error }));
         onError?.(error);
@@ -295,7 +454,34 @@ export function usePhoneAuthFlow({
     state.phoneNumber,
     startResendCooldown,
     clearSessionActivationFallback,
+    enterCaptchaStep,
     onError,
+  ]);
+
+  useEffect(() => {
+    if (!autoSendInitialCode || hasAutoSentInitialCodeRef.current) return;
+    if (state.step !== "phone") return;
+    if (!digitsOnly(state.phoneNumber)) return;
+    if (!isSignInLoaded || !isSignUpLoaded || !signIn || !signUp) return;
+
+    hasAutoSentInitialCodeRef.current = true;
+    autoSendRequestInFlightRef.current = true;
+    startAutoSendCaptchaFallbackInterval();
+    void sendVerificationCode().finally(() => {
+      autoSendRequestInFlightRef.current = false;
+      clearAutoSendCaptchaFallbackInterval();
+    });
+  }, [
+    autoSendInitialCode,
+    clearAutoSendCaptchaFallbackInterval,
+    isSignInLoaded,
+    isSignUpLoaded,
+    sendVerificationCode,
+    signIn,
+    signUp,
+    startAutoSendCaptchaFallbackInterval,
+    state.phoneNumber,
+    state.step,
   ]);
 
   const verifyCode = useCallback(
@@ -361,6 +547,11 @@ export function usePhoneAuthFlow({
           }
         }
       } catch (error) {
+        if (isBotProtectionError(error)) {
+          enterCaptchaStep();
+          return;
+        }
+
         const mappedError = mapClerkErrorToPhoneAuth(error);
         awaitingSessionRef.current = false;
         setState((prev) => ({
@@ -381,6 +572,7 @@ export function usePhoneAuthFlow({
       setSignInActive,
       setSignUpActive,
       completeSessionActivation,
+      enterCaptchaStep,
       onError,
     ],
   );
@@ -404,6 +596,11 @@ export function usePhoneAuthFlow({
       setState((prev) => ({ ...prev, isLoading: false }));
       startResendCooldown();
     } catch (error) {
+      if (isBotProtectionError(error)) {
+        enterCaptchaStep();
+        return;
+      }
+
       const mappedError = mapClerkErrorToPhoneAuth(error);
       setState((prev) => ({ ...prev, isLoading: false, error: mappedError }));
       onError?.(mappedError);
@@ -418,6 +615,7 @@ export function usePhoneAuthFlow({
     signIn,
     signUp,
     startResendCooldown,
+    enterCaptchaStep,
     onError,
   ]);
 

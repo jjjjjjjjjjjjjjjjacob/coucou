@@ -5,9 +5,13 @@ import { api, components } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
+import { generateRsvpHandoffToken } from "./lib/codeGenerators";
+import { hashOpaqueValue, normalizeAndHashPhoneNumber } from "./lib/phoneHash";
+import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import {
   assertRequiredPrimaryFieldValues,
   buildInvitedByPatch,
+  type SanitizedSubmittedSocialProfile,
   sanitizeSubmittedSocialProfiles,
   submittedSocialProfileValidator,
 } from "./lib/primaryFields";
@@ -35,7 +39,10 @@ import {
   sanitizeAttendanceStatus,
 } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";
-import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
+import {
+  replaceRsvpSocialProfileSnapshots,
+  upsertUserSocialProfile,
+} from "./lib/socialProfileRecords";
 import { NotFoundError } from "./lib/types";
 import {
   requireWorkspaceDoor,
@@ -96,6 +103,161 @@ async function buildReferralPatch(
   };
 }
 
+const GUEST_CLERK_USER_ID_PREFIX = "guest:";
+const RSVP_HANDOFF_TTL_MS = 15 * 60 * 1000;
+
+function buildGuestClerkUserId(phoneHash: string): string {
+  return `${GUEST_CLERK_USER_ID_PREFIX}${phoneHash}`;
+}
+
+function isGuestClerkUserId(clerkUserId: string): boolean {
+  return clerkUserId.startsWith(GUEST_CLERK_USER_ID_PREFIX);
+}
+
+async function canAutoSendGuestRsvpHandoffCode(
+  ctx: QueryCtx,
+  {
+    phoneNumber,
+    phoneHash,
+  }: {
+    phoneNumber: string;
+    phoneHash: string;
+  },
+): Promise<boolean> {
+  const userWithPhone = await ctx.db
+    .query("users")
+    .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phone", phoneNumber))
+    .first();
+  if (userWithPhone?.clerkUserId && !isGuestClerkUserId(userWithPhone.clerkUserId)) {
+    return true;
+  }
+
+  const rsvpsWithPhone = await ctx.db
+    .query("rsvps")
+    .withIndex("by_guestPhoneHash", (queryBuilder) => queryBuilder.eq("guestPhoneHash", phoneHash))
+    .collect();
+  return rsvpsWithPhone.some((rsvp) => !isGuestClerkUserId(rsvp.clerkUserId));
+}
+
+function resolveSubmittedGuestName(firstName: string, lastName: string): string {
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ").trim();
+}
+
+function resolveUserDisplayName(user: Doc<"users"> | null | undefined, fallback: string): string {
+  const nameFromUser = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+  return nameFromUser || user?.metadata?.name || fallback;
+}
+
+type RsvpSubmissionInput = {
+  eventId: Id<"events">;
+  siteKey?: string;
+  listKey: string;
+  note?: string;
+  shareContact: boolean;
+  attendees?: number;
+  attendanceStatus?: "yes" | "no" | "maybe";
+  smsConsent?: boolean;
+  smsConsentIpAddress?: string;
+  customFields?: Record<string, string>;
+  socialProfiles?: Array<{ platformKey: string; handle: string }>;
+  invitedByName?: string;
+  referralCode?: string;
+};
+
+type PreparedRsvpSubmission = {
+  event: Doc<"events">;
+  now: number;
+  sanitizedSocialProfiles: SanitizedSubmittedSocialProfile[];
+  configuredSocialPlatformKeys: Set<string>;
+  invitedByPatch: ReturnType<typeof buildInvitedByPatch> | Record<string, never>;
+  referralPatch:
+    | {
+        referralCode: string;
+        referrerUserId?: Id<"users">;
+        referrerClerkUserId?: string;
+        referredByName?: string;
+      }
+    | undefined;
+  sanitizedCustomFieldValues: Record<string, string> | undefined;
+  requestedAttendees: number;
+  submittedAttendanceStatus: AttendanceStatus;
+  sanitizedSmsConsentIpAddress: string | undefined;
+};
+
+async function prepareRsvpSubmission(
+  ctx: MutationCtx,
+  args: RsvpSubmissionInput,
+  currentClerkUserId: string,
+): Promise<PreparedRsvpSubmission> {
+  const event = await getEventInSiteScope(ctx, args.eventId, {
+    siteKey: args.siteKey,
+  });
+  const now = Date.now();
+  if (!event || !isEventOpenForRsvp(event, now)) throw new Error("Event not available");
+
+  const eventFieldMap = new Map((event.customFields ?? []).map((field) => [field.key, field]));
+  const primaryFieldConfig = event.primaryFieldConfig;
+  const sanitizedSocialProfiles = sanitizeSubmittedSocialProfiles(
+    args.socialProfiles,
+    primaryFieldConfig,
+  );
+  assertRequiredPrimaryFieldValues({
+    primaryFieldConfig,
+    submittedProfiles: sanitizedSocialProfiles,
+    invitedByName: args.invitedByName,
+  });
+  const configuredSocialPlatformKeys = new Set(
+    (primaryFieldConfig?.socialPlatforms ?? []).map((platform) => platform.platformKey),
+  );
+  const invitedByPatch =
+    primaryFieldConfig?.invitedBy?.enabled === true ? buildInvitedByPatch(args.invitedByName) : {};
+  const referralPatch = await buildReferralPatch(ctx, args.referralCode, currentClerkUserId);
+
+  const sanitizedCustomFieldValues = args.customFields
+    ? Object.fromEntries(
+        Object.entries(args.customFields)
+          .map(([fieldKey, rawValue]) => {
+            const fieldConfig = eventFieldMap.get(fieldKey);
+            if (!fieldConfig) return null;
+            const stringValue = typeof rawValue === "string" ? rawValue : `${rawValue ?? ""}`;
+            const finalValue =
+              fieldConfig.trimWhitespace === false ? stringValue : stringValue.trim();
+            if (!finalValue) return null;
+            return [fieldKey, finalValue];
+          })
+          .filter((entry): entry is [string, string] => entry !== null),
+      )
+    : undefined;
+
+  const maxAttendeesAllowed = event.maxAttendees ?? 1;
+  const requestedAttendees = args.attendees ?? 1;
+  const submittedAttendanceStatus = sanitizeAttendanceStatus(args.attendanceStatus);
+  if (requestedAttendees > maxAttendeesAllowed) {
+    throw new Error(`Maximum ${maxAttendeesAllowed} attendees allowed for this event`);
+  }
+  if (requestedAttendees < 1) {
+    throw new Error("At least 1 attendee required");
+  }
+
+  const sanitizedSmsConsentIpAddress =
+    args.smsConsent === true && typeof args.smsConsentIpAddress === "string"
+      ? args.smsConsentIpAddress.slice(0, 256)
+      : undefined;
+
+  return {
+    event,
+    now,
+    sanitizedSocialProfiles,
+    configuredSocialPlatformKeys,
+    invitedByPatch,
+    referralPatch,
+    sanitizedCustomFieldValues,
+    requestedAttendees,
+    submittedAttendanceStatus,
+    sanitizedSmsConsentIpAddress,
+  };
+}
+
 export const submitRequest = mutation({
   args: {
     eventId: v.id("events"),
@@ -129,58 +291,18 @@ export const submitRequest = mutation({
 
     const userName = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") || "" : "";
 
-    // Ensure event exists and is active
-    const event = await getEventInSiteScope(ctx, args.eventId, {
-      siteKey: args.siteKey,
-    });
-    const now = Date.now();
-    if (!event || !isEventOpenForRsvp(event, now)) throw new Error("Event not available");
-    const eventFieldMap = new Map((event.customFields ?? []).map((field) => [field.key, field]));
-    const primaryFieldConfig = event.primaryFieldConfig;
-    const sanitizedSocialProfiles = sanitizeSubmittedSocialProfiles(
-      args.socialProfiles,
-      primaryFieldConfig,
-    );
-    assertRequiredPrimaryFieldValues({
-      primaryFieldConfig,
-      submittedProfiles: sanitizedSocialProfiles,
-      invitedByName: args.invitedByName,
-    });
-    const configuredSocialPlatformKeys = new Set(
-      (primaryFieldConfig?.socialPlatforms ?? []).map((platform) => platform.platformKey),
-    );
-    const invitedByPatch =
-      primaryFieldConfig?.invitedBy?.enabled === true
-        ? buildInvitedByPatch(args.invitedByName)
-        : {};
-    const referralPatch = await buildReferralPatch(ctx, args.referralCode, clerkUserId);
-
-    const sanitizedCustomFieldValues = args.customFields
-      ? Object.fromEntries(
-          Object.entries(args.customFields)
-            .map(([fieldKey, rawValue]) => {
-              const fieldConfig = eventFieldMap.get(fieldKey);
-              if (!fieldConfig) return null;
-              const stringValue = typeof rawValue === "string" ? rawValue : `${rawValue ?? ""}`;
-              const finalValue =
-                fieldConfig.trimWhitespace === false ? stringValue : stringValue.trim();
-              if (!finalValue) return null;
-              return [fieldKey, finalValue];
-            })
-            .filter((entry): entry is [string, string] => entry !== null),
-        )
-      : undefined;
-
-    // Validate attendees against event's maxAttendees setting
-    const maxAttendeesAllowed = event.maxAttendees ?? 1;
-    const requestedAttendees = args.attendees ?? 1;
-    const submittedAttendanceStatus = sanitizeAttendanceStatus(args.attendanceStatus);
-    if (requestedAttendees > maxAttendeesAllowed) {
-      throw new Error(`Maximum ${maxAttendeesAllowed} attendees allowed for this event`);
-    }
-    if (requestedAttendees < 1) {
-      throw new Error("At least 1 attendee required");
-    }
+    const {
+      event,
+      now,
+      sanitizedSocialProfiles,
+      configuredSocialPlatformKeys,
+      invitedByPatch,
+      referralPatch,
+      sanitizedCustomFieldValues,
+      requestedAttendees,
+      submittedAttendanceStatus,
+      sanitizedSmsConsentIpAddress,
+    } = await prepareRsvpSubmission(ctx, args, clerkUserId);
 
     // Upsert RSVP per (eventId, clerkUserId)
     const existing = await ctx.db
@@ -201,11 +323,6 @@ export const submitRequest = mutation({
         smsConsentChange = "disabled";
       }
     }
-
-    const sanitizedSmsConsentIpAddress =
-      args.smsConsent === true && typeof args.smsConsentIpAddress === "string"
-        ? args.smsConsentIpAddress.slice(0, 256)
-        : undefined;
 
     if (!existing) {
       const rsvpId = await ctx.db.insert("rsvps", {
@@ -325,6 +442,551 @@ export const submitRequest = mutation({
     }
 
     return { ok: true as const };
+  },
+});
+
+export const submitGuestRequest = mutation({
+  args: {
+    eventId: v.id("events"),
+    siteKey: v.optional(v.string()),
+    listKey: v.string(),
+    firstName: v.string(),
+    lastName: v.optional(v.string()),
+    phone: v.string(),
+    note: v.optional(v.string()),
+    shareContact: v.boolean(),
+    attendees: v.optional(v.number()),
+    attendanceStatus: v.optional(v.union(v.literal("yes"), v.literal("no"), v.literal("maybe"))),
+    smsConsent: v.optional(v.boolean()),
+    smsConsentIpAddress: v.optional(v.string()),
+    customFields: v.optional(v.record(v.string(), v.string())),
+    socialProfiles: v.optional(v.array(submittedSocialProfileValidator)),
+    invitedByName: v.optional(v.string()),
+    referralCode: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const submittedFirstName = args.firstName.trim();
+    const submittedLastName = args.lastName?.trim() ?? "";
+    if (!submittedFirstName) {
+      throw new Error("First name is required");
+    }
+
+    const { normalizedPhoneNumber, phoneHash } = await normalizeAndHashPhoneNumber(args.phone);
+    const guestClerkUserId = buildGuestClerkUserId(phoneHash);
+    const guestPhoneObfuscated = obfuscatePhoneNumber(normalizedPhoneNumber);
+    const guestName = resolveSubmittedGuestName(submittedFirstName, submittedLastName);
+    const {
+      event,
+      now,
+      sanitizedSocialProfiles,
+      configuredSocialPlatformKeys,
+      invitedByPatch,
+      referralPatch,
+      sanitizedCustomFieldValues,
+      requestedAttendees,
+      submittedAttendanceStatus,
+      sanitizedSmsConsentIpAddress,
+    } = await prepareRsvpSubmission(ctx, args, guestClerkUserId);
+
+    const existingGuestRsvps = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event_guestPhoneHash", (queryBuilder) =>
+        queryBuilder.eq("eventId", args.eventId).eq("guestPhoneHash", phoneHash),
+      )
+      .collect();
+    const existing = existingGuestRsvps.find((rsvp) => isGuestClerkUserId(rsvp.clerkUserId));
+
+    let rsvpId: Id<"rsvps">;
+    if (!existing) {
+      rsvpId = await ctx.db.insert("rsvps", {
+        eventId: args.eventId,
+        clerkUserId: guestClerkUserId,
+        listKey: args.listKey,
+        ticketStatus: "not-issued",
+        userName: guestName,
+        guestPhoneHash: phoneHash,
+        guestPhoneObfuscated,
+        note: args.note,
+        shareContact: args.shareContact,
+        attendees: requestedAttendees,
+        smsConsent: args.smsConsent,
+        smsConsentTimestamp: args.smsConsent !== undefined ? now : undefined,
+        smsConsentIpAddress: args.smsConsent === true ? sanitizedSmsConsentIpAddress : undefined,
+        customFieldValues:
+          sanitizedCustomFieldValues && Object.keys(sanitizedCustomFieldValues).length > 0
+            ? sanitizedCustomFieldValues
+            : undefined,
+        ...invitedByPatch,
+        ...(referralPatch ?? {}),
+        status: "pending",
+        approvalStatus: "pending",
+        attendanceStatus: event.attendanceQuestionEnabled ? submittedAttendanceStatus : "yes",
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      if (configuredSocialPlatformKeys.size > 0) {
+        await replaceRsvpSocialProfileSnapshots(ctx, {
+          eventId: args.eventId,
+          rsvpId,
+          clerkUserId: guestClerkUserId,
+          configuredPlatformKeys: configuredSocialPlatformKeys,
+          submittedProfiles: sanitizedSocialProfiles,
+          persistUserProfiles: false,
+        });
+      }
+
+      const newRsvp = await ctx.db.get(rsvpId);
+      if (newRsvp) {
+        await insertRsvpIntoAggregate(ctx, newRsvp);
+      }
+    } else {
+      if (resolveApprovalStatus(existing) === "denied" && existing.listKey === args.listKey) {
+        throw new Error("Denied for this list; try a different password");
+      }
+
+      rsvpId = existing._id;
+      const oldRsvp = await ctx.db.get(existing._id);
+      await ctx.db.patch(existing._id, {
+        listKey: args.listKey,
+        userName: guestName,
+        guestPhoneHash: phoneHash,
+        guestPhoneObfuscated,
+        note: args.note,
+        shareContact: args.shareContact,
+        attendees: requestedAttendees,
+        smsConsent: args.smsConsent,
+        smsConsentTimestamp: args.smsConsent !== undefined ? now : existing.smsConsentTimestamp,
+        smsConsentIpAddress:
+          args.smsConsent === true
+            ? (sanitizedSmsConsentIpAddress ?? existing.smsConsentIpAddress)
+            : existing.smsConsentIpAddress,
+        customFieldValues:
+          sanitizedCustomFieldValues !== undefined
+            ? Object.keys(sanitizedCustomFieldValues).length > 0
+              ? sanitizedCustomFieldValues
+              : undefined
+            : existing.customFieldValues,
+        ...invitedByPatch,
+        ...(referralPatch ?? {}),
+        status: resolveApprovalStatus(existing) === "approved" ? "approved" : "pending",
+        approvalStatus: resolveApprovalStatus(existing) === "approved" ? "approved" : "pending",
+        attendanceStatus: event.attendanceQuestionEnabled ? submittedAttendanceStatus : "yes",
+        updatedAt: now,
+      });
+
+      if (configuredSocialPlatformKeys.size > 0) {
+        await replaceRsvpSocialProfileSnapshots(ctx, {
+          eventId: args.eventId,
+          rsvpId: existing._id,
+          clerkUserId: guestClerkUserId,
+          configuredPlatformKeys: configuredSocialPlatformKeys,
+          submittedProfiles: sanitizedSocialProfiles,
+          persistUserProfiles: false,
+        });
+      }
+
+      const newRsvp = await ctx.db.get(existing._id);
+      if (oldRsvp && newRsvp) {
+        await updateRsvpInAggregate(ctx, oldRsvp, newRsvp);
+      }
+    }
+
+    const rsvpHandoffToken = generateRsvpHandoffToken();
+    const rsvpHandoffTokenHash = await hashOpaqueValue(rsvpHandoffToken);
+    const expiresAt = now + RSVP_HANDOFF_TTL_MS;
+    await ctx.db.insert("rsvpGuestHandoffs", {
+      tokenHash: rsvpHandoffTokenHash,
+      rsvpId,
+      phoneNumber: normalizedPhoneNumber,
+      phoneHash,
+      expiresAt,
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      rsvpId,
+      rsvpHandoffToken,
+      expiresAt,
+    };
+  },
+});
+
+export const resolveGuestRsvpHandoff = query({
+  args: {
+    token: v.string(),
+  },
+  handler: async (ctx, { token }) => {
+    const trimmedToken = token.trim();
+    if (!trimmedToken) return null;
+
+    const tokenHash = await hashOpaqueValue(trimmedToken);
+    const handoff = await ctx.db
+      .query("rsvpGuestHandoffs")
+      .withIndex("by_tokenHash", (queryBuilder) => queryBuilder.eq("tokenHash", tokenHash))
+      .unique();
+    if (!handoff || handoff.expiresAt <= Date.now()) {
+      return null;
+    }
+
+    return {
+      rsvpId: handoff.rsvpId,
+      phoneNumber: handoff.phoneNumber,
+      expiresAt: handoff.expiresAt,
+      canAutoSendCode: await canAutoSendGuestRsvpHandoffCode(ctx, {
+        phoneNumber: handoff.phoneNumber,
+        phoneHash: handoff.phoneHash,
+      }),
+    } as const;
+  },
+});
+
+function resolveApprovalRank(rsvp: Doc<"rsvps">): number {
+  switch (resolveApprovalStatus(rsvp)) {
+    case "approved":
+      return 3;
+    case "pending":
+      return 2;
+    case "denied":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function chooseStrongerRsvpStatusSource(
+  existingRsvp: Doc<"rsvps">,
+  guestRsvp: Doc<"rsvps">,
+): Doc<"rsvps"> {
+  const existingRank = resolveApprovalRank(existingRsvp);
+  const guestRank = resolveApprovalRank(guestRsvp);
+  if (guestRank > existingRank) return guestRsvp;
+  if (existingRank > guestRank) return existingRsvp;
+  return (guestRsvp.updatedAt ?? guestRsvp.createdAt) >
+    (existingRsvp.updatedAt ?? existingRsvp.createdAt)
+    ? guestRsvp
+    : existingRsvp;
+}
+
+async function moveGuestRsvpDependentRecords(
+  ctx: MutationCtx,
+  {
+    guestRsvp,
+    targetRsvpId,
+    targetClerkUserId,
+    targetUserId,
+    now,
+  }: {
+    guestRsvp: Doc<"rsvps">;
+    targetRsvpId: Id<"rsvps">;
+    targetClerkUserId: string;
+    targetUserId?: Id<"users">;
+    now: number;
+  },
+): Promise<Doc<"redemptions"> | null> {
+  const guestSocialProfiles = await ctx.db
+    .query("rsvpSocialProfiles")
+    .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", guestRsvp._id))
+    .collect();
+
+  const event = await ctx.db.get(guestRsvp.eventId);
+  const submittedProfiles = guestSocialProfiles.map((profile) => ({
+    platformKey: profile.platformKey,
+    handle: profile.handle,
+    normalizedHandle: profile.normalizedHandle,
+  }));
+  if (event && submittedProfiles.length > 0) {
+    await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+      event,
+      rsvpId: targetRsvpId,
+      clerkUserId: targetClerkUserId,
+      userId: targetUserId,
+      submittedProfiles,
+    });
+  }
+
+  for (const profile of guestSocialProfiles) {
+    const targetProfile =
+      targetRsvpId === guestRsvp._id
+        ? null
+        : await ctx.db
+            .query("rsvpSocialProfiles")
+            .withIndex("by_rsvp_platform", (queryBuilder) =>
+              queryBuilder.eq("rsvpId", targetRsvpId).eq("platformKey", profile.platformKey),
+            )
+            .unique();
+    const userSocialProfileId = await upsertUserSocialProfile(ctx, {
+      clerkUserId: targetClerkUserId,
+      userId: targetUserId,
+      platformKey: profile.platformKey,
+      handle: profile.handle,
+      normalizedHandle: profile.normalizedHandle,
+    });
+
+    if (targetProfile && targetProfile._id !== profile._id) {
+      await ctx.db.delete(profile._id);
+      continue;
+    }
+
+    await ctx.db.patch(profile._id, {
+      rsvpId: targetRsvpId,
+      clerkUserId: targetClerkUserId,
+      userSocialProfileId,
+      updatedAt: now,
+    });
+  }
+
+  const approvals = await ctx.db
+    .query("approvals")
+    .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", guestRsvp.eventId))
+    .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("rsvpId"), guestRsvp._id))
+    .collect();
+  for (const approval of approvals) {
+    await ctx.db.patch(approval._id, {
+      rsvpId: targetRsvpId,
+      clerkUserId: targetClerkUserId,
+    });
+  }
+
+  const guestRedemption = await ctx.db
+    .query("redemptions")
+    .withIndex("by_event_user", (queryBuilder) =>
+      queryBuilder.eq("eventId", guestRsvp.eventId).eq("clerkUserId", guestRsvp.clerkUserId),
+    )
+    .unique();
+  const existingTargetRedemption = await ctx.db
+    .query("redemptions")
+    .withIndex("by_event_user", (queryBuilder) =>
+      queryBuilder.eq("eventId", guestRsvp.eventId).eq("clerkUserId", targetClerkUserId),
+    )
+    .unique();
+  let resolvedRedemption = existingTargetRedemption;
+  if (guestRedemption && !existingTargetRedemption) {
+    await ctx.db.patch(guestRedemption._id, {
+      clerkUserId: targetClerkUserId,
+    });
+    resolvedRedemption = {
+      ...guestRedemption,
+      clerkUserId: targetClerkUserId,
+    };
+  } else if (
+    guestRedemption &&
+    existingTargetRedemption &&
+    guestRedemption._id !== existingTargetRedemption._id
+  ) {
+    await ctx.db.delete(guestRedemption._id);
+  }
+
+  const handoffs = await ctx.db
+    .query("rsvpGuestHandoffs")
+    .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", guestRsvp._id))
+    .collect();
+  for (const handoff of handoffs) {
+    await ctx.db.patch(handoff._id, {
+      rsvpId: targetRsvpId,
+      usedAt: handoff.usedAt ?? now,
+    });
+  }
+
+  return resolvedRedemption;
+}
+
+async function maybeSendPairedApprovalSms(
+  ctx: MutationCtx,
+  {
+    guestRsvp,
+    targetClerkUserId,
+    redemption,
+  }: {
+    guestRsvp: Doc<"rsvps">;
+    targetClerkUserId: string;
+    redemption: Doc<"redemptions"> | null;
+  },
+) {
+  if (resolveApprovalStatus(guestRsvp) !== "approved") return;
+  if (!redemption || !guestRsvp.shareContact || !guestRsvp.listKey) return;
+
+  await ctx.scheduler.runAfter(0, api.notifications.sendApprovalSms, {
+    eventId: guestRsvp.eventId,
+    clerkUserId: targetClerkUserId,
+    listKey: guestRsvp.listKey,
+    code: redemption.code,
+    shareContact: guestRsvp.shareContact,
+  });
+}
+
+async function claimGuestRsvpsForPhone(
+  ctx: MutationCtx,
+  {
+    clerkUserId,
+    phoneNumber,
+  }: {
+    clerkUserId: string;
+    phoneNumber: string;
+  },
+) {
+  const { phoneHash } = await normalizeAndHashPhoneNumber(phoneNumber);
+  const now = Date.now();
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+    .unique();
+  const guestRsvps = (
+    await ctx.db
+      .query("rsvps")
+      .withIndex("by_guestPhoneHash", (queryBuilder) =>
+        queryBuilder.eq("guestPhoneHash", phoneHash),
+      )
+      .collect()
+  ).filter((rsvp) => isGuestClerkUserId(rsvp.clerkUserId));
+
+  let pairedCount = 0;
+  let mergedCount = 0;
+  for (const guestRsvp of guestRsvps) {
+    const existingUserRsvp = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event_user", (queryBuilder) =>
+        queryBuilder.eq("eventId", guestRsvp.eventId).eq("clerkUserId", clerkUserId),
+      )
+      .unique();
+
+    if (existingUserRsvp && existingUserRsvp._id !== guestRsvp._id) {
+      const statusSource = chooseStrongerRsvpStatusSource(existingUserRsvp, guestRsvp);
+      const oldExistingUserRsvp = await ctx.db.get(existingUserRsvp._id);
+      const mergedCustomFieldValues = {
+        ...(existingUserRsvp.customFieldValues ?? {}),
+        ...(guestRsvp.customFieldValues ?? {}),
+      };
+      await ctx.db.patch(existingUserRsvp._id, {
+        listKey: statusSource.listKey,
+        userName: resolveUserDisplayName(
+          user,
+          guestRsvp.userName ?? existingUserRsvp.userName ?? "",
+        ),
+        note: guestRsvp.note ?? existingUserRsvp.note,
+        shareContact: guestRsvp.shareContact || existingUserRsvp.shareContact,
+        attendees: guestRsvp.attendees ?? existingUserRsvp.attendees,
+        smsConsent: guestRsvp.smsConsent ?? existingUserRsvp.smsConsent,
+        smsConsentTimestamp: guestRsvp.smsConsentTimestamp ?? existingUserRsvp.smsConsentTimestamp,
+        smsConsentIpAddress: guestRsvp.smsConsentIpAddress ?? existingUserRsvp.smsConsentIpAddress,
+        customFieldValues:
+          Object.keys(mergedCustomFieldValues).length > 0 ? mergedCustomFieldValues : undefined,
+        invitedByName: guestRsvp.invitedByName ?? existingUserRsvp.invitedByName,
+        invitedByNormalizedName:
+          guestRsvp.invitedByNormalizedName ?? existingUserRsvp.invitedByNormalizedName,
+        invitedBySocialPlatformKey:
+          guestRsvp.invitedBySocialPlatformKey ?? existingUserRsvp.invitedBySocialPlatformKey,
+        invitedBySocialHandle:
+          guestRsvp.invitedBySocialHandle ?? existingUserRsvp.invitedBySocialHandle,
+        invitedByUserId: guestRsvp.invitedByUserId ?? existingUserRsvp.invitedByUserId,
+        referralCode: guestRsvp.referralCode ?? existingUserRsvp.referralCode,
+        referrerUserId: guestRsvp.referrerUserId ?? existingUserRsvp.referrerUserId,
+        referrerClerkUserId: guestRsvp.referrerClerkUserId ?? existingUserRsvp.referrerClerkUserId,
+        referredByName: guestRsvp.referredByName ?? existingUserRsvp.referredByName,
+        status: resolveApprovalStatus(statusSource),
+        approvalStatus: resolveApprovalStatus(statusSource),
+        attendanceStatus: guestRsvp.attendanceStatus ?? existingUserRsvp.attendanceStatus,
+        ticketStatus: statusSource.ticketStatus ?? existingUserRsvp.ticketStatus,
+        ticketViewedAt: guestRsvp.ticketViewedAt ?? existingUserRsvp.ticketViewedAt,
+        guestPhoneObfuscated:
+          guestRsvp.guestPhoneObfuscated ?? existingUserRsvp.guestPhoneObfuscated,
+        pairedAt: now,
+        updatedAt: now,
+      });
+      const newExistingUserRsvp = await ctx.db.get(existingUserRsvp._id);
+      if (oldExistingUserRsvp && newExistingUserRsvp) {
+        await updateRsvpInAggregate(ctx, oldExistingUserRsvp, newExistingUserRsvp);
+      }
+
+      const redemption = await moveGuestRsvpDependentRecords(ctx, {
+        guestRsvp,
+        targetRsvpId: existingUserRsvp._id,
+        targetClerkUserId: clerkUserId,
+        targetUserId: user?._id,
+        now,
+      });
+
+      await ctx.db.delete(guestRsvp._id);
+      await deleteRsvpFromAggregate(ctx, guestRsvp);
+      await maybeSendPairedApprovalSms(ctx, {
+        guestRsvp,
+        targetClerkUserId: clerkUserId,
+        redemption,
+      });
+      pairedCount++;
+      mergedCount++;
+      continue;
+    }
+
+    const oldGuestRsvp = await ctx.db.get(guestRsvp._id);
+    await ctx.db.patch(guestRsvp._id, {
+      clerkUserId,
+      userName: resolveUserDisplayName(user, guestRsvp.userName ?? ""),
+      guestPhoneHash: undefined,
+      pairedAt: now,
+      updatedAt: now,
+    });
+    const newUserRsvp = await ctx.db.get(guestRsvp._id);
+    if (oldGuestRsvp && newUserRsvp) {
+      await updateRsvpInAggregate(ctx, oldGuestRsvp, newUserRsvp);
+    }
+
+    const redemption = await moveGuestRsvpDependentRecords(ctx, {
+      guestRsvp,
+      targetRsvpId: guestRsvp._id,
+      targetClerkUserId: clerkUserId,
+      targetUserId: user?._id,
+      now,
+    });
+    await maybeSendPairedApprovalSms(ctx, {
+      guestRsvp,
+      targetClerkUserId: clerkUserId,
+      redemption,
+    });
+    pairedCount++;
+  }
+
+  return {
+    paired: pairedCount,
+    merged: mergedCount,
+  } as const;
+}
+
+export const claimGuestRsvpsForCurrentUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", identity.subject),
+      )
+      .unique();
+    const phoneNumber = identity.phoneNumber ?? user?.phone;
+    if (!phoneNumber) {
+      return { paired: 0, merged: 0 } as const;
+    }
+
+    return await claimGuestRsvpsForPhone(ctx, {
+      clerkUserId: identity.subject,
+      phoneNumber,
+    });
+  },
+});
+
+export const claimGuestRsvpsForClerkPhoneInternal = internalMutation({
+  args: {
+    clerkUserId: v.string(),
+    phone: v.string(),
+  },
+  handler: async (ctx, { clerkUserId, phone }) => {
+    return await claimGuestRsvpsForPhone(ctx, {
+      clerkUserId,
+      phoneNumber: phone,
+    });
   },
 });
 
@@ -780,9 +1442,10 @@ export const listForEvent = query({
             .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", r.clerkUserId))
             .unique();
           // User name constructed from firstName/lastName in display logic
-          const firstName = user?.firstName;
-          const lastName = user?.lastName;
-          const name = [firstName, lastName].filter(Boolean).join(" ") || undefined;
+          const firstName = user?.firstName || (r.userName ? r.userName.split(" ")[0] : undefined);
+          const lastName =
+            user?.lastName || (r.userName ? r.userName.split(" ").slice(1).join(" ") : undefined);
+          const name = [firstName, lastName].filter(Boolean).join(" ") || r.userName || undefined;
           // Redemption info for this user+event
           const redemption = await ctx.db
             .query("redemptions")
@@ -809,7 +1472,11 @@ export const listForEvent = query({
             if (prof) {
               contact = {
                 email: prof.emailObfuscated,
-                phone: prof.phoneObfuscated,
+                phone: prof.phoneObfuscated ?? r.guestPhoneObfuscated,
+              };
+            } else if (r.guestPhoneObfuscated) {
+              contact = {
+                phone: r.guestPhoneObfuscated,
               };
             }
           }
@@ -1086,6 +1753,181 @@ type PaginatedRsvpResult = {
   isDone: boolean;
 };
 
+async function enrichSelectedHostRsvps(
+  ctx: QueryCtx,
+  eventId: Id<"events">,
+  rsvpsToEnrich: Array<Doc<"rsvps">>,
+): Promise<EnrichedRsvp[]> {
+  const userClerkIds = Array.from(
+    new Set(rsvpsToEnrich.map((rsvpRecord) => rsvpRecord.clerkUserId)),
+  );
+  const users = await Promise.all(
+    userClerkIds.map(async (clerkUserId) =>
+      ctx.db
+        .query("users")
+        .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+        .unique(),
+    ),
+  );
+  const userMap = Object.fromEntries(
+    users
+      .filter((userRecord): userRecord is Doc<"users"> => userRecord !== null)
+      .map((userRecord) => [userRecord.clerkUserId, userRecord]),
+  );
+
+  const rsvpsNeedingRedemption = rsvpsToEnrich.filter(
+    (rsvpRecord) =>
+      ((rsvpRecord.ticketStatus as string | undefined) ?? "not-issued") !== "not-issued",
+  );
+  const redemptions = await Promise.all(
+    rsvpsNeedingRedemption.map(async (rsvpRecord) =>
+      ctx.db
+        .query("redemptions")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder.eq("eventId", eventId).eq("clerkUserId", rsvpRecord.clerkUserId),
+        )
+        .unique(),
+    ),
+  );
+  const redemptionMap = Object.fromEntries(
+    redemptions
+      .filter(
+        (redemptionRecord): redemptionRecord is Doc<"redemptions"> => redemptionRecord !== null,
+      )
+      .map((redemptionRecord) => [redemptionRecord.clerkUserId, redemptionRecord]),
+  );
+
+  const socialProfileEntries = await Promise.all(
+    rsvpsToEnrich.map(async (rsvpRecord) => ({
+      rsvpId: rsvpRecord._id,
+      profiles: await ctx.db
+        .query("rsvpSocialProfiles")
+        .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvpRecord._id))
+        .collect(),
+    })),
+  );
+  const socialProfilesByRsvpId = new Map(
+    socialProfileEntries.map((entry) => [entry.rsvpId, entry.profiles]),
+  );
+
+  return rsvpsToEnrich.map((rsvpRecord) => {
+    const redemption = redemptionMap[rsvpRecord.clerkUserId];
+    const ticketStatus =
+      (rsvpRecord.ticketStatus as "not-issued" | "issued" | "disabled" | "redeemed") ??
+      "not-issued";
+    let redemptionStatus: "none" | "issued" | "redeemed" | "disabled";
+    switch (ticketStatus) {
+      case "issued":
+        redemptionStatus = "issued";
+        break;
+      case "disabled":
+        redemptionStatus = "disabled";
+        break;
+      case "redeemed":
+        redemptionStatus = "redeemed";
+        break;
+      case "not-issued":
+      default:
+        redemptionStatus = "none";
+        break;
+    }
+
+    const user = userMap[rsvpRecord.clerkUserId];
+    const customFieldValues = rsvpRecord.customFieldValues ?? ({} as Record<string, string>);
+    const socialProfiles = socialProfilesByRsvpId.get(rsvpRecord._id) ?? [];
+
+    return {
+      id: rsvpRecord._id,
+      clerkUserId: rsvpRecord.clerkUserId,
+      name:
+        [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+        user?.metadata?.name ||
+        rsvpRecord.userName ||
+        "",
+      firstName: user?.firstName || (rsvpRecord.userName ? rsvpRecord.userName.split(" ")[0] : ""),
+      lastName:
+        user?.lastName ||
+        (rsvpRecord.userName ? rsvpRecord.userName.split(" ").slice(1).join(" ") : ""),
+      listKey: rsvpRecord.listKey || "",
+      note: rsvpRecord.note,
+      status: resolveApprovalStatus(rsvpRecord),
+      approvalStatus: resolveApprovalStatus(rsvpRecord),
+      attendanceStatus: sanitizeAttendanceStatus(rsvpRecord.attendanceStatus),
+      ticketViewedAt: rsvpRecord.ticketViewedAt,
+      ticketStatus,
+      attendees: rsvpRecord.attendees,
+      contact: rsvpRecord.shareContact
+        ? {
+            email: undefined,
+            phone: rsvpRecord.guestPhoneObfuscated,
+          }
+        : undefined,
+      customFieldValues,
+      socialProfiles: socialProfiles.map((profile) => ({
+        platformKey: profile.platformKey,
+        handle: profile.handle,
+        normalizedHandle: profile.normalizedHandle,
+      })),
+      invitedByName: rsvpRecord.invitedByName,
+      invitedByNormalizedName: rsvpRecord.invitedByNormalizedName,
+      invitedBySocialPlatformKey: rsvpRecord.invitedBySocialPlatformKey,
+      invitedBySocialHandle: rsvpRecord.invitedBySocialHandle,
+      referralCode: rsvpRecord.referralCode,
+      referrerUserId: rsvpRecord.referrerUserId,
+      referrerClerkUserId: rsvpRecord.referrerClerkUserId,
+      referredByName: rsvpRecord.referredByName,
+      redemptionStatus,
+      redemptionCode: redemption?.code,
+      createdAt: rsvpRecord.createdAt,
+      updatedAt: rsvpRecord.updatedAt ?? rsvpRecord.createdAt,
+      smsConsent: rsvpRecord.smsConsent ?? undefined,
+    };
+  });
+}
+
+export const listReviewFeedForEvent = query({
+  args: {
+    eventId: v.id("events"),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+    rsvpIds: v.array(v.id("rsvps")),
+  },
+  handler: async (ctx, { eventId, siteKey, workspaceSlug, rsvpIds }): Promise<EnrichedRsvp[]> => {
+    await requireWorkspaceRead(ctx, { siteKey, workspaceSlug });
+    await ensureEventInSiteScope(ctx, eventId, { siteKey, workspaceSlug });
+
+    const orderedUniqueRsvpIds: Array<Id<"rsvps">> = [];
+    const seenRsvpIds = new Set<string>();
+    for (const rsvpId of rsvpIds) {
+      if (seenRsvpIds.has(rsvpId)) {
+        continue;
+      }
+      seenRsvpIds.add(rsvpId);
+      orderedUniqueRsvpIds.push(rsvpId);
+    }
+
+    const rsvpEntries = await Promise.all(
+      orderedUniqueRsvpIds.map(async (rsvpId) => ({
+        rsvpId,
+        rsvp: await ctx.db.get(rsvpId),
+      })),
+    );
+    const rsvpRecordsById = new Map(
+      rsvpEntries
+        .filter(
+          (entry): entry is { rsvpId: Id<"rsvps">; rsvp: Doc<"rsvps"> } =>
+            entry.rsvp !== null && entry.rsvp.eventId === eventId,
+        )
+        .map((entry) => [entry.rsvpId, entry.rsvp]),
+    );
+    const orderedRsvps = orderedUniqueRsvpIds
+      .map((rsvpId) => rsvpRecordsById.get(rsvpId))
+      .filter((rsvpRecord): rsvpRecord is Doc<"rsvps"> => rsvpRecord !== undefined);
+
+    return await enrichSelectedHostRsvps(ctx, eventId, orderedRsvps);
+  },
+});
+
 export const listForEventPaginated = query({
   args: {
     eventId: v.id("events"),
@@ -1348,7 +2190,7 @@ export const listForEventPaginated = query({
         contact: rsvp.shareContact
           ? {
               email: undefined,
-              phone: undefined,
+              phone: rsvp.guestPhoneObfuscated,
             }
           : undefined,
         customFieldValues,
@@ -1858,9 +2700,15 @@ export const createDirect = mutation({
     eventId: v.id("events"),
     clerkUserId: v.string(),
     listKey: v.string(),
+    userName: v.optional(v.string()),
     shareContact: v.boolean(),
     note: v.optional(v.string()),
     attendees: v.optional(v.number()),
+    smsConsent: v.optional(v.boolean()),
+    smsConsentIpAddress: v.optional(v.string()),
+    customFieldValues: v.optional(v.record(v.string(), v.string())),
+    socialProfiles: v.optional(v.array(submittedSocialProfileValidator)),
+    invitedByName: v.optional(v.string()),
     status: v.string(),
     approvalStatus: v.optional(
       v.union(v.literal("pending"), v.literal("approved"), v.literal("denied")),
@@ -1879,14 +2727,50 @@ export const createDirect = mutation({
   },
   handler: async (ctx, args) => {
     const now = args.createdAt || Date.now();
+    const event =
+      args.socialProfiles?.length || args.invitedByName ? await ctx.db.get(args.eventId) : null;
+    const primaryFieldConfig = event?.primaryFieldConfig;
+    const sanitizedSocialProfiles = sanitizeSubmittedSocialProfiles(
+      args.socialProfiles,
+      primaryFieldConfig,
+    );
+    const configuredSocialPlatformKeys = new Set(
+      (primaryFieldConfig?.socialPlatforms ?? [])
+        .map((platform) => normalizeSocialPlatformKey(platform.platformKey))
+        .filter((platformKey): platformKey is string => Boolean(platformKey)),
+    );
+    const invitedByPatch =
+      primaryFieldConfig?.invitedBy?.enabled === true
+        ? buildInvitedByPatch(args.invitedByName)
+        : {};
+    const user =
+      sanitizedSocialProfiles.length > 0
+        ? await ctx.db
+            .query("users")
+            .withIndex("by_clerkUserId", (queryBuilder) =>
+              queryBuilder.eq("clerkUserId", args.clerkUserId),
+            )
+            .unique()
+        : null;
+    const sanitizedSmsConsentIpAddress =
+      args.smsConsent === true && typeof args.smsConsentIpAddress === "string"
+        ? args.smsConsentIpAddress.slice(0, 256)
+        : undefined;
+
     const rsvpId = await ctx.db.insert("rsvps", {
       eventId: args.eventId,
       clerkUserId: args.clerkUserId,
       listKey: args.listKey,
       ticketStatus: args.ticketStatus ?? "not-issued",
+      userName: args.userName,
       note: args.note,
       shareContact: args.shareContact,
       attendees: args.attendees,
+      smsConsent: args.smsConsent,
+      smsConsentTimestamp: args.smsConsent !== undefined ? now : undefined,
+      smsConsentIpAddress: args.smsConsent === true ? sanitizedSmsConsentIpAddress : undefined,
+      customFieldValues: args.customFieldValues,
+      ...invitedByPatch,
       status: args.status,
       approvalStatus: args.approvalStatus ?? deriveApprovalStatus(args.status),
       attendanceStatus: sanitizeAttendanceStatus(args.attendanceStatus),
@@ -1894,6 +2778,24 @@ export const createDirect = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    if (event && sanitizedSocialProfiles.length > 0 && configuredSocialPlatformKeys.size > 0) {
+      await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+        event,
+        rsvpId,
+        clerkUserId: args.clerkUserId,
+        userId: user?._id,
+        submittedProfiles: sanitizedSocialProfiles,
+      });
+      await replaceRsvpSocialProfileSnapshots(ctx, {
+        eventId: args.eventId,
+        rsvpId,
+        clerkUserId: args.clerkUserId,
+        userId: user?._id,
+        configuredPlatformKeys: configuredSocialPlatformKeys,
+        submittedProfiles: sanitizedSocialProfiles,
+      });
+    }
 
     // Sync with aggregate
     const newRsvp = await ctx.db.get(rsvpId);
@@ -1913,6 +2815,14 @@ export const deleteRSVP = mutation({
   handler: async (ctx, args) => {
     // Get RSVP before deleting for aggregate sync
     const rsvp = await ctx.db.get(args.rsvpId);
+    const socialProfileSnapshots = await ctx.db
+      .query("rsvpSocialProfiles")
+      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", args.rsvpId))
+      .collect();
+
+    for (const socialProfileSnapshot of socialProfileSnapshots) {
+      await ctx.db.delete(socialProfileSnapshot._id);
+    }
 
     await ctx.db.delete(args.rsvpId);
 

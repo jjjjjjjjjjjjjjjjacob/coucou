@@ -11,7 +11,12 @@ import {
   type TicketDetailRow,
 } from "@coucou/ui/tenant-template";
 import { useMutation } from "@tanstack/react-query";
-import { type Preloaded, useQuery as useConvexQuery, usePreloadedQuery } from "convex/react";
+import {
+  type Preloaded,
+  useQuery as useConvexQuery,
+  useMutation as useConvexReactMutation,
+  usePreloadedQuery,
+} from "convex/react";
 import { Check, Download } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -108,6 +113,8 @@ export default function TicketClientPage({
   const event = usePreloadedQuery(eventPreload);
   const status = usePreloadedQuery(statusPreload);
   const canonicalEventId = event?._id;
+  const claimGuestRsvps = useConvexReactMutation(api.rsvps.claimGuestRsvpsForCurrentUser);
+  const [hasAttemptedGuestRsvpClaim, setHasAttemptedGuestRsvpClaim] = useState(false);
 
   const myRedemption = useConvexQuery(
     api.redemptions.forCurrentUserEvent,
@@ -142,6 +149,17 @@ export default function TicketClientPage({
       foregroundColor: event?.themeTextColor,
       backgroundColor: event?.themeBackgroundColor,
     });
+
+  useEffect(() => {
+    if (hasAttemptedGuestRsvpClaim) return;
+    void claimGuestRsvps()
+      .catch((error) => {
+        console.error("Failed to claim guest RSVPs:", error);
+      })
+      .finally(() => {
+        setHasAttemptedGuestRsvpClaim(true);
+      });
+  }, [claimGuestRsvps, hasAttemptedGuestRsvpClaim]);
 
   const dateText = useMemo(() => {
     const timestamp = event?.eventDate;
@@ -223,6 +241,14 @@ export default function TicketClientPage({
       <div className="text-center" style={{ color: "var(--tt-fg-dim)" }}>
         <p className="text-lg font-medium">Event Not Found</p>
         <p className="mt-2 text-sm">This event may not exist or may have been removed.</p>
+      </div>
+    );
+  }
+
+  if (!hasAttemptedGuestRsvpClaim) {
+    return (
+      <div className="flex items-center justify-center p-6">
+        <Spinner />
       </div>
     );
   }

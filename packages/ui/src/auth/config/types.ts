@@ -1,7 +1,7 @@
 // Phone-auth state machine types. Ported from
 // the-market/apps/web/src/components/phone-auth/config/types.ts.
 
-export type PhoneAuthStep = "phone" | "verification" | "completing";
+export type PhoneAuthStep = "phone" | "captcha" | "verification" | "completing";
 
 export interface PhoneAuthError {
   type: "invalid_code" | "expired_code" | "rate_limit" | "invalid_phone" | "network" | "unknown";

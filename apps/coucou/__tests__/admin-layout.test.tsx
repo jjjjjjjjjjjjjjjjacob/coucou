@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import AdminLayout from "../app/admin/layout";
 
 interface AdminLayoutTestGlobal {
@@ -25,6 +25,9 @@ interface AdminLayoutTestGlobal {
   ) => void;
   __setConvexQueryResponse?: (nextResponse: unknown) => void;
   __getClerkSetActiveCalls?: () => Array<{ organization: string }>;
+  __setClerkSetActiveDeferred?: (nextShouldDefer: boolean) => void;
+  __resolveClerkSetActive?: () => void;
+  __getConvexActionCalls?: () => unknown[];
   __getToastTestCalls?: () => Array<{
     kind: string;
     message: string;
@@ -62,22 +65,54 @@ describe("AdminLayout", () => {
         },
       },
     ]);
+    getAdminLayoutTestGlobal().__setClerkSetActiveDeferred?.(true);
 
-    const { container } = render(
+    const adminLayout = (
       <AdminLayout>
         <div>Admin loaded</div>
-      </AdminLayout>,
+      </AdminLayout>
     );
+    const { container, rerender } = render(adminLayout);
 
     expect(screen.queryByText("Admin loaded")).toBeNull();
     await waitFor(() => {
       expect(container.querySelector('[data-preset="maison"]')).toBeTruthy();
     });
     await waitFor(() => {
+      expect(getAdminLayoutTestGlobal().__getClerkSetActiveCalls?.()).toEqual([
+        { organization: "org_coucou" },
+      ]);
+    });
+    expect(screen.getByText(/Opening Coucou admin/)).toBeTruthy();
+    expect(getAdminLayoutTestGlobal().__getConvexActionCalls?.()).toEqual([]);
+
+    await act(async () => {
+      getAdminLayoutTestGlobal().__setClerkSetActiveDeferred?.(false);
+      getAdminLayoutTestGlobal().__resolveClerkSetActive?.();
+      getAdminLayoutTestGlobal().__setClerkTestState?.({
+        orgId: "org_coucou",
+        orgSlug: "coucou",
+      });
+      await Promise.resolve();
+    });
+    rerender(
+      <AdminLayout>
+        <div>Admin loaded</div>
+      </AdminLayout>,
+    );
+
+    await waitFor(() => {
       expect(screen.getByText("Admin loaded")).toBeTruthy();
     });
     expect(getAdminLayoutTestGlobal().__getClerkSetActiveCalls?.()).toEqual([
       { organization: "org_coucou" },
+    ]);
+    expect(getAdminLayoutTestGlobal().__getConvexActionCalls?.()).toEqual([
+      {
+        clerkOrganizationId: "org_coucou",
+        organizationName: "Coucou",
+        organizationSlug: "coucou",
+      },
     ]);
     const coucouSwitchToast =
       getAdminLayoutTestGlobal()

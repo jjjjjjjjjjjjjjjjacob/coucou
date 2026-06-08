@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  CHLORINE_COLLAPSED_SHELL_FALLBACK_VIEWPORT_DIMENSIONS,
   resolveLandingViewportDimensions,
   resolveStableLandingViewportDimensions,
 } from "./chlorine-split-frame";
@@ -28,6 +29,19 @@ describe("chlorine split frame viewport measurement", () => {
     ).toEqual({
       width: 650,
       height: 720,
+    });
+  });
+
+  it("supports a mobile-first collapsed shell fallback before viewport measurement", () => {
+    expect(
+      resolveLandingViewportDimensions({
+        elementWidth: 0,
+        elementHeight: 0,
+        fallbackViewportDimensions: CHLORINE_COLLAPSED_SHELL_FALLBACK_VIEWPORT_DIMENSIONS,
+      }),
+    ).toEqual({
+      width: 390,
+      height: 852,
     });
   });
 

@@ -22,7 +22,7 @@ export interface TicketProps {
    */
   qrValue: string;
   /**
-   * The human-readable redemption code. Rendered under the QR in mono.
+   * The human-readable redemption code. Rendered under the QR in the preset text stack.
    */
   redemptionCode?: string;
   /**
@@ -161,7 +161,7 @@ export function Ticket({
             {redemptionCode ? (
               <div
                 style={{
-                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                  fontFamily: "var(--tt-text)",
                   fontSize: 12,
                   color: "var(--tt-fg-dim)",
                   letterSpacing: "0.1em",

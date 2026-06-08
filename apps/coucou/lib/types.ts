@@ -212,6 +212,18 @@ export interface UserSharedEventField {
 
 export type TextBlastStatus = "draft" | "sending" | "sent" | "failed";
 
+export interface TextBlastReplyAction {
+  _id?: Id<"textBlastReplyActions">;
+  textBlastId?: Id<"textBlasts">;
+  replyCode: string;
+  replyCodeNormalized?: string;
+  targetEventId: Id<"events">;
+  targetListKey: string;
+  isEnabled: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
 export interface TextBlast {
   _id: Id<"textBlasts">;
   eventId: Id<"events">;
@@ -234,6 +246,8 @@ export interface TextBlast {
   createdAt: number;
   updatedAt: number;
   sentAt?: number;
+  replyActions?: TextBlastReplyAction[];
+  replyActionCount?: number;
 }
 
 export interface UserEventSharing {

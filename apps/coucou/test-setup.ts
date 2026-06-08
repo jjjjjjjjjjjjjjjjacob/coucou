@@ -80,8 +80,11 @@ const routerPushCalls: string[] = [];
 const locationAssignCalls: string[] = [];
 const locationReplaceCalls: string[] = [];
 const clerkSetActiveCalls: Array<{ organization: string }> = [];
+const pendingClerkSetActiveResolutions: Array<() => void> = [];
+let shouldDeferClerkSetActive = false;
 let convexQueryResponse: unknown;
 const convexMutationCalls: unknown[] = [];
+const convexActionCalls: unknown[] = [];
 interface ToastTestCall {
   kind: "loading" | "success" | "error" | "info" | "warning" | "dismiss";
   message: string;
@@ -122,10 +125,14 @@ interface ClerkTestGlobal {
   __clearLocationReplaceCalls?: () => void;
   __getClerkSetActiveCalls?: () => Array<{ organization: string }>;
   __clearClerkSetActiveCalls?: () => void;
+  __setClerkSetActiveDeferred?: (nextShouldDefer: boolean) => void;
+  __resolveClerkSetActive?: () => void;
   __setConvexQueryResponse?: (nextResponse: unknown) => void;
   __clearConvexQueryResponse?: () => void;
   __getConvexMutationCalls?: () => unknown[];
   __clearConvexMutationCalls?: () => void;
+  __getConvexActionCalls?: () => unknown[];
+  __clearConvexActionCalls?: () => void;
   __getToastTestCalls?: () => ToastTestCall[];
   __clearToastTestCalls?: () => void;
 }
@@ -162,6 +169,15 @@ clerkTestGlobal.__getClerkSetActiveCalls = () => [...clerkSetActiveCalls];
 clerkTestGlobal.__clearClerkSetActiveCalls = () => {
   clerkSetActiveCalls.length = 0;
 };
+clerkTestGlobal.__setClerkSetActiveDeferred = (nextShouldDefer) => {
+  shouldDeferClerkSetActive = nextShouldDefer;
+};
+clerkTestGlobal.__resolveClerkSetActive = () => {
+  const pendingResolutions = pendingClerkSetActiveResolutions.splice(0);
+  for (const resolvePendingSetActive of pendingResolutions) {
+    resolvePendingSetActive();
+  }
+};
 clerkTestGlobal.__setConvexQueryResponse = (nextResponse) => {
   convexQueryResponse = nextResponse;
 };
@@ -171,6 +187,10 @@ clerkTestGlobal.__clearConvexQueryResponse = () => {
 clerkTestGlobal.__getConvexMutationCalls = () => [...convexMutationCalls];
 clerkTestGlobal.__clearConvexMutationCalls = () => {
   convexMutationCalls.length = 0;
+};
+clerkTestGlobal.__getConvexActionCalls = () => [...convexActionCalls];
+clerkTestGlobal.__clearConvexActionCalls = () => {
+  convexActionCalls.length = 0;
 };
 clerkTestGlobal.__getToastTestCalls = () => [...toastTestCalls];
 clerkTestGlobal.__clearToastTestCalls = () => {
@@ -249,6 +269,11 @@ mock.module("@clerk/nextjs", () => ({
     },
     setActive: async (params: { organization: string }) => {
       clerkSetActiveCalls.push(params);
+      if (shouldDeferClerkSetActive) {
+        await new Promise<void>((resolve) => {
+          pendingClerkSetActiveResolutions.push(resolve);
+        });
+      }
       const activeMembership = clerkTestMemberships.find(
         (membership) => membership.organization.id === params.organization,
       );
@@ -295,7 +320,10 @@ mock.module("convex/react", () => ({
     convexMutationCalls.push(args);
     return "mutation_result";
   },
-  useAction: () => () => Promise.resolve({ ok: true }),
+  useAction: () => (args: unknown) => {
+    convexActionCalls.push(args);
+    return Promise.resolve({ ok: true });
+  },
 }));
 
 // Mock TanStack Query
@@ -570,6 +598,8 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  clerkTestGlobal.__setClerkSetActiveDeferred?.(false);
+  clerkTestGlobal.__resolveClerkSetActive?.();
   cleanup();
   clerkTestGlobal.__resetClerkTestState?.();
   clerkTestGlobal.__clearRouterReplaceCalls?.();
@@ -579,6 +609,7 @@ afterEach(() => {
   clerkTestGlobal.__clearClerkSetActiveCalls?.();
   clerkTestGlobal.__clearConvexQueryResponse?.();
   clerkTestGlobal.__clearConvexMutationCalls?.();
+  clerkTestGlobal.__clearConvexActionCalls?.();
   clerkTestGlobal.__clearToastTestCalls?.();
 });
 afterAll(() => {

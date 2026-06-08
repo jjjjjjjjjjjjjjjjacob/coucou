@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { CountrySelector } from "./country-selector";
 import type { shouldShowOtpFakeCaret } from "./otp-input";
@@ -48,7 +48,11 @@ describe("auth input polish", () => {
 
     cleanup();
     const countrySelectorRender = render(<LoadedCountrySelector value="+1" onChange={() => {}} />);
-    await user.click(countrySelectorRender.getByRole("button"));
+    const countrySelectorButton = countrySelectorRender.getByRole("button");
+    await waitFor(() => {
+      expect(countrySelectorButton.getAttribute("aria-haspopup")).toBe("dialog");
+    });
+    await user.click(countrySelectorButton);
 
     const searchInput = countrySelectorRender.getByPlaceholderText("Search countries…");
     expect(searchInput.className).toContain("text-[16px]");

@@ -46,3 +46,8 @@ export function generateReferralCode(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   return generateRandomCode(8, alphabet);
 }
+
+export function generateRsvpHandoffToken(): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  return generateRandomCode(32, alphabet);
+}

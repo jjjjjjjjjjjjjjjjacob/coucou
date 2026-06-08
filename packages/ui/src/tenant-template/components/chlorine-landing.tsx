@@ -33,7 +33,7 @@ export interface ChlorineLandingEvent {
    */
   id: string;
   /**
-   * Pre-formatted short date — e.g. "FRI 03.01". Rendered in mono.
+   * Pre-formatted short date — e.g. "FRI 03.01". Rendered in the preset text stack.
    */
   date: string;
   /**
@@ -477,8 +477,7 @@ export function ChlorineEventRow({
       <DetailTag
         href={detailHref}
         style={{
-          fontFamily:
-            'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+          fontFamily: "var(--tt-text)",
           fontSize: 10,
           fontWeight: 600,
           letterSpacing: "0.08em",
@@ -517,8 +516,7 @@ export function ChlorineEventRow({
     >
       <div
         style={{
-          fontFamily:
-            'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+          fontFamily: "var(--tt-text)",
           fontSize: mobile ? 13 : 16,
           color: isMinimized ? "var(--tt-fg-mute)" : "var(--tt-fg)",
           fontWeight: 600,
@@ -596,8 +594,7 @@ export function ChlorineEventRow({
         {isMinimized ? (
           <span
             style={{
-              fontFamily:
-                'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+              fontFamily: "var(--tt-text)",
               fontSize: mobile ? 10 : 11,
               fontWeight: 600,
               letterSpacing: "0.08em",
@@ -639,8 +636,7 @@ function ChlorineLineupBadges({ badges }: ChlorineLineupBadgesProps) {
   return (
     <sup
       style={{
-        fontFamily:
-          'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+        fontFamily: "var(--tt-text)",
         fontSize: "0.42em",
         verticalAlign: "super",
         letterSpacing: "0.06em",
@@ -693,7 +689,7 @@ export function buildRsvpBrickStyle(mobile: boolean, disabled: boolean): CSSProp
   return {
     background: "var(--tt-fg)",
     color: "var(--tt-bg)",
-    fontFamily: 'var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+    fontFamily: "var(--tt-text)",
     fontSize: mobile ? 11 : 12,
     fontWeight: 700,
     letterSpacing: "0.08em",

@@ -37,6 +37,9 @@ export interface AuthShellProps {
    * from the override pair).
    */
   event?: EventThemeColorSource | null;
+  headingOverride?: string;
+  hideSubCopy?: boolean;
+  compactFlowHeading?: boolean;
   children: ReactNode;
   className?: string;
 }
@@ -78,6 +81,9 @@ export function AuthShell({
   authBranding,
   brandMarkSlot,
   event,
+  headingOverride,
+  hideSubCopy = false,
+  compactFlowHeading = false,
   children,
   className,
 }: AuthShellProps) {
@@ -95,6 +101,8 @@ export function AuthShell({
     trimmedOrUndefined(authBranding?.eyebrow) ?? presetDefinition.authCopy.eyebrow;
   const brandMarkStyle = authBranding?.brandMarkStyle ?? undefined;
   const showAttribution = Boolean(authBranding?.showCoucouAttribution);
+  const resolvedHeadingCopy = trimmedOrUndefined(headingOverride) ?? headingCopy;
+  const resolvedSubCopy = hideSubCopy ? undefined : subCopy;
 
   return (
     <TenantTemplateProvider siteConfigurationPreset={preset} event={event}>
@@ -148,25 +156,32 @@ export function AuthShell({
               ) : null}
             </div>
 
-            {/* Heading + sub copy */}
-            <div className="space-y-2 text-center">
-              <h1
-                className="m-0 text-[22px] leading-tight"
-                style={{
-                  fontFamily: "var(--tt-display)",
-                  fontWeight: preset === "dojo" ? 700 : 500,
-                  color: "var(--tt-fg)",
-                }}
-              >
-                {headingCopy}
-              </h1>
-              <p className="m-0 text-[13px] leading-relaxed" style={{ color: "var(--tt-fg-dim)" }}>
-                {subCopy}
-              </p>
-            </div>
+            <div className={combineClassNames(compactFlowHeading ? "space-y-4" : "space-y-8")}>
+              {/* Heading + sub copy */}
+              <div className={combineClassNames(resolvedSubCopy ? "space-y-2" : "", "text-center")}>
+                <h1
+                  className="m-0 text-[22px] leading-tight"
+                  style={{
+                    fontFamily: "var(--tt-display)",
+                    fontWeight: preset === "dojo" ? 700 : 500,
+                    color: "var(--tt-fg)",
+                  }}
+                >
+                  {resolvedHeadingCopy}
+                </h1>
+                {resolvedSubCopy ? (
+                  <p
+                    className="m-0 text-[13px] leading-relaxed"
+                    style={{ color: "var(--tt-fg-dim)" }}
+                  >
+                    {resolvedSubCopy}
+                  </p>
+                ) : null}
+              </div>
 
-            {/* Flow body */}
-            <div>{children}</div>
+              {/* Flow body */}
+              <div>{children}</div>
+            </div>
           </section>
         </div>
 
