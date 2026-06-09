@@ -85,6 +85,7 @@ type EventUpdatePatch = {
   qrCodeColor?: string;
   sendQrOnApproval?: boolean;
   attendanceQuestionEnabled?: boolean;
+  referralSharingEnabled?: boolean;
 };
 
 type EventUnsetField =
@@ -178,6 +179,7 @@ export default function EditEventDialog({
             ? !event.defersQrDelivery
             : false,
       attendanceQuestionEnabled: event.attendanceQuestionEnabled ?? false,
+      referralSharingEnabled: event.referralSharingEnabled ?? false,
     },
   });
   const [flyerStorageId, setFlyerStorageId] = React.useState<string | null>(
@@ -514,6 +516,10 @@ export default function EditEventDialog({
       const nextAttendanceQuestionEnabled = values.attendanceQuestionEnabled ?? false;
       if (nextAttendanceQuestionEnabled !== (event.attendanceQuestionEnabled ?? false)) {
         patch.attendanceQuestionEnabled = nextAttendanceQuestionEnabled;
+      }
+      const nextReferralSharingEnabled = values.referralSharingEnabled ?? false;
+      if (nextReferralSharingEnabled !== (event.referralSharingEnabled ?? false)) {
+        patch.referralSharingEnabled = nextReferralSharingEnabled;
       }
       const outgoingLists = lists.map((list) => {
         let password: string | undefined;

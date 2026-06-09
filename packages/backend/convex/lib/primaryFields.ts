@@ -39,6 +39,7 @@ export const workspaceEventDefaultsValidator = v.object({
   listKeys: v.optional(v.array(v.string())),
   socialPlatforms: v.optional(v.array(socialPlatformConfigValidator)),
   invitedBy: v.optional(invitedByPrimaryFieldConfigValidator),
+  referralSharingEnabled: v.optional(v.boolean()),
 });
 
 export const submittedSocialProfileValidator = v.object({
@@ -124,13 +125,18 @@ export function sanitizeWorkspaceEventDefaults(
   const invitedBy = sanitizeInvitedByConfig(defaults.invitedBy);
   const themeBackgroundColor = normalizeHexColorInput(defaults.themeBackgroundColor);
   const themeTextColor = normalizeHexColorInput(defaults.themeTextColor);
+  const referralSharingEnabled =
+    typeof defaults.referralSharingEnabled === "boolean"
+      ? defaults.referralSharingEnabled
+      : undefined;
 
   if (
     !themeBackgroundColor &&
     !themeTextColor &&
     listKeys.length === 0 &&
     !socialPlatforms &&
-    !invitedBy
+    !invitedBy &&
+    referralSharingEnabled === undefined
   ) {
     return undefined;
   }
@@ -141,6 +147,7 @@ export function sanitizeWorkspaceEventDefaults(
     listKeys: listKeys.length > 0 ? listKeys : undefined,
     socialPlatforms,
     invitedBy,
+    referralSharingEnabled,
   };
 }
 

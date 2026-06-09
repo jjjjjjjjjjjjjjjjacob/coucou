@@ -81,6 +81,7 @@ export type EventPatch = Partial<
     | "defersQrDelivery"
     | "sendQrOnApproval"
     | "attendanceQuestionEnabled"
+    | "referralSharingEnabled"
   >
 >;
 

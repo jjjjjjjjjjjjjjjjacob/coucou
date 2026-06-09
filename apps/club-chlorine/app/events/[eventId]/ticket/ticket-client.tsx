@@ -135,6 +135,7 @@ export default function TicketClientPage({
     redemptionCode: myRedemption?.code ?? null,
   };
   const shouldMentionQr = ticketCopyShouldMentionQr(ticketCopyInput);
+  const shouldShowReferralSharing = event?.referralSharingEnabled === true;
 
   const eventDisplayName = formatEventTitleInline(event);
   const eventHasSecondaryTitle = hasEventSecondaryTitle(event);
@@ -331,29 +332,33 @@ export default function TicketClientPage({
             )
           }
           actions={
-            <div className="flex flex-col items-center justify-center gap-4">
-              {showQr ? (
-                <TenantButton
-                  type="button"
-                  onClick={() =>
-                    downloadQRCodeAsImage(QR_SVG_ID, qrFileName, {
-                      foregroundColor: qrForegroundColor,
-                      backgroundColor: qrBackgroundColor,
-                    })
-                  }
-                >
-                  <Download className="mr-2 h-3.5 w-3.5" />
-                  Download
-                </TenantButton>
-              ) : null}
-              <div className="my-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-700">
-                <EventReferralShareButton
-                  event={event}
-                  variant="prominent"
-                  className="h-auto p-4 text-[15px]"
-                />
+            showQr || shouldShowReferralSharing ? (
+              <div className="flex flex-col items-center justify-center gap-4">
+                {showQr ? (
+                  <TenantButton
+                    type="button"
+                    onClick={() =>
+                      downloadQRCodeAsImage(QR_SVG_ID, qrFileName, {
+                        foregroundColor: qrForegroundColor,
+                        backgroundColor: qrBackgroundColor,
+                      })
+                    }
+                  >
+                    <Download className="mr-2 h-3.5 w-3.5" />
+                    Download
+                  </TenantButton>
+                ) : null}
+                {shouldShowReferralSharing ? (
+                  <div className="my-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-700">
+                    <EventReferralShareButton
+                      event={event}
+                      variant="prominent"
+                      className="h-auto p-4 text-[15px]"
+                    />
+                  </div>
+                ) : null}
               </div>
-            </div>
+            ) : null
           }
           details={ticketDetails}
         />

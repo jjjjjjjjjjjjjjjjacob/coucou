@@ -89,6 +89,7 @@ export default function WorkspaceDashboardSettingsPage() {
   const [themeBackgroundColorDraft, setThemeBackgroundColorDraft] = useState("#FFFFFF");
   const [themeTextColorDraft, setThemeTextColorDraft] = useState("#EF4444");
   const [listKeysDraft, setListKeysDraft] = useState("vip, ga");
+  const [referralSharingEnabledDraft, setReferralSharingEnabledDraft] = useState(false);
   const [primaryFieldConfigDraft, setPrimaryFieldConfigDraft] = useState<PrimaryFieldConfigDraft>(
     EMPTY_PRIMARY_FIELD_CONFIG,
   );
@@ -113,6 +114,7 @@ export default function WorkspaceDashboardSettingsPage() {
     setThemeBackgroundColorDraft(eventDefaults?.themeBackgroundColor ?? "#FFFFFF");
     setThemeTextColorDraft(eventDefaults?.themeTextColor ?? "#EF4444");
     setListKeysDraft((eventDefaults?.listKeys ?? ["vip", "ga"]).join(", "));
+    setReferralSharingEnabledDraft(eventDefaults?.referralSharingEnabled ?? false);
     setPrimaryFieldConfigDraft(
       primaryFieldConfigToDraft({
         socialPlatforms: eventDefaults?.socialPlatforms,
@@ -215,6 +217,7 @@ export default function WorkspaceDashboardSettingsPage() {
               invitedBy: sanitizedConfig.invitedBy ?? {
                 enabled: false,
               },
+              referralSharingEnabled: referralSharingEnabledDraft,
             },
           }),
         {
@@ -394,6 +397,18 @@ export default function WorkspaceDashboardSettingsPage() {
               onChange={setPrimaryFieldConfigDraft}
               disabled={!canWriteSettings || isSavingDefaults}
             />
+
+            <label className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <Checkbox
+                checked={referralSharingEnabledDraft}
+                onCheckedChange={(checked) => setReferralSharingEnabledDraft(Boolean(checked))}
+                disabled={!canWriteSettings || isSavingDefaults}
+              />
+              <span>
+                Show the guest referral sharing CTA on pending status pages and approved tickets.
+                Off by default.
+              </span>
+            </label>
 
             {canWriteSettings ? (
               <Button type="submit" disabled={isSavingDefaults}>

@@ -1,6 +1,7 @@
 "use client";
 import type { Path, PathValue } from "react-hook-form";
 import { StorageImageUpload } from "@/components/flyer-upload";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   FormControl,
   FormDescription,
@@ -118,6 +119,29 @@ export function EventGuestPageSection<FormValues extends BaseEventFormValues>({
           }}
         />
       </div>
+      <FormField
+        control={form.control}
+        name={"referralSharingEnabled" as Path<FormValues>}
+        render={({ field }) => (
+          <FormItem>
+            <label className="flex items-start gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <FormControl>
+                <Checkbox
+                  checked={Boolean(field.value)}
+                  onCheckedChange={(checked) => field.onChange(Boolean(checked))}
+                />
+              </FormControl>
+              <span className="space-y-1">
+                <span className="block text-sm font-medium">Show referral sharing CTA</span>
+                <FormDescription>
+                  Adds the guest sharing button on pending status pages and approved tickets.
+                </FormDescription>
+              </span>
+            </label>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   );
 }

@@ -106,6 +106,7 @@ export interface Event {
   maxAttendees?: number;
   status?: EventStatus;
   attendanceQuestionEnabled?: boolean;
+  referralSharingEnabled?: boolean;
   customFields?: CustomField[];
   primaryFieldConfig?: PrimaryFieldConfig;
   themeBackgroundColor?: string;
@@ -384,6 +385,7 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   themeBackgroundColor?: string;
   themeTextColor?: string;
   qrCodeColor?: string;
+  referralSharingEnabled?: boolean;
 }
 
 export interface EventFormData extends BaseEventFormValues {

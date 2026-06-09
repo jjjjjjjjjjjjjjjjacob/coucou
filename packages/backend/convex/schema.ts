@@ -32,6 +32,7 @@ const workspaceEventDefaultsValidator = v.object({
   listKeys: v.optional(v.array(v.string())),
   socialPlatforms: v.optional(v.array(socialPlatformConfigValidator)),
   invitedBy: v.optional(invitedByPrimaryFieldConfigValidator),
+  referralSharingEnabled: v.optional(v.boolean()),
 });
 
 export default defineSchema({
@@ -195,6 +196,7 @@ export default defineSchema({
      * When disabled, new RSVPs default to attendanceStatus="yes".
      */
     attendanceQuestionEnabled: v.optional(v.boolean()),
+    referralSharingEnabled: v.optional(v.boolean()),
     maxAttendees: v.optional(v.number()), // maximum attendees allowed per RSVP (default 1)
     customFields: v.optional(
       v.array(

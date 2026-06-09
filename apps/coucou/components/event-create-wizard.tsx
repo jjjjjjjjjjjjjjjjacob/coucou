@@ -110,6 +110,7 @@ type DraftEventPatchPayload = {
   primaryFieldConfig?: PrimaryFieldConfig;
   sendQrOnApproval: boolean;
   attendanceQuestionEnabled: boolean;
+  referralSharingEnabled: boolean;
 };
 
 type DraftListPayload = {
@@ -130,6 +131,7 @@ type EventWizardWorkspaceDefaults = {
   themeBackgroundColor?: string | null;
   themeTextColor?: string | null;
   listKeys?: readonly string[] | null;
+  referralSharingEnabled?: boolean | null;
 };
 
 type EventWizardWorkspace = {
@@ -141,6 +143,7 @@ type EventWizardDefaults = {
   themeBackgroundColor: string;
   themeTextColor: string;
   listKeys: readonly string[];
+  referralSharingEnabled: boolean;
 };
 
 type KnownSiteKey = keyof typeof siteConfigurations;
@@ -262,6 +265,7 @@ function resolveEventWizardDefaults({
     themeBackgroundColor,
     themeTextColor,
     listKeys,
+    referralSharingEnabled: eventDefaults?.referralSharingEnabled ?? false,
   };
 }
 
@@ -309,6 +313,7 @@ function createDefaultEventFormValues(defaults: EventWizardDefaults): EventFormD
     themeTextColor: defaults.themeTextColor,
     qrCodeColor: "#000000",
     attendanceQuestionEnabled: false,
+    referralSharingEnabled: defaults.referralSharingEnabled,
   };
 }
 
@@ -462,6 +467,9 @@ export default function EventCreateWizard() {
     if (!form.getFieldState("themeTextColor").isDirty) {
       form.setValue("themeTextColor", eventWizardDefaults.themeTextColor);
     }
+    if (!form.getFieldState("referralSharingEnabled").isDirty) {
+      form.setValue("referralSharingEnabled", eventWizardDefaults.referralSharingEnabled);
+    }
     setLists((currentLists) =>
       areListRowsPristine(currentLists, DEFAULT_LIST_KEYS)
         ? createListRows(eventWizardDefaults.listKeys)
@@ -519,6 +527,8 @@ export default function EventCreateWizard() {
         normalizeHexColorInput(draftEvent.themeTextColor) ?? eventWizardDefaults.themeTextColor,
       qrCodeColor: draftEvent.qrCodeColor ?? "#000000",
       attendanceQuestionEnabled: draftEvent.attendanceQuestionEnabled ?? false,
+      referralSharingEnabled:
+        draftEvent.referralSharingEnabled ?? eventWizardDefaults.referralSharingEnabled,
     });
 
     setActs(draftEvent.acts && draftEvent.acts.length > 0 ? (draftEvent.acts as EventAct[]) : []);
@@ -697,6 +707,7 @@ export default function EventCreateWizard() {
         : draftToPrimaryFieldConfig(primaryFieldConfigDraft),
       sendQrOnApproval,
       attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
+      referralSharingEnabled: values.referralSharingEnabled ?? false,
     };
     if (startTimestamp !== undefined) patch.eventDate = startTimestamp;
 
@@ -871,6 +882,7 @@ export default function EventCreateWizard() {
         status: values.status ?? "inactive",
         sendQrOnApproval,
         attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
+        referralSharingEnabled: values.referralSharingEnabled ?? false,
         lists: listsFiltered,
         customFields: customFields.map((field) => ({
           key: field.key.trim(),
@@ -1600,6 +1612,31 @@ function StepGuestExperience({
           )}
         />
       </div>
+
+      <FormField
+        control={form.control}
+        name="referralSharingEnabled"
+        render={({ field }) => (
+          <FormItem>
+            <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+              <FormControl>
+                <Checkbox
+                  checked={Boolean(field.value)}
+                  onCheckedChange={(checked) => field.onChange(Boolean(checked))}
+                  className="mt-0.5"
+                />
+              </FormControl>
+              <span className="space-y-1">
+                <span className="block text-sm font-medium">Show referral sharing CTA</span>
+                <FormDescription>
+                  Adds the guest sharing button on pending status pages and approved tickets.
+                </FormDescription>
+              </span>
+            </label>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   );
 }
@@ -1876,6 +1913,11 @@ function StepReview({
           </span>
         </span>
       ),
+    },
+    {
+      stepIndex: 4,
+      key: "Guest sharing",
+      value: values.referralSharingEnabled ? "On" : "Off",
     },
     {
       stepIndex: 5,

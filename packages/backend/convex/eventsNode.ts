@@ -64,6 +64,7 @@ const eventUpdatePatchValidator = v.object({
   defersQrDelivery: v.optional(v.boolean()),
   sendQrOnApproval: v.optional(v.boolean()),
   attendanceQuestionEnabled: v.optional(v.boolean()),
+  referralSharingEnabled: v.optional(v.boolean()),
   customFields: v.optional(
     v.array(
       v.object({
@@ -247,6 +248,7 @@ export const create = action({
     maxAttendees: v.optional(v.number()),
     sendQrOnApproval: v.optional(v.boolean()),
     attendanceQuestionEnabled: v.optional(v.boolean()),
+    referralSharingEnabled: v.optional(v.boolean()),
     lists: v.array(
       v.object({
         listKey: v.string(),
@@ -338,6 +340,8 @@ export const create = action({
     const primaryFieldConfig =
       sanitizePrimaryFieldConfig(args.primaryFieldConfig) ??
       primaryFieldConfigFromWorkspaceDefaults(workspaceEventDefaults);
+    const referralSharingEnabled =
+      args.referralSharingEnabled ?? workspaceEventDefaults?.referralSharingEnabled ?? false;
     const trimmedGuestPortalLinkLabel = args.guestPortalLinkLabel?.trim() ?? "";
     const trimmedGuestPortalLinkUrl = args.guestPortalLinkUrl?.trim() ?? "";
     const hasGuestPortalLinkLabel = trimmedGuestPortalLinkLabel.length > 0;
@@ -388,6 +392,7 @@ export const create = action({
       maxAttendees: args.maxAttendees ?? 1,
       sendQrOnApproval: args.sendQrOnApproval,
       attendanceQuestionEnabled: args.attendanceQuestionEnabled,
+      referralSharingEnabled,
       customFields: args.customFields,
       primaryFieldConfig,
       themeBackgroundColor: normalizedThemeBackgroundColor,

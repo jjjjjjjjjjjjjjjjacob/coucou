@@ -15,15 +15,22 @@ import { ensureEventInSiteScope, eventMatchesSiteScope } from "./lib/siteScope";
 import { type EventPatch, NotFoundError, ValidationError } from "./lib/types";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
-async function applyWorkspacePrimaryFieldFallback<TEvent extends Doc<"events"> | null>(
+async function applyWorkspaceEventDefaults<TEvent extends Doc<"events"> | null>(
   ctx: QueryCtx,
   event: TEvent,
 ): Promise<TEvent> {
   if (!event) return event;
-  if (primaryFieldConfigHasEffectiveContent(event.primaryFieldConfig)) {
+  const hasEventPrimaryFieldConfig = primaryFieldConfigHasEffectiveContent(
+    event.primaryFieldConfig,
+  );
+  const hasEventReferralSharingSetting = typeof event.referralSharingEnabled === "boolean";
+  if (hasEventPrimaryFieldConfig && hasEventReferralSharingSetting) {
     return event;
   }
-  if (!event.workspaceSlug) return event;
+  if (!event.workspaceSlug) {
+    if (hasEventReferralSharingSetting) return event;
+    return { ...event, referralSharingEnabled: false } as TEvent;
+  }
   // Defensive lookup — `unique()` throws on >1 match, and a transient
   // schema oddity here would otherwise propagate as a Server Error to
   // the satellite (where it surfaces as a busted error screen on the
@@ -36,15 +43,37 @@ async function applyWorkspacePrimaryFieldFallback<TEvent extends Doc<"events"> |
       .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", event.workspaceSlug!))
       .unique();
   } catch (error) {
-    console.error("applyWorkspacePrimaryFieldFallback: workspace lookup failed", {
+    console.error("applyWorkspaceEventDefaults: workspace lookup failed", {
       workspaceSlug: event.workspaceSlug,
       error,
     });
+    if (hasEventReferralSharingSetting) return event;
+    return { ...event, referralSharingEnabled: false } as TEvent;
+  }
+  const fallbackPrimaryFieldConfig = hasEventPrimaryFieldConfig
+    ? event.primaryFieldConfig
+    : primaryFieldConfigFromWorkspaceDefaults(workspace?.eventDefaults);
+  const referralSharingEnabled =
+    event.referralSharingEnabled ?? workspace?.eventDefaults?.referralSharingEnabled ?? false;
+
+  if (
+    fallbackPrimaryFieldConfig === event.primaryFieldConfig &&
+    referralSharingEnabled === event.referralSharingEnabled
+  ) {
     return event;
   }
-  const fallback = primaryFieldConfigFromWorkspaceDefaults(workspace?.eventDefaults);
-  if (!fallback) return event;
-  return { ...event, primaryFieldConfig: fallback } as TEvent;
+
+  const eventWithDefaults = {
+    ...event,
+    referralSharingEnabled,
+  };
+  if (fallbackPrimaryFieldConfig) {
+    return {
+      ...eventWithDefaults,
+      primaryFieldConfig: fallbackPrimaryFieldConfig,
+    } as TEvent;
+  }
+  return eventWithDefaults as TEvent;
 }
 
 import {
@@ -226,6 +255,7 @@ export const insertWithCreds = mutation({
     defersQrDelivery: v.optional(v.boolean()),
     sendQrOnApproval: v.optional(v.boolean()),
     attendanceQuestionEnabled: v.optional(v.boolean()),
+    referralSharingEnabled: v.optional(v.boolean()),
     creds: v.array(
       v.object({
         listKey: v.string(),
@@ -272,6 +302,7 @@ export const insertWithCreds = mutation({
       defersQrDelivery: args.defersQrDelivery,
       sendQrOnApproval: args.sendQrOnApproval,
       attendanceQuestionEnabled: args.attendanceQuestionEnabled,
+      referralSharingEnabled: args.referralSharingEnabled,
       maxAttendees: args.maxAttendees,
       customFields: args.customFields,
       primaryFieldConfig: args.primaryFieldConfig,
@@ -538,6 +569,7 @@ export const update = mutation({
     defersQrDelivery: v.optional(v.boolean()),
     sendQrOnApproval: v.optional(v.boolean()),
     attendanceQuestionEnabled: v.optional(v.boolean()),
+    referralSharingEnabled: v.optional(v.boolean()),
     isFeatured: v.optional(v.boolean()),
     customFields: v.optional(
       v.array(
@@ -629,6 +661,7 @@ export const update = mutation({
       "defersQrDelivery",
       "sendQrOnApproval",
       "attendanceQuestionEnabled",
+      "referralSharingEnabled",
       "isFeatured",
       "customFields",
       "primaryFieldConfig",
@@ -900,7 +933,7 @@ export const get = query({
   handler: async (ctx, { eventId, siteKey, workspaceSlug }) => {
     const event = await ctx.db.get(eventId);
     if (!eventMatchesSiteScope(event, { siteKey, workspaceSlug })) return null;
-    return await applyWorkspacePrimaryFieldFallback(ctx, event);
+    return await applyWorkspaceEventDefaults(ctx, event);
   },
 });
 
@@ -912,7 +945,7 @@ export const getByRouteId = query({
   },
   handler: async (ctx, { eventRouteId, siteKey, workspaceSlug }) => {
     const event = await getEventByRouteId(ctx, eventRouteId, { siteKey, workspaceSlug });
-    return await applyWorkspacePrimaryFieldFallback(ctx, event);
+    return await applyWorkspaceEventDefaults(ctx, event);
   },
 });
 
@@ -963,7 +996,10 @@ export const listAll = query({
   },
   handler: async (ctx, { siteKey, workspaceSlug }) => {
     const events = await ctx.db.query("events").collect();
-    return events.filter((event) => eventMatchesSiteScope(event, { siteKey, workspaceSlug }));
+    const filtered = events.filter((event) =>
+      eventMatchesSiteScope(event, { siteKey, workspaceSlug }),
+    );
+    return await Promise.all(filtered.map((event) => applyWorkspaceEventDefaults(ctx, event)));
   },
 });
 
@@ -982,7 +1018,7 @@ export const listAllWithFlyerUrls = query({
         const flyerUrl = event.flyerStorageId
           ? await ctx.storage.getUrl(event.flyerStorageId)
           : null;
-        return { event, flyerUrl };
+        return { event: await applyWorkspaceEventDefaults(ctx, event), flyerUrl };
       }),
     );
     return enriched;
@@ -1035,7 +1071,7 @@ export const getFeaturedEvent = query({
     const matchingEvent =
       featuredEvents.find((event) => eventMatchesSiteScope(event, { siteKey, workspaceSlug })) ??
       null;
-    return await applyWorkspacePrimaryFieldFallback(ctx, matchingEvent);
+    return await applyWorkspaceEventDefaults(ctx, matchingEvent);
   },
 });
 

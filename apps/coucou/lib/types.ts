@@ -111,6 +111,7 @@ export interface Event {
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
   attendanceQuestionEnabled?: boolean;
+  referralSharingEnabled?: boolean;
   customFields?: CustomField[];
   primaryFieldConfig?: PrimaryFieldConfig;
   themeBackgroundColor?: string;
@@ -423,6 +424,7 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   qrCodeColor?: string;
   sendQrOnApproval?: boolean;
   attendanceQuestionEnabled?: boolean;
+  referralSharingEnabled?: boolean;
 }
 
 export interface EventFormData extends BaseEventFormValues {

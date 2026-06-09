@@ -7,7 +7,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { EyebrowPill, RsvpPending } from "@coucou/ui/tenant-template";
 import { useQuery } from "@tanstack/react-query";
 import { useQuery as useConvexQuery, useMutation } from "convex/react";
-import { CheckCircle2, CircleDashed } from "lucide-react";
+import { CircleDashed } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useEffect, useMemo, useRef, useState } from "react";
@@ -103,6 +103,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
   const guestPortalLinkUrl = event?.guestPortalLinkUrl?.trim() ?? "";
   const shouldShowGuestLink = guestPortalLinkLabel.length > 0 && guestPortalLinkUrl.length > 0;
   const guestPortalImageUrl = guestPortalImageResponse?.url ?? null;
+  const shouldShowReferralSharing = event?.referralSharingEnabled === true;
 
   useEffect(() => {
     if (typeof status?.smsConsentIpAddress === "string" && status.smsConsentIpAddress.length > 0) {
@@ -270,35 +271,18 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
               </section>
             )}
 
-            <section className="flex w-full flex-col items-center gap-3 text-center">
-              <EventReferralShareButton event={event} variant="prominent" className="h-auto p-3" />
-            </section>
+            {shouldShowReferralSharing ? (
+              <section className="flex w-full flex-col items-center gap-3 text-center">
+                <EventReferralShareButton
+                  event={event}
+                  variant="prominent"
+                  className="h-auto p-3"
+                />
+              </section>
+            ) : null}
 
-            <div className="flex flex-col gap-3">
-              {status.smsConsent ? (
-                <div className="flex flex-col gap-3">
-                  <div
-                    className="flex items-center gap-2 text-sm font-medium"
-                    style={{ color: "var(--tt-fg)" }}
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>SMS from {smsSenderDisplayName} enabled</span>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="min-w-[7rem]"
-                    onClick={() => handleSmsPreferenceChange(false)}
-                    disabled={
-                      statusQuery.isLoading || statusQuery.isFetching || isUpdatingSmsPreference
-                    }
-                  >
-                    {isUpdatingSmsPreference && <Spinner className="h-3.5 w-3.5" />}
-                    SMS On
-                  </Button>
-                </div>
-              ) : (
+            {status.smsConsent !== true ? (
+              <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3">
                   <div
                     className="flex items-center gap-2 text-sm font-medium"
@@ -319,24 +303,24 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
                     Enable SMS Updates
                   </Button>
                 </div>
-              )}
-              <p
-                className="max-w-sm text-[10px] leading-tight"
-                style={{ color: "var(--tt-fg-mute)" }}
-              >
-                RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-                {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply
-                STOP to cancel. Consent not required for purchase.{" "}
-                <a href="/terms" className="underline">
-                  Terms
-                </a>{" "}
-                &amp;{" "}
-                <a href="/privacy" className="underline">
-                  Privacy
-                </a>
-                .
-              </p>
-            </div>
+                <p
+                  className="max-w-sm text-[10px] leading-tight"
+                  style={{ color: "var(--tt-fg-mute)" }}
+                >
+                  RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
+                  {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply
+                  STOP to cancel. Consent not required for purchase.{" "}
+                  <a href="/terms" className="underline">
+                    Terms
+                  </a>{" "}
+                  &amp;{" "}
+                  <a href="/privacy" className="underline">
+                    Privacy
+                  </a>
+                  .
+                </p>
+              </div>
+            ) : null}
           </div>
         }
       />

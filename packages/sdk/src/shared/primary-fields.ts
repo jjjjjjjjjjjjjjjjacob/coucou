@@ -22,6 +22,7 @@ export interface WorkspaceEventDefaults extends PrimaryFieldConfig {
   themeBackgroundColor?: string;
   themeTextColor?: string;
   listKeys?: string[];
+  referralSharingEnabled?: boolean;
 }
 
 export interface CustomFieldLike {
