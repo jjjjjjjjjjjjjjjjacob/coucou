@@ -1,6 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, vi } from "bun:test";
 import type { UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
+import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
 import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { normalizeAndHashPhoneNumber } from "../convex/lib/phoneHash";
@@ -17,13 +18,31 @@ const convexModules = {
 
 type TestBackend = ReturnType<typeof convexTest>;
 
+const aggregateComponentModules = {
+  "../../../node_modules/@convex-dev/aggregate/dist/esm/component/_generated/api.js": () =>
+    import("../../../node_modules/@convex-dev/aggregate/dist/esm/component/_generated/api.js"),
+  "../../../node_modules/@convex-dev/aggregate/dist/esm/component/btree.js": () =>
+    import("../../../node_modules/@convex-dev/aggregate/dist/esm/component/btree.js"),
+  "../../../node_modules/@convex-dev/aggregate/dist/esm/component/public.js": () =>
+    import("../../../node_modules/@convex-dev/aggregate/dist/esm/component/public.js"),
+};
+
 const WORKSPACE_SLUG = "dojo-pomodoro";
 const SITE_KEY = "dojo";
 const CLERK_ORGANIZATION_ID = "org_dojo";
 
+function setupTestBackend(): TestBackend {
+  const testBackend = convexTest(schema, convexModules);
+  testBackend.registerComponent(
+    "rsvpAggregate",
+    aggregateComponentSchema,
+    aggregateComponentModules,
+  );
+  return testBackend;
+}
+
 async function finishQueuedFunctions(testBackend: TestBackend) {
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
-  await testBackend.finishInProgressScheduledFunctions();
+  await testBackend.finishAllScheduledFunctions(vi.runAllTimers);
 }
 
 function createWorkspaceIdentity(subject: string): Partial<UserIdentity> {
@@ -347,7 +366,7 @@ async function seedMultiEventRecipients(testBackend: TestBackend) {
 
 describe("text blast recipient selection", () => {
   it("stores reply actions on a draft and rejects reserved reply codes", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
     const sourceEventId = await seedEvent(testBackend, "Source Event");
     const targetEventId = await seedEvent(testBackend, "Target Event");
@@ -404,7 +423,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("submits a pending RSVP from a matching text blast reply action", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const sourceEventId = await seedEvent(testBackend, "Source Event");
     const targetEventId = await seedEventWithCustomFields(testBackend, "Target Event", [
       { key: "shirt", label: "Shirt size", required: true },
@@ -466,7 +485,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("uses custom RSVP confirmation text for matching reply action submissions", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const sourceEventId = await seedEvent(testBackend, "Custom Confirmation Source");
     const targetEventId = await seedEvent(testBackend, "Custom Confirmation Target");
     await testBackend.run(async (databaseContext) => {
@@ -520,7 +539,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("submits reply action RSVPs without responding when initial confirmation is disabled", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const sourceEventId = await seedEvent(testBackend, "Disabled Confirmation Source");
     const targetEventId = await seedEvent(testBackend, "Disabled Confirmation Target");
     await testBackend.run(async (databaseContext) => {
@@ -581,7 +600,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("keeps an existing destination RSVP unchanged for reply actions", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const sourceEventId = await seedEvent(testBackend, "Existing Source Event");
     const targetEventId = await seedEvent(testBackend, "Existing Target Event");
     await seedListCredential(testBackend, {
@@ -634,7 +653,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("does not submit a reply action RSVP when required matching fields are missing", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const sourceEventId = await seedEvent(testBackend, "Missing Field Source");
     const targetEventId = await seedEventWithCustomFields(testBackend, "Missing Field Target", [
       { key: "requiredHandle", label: "Required handle", required: true },
@@ -683,7 +702,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("dedupes multi-event recipients by normalized phone across users and events", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const { firstEventId, secondEventId } = await seedMultiEventRecipients(testBackend);
 
     const vipRecipientCount = await testBackend.query(internal.textBlasts.countRecipientsInternal, {
@@ -702,7 +721,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("targets approved RSVPs with a sent approval SMS for the same event", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const eventId = await seedEvent(testBackend, "Approval SMS Event");
 
     await seedUser(testBackend, "user_sent", "555-100-0001", "Sent");
@@ -774,7 +793,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("dedupes multi-event approved-with-approval-SMS recipients when any selected RSVP qualifies", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const { firstEventId, secondEventId } = await seedMultiEventRecipients(testBackend);
     await seedApprovalSmsNotification(testBackend, {
       eventId: secondEventId,
@@ -793,7 +812,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("targets approved previous RSVPs while excluding anyone who RSVP'd to the excluded event", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const previousEventId = await seedEvent(testBackend, "Previous Event");
     const currentEventId = await seedEvent(testBackend, "Current Event");
 
@@ -855,7 +874,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("filters history by sent delivery rows only", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const { firstEventId, secondEventId, firstRsvpId, uniqueRsvpId } =
       await seedMultiEventRecipients(testBackend);
     const trackedBlastId = await seedTextBlast(testBackend, firstEventId, "Tracked blast");
@@ -905,7 +924,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("skips phone hashes already marked sent when preparing a retry", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const { firstEventId, secondEventId, firstRsvpId, uniqueRsvpId } =
       await seedMultiEventRecipients(testBackend);
     const retryBlastId = await seedTextBlast(testBackend, firstEventId, "Retry blast");
@@ -946,7 +965,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("stores single-event drafts with QR enabled when the message contains the QR URL variable", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
     const eventId = await seedEvent(testBackend, "QR Draft Event");
     const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
@@ -996,7 +1015,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("rejects multi-event drafts that contain the QR URL variable", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
     const firstEventId = await seedEvent(testBackend, "First QR Event");
     const secondEventId = await seedEvent(testBackend, "Second QR Event");
@@ -1017,7 +1036,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("queues direct single-event blasts and finalizes Twilio-disabled failures", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
     const eventId = await seedEvent(testBackend, "QR Send Event");
     await seedUser(testBackend, "user_qr", "555-777-8888", "Quinn");
@@ -1036,6 +1055,7 @@ describe("text blast recipient selection", () => {
     const previousDevTwilioEnabled = process.env.DEV_TWILIO_ENABLED;
     process.env.DEV_TWILIO_ENABLED = "false";
 
+    vi.useFakeTimers();
     try {
       const result = await hostBackend.action(api.textBlasts.sendBlastDirect, {
         eventId,
@@ -1061,6 +1081,7 @@ describe("text blast recipient selection", () => {
       } else {
         process.env.DEV_TWILIO_ENABLED = previousDevTwilioEnabled;
       }
+      vi.useRealTimers();
     }
 
     const sendState = await testBackend.run(async (databaseContext) => {
@@ -1084,7 +1105,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("sends an existing draft only to saved selected RSVP IDs", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
     const eventId = await seedEvent(testBackend, "Selected Draft Event");
     await seedUser(testBackend, "user_selected", "555-888-0001", "Selena");
@@ -1113,6 +1134,7 @@ describe("text blast recipient selection", () => {
     const previousDevTwilioEnabled = process.env.DEV_TWILIO_ENABLED;
     process.env.DEV_TWILIO_ENABLED = "false";
 
+    vi.useFakeTimers();
     try {
       const result = await hostBackend.action(api.textBlasts.sendBlast, {
         blastId: draftId,
@@ -1131,6 +1153,7 @@ describe("text blast recipient selection", () => {
       } else {
         process.env.DEV_TWILIO_ENABLED = previousDevTwilioEnabled;
       }
+      vi.useRealTimers();
     }
 
     const sendState = await testBackend.run(async (databaseContext) => {
@@ -1147,7 +1170,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("finalizes successful bulk SMS results into notifications, deliveries, usage logs, and counts", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const eventId = await seedEvent(testBackend, "Finalizer Event");
     await seedUser(testBackend, "user_finalizer", "555-123-4567", "Finley");
     const rsvpId = await seedRsvp(testBackend, {
@@ -1239,7 +1262,7 @@ describe("text blast recipient selection", () => {
   });
 
   it("skips opted-out recipients before Twilio and marks their delivery failed", async () => {
-    const testBackend = convexTest(schema, convexModules);
+    const testBackend = setupTestBackend();
     const eventId = await seedEvent(testBackend, "Opt Out Event");
     await seedUser(testBackend, "user_opted_out", "555-222-3333", "Opal");
     await seedRsvp(testBackend, {
