@@ -19,7 +19,13 @@ export function shouldSkipChlorineAppShellIntro(pathname: string | null | undefi
   return !isExactEventDetailPath(pathname) && pathname !== "/";
 }
 
-export function AppChrome({ children }: { children: ReactNode }) {
+export function AppChrome({
+  children,
+  satelliteOrigin,
+}: {
+  children: ReactNode;
+  satelliteOrigin: string;
+}) {
   const pathname = usePathname();
   // One persistent shell hosts the chlorine wordmark for every route. The
   // mode prop drives the layout — `expanded` for the landing (split top/
@@ -42,7 +48,7 @@ export function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <HeaderClient />
+      <HeaderClient initialSatelliteOrigin={satelliteOrigin} />
       <ChlorineAppShell
         mode={mode}
         linkComponent={Link}

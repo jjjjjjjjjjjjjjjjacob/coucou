@@ -395,6 +395,10 @@ export function RsvpAcceptedForm({
     eventId,
     siteKey: siteConfiguration.siteKey,
   }) as CurrentUserRsvpFormStatus | null | undefined;
+  const organizerSmsPreference = useQuery(api.rsvps.smsPreferenceForUserEvent, {
+    eventId,
+    siteKey: siteConfiguration.siteKey,
+  });
   const userDoc = useQuery(
     api.users.getByClerkUser,
     user?.id ? { clerkUserId: user.id } : "skip",
@@ -436,6 +440,7 @@ export function RsvpAcceptedForm({
     name: false,
     phone: false,
   });
+  const shouldPreserveSmsConsentDraftRef = useRef<boolean>(false);
 
   const smsSenderDisplayName = useMemo(
     () =>
@@ -543,6 +548,7 @@ export function RsvpAcceptedForm({
       name: false,
       phone: false,
     };
+    shouldPreserveSmsConsentDraftRef.current = false;
     const storedDraft = readRsvpDraftStorage(rsvpDraftStorageKey);
     if (storedDraft) {
       const restoredFirstName = storedDraft.firstName;
@@ -570,6 +576,8 @@ export function RsvpAcceptedForm({
       setAccessPassword(storedDraft.accessPassword || initialPassword);
       setSmsConsentEnabled(storedDraft.smsConsentEnabled);
       setHasAcknowledgedSmsOptOutPrompt(storedDraft.hasAcknowledgedSmsOptOutPrompt);
+      shouldPreserveSmsConsentDraftRef.current =
+        storedDraft.smsConsentEnabled || storedDraft.hasAcknowledgedSmsOptOutPrompt;
       form.setValue("attendees", storedDraft.attendees, {
         shouldValidate: false,
         shouldDirty: false,
@@ -815,6 +823,7 @@ export function RsvpAcceptedForm({
   const handleSmsConsentChange = React.useCallback(
     async (checked: boolean | "indeterminate") => {
       const isEnabled = checked === true;
+      setHasInitializedSmsConsent(true);
       setSmsConsentEnabled(isEnabled);
       if (isEnabled) {
         setHasAcknowledgedSmsOptOutPrompt(false);
@@ -1061,21 +1070,59 @@ export function RsvpAcceptedForm({
   };
 
   useEffect(() => {
-    if (!status) return;
-    if (!hasInitializedSmsConsent && status.smsConsent !== undefined) {
-      setSmsConsentEnabled(status.smsConsent);
+    const statusHasLoaded = status !== undefined;
+    const statusSmsConsent = status?.smsConsent;
+    const organizerSmsPreferenceHasLoaded = organizerSmsPreference !== undefined;
+    const shouldPreserveSmsConsentDraft = shouldPreserveSmsConsentDraftRef.current;
+
+    if (!hasInitializedSmsConsent && statusSmsConsent !== undefined) {
+      setSmsConsentEnabled(statusSmsConsent);
+      setHasInitializedSmsConsent(true);
+    } else if (!hasInitializedSmsConsent && statusHasLoaded && shouldPreserveSmsConsentDraft) {
+      setHasInitializedSmsConsent(true);
+    } else if (
+      !hasInitializedSmsConsent &&
+      statusHasLoaded &&
+      organizerSmsPreferenceHasLoaded &&
+      organizerSmsPreference
+    ) {
+      setSmsConsentEnabled(organizerSmsPreference.smsConsent);
       setHasInitializedSmsConsent(true);
     }
-    if (status.smsConsent === true) {
+
+    const shouldUseOrganizerSmsPreference = !(
+      shouldPreserveSmsConsentDraft && statusSmsConsent === undefined
+    );
+    const effectiveSmsConsent =
+      statusSmsConsent ??
+      (shouldUseOrganizerSmsPreference ? organizerSmsPreference?.smsConsent : undefined);
+    const effectiveSmsConsentSource =
+      statusSmsConsent !== undefined
+        ? "event"
+        : shouldUseOrganizerSmsPreference
+          ? organizerSmsPreference?.source
+          : undefined;
+
+    if (effectiveSmsConsent === true) {
       setHasAcknowledgedSmsOptOutPrompt(false);
     }
-    if (status.smsConsent === false) {
+    if (
+      effectiveSmsConsent === false &&
+      (effectiveSmsConsentSource === "event" || effectiveSmsConsentSource === "organizer")
+    ) {
       setHasAcknowledgedSmsOptOutPrompt(true);
     }
-    if (typeof status.smsConsentIpAddress === "string" && status.smsConsentIpAddress.length > 0) {
-      setSmsConsentIpAddress(status.smsConsentIpAddress);
+
+    const effectiveSmsConsentIpAddress =
+      status?.smsConsentIpAddress ??
+      (shouldUseOrganizerSmsPreference ? organizerSmsPreference?.smsConsentIpAddress : undefined);
+    if (
+      typeof effectiveSmsConsentIpAddress === "string" &&
+      effectiveSmsConsentIpAddress.length > 0
+    ) {
+      setSmsConsentIpAddress(effectiveSmsConsentIpAddress);
     }
-  }, [status, hasInitializedSmsConsent]);
+  }, [status, organizerSmsPreference, hasInitializedSmsConsent]);
 
   const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

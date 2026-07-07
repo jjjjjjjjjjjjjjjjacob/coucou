@@ -1,4 +1,4 @@
-import { getSiteOrigin, type SiteConfiguration, siteConfigurations } from "@coucou/sdk";
+import { getSiteOrigins, type SiteConfiguration, siteConfigurations } from "@coucou/sdk";
 import type { SiteKey } from "@coucou/sdk/site-config";
 
 interface WorkspaceSiteLike {
@@ -71,7 +71,9 @@ export function buildWorkspaceAllowedRedirectOrigins(workspace: WorkspaceLike): 
     }
 
     if (isSiteKey(workspaceSite.siteKey)) {
-      allowedRedirectOrigins.add(getSiteOrigin(siteConfigurations[workspaceSite.siteKey]));
+      for (const siteOrigin of getSiteOrigins(siteConfigurations[workspaceSite.siteKey])) {
+        allowedRedirectOrigins.add(siteOrigin);
+      }
     }
   }
 

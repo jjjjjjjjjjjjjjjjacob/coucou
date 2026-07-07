@@ -215,6 +215,12 @@ export default defineSchema({
     themeBackgroundColor: v.optional(v.string()),
     themeTextColor: v.optional(v.string()),
     approvalMessage: v.optional(v.string()), // custom approval message for SMS
+    /**
+     * Initial SMS reply after an RSVP is submitted through a text reply action.
+     * Undefined `rsvpConfirmationMessageEnabled` preserves legacy default-on behavior.
+     */
+    rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
+    rsvpConfirmationMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()), // legacy QR code color field retained for compatibility
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -316,6 +322,24 @@ export default defineSchema({
       searchField: "userName",
       filterFields: ["eventId", "status", "listKey", "ticketStatus"],
     }),
+
+  userSmsOrganizerPreferences: defineTable({
+    clerkUserId: v.string(),
+    organizerKey: v.string(),
+    workspaceId: v.optional(v.id("workspaces")),
+    workspaceSlug: v.optional(v.string()),
+    siteKey: v.optional(v.string()),
+    smsConsent: v.boolean(),
+    smsConsentTimestamp: v.optional(v.number()),
+    smsConsentIpAddress: v.optional(v.string()),
+    sourceEventId: v.optional(v.id("events")),
+    sourceRsvpId: v.optional(v.id("rsvps")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["clerkUserId"])
+    .index("by_user_organizer", ["clerkUserId", "organizerKey"])
+    .index("by_organizer", ["organizerKey"]),
 
   rsvpGuestHandoffs: defineTable({
     tokenHash: v.string(),
@@ -475,6 +499,7 @@ export default defineSchema({
     message: v.string(),
     targetLists: v.array(v.string()), // ['vip', 'ga', etc.]
     recipientFilter: v.optional(v.string()), // Serialized recipient filter config
+    selectedRsvpIds: v.optional(v.array(v.id("rsvps"))),
     recipientHistoryFilter: v.optional(
       v.object({
         type: v.union(v.literal("received_any"), v.literal("not_received_any")),

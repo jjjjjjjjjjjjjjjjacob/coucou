@@ -35,17 +35,11 @@ function buildPrimarySignInHref(satelliteOrigin: string, redirectPath: string): 
   });
 }
 
-// Hard-coded production fallback used during SSR / first render before
-// the browser-only `window.location.origin` is available. The effect
-// below replaces it with the live origin so the post-auth redirect
-// returns to the same satellite the user came from.
-const fallbackSatelliteOrigin = (() => {
-  try {
-    return new URL(siteConfiguration.domain).origin;
-  } catch {
-    return "https://clubchlorine.party";
-  }
-})();
+const fallbackSatelliteOrigin = new URL(siteConfiguration.domain).origin;
+
+interface HeaderClientProps {
+  initialSatelliteOrigin?: string;
+}
 
 function useRoleFlags() {
   const { isSignedIn, user } = useUser();
@@ -59,13 +53,19 @@ function useRoleFlags() {
   return { isHost, isDoor };
 }
 
-export default function HeaderClient() {
+export default function HeaderClient({ initialSatelliteOrigin }: HeaderClientProps) {
   const { isHost, isDoor } = useRoleFlags();
   const pathname = usePathname();
-  const [satelliteOrigin, setSatelliteOrigin] = useState<string>(fallbackSatelliteOrigin);
+  const [satelliteOrigin, setSatelliteOrigin] = useState<string>(
+    initialSatelliteOrigin ?? fallbackSatelliteOrigin,
+  );
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setSatelliteOrigin(window.location.origin);
+    setSatelliteOrigin((currentSatelliteOrigin) => {
+      return currentSatelliteOrigin === window.location.origin
+        ? currentSatelliteOrigin
+        : window.location.origin;
+    });
   }, []);
   const signInHref = buildPrimarySignInHref(
     satelliteOrigin,

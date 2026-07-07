@@ -243,7 +243,9 @@ export default function TextBlastsPage() {
         ...workspaceScope.queryArgs,
       });
       if (result.success) {
-        toast.success(`Text blast sent successfully! ${result.sentCount} messages delivered.`);
+        toast.success(
+          `Text blast queued. Sending to ${result.totalRecipients} recipient${result.totalRecipients !== 1 ? "s" : ""}.`,
+        );
       } else {
         toast.error(result.message || "Failed to send text blast");
       }

@@ -112,6 +112,8 @@ export interface Event {
   themeBackgroundColor?: string;
   themeTextColor?: string;
   approvalMessage?: string; // deprecated fallback during per-list rollout
+  rsvpConfirmationMessageEnabled?: boolean;
+  rsvpConfirmationMessage?: string;
   qrCodeColor?: string;
   createdAt: number;
   updatedAt: number;
@@ -387,6 +389,8 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   themeTextColor?: string;
   qrCodeColor?: string;
   referralSharingEnabled?: boolean;
+  rsvpConfirmationMessageEnabled?: boolean;
+  rsvpConfirmationMessage?: string;
 }
 
 export interface EventFormData extends BaseEventFormValues {

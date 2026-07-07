@@ -105,7 +105,7 @@ export async function generateMetadata({ params }: { params: LayoutParams }): Pr
     openGraph: {
       title,
       description,
-      url: `https://clubchlorine.party/events/${eventId}`,
+      url: new URL(`/events/${eventId}`, siteConfiguration.domain).toString(),
       siteName: "Club Chlorine",
       images: [
         {

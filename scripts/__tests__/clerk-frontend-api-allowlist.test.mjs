@@ -100,12 +100,22 @@ describe("Clerk Frontend API allowlist generator", () => {
             domain: "https://dojopomodoro.club",
           },
           {
+            appKind: "client",
+            domain: "https://clubchlorine.party",
+            domainAliases: ["https://clubchlorine.club"],
+          },
+          {
             appKind: "admin",
             domain: "https://coucou.events",
           },
         ],
       }),
-    ).toEqual(["https://clerk.coucou.events", "https://clerk.dojopomodoro.club"]);
+    ).toEqual([
+      "https://clerk.coucou.events",
+      "https://clerk.dojopomodoro.club",
+      "https://clerk.clubchlorine.party",
+      "https://clerk.clubchlorine.club",
+    ]);
   });
 
   it("validates production HTTPS URLs", () => {

@@ -75,6 +75,10 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
     eventRouteId,
     siteKey: siteConfiguration.siteKey,
   });
+  const organizerSmsPreference = useQuery(api.rsvps.smsPreferenceForUserEventByRouteId, {
+    eventRouteId,
+    siteKey: siteConfiguration.siteKey,
+  });
   const event = useQuery(api.events.getByRouteId, {
     eventRouteId,
     siteKey: siteConfiguration.siteKey,
@@ -326,6 +330,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
   const handleSmsConsentChange = React.useCallback(
     async (checked: boolean | "indeterminate") => {
       const isEnabled = checked === true;
+      setHasInitializedSmsConsent(true);
       setSmsConsentEnabled(isEnabled);
       if (isEnabled) {
         setHasConfirmedSmsOptIn(false);
@@ -543,23 +548,48 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
   };
 
   useEffect(() => {
-    if (!status) return;
-    if (!hasInitializedSmsConsent && status.smsConsent !== undefined) {
-      setSmsConsentEnabled(status.smsConsent);
+    const statusHasLoaded = status !== undefined;
+    const statusSmsConsent = status?.smsConsent;
+    const organizerSmsPreferenceHasLoaded = organizerSmsPreference !== undefined;
+
+    if (!hasInitializedSmsConsent && statusSmsConsent !== undefined) {
+      setSmsConsentEnabled(statusSmsConsent);
+      setHasInitializedSmsConsent(true);
+    } else if (
+      !hasInitializedSmsConsent &&
+      statusHasLoaded &&
+      organizerSmsPreferenceHasLoaded &&
+      organizerSmsPreference
+    ) {
+      setSmsConsentEnabled(organizerSmsPreference.smsConsent);
       setHasInitializedSmsConsent(true);
     }
-    if (status.smsConsent === true) {
+
+    const effectiveSmsConsent = statusSmsConsent ?? organizerSmsPreference?.smsConsent;
+    const effectiveSmsConsentSource =
+      statusSmsConsent !== undefined ? "event" : organizerSmsPreference?.source;
+
+    if (effectiveSmsConsent === true) {
       setHasConfirmedSmsOptIn(true);
       setHasAcknowledgedSmsOptOutPrompt(false);
     }
-    if (status.smsConsent === false) {
+    if (
+      effectiveSmsConsent === false &&
+      (effectiveSmsConsentSource === "event" || effectiveSmsConsentSource === "organizer")
+    ) {
       setHasAcknowledgedSmsOptOutPrompt(true);
       setHasConfirmedSmsOptIn(false);
     }
-    if (typeof status.smsConsentIpAddress === "string" && status.smsConsentIpAddress.length > 0) {
-      setSmsConsentIpAddress(status.smsConsentIpAddress);
+
+    const effectiveSmsConsentIpAddress =
+      status?.smsConsentIpAddress ?? organizerSmsPreference?.smsConsentIpAddress;
+    if (
+      typeof effectiveSmsConsentIpAddress === "string" &&
+      effectiveSmsConsentIpAddress.length > 0
+    ) {
+      setSmsConsentIpAddress(effectiveSmsConsentIpAddress);
     }
-  }, [status, hasInitializedSmsConsent]);
+  }, [status, organizerSmsPreference, hasInitializedSmsConsent]);
 
   return (
     <main className="min-h-screen flex items-center justify-center p-6">

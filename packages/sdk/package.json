@@ -19,6 +19,7 @@
     "./shared/message-template": "./src/shared/message-template.ts",
     "./shared/primary-fields": "./src/shared/primary-fields.ts",
     "./shared/qr-code-colors": "./src/shared/qr-code-colors.ts",
+    "./shared/rsvp-confirmation-messages": "./src/shared/rsvp-confirmation-messages.ts",
     "./theming": "./src/theming/index.ts",
     "./theming/presets": "./src/theming/presets.ts",
     "./theming/build-event-theme": "./src/theming/build-event-theme.ts",

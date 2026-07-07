@@ -92,7 +92,10 @@ export function buildClerkFrontendApiUrlFromSiteDomain(siteDomain) {
 export function buildStaticFallbackClerkFrontendApiUrls(staticSiteConfigurations) {
   return staticSiteConfigurations
     .filter((siteConfiguration) => siteConfiguration.appKind === "client")
-    .map((siteConfiguration) => buildClerkFrontendApiUrlFromSiteDomain(siteConfiguration.domain));
+    .flatMap((siteConfiguration) => {
+      const siteDomains = [siteConfiguration.domain, ...(siteConfiguration.domainAliases ?? [])];
+      return siteDomains.map((siteDomain) => buildClerkFrontendApiUrlFromSiteDomain(siteDomain));
+    });
 }
 
 export function collectVerifiedWorkspaceSiteClerkFrontendApiUrls(workspaceSites) {

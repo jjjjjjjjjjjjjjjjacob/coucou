@@ -42,10 +42,8 @@ async function seedWorkspace(testBackend: TestBackend) {
 
 async function getListCredentialsForEvent(testBackend: TestBackend, eventId: Id<"events">) {
   return await testBackend.run(async (databaseContext) => {
-    return await databaseContext.db
-      .query("listCredentials")
-      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
-      .collect();
+    const listCredentials = await databaseContext.db.query("listCredentials").collect();
+    return listCredentials.filter((listCredential) => listCredential.eventId === eventId);
   });
 }
 

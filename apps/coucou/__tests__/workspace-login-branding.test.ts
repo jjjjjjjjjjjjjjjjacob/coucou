@@ -67,6 +67,6 @@ describe("workspace login branding helpers", () => {
           },
         ],
       }),
-    ).toEqual(["http://localhost:5679", "https://clubchlorine.party"]);
+    ).toEqual(["http://localhost:5679", "https://clubchlorine.party", "https://clubchlorine.club"]);
   });
 });

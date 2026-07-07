@@ -5,6 +5,10 @@ import {
   getDefaultApprovalMessage,
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
+import {
+  getDefaultRsvpConfirmationMessage,
+  sanitizeOptionalRsvpConfirmationMessage,
+} from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import { useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
@@ -14,10 +18,12 @@ import { toast } from "sonner";
 import { type CustomFieldDef, CustomFieldsEditor } from "@/components/custom-fields-builder";
 import { EventActsEditor } from "@/components/event-acts-editor";
 import { HostEventForm } from "@/components/host-event-form";
+import { RsvpConfirmationTextSection } from "@/components/rsvp-confirmation-text-section";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
 import { createTimestamp } from "@/lib/date-utils";
 import { sanitizeEventActsForSubmit } from "@/lib/event-metadata";
 import {
@@ -82,6 +88,8 @@ export default function NewEventClient() {
       themeTextColor: EVENT_THEME_DEFAULT_TEXT_COLOR,
       qrCodeColor: "#000000",
       attendanceQuestionEnabled: false,
+      rsvpConfirmationMessageEnabled: true,
+      rsvpConfirmationMessage: "",
     },
   });
 
@@ -89,7 +97,37 @@ export default function NewEventClient() {
   const eventIconStorageId = form.watch("customIconStorageId") ?? null;
   const guestPortalImageStorageId = form.watch("guestPortalImageStorageId") ?? null;
   const eventName = form.watch("name");
+  const eventSecondaryTitle = form.watch("secondaryTitle");
+  const eventLocation = form.watch("location");
+  const eventDateValue = form.watch("eventDate");
+  const eventTimeValue = form.watch("eventTime");
+  const eventTimezoneValue = form.watch("eventTimezone");
+  const rsvpConfirmationMessageEnabled = form.watch("rsvpConfirmationMessageEnabled") ?? true;
+  const rsvpConfirmationMessage = form.watch("rsvpConfirmationMessage") ?? "";
   const defaultApprovalMessage = getDefaultApprovalMessage(eventName);
+  const defaultRsvpConfirmationMessage = getDefaultRsvpConfirmationMessage({
+    name: eventName,
+    secondaryTitle: eventSecondaryTitle,
+  });
+  const confirmationPreviewVariables = React.useMemo(
+    () =>
+      buildConfirmationPreviewVariables({
+        name: eventName,
+        secondaryTitle: eventSecondaryTitle,
+        eventDate: eventDateValue,
+        eventTime: eventTimeValue,
+        eventTimezone: eventTimezoneValue,
+        location: eventLocation,
+      }),
+    [
+      eventName,
+      eventSecondaryTitle,
+      eventDateValue,
+      eventTimeValue,
+      eventTimezoneValue,
+      eventLocation,
+    ],
+  );
   const [lists, setLists] = React.useState<ListRow[]>([
     {
       listKey: "vip",
@@ -191,6 +229,10 @@ export default function NewEventClient() {
         maxAttendees: values.maxAttendees,
         status: values.status ?? "inactive",
         attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
+        rsvpConfirmationMessageEnabled: values.rsvpConfirmationMessageEnabled ?? true,
+        rsvpConfirmationMessage: sanitizeOptionalRsvpConfirmationMessage(
+          values.rsvpConfirmationMessage,
+        ),
         lists: listsFiltered,
         customFields: customFields.map((field) => ({
           key: field.key.trim(),
@@ -255,131 +297,149 @@ export default function NewEventClient() {
           }
           actsSection={<EventActsEditor acts={acts} onChange={setActs} />}
           listsSection={
-            <div className="rounded-lg border bg-card p-4 space-y-4">
-              <h3 className="font-medium text-sm text-muted-foreground">
-                ACCESS LISTS & PASSWORDS
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Leave a password blank for an open list — the first list with no password receives
-                RSVPs that skip the password step.
-              </p>
-              <label className="flex items-start gap-3 rounded border border-border/60 p-3">
-                <Checkbox
-                  checked={form.watch("attendanceQuestionEnabled") ?? false}
-                  onCheckedChange={(checked) =>
-                    form.setValue("attendanceQuestionEnabled", Boolean(checked), {
-                      shouldDirty: true,
-                    })
-                  }
-                  className="mt-0.5"
-                />
-                <span className="space-y-1">
-                  <span className="block text-sm font-medium">Ask attendance question</span>
-                  <span className="block text-xs text-muted-foreground">
-                    When on, guests choose Yes, No, or Maybe during RSVP. When off, new RSVPs
-                    default to Yes.
+            <div className="space-y-6">
+              <RsvpConfirmationTextSection
+                rsvpConfirmationMessageEnabled={rsvpConfirmationMessageEnabled}
+                rsvpConfirmationMessage={rsvpConfirmationMessage}
+                defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}
+                onEnabledChange={(enabled) =>
+                  form.setValue("rsvpConfirmationMessageEnabled", enabled, {
+                    shouldDirty: true,
+                  })
+                }
+                onMessageChange={(message) =>
+                  form.setValue("rsvpConfirmationMessage", message, {
+                    shouldDirty: true,
+                  })
+                }
+                previewVariables={confirmationPreviewVariables}
+              />
+              <div className="rounded-lg border bg-card p-4 space-y-4">
+                <h3 className="font-medium text-sm text-muted-foreground">
+                  ACCESS LISTS & PASSWORDS
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Leave a password blank for an open list — the first list with no password receives
+                  RSVPs that skip the password step.
+                </p>
+                <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+                  <Checkbox
+                    checked={form.watch("attendanceQuestionEnabled") ?? false}
+                    onCheckedChange={(checked) =>
+                      form.setValue("attendanceQuestionEnabled", Boolean(checked), {
+                        shouldDirty: true,
+                      })
+                    }
+                    className="mt-0.5"
+                  />
+                  <span className="space-y-1">
+                    <span className="block text-sm font-medium">Ask attendance question</span>
+                    <span className="block text-xs text-muted-foreground">
+                      When on, guests choose Yes, No, or Maybe during RSVP. When off, new RSVPs
+                      default to Yes.
+                    </span>
                   </span>
-                </span>
-              </label>
-              <div className="space-y-3">
-                {lists.map((list, idx) => (
-                  <div key={idx} className="space-y-4 rounded-lg border bg-background p-4">
-                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-                      <div className="flex flex-col">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          List Name
-                        </label>
-                        <Input
-                          placeholder="e.g. vip, general, backstage"
-                          value={list.listKey}
-                          onChange={(event) => setList(idx, "listKey", event.target.value)}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Password
-                        </label>
-                        <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
-                          <Checkbox
-                            id={`require-password-${idx}`}
-                            checked={list.requirePassword}
-                            onCheckedChange={(checked) =>
-                              setList(idx, "requirePassword", Boolean(checked))
-                            }
-                          />
-                          <label
-                            htmlFor={`require-password-${idx}`}
-                            className="text-sm text-muted-foreground leading-tight"
-                          >
-                            Require password
+                </label>
+                <div className="space-y-3">
+                  {lists.map((list, idx) => (
+                    <div key={idx} className="space-y-4 rounded-lg border bg-background p-4">
+                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                        <div className="flex flex-col">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            List Name
                           </label>
-                        </div>
-                        {list.requirePassword ? (
                           <Input
-                            placeholder="Enter password"
-                            value={list.password}
-                            onChange={(event) => setList(idx, "password", event.target.value)}
+                            placeholder="e.g. vip, general, backstage"
+                            value={list.listKey}
+                            onChange={(event) => setList(idx, "listKey", event.target.value)}
                           />
-                        ) : (
-                          <Input placeholder="Open list — no password" value="" disabled />
-                        )}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <label
-                          htmlFor={`generate-qr-${idx}`}
-                          className="text-xs font-medium text-muted-foreground"
-                        >
-                          QR Code Generation
-                        </label>
-                        <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
-                          <Checkbox
-                            id={`generate-qr-${idx}`}
-                            checked={list.shouldGenerateQrCode}
-                            onCheckedChange={(checked) =>
-                              setList(idx, "shouldGenerateQrCode", Boolean(checked))
-                            }
-                          />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            Password
+                          </label>
+                          <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                            <Checkbox
+                              id={`require-password-${idx}`}
+                              checked={list.requirePassword}
+                              onCheckedChange={(checked) =>
+                                setList(idx, "requirePassword", Boolean(checked))
+                              }
+                            />
+                            <label
+                              htmlFor={`require-password-${idx}`}
+                              className="text-sm text-muted-foreground leading-tight"
+                            >
+                              Require password
+                            </label>
+                          </div>
+                          {list.requirePassword ? (
+                            <Input
+                              placeholder="Enter password"
+                              value={list.password}
+                              onChange={(event) => setList(idx, "password", event.target.value)}
+                            />
+                          ) : (
+                            <Input placeholder="Open list — no password" value="" disabled />
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2">
                           <label
                             htmlFor={`generate-qr-${idx}`}
-                            className="text-sm text-muted-foreground leading-tight"
+                            className="text-xs font-medium text-muted-foreground"
                           >
-                            Generate QR code for guests on this list
+                            QR Code Generation
                           </label>
+                          <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                            <Checkbox
+                              id={`generate-qr-${idx}`}
+                              checked={list.shouldGenerateQrCode}
+                              onCheckedChange={(checked) =>
+                                setList(idx, "shouldGenerateQrCode", Boolean(checked))
+                              }
+                            />
+                            <label
+                              htmlFor={`generate-qr-${idx}`}
+                              className="text-sm text-muted-foreground leading-tight"
+                            >
+                              Generate QR code for guests on this list
+                            </label>
+                          </div>
                         </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => removeList(idx)}
+                          className="h-10 lg:self-end"
+                        >
+                          Remove
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => removeList(idx)}
-                        className="h-10 lg:self-end"
-                      >
-                        Remove
-                      </Button>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Approval Message <span className="text-muted-foreground">(optional)</span>
+                        </label>
+                        <p className="text-xs text-muted-foreground">
+                          Sent when a guest on this list is approved.
+                        </p>
+                        <Textarea
+                          placeholder={defaultApprovalMessage}
+                          value={list.approvalMessage}
+                          onChange={(event) => setList(idx, "approvalMessage", event.target.value)}
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        Approval Message <span className="text-muted-foreground">(optional)</span>
-                      </label>
-                      <p className="text-xs text-muted-foreground">
-                        Sent when a guest on this list is approved.
-                      </p>
-                      <Textarea
-                        placeholder={defaultApprovalMessage}
-                        value={list.approvalMessage}
-                        onChange={(event) => setList(idx, "approvalMessage", event.target.value)}
-                      />
-                    </div>
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addList}
-                  className="w-full"
-                >
-                  + Add Another List
-                </Button>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addList}
+                    className="w-full"
+                  >
+                    + Add Another List
+                  </Button>
+                </div>
               </div>
             </div>
           }

@@ -145,6 +145,244 @@ function normalizeOptionalText(value: string | null | undefined): string | undef
   return trimmedValue ? trimmedValue : undefined;
 }
 
+type SmsOrganizerPreferenceSource = "organizer" | "none";
+
+type ResolvedSmsOrganizerScope = {
+  organizerKey: string;
+  workspaceId?: Id<"workspaces">;
+  workspaceSlug?: string;
+  siteKey?: string;
+};
+
+async function resolveSmsOrganizerScope(
+  ctx: QueryCtx | MutationCtx,
+  event: Pick<Doc<"events">, "workspaceSlug" | "siteKey">,
+  fallbackSiteKey?: string,
+): Promise<ResolvedSmsOrganizerScope | null> {
+  const workspaceSlug = normalizeOptionalText(event.workspaceSlug);
+  const siteKey = normalizeOptionalText(event.siteKey) ?? normalizeOptionalText(fallbackSiteKey);
+  const workspaceScope = await resolveTenantWorkspaceScope(ctx, {
+    workspaceSlug,
+    siteKey,
+  });
+
+  if (workspaceScope) {
+    return {
+      organizerKey: `workspace:${workspaceScope.workspaceId}`,
+      workspaceId: workspaceScope.workspaceId,
+      workspaceSlug: workspaceScope.workspaceSlug,
+      siteKey: workspaceScope.siteKey ?? siteKey,
+    };
+  }
+
+  if (workspaceSlug) {
+    return {
+      organizerKey: `workspaceSlug:${workspaceSlug}`,
+      workspaceSlug,
+      siteKey,
+    };
+  }
+
+  if (siteKey) {
+    return {
+      organizerKey: `site:${siteKey}`,
+      siteKey,
+    };
+  }
+
+  return null;
+}
+
+async function resolveSmsOrganizerPreferenceRecord(
+  ctx: QueryCtx | MutationCtx,
+  {
+    clerkUserId,
+    event,
+    siteKey,
+  }: {
+    clerkUserId: string;
+    event: Doc<"events">;
+    siteKey?: string;
+  },
+) {
+  const organizerScope = await resolveSmsOrganizerScope(ctx, event, siteKey);
+  if (!organizerScope) return null;
+
+  const preference = await ctx.db
+    .query("userSmsOrganizerPreferences")
+    .withIndex("by_user_organizer", (queryBuilder) =>
+      queryBuilder.eq("clerkUserId", clerkUserId).eq("organizerKey", organizerScope.organizerKey),
+    )
+    .unique();
+
+  return {
+    organizerScope,
+    preference,
+  };
+}
+
+async function findLatestSmsConsentFromOrganizerRsvp(
+  ctx: QueryCtx | MutationCtx,
+  {
+    clerkUserId,
+    organizerScope,
+  }: {
+    clerkUserId: string;
+    organizerScope: ResolvedSmsOrganizerScope;
+  },
+) {
+  const rsvps = await ctx.db
+    .query("rsvps")
+    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+    .collect();
+
+  let latestPreference: {
+    smsConsent: boolean;
+    smsConsentTimestamp?: number;
+    smsConsentIpAddress?: string;
+    updatedAt: number;
+  } | null = null;
+
+  for (const rsvp of rsvps) {
+    if (rsvp.smsConsent === undefined) continue;
+
+    const event = await ctx.db.get(rsvp.eventId);
+    if (!event) continue;
+
+    const rsvpOrganizerScope = await resolveSmsOrganizerScope(ctx, event, event.siteKey);
+    if (rsvpOrganizerScope?.organizerKey !== organizerScope.organizerKey) continue;
+
+    const rsvpUpdatedAt = rsvp.smsConsentTimestamp ?? rsvp.updatedAt ?? rsvp.createdAt;
+    if (latestPreference && latestPreference.updatedAt >= rsvpUpdatedAt) continue;
+
+    latestPreference = {
+      smsConsent: rsvp.smsConsent,
+      smsConsentTimestamp: rsvp.smsConsentTimestamp,
+      smsConsentIpAddress: rsvp.smsConsentIpAddress,
+      updatedAt: rsvpUpdatedAt,
+    };
+  }
+
+  return latestPreference;
+}
+
+async function resolveSmsOrganizerPreference(
+  ctx: QueryCtx | MutationCtx,
+  {
+    clerkUserId,
+    event,
+    siteKey,
+  }: {
+    clerkUserId: string;
+    event: Doc<"events">;
+    siteKey?: string;
+  },
+): Promise<{
+  smsConsent: boolean;
+  smsConsentTimestamp?: number;
+  smsConsentIpAddress?: string;
+  source: SmsOrganizerPreferenceSource;
+}> {
+  const resolvedPreference = await resolveSmsOrganizerPreferenceRecord(ctx, {
+    clerkUserId,
+    event,
+    siteKey,
+  });
+  if (!resolvedPreference) {
+    return { smsConsent: false, source: "none" };
+  }
+
+  const { organizerScope, preference } = resolvedPreference;
+  if (preference) {
+    return {
+      smsConsent: preference.smsConsent,
+      smsConsentTimestamp: preference.smsConsentTimestamp,
+      smsConsentIpAddress: preference.smsConsentIpAddress,
+      source: "organizer",
+    };
+  }
+
+  const historicalPreference = await findLatestSmsConsentFromOrganizerRsvp(ctx, {
+    clerkUserId,
+    organizerScope,
+  });
+  if (!historicalPreference) {
+    return { smsConsent: false, source: "none" };
+  }
+
+  return {
+    smsConsent: historicalPreference.smsConsent,
+    smsConsentTimestamp: historicalPreference.smsConsentTimestamp,
+    smsConsentIpAddress: historicalPreference.smsConsentIpAddress,
+    source: "organizer",
+  };
+}
+
+async function upsertSmsOrganizerPreference(
+  ctx: MutationCtx,
+  {
+    clerkUserId,
+    event,
+    siteKey,
+    smsConsent,
+    smsConsentIpAddress,
+    sourceEventId,
+    sourceRsvpId,
+    now,
+  }: {
+    clerkUserId: string;
+    event: Doc<"events">;
+    siteKey?: string;
+    smsConsent: boolean;
+    smsConsentIpAddress?: string;
+    sourceEventId: Id<"events">;
+    sourceRsvpId?: Id<"rsvps">;
+    now: number;
+  },
+) {
+  const resolvedPreference = await resolveSmsOrganizerPreferenceRecord(ctx, {
+    clerkUserId,
+    event,
+    siteKey,
+  });
+  if (!resolvedPreference) return;
+
+  const { organizerScope, preference } = resolvedPreference;
+  const nextSmsConsentIpAddress = smsConsent
+    ? (smsConsentIpAddress ?? preference?.smsConsentIpAddress)
+    : preference?.smsConsentIpAddress;
+
+  if (preference) {
+    await ctx.db.patch(preference._id, {
+      workspaceId: organizerScope.workspaceId,
+      workspaceSlug: organizerScope.workspaceSlug,
+      siteKey: organizerScope.siteKey,
+      smsConsent,
+      smsConsentTimestamp: now,
+      smsConsentIpAddress: nextSmsConsentIpAddress,
+      sourceEventId,
+      sourceRsvpId,
+      updatedAt: now,
+    });
+    return;
+  }
+
+  await ctx.db.insert("userSmsOrganizerPreferences", {
+    clerkUserId,
+    organizerKey: organizerScope.organizerKey,
+    workspaceId: organizerScope.workspaceId,
+    workspaceSlug: organizerScope.workspaceSlug,
+    siteKey: organizerScope.siteKey,
+    smsConsent,
+    smsConsentTimestamp: now,
+    smsConsentIpAddress: nextSmsConsentIpAddress,
+    sourceEventId,
+    sourceRsvpId,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 function splitSubmittedDisplayName(displayName: string | null | undefined): {
   firstName?: string;
   lastName?: string;
@@ -524,6 +762,19 @@ export const submitRequest = mutation({
         });
       }
 
+      if (args.smsConsent !== undefined) {
+        await upsertSmsOrganizerPreference(ctx, {
+          clerkUserId,
+          event,
+          siteKey: args.siteKey,
+          smsConsent: args.smsConsent,
+          smsConsentIpAddress: sanitizedSmsConsentIpAddress,
+          sourceEventId: args.eventId,
+          sourceRsvpId: rsvpId,
+          now,
+        });
+      }
+
       // Sync with aggregate
       const newRsvp = await ctx.db.get(rsvpId);
       if (newRsvp) {
@@ -586,6 +837,19 @@ export const submitRequest = mutation({
       const newRsvp = await ctx.db.get(existing._id);
       if (oldRsvp && newRsvp) {
         await updateRsvpInAggregate(ctx, oldRsvp, newRsvp);
+      }
+
+      if (args.smsConsent !== undefined) {
+        await upsertSmsOrganizerPreference(ctx, {
+          clerkUserId,
+          event,
+          siteKey: args.siteKey,
+          smsConsent: args.smsConsent,
+          smsConsentIpAddress: sanitizedSmsConsentIpAddress ?? existing.smsConsentIpAddress,
+          sourceEventId: args.eventId,
+          sourceRsvpId: existing._id,
+          now,
+        });
       }
     }
 
@@ -1240,6 +1504,58 @@ export const listForCurrentUserInWorkspace = query({
   },
 });
 
+export const smsPreferenceForUserEvent = query({
+  args: {
+    eventId: v.id("events"),
+    siteKey: v.optional(v.string()),
+  },
+  handler: async (ctx, { eventId, siteKey }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const event = await getEventInSiteScope(ctx, eventId, { siteKey });
+    if (!event) return null;
+
+    return await resolveSmsOrganizerPreference(ctx, {
+      clerkUserId: identity.subject,
+      event,
+      siteKey,
+    });
+  },
+});
+
+export const smsPreferenceForUserEventByRouteId = query({
+  args: {
+    eventRouteId: v.string(),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, { eventRouteId, siteKey, workspaceSlug }) => {
+    const resolvedEventRoute: { eventId: Id<"events">; shortId?: string } | null =
+      await ctx.runQuery(api.events.resolveRouteId, {
+        eventRouteId,
+        siteKey,
+        workspaceSlug,
+      });
+    if (!resolvedEventRoute) return null;
+
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const event = await getEventInSiteScope(ctx, resolvedEventRoute.eventId, {
+      siteKey,
+      workspaceSlug,
+    });
+    if (!event) return null;
+
+    return await resolveSmsOrganizerPreference(ctx, {
+      clerkUserId: identity.subject,
+      event,
+      siteKey,
+    });
+  },
+});
+
 async function collectUserSharedEvents(
   ctx: QueryCtx,
   scope: { workspaceSlug: string; siteKey: string | null } | null,
@@ -1341,36 +1657,58 @@ export const updateSmsPreference = mutation({
         .query("rsvps")
         .withIndex("by_user", (q) => q.eq("clerkUserId", clerkUserId))
         .collect();
-      await Promise.all(
-        rsvps.map((rsvp) =>
-          ctx.db.patch(rsvp._id, {
+      for (const rsvp of rsvps) {
+        const rsvpSmsConsentIpAddress = smsConsent
+          ? (sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress)
+          : rsvp.smsConsentIpAddress;
+        await ctx.db.patch(rsvp._id, {
+          smsConsent,
+          smsConsentTimestamp: now,
+          smsConsentIpAddress: rsvpSmsConsentIpAddress,
+          updatedAt: now,
+        });
+        const event = await ctx.db.get(rsvp.eventId);
+        if (event) {
+          await upsertSmsOrganizerPreference(ctx, {
+            clerkUserId,
+            event,
             smsConsent,
-            smsConsentTimestamp: now,
-            smsConsentIpAddress: smsConsent
-              ? (sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress)
-              : rsvp.smsConsentIpAddress,
-            updatedAt: now,
-          }),
-        ),
-      );
-      rsvps.forEach((rsvp) => {
+            smsConsentIpAddress: rsvpSmsConsentIpAddress,
+            sourceEventId: rsvp.eventId,
+            sourceRsvpId: rsvp._id,
+            now,
+          });
+        }
         if (rsvp.smsConsent !== smsConsent) {
           notificationsByEvent.set(rsvp.eventId, smsConsent);
         }
-      });
+      }
       updatedCount = rsvps.length;
     } else {
       const rsvp = await ctx.db.get(rsvpId);
       if (!rsvp) throw new NotFoundError("RSVP");
       if (rsvp.clerkUserId !== clerkUserId) throw new Error("Forbidden");
+      const event = await ctx.db.get(rsvp.eventId);
+      const rsvpSmsConsentIpAddress = smsConsent
+        ? (sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress)
+        : rsvp.smsConsentIpAddress;
+      if (event) {
+        await upsertSmsOrganizerPreference(ctx, {
+          clerkUserId,
+          event,
+          smsConsent,
+          smsConsentIpAddress: rsvpSmsConsentIpAddress,
+          sourceEventId: rsvp.eventId,
+          sourceRsvpId: rsvp._id,
+          now,
+        });
+      }
       if (rsvp.smsConsent === smsConsent) return { updated: 0 };
 
       await ctx.db.patch(rsvpId, {
         smsConsent,
         smsConsentTimestamp: now,
-        smsConsentIpAddress: smsConsent
-          ? (sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress)
-          : rsvp.smsConsentIpAddress,
+        smsConsentIpAddress: rsvpSmsConsentIpAddress,
         updatedAt: now,
       });
       notificationsByEvent.set(rsvp.eventId, smsConsent);

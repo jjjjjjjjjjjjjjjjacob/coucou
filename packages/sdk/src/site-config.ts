@@ -22,6 +22,7 @@ export interface SiteConfiguration {
   brandName: string;
   shortName: string;
   domain: string;
+  domainAliases?: string[];
   description: string;
   accentMark: string;
   homeTitle: string;
@@ -62,6 +63,7 @@ export const siteConfigurations: Record<SiteKey, SiteConfiguration> = {
     brandName: "Club Chlorine",
     shortName: "Chlorine",
     domain: "https://clubchlorine.party",
+    domainAliases: ["https://clubchlorine.club"],
     description: "Guest list and event access for Club Chlorine and curated nightlife experiences",
     accentMark: "CC",
     homeTitle: "Club Chlorine",

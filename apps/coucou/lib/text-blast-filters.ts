@@ -6,7 +6,8 @@ export type RecipientFilterType =
   | "approved_with_approval_sms"
   | "status"
   | "custom_field_missing"
-  | "rsvp_before";
+  | "rsvp_before"
+  | "previous_approved_not_rsvped";
 
 export type RecipientFilterState =
   | { type: "all" }
@@ -14,7 +15,8 @@ export type RecipientFilterState =
   | { type: "approved_with_approval_sms" }
   | { type: "status"; status: RecipientApprovalStatus }
   | { type: "custom_field_missing"; fieldKey: string }
-  | { type: "rsvp_before"; isoDateTime: string };
+  | { type: "rsvp_before"; isoDateTime: string }
+  | { type: "previous_approved_not_rsvped"; excludedEventId: string };
 
 export type RecipientHistoryFilterState =
   | { type: "none"; textBlastIds: [] }
@@ -30,6 +32,7 @@ export const RECIPIENT_FILTER_LABELS: Record<RecipientFilterType, string> = {
   status: "Filter by RSVP Status",
   custom_field_missing: "Missing Custom Field",
   rsvp_before: "RSVP Before Date/Time",
+  previous_approved_not_rsvped: "Approved previous RSVPs who have not RSVP'd to an event",
 };
 
 const toDateTimeLocalString = (timestamp: number): string => {
@@ -70,6 +73,12 @@ export const encodeRecipientFilter = (state: RecipientFilterState): string | und
       if (!Number.isFinite(timestamp)) return undefined;
       return JSON.stringify({ type: "rsvp_before", timestamp });
     }
+    case "previous_approved_not_rsvped":
+      if (!state.excludedEventId) return undefined;
+      return JSON.stringify({
+        type: "previous_approved_not_rsvped",
+        excludedEventId: state.excludedEventId,
+      });
     default:
       return undefined;
   }
@@ -129,6 +138,13 @@ export const decodeRecipientFilter = (value: string | null | undefined): Recipie
         }
         return { type: "rsvp_before", isoDateTime: "" };
       }
+      case "previous_approved_not_rsvped": {
+        const excludedEventId = candidate.excludedEventId;
+        if (typeof excludedEventId === "string") {
+          return { type: "previous_approved_not_rsvped", excludedEventId };
+        }
+        return { type: "previous_approved_not_rsvped", excludedEventId: "" };
+      }
       default:
         return { type: "all" };
     }
@@ -166,6 +182,10 @@ export const describeRecipientFilter = (
       return state.isoDateTime
         ? `RSVP created before ${new Date(state.isoDateTime).toLocaleString()}`
         : "RSVP before a specific date/time";
+    case "previous_approved_not_rsvped":
+      return state.excludedEventId
+        ? "Approved RSVPs from the selected source events, excluding anyone who RSVP'd to the excluded event"
+        : "Approved RSVPs from previous events, excluding a selected event";
     default:
       return "All approved RSVPs";
   }
@@ -177,6 +197,8 @@ export const isRecipientFilterConfigured = (state: RecipientFilterState): boolea
       return state.fieldKey.trim().length > 0;
     case "rsvp_before":
       return state.isoDateTime.trim().length > 0 && Number.isFinite(Date.parse(state.isoDateTime));
+    case "previous_approved_not_rsvped":
+      return state.excludedEventId.trim().length > 0;
     case "status":
       return state.status !== undefined;
     default:

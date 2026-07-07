@@ -276,6 +276,69 @@ describe("guest RSVP handoff", () => {
     });
   });
 
+  it("carries SMS preference across events for the same organizer", async () => {
+    const testBackend = setupTestBackend();
+    const firstEventId = await seedActiveEvent(testBackend);
+    const nextEventId = await seedActiveEvent(testBackend);
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_sms_preference", "+13104996272"),
+    );
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      eventId: firstEventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Mina",
+      lastName: "Park",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      smsConsent: true,
+      smsConsentIpAddress: "203.0.113.10",
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    const enabledPreference = await authedBackend.query(api.rsvps.smsPreferenceForUserEvent, {
+      eventId: nextEventId,
+      siteKey: "club-chlorine",
+    });
+    expect(enabledPreference?.source).toBe("organizer");
+    expect(enabledPreference?.smsConsent).toBe(true);
+    expect(enabledPreference?.smsConsentIpAddress).toBe("203.0.113.10");
+
+    const submittedRsvp = await testBackend.run(async (databaseContext) => {
+      const rsvps = await databaseContext.db.query("rsvps").collect();
+      return (
+        rsvps.find(
+          (rsvp) => rsvp.eventId === firstEventId && rsvp.clerkUserId === "user_sms_preference",
+        ) ?? null
+      );
+    });
+    if (!submittedRsvp) throw new Error("Expected submitted RSVP");
+
+    await authedBackend.mutation(api.rsvps.updateSmsPreference, {
+      rsvpId: submittedRsvp._id,
+      smsConsent: false,
+    });
+
+    const disabledPreference = await authedBackend.query(api.rsvps.smsPreferenceForUserEvent, {
+      eventId: nextEventId,
+      siteKey: "club-chlorine",
+    });
+    expect(disabledPreference?.source).toBe("organizer");
+    expect(disabledPreference?.smsConsent).toBe(false);
+
+    await testBackend.run(async (databaseContext) => {
+      const preferences = await databaseContext.db.query("userSmsOrganizerPreferences").collect();
+      const userPreference = preferences.find(
+        (preference) => preference.clerkUserId === "user_sms_preference",
+      );
+      expect(userPreference?.smsConsent).toBe(false);
+      expect(userPreference?.sourceRsvpId).toBe(submittedRsvp._id);
+    });
+  });
+
   it("rejects RSVP submissions without both first and last names", async () => {
     const testBackend = setupTestBackend();
     const eventId = await seedActiveEvent(testBackend);

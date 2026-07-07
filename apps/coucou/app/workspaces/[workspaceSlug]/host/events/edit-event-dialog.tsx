@@ -5,6 +5,10 @@ import {
   getDefaultApprovalMessage,
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
+import {
+  getDefaultRsvpConfirmationMessage,
+  sanitizeOptionalRsvpConfirmationMessage,
+} from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import { useAction, useQuery } from "convex/react";
 import React, { useEffect } from "react";
 import { useForm } from "react-hook-form";
@@ -23,6 +27,7 @@ import {
   PrimaryFieldConfigOverrideEditor,
   primaryFieldConfigToDraft,
 } from "@/components/primary-field-config-editor";
+import { RsvpConfirmationTextSection } from "@/components/rsvp-confirmation-text-section";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -86,6 +91,8 @@ type EventUpdatePatch = {
   sendQrOnApproval?: boolean;
   attendanceQuestionEnabled?: boolean;
   referralSharingEnabled?: boolean;
+  rsvpConfirmationMessageEnabled?: boolean;
+  rsvpConfirmationMessage?: string;
 };
 
 type EventUnsetField =
@@ -95,7 +102,8 @@ type EventUnsetField =
   | "guestPortalImageStorageId"
   | "guestPortalLinkLabel"
   | "guestPortalLinkUrl"
-  | "primaryFieldConfig";
+  | "primaryFieldConfig"
+  | "rsvpConfirmationMessage";
 
 function sanitizeCustomFieldsForSubmit(customFields: CustomFieldDef[]): Event["customFields"] {
   return customFields.map((field) => ({
@@ -180,6 +188,8 @@ export default function EditEventDialog({
             : false,
       attendanceQuestionEnabled: event.attendanceQuestionEnabled ?? false,
       referralSharingEnabled: event.referralSharingEnabled ?? false,
+      rsvpConfirmationMessageEnabled: event.rsvpConfirmationMessageEnabled ?? true,
+      rsvpConfirmationMessage: event.rsvpConfirmationMessage ?? "",
     },
   });
   const [flyerStorageId, setFlyerStorageId] = React.useState<string | null>(
@@ -243,7 +253,14 @@ export default function EditEventDialog({
   const currentEventTime = form.watch("eventTime");
   const currentEventTimezone = form.watch("eventTimezone");
   const currentSendQrOnApproval = form.watch("sendQrOnApproval") ?? false;
+  const currentRsvpConfirmationMessageEnabled =
+    form.watch("rsvpConfirmationMessageEnabled") ?? true;
+  const currentRsvpConfirmationMessage = form.watch("rsvpConfirmationMessage") ?? "";
   const defaultApprovalMessage = getDefaultApprovalMessage(currentEventName);
+  const defaultRsvpConfirmationMessage = getDefaultRsvpConfirmationMessage({
+    name: currentEventName,
+    secondaryTitle: currentEventSecondaryTitle,
+  });
   const confirmationPreviewVariables = React.useMemo(
     () =>
       buildConfirmationPreviewVariables({
@@ -521,6 +538,23 @@ export default function EditEventDialog({
       if (nextReferralSharingEnabled !== (event.referralSharingEnabled ?? false)) {
         patch.referralSharingEnabled = nextReferralSharingEnabled;
       }
+      const nextRsvpConfirmationMessageEnabled = values.rsvpConfirmationMessageEnabled ?? true;
+      if (nextRsvpConfirmationMessageEnabled !== (event.rsvpConfirmationMessageEnabled ?? true)) {
+        patch.rsvpConfirmationMessageEnabled = nextRsvpConfirmationMessageEnabled;
+      }
+      const nextRsvpConfirmationMessage = sanitizeOptionalRsvpConfirmationMessage(
+        values.rsvpConfirmationMessage,
+      );
+      const previousRsvpConfirmationMessage = sanitizeOptionalRsvpConfirmationMessage(
+        event.rsvpConfirmationMessage,
+      );
+      if (nextRsvpConfirmationMessage !== previousRsvpConfirmationMessage) {
+        if (nextRsvpConfirmationMessage) {
+          patch.rsvpConfirmationMessage = nextRsvpConfirmationMessage;
+        } else {
+          unsetFields.push("rsvpConfirmationMessage");
+        }
+      }
       const outgoingLists = lists.map((list) => {
         let password: string | undefined;
         if (!list.requirePassword) {
@@ -588,7 +622,7 @@ export default function EditEventDialog({
         <DialogHeader className="px-5 pt-5 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
           <DialogTitle>Edit Event</DialogTitle>
           <DialogDescription>
-            Update event details, list access, and per-list confirmation texts.
+            Update event details, list access, and confirmation texts.
           </DialogDescription>
         </DialogHeader>
         <div className="mx-auto w-full max-w-[1200px] px-5 pb-5 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8">
@@ -653,16 +687,35 @@ export default function EditEventDialog({
                 </TabsContent>
 
                 <TabsContent value="confirmations">
-                  <ListConfirmationTextsSection
-                    lists={lists}
-                    defaultApprovalMessage={defaultApprovalMessage}
-                    onApprovalMessageChange={setListApprovalMessage}
-                    resolveQrAttachmentEnabled={(list) =>
-                      list.generateQR && (list.sendQrOnApprovalOverride ?? currentSendQrOnApproval)
-                    }
-                    onQrAttachmentChange={setListQrAttachmentEnabled}
-                    previewVariables={confirmationPreviewVariables}
-                  />
+                  <div className="space-y-6">
+                    <RsvpConfirmationTextSection
+                      rsvpConfirmationMessageEnabled={currentRsvpConfirmationMessageEnabled}
+                      rsvpConfirmationMessage={currentRsvpConfirmationMessage}
+                      defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}
+                      onEnabledChange={(enabled) =>
+                        form.setValue("rsvpConfirmationMessageEnabled", enabled, {
+                          shouldDirty: true,
+                        })
+                      }
+                      onMessageChange={(message) =>
+                        form.setValue("rsvpConfirmationMessage", message, {
+                          shouldDirty: true,
+                        })
+                      }
+                      previewVariables={confirmationPreviewVariables}
+                    />
+                    <ListConfirmationTextsSection
+                      lists={lists}
+                      defaultApprovalMessage={defaultApprovalMessage}
+                      onApprovalMessageChange={setListApprovalMessage}
+                      resolveQrAttachmentEnabled={(list) =>
+                        list.generateQR &&
+                        (list.sendQrOnApprovalOverride ?? currentSendQrOnApproval)
+                      }
+                      onQrAttachmentChange={setListQrAttachmentEnabled}
+                      previewVariables={confirmationPreviewVariables}
+                    />
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="rsvp" className="space-y-6">

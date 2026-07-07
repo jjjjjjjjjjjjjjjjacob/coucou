@@ -7,6 +7,10 @@ import {
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
 import type { PrimaryFieldConfig } from "@coucou/sdk/shared/primary-fields";
+import {
+  getDefaultRsvpConfirmationMessage,
+  sanitizeOptionalRsvpConfirmationMessage,
+} from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -26,6 +30,7 @@ import {
   PrimaryFieldConfigOverrideEditor,
   primaryFieldConfigToDraft,
 } from "@/components/primary-field-config-editor";
+import { RsvpConfirmationTextSection } from "@/components/rsvp-confirmation-text-section";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -111,7 +116,11 @@ type DraftEventPatchPayload = {
   sendQrOnApproval: boolean;
   attendanceQuestionEnabled: boolean;
   referralSharingEnabled: boolean;
+  rsvpConfirmationMessageEnabled: boolean;
+  rsvpConfirmationMessage?: string;
 };
+
+type DraftEventUnsetField = "rsvpConfirmationMessage";
 
 type DraftListPayload = {
   id?: Id<"listCredentials">;
@@ -124,6 +133,7 @@ type DraftListPayload = {
 
 type DraftPayload = {
   patch: DraftEventPatchPayload;
+  unsetFields: DraftEventUnsetField[];
   lists: DraftListPayload[];
 };
 
@@ -196,8 +206,8 @@ const STEPS: WizardStep[] = [
   {
     number: "07",
     eyebrow: "Texts",
-    title: "Write the confirmations.",
-    description: "Customize the approval SMS guests receive after each list is approved.",
+    title: "Write the texts.",
+    description: "Set the initial RSVP confirmation and the approval SMS for each list.",
     validate: [],
   },
   {
@@ -314,6 +324,8 @@ function createDefaultEventFormValues(defaults: EventWizardDefaults): EventFormD
     qrCodeColor: "#000000",
     attendanceQuestionEnabled: false,
     referralSharingEnabled: defaults.referralSharingEnabled,
+    rsvpConfirmationMessageEnabled: true,
+    rsvpConfirmationMessage: "",
   };
 }
 
@@ -430,7 +442,13 @@ export default function EventCreateWizard() {
   const eventDateValue = form.watch("eventDate");
   const eventTimeValue = form.watch("eventTime");
   const eventTimezoneValue = form.watch("eventTimezone");
+  const rsvpConfirmationMessageEnabled = form.watch("rsvpConfirmationMessageEnabled") ?? true;
+  const rsvpConfirmationMessage = form.watch("rsvpConfirmationMessage") ?? "";
   const defaultApprovalMessage = getDefaultApprovalMessage(eventName);
+  const defaultRsvpConfirmationMessage = getDefaultRsvpConfirmationMessage({
+    name: eventName,
+    secondaryTitle: eventSecondaryTitle,
+  });
   const confirmationPreviewVariables = React.useMemo(
     () =>
       buildConfirmationPreviewVariables({
@@ -529,6 +547,8 @@ export default function EventCreateWizard() {
       attendanceQuestionEnabled: draftEvent.attendanceQuestionEnabled ?? false,
       referralSharingEnabled:
         draftEvent.referralSharingEnabled ?? eventWizardDefaults.referralSharingEnabled,
+      rsvpConfirmationMessageEnabled: draftEvent.rsvpConfirmationMessageEnabled ?? true,
+      rsvpConfirmationMessage: draftEvent.rsvpConfirmationMessage ?? "",
     });
 
     setActs(draftEvent.acts && draftEvent.acts.length > 0 ? (draftEvent.acts as EventAct[]) : []);
@@ -668,6 +688,10 @@ export default function EventCreateWizard() {
       eventWizardDefaults.themeBackgroundColor;
     const themeText =
       normalizeHexColorInput(values.themeTextColor) ?? eventWizardDefaults.themeTextColor;
+    const sanitizedRsvpConfirmationMessage = sanitizeOptionalRsvpConfirmationMessage(
+      values.rsvpConfirmationMessage,
+    );
+    const unsetFields: DraftEventUnsetField[] = [];
 
     const patch: DraftEventPatchPayload = {
       name: values.name?.trim() || "Untitled event",
@@ -708,8 +732,14 @@ export default function EventCreateWizard() {
       sendQrOnApproval,
       attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
       referralSharingEnabled: values.referralSharingEnabled ?? false,
+      rsvpConfirmationMessageEnabled: values.rsvpConfirmationMessageEnabled ?? true,
     };
     if (startTimestamp !== undefined) patch.eventDate = startTimestamp;
+    if (sanitizedRsvpConfirmationMessage) {
+      patch.rsvpConfirmationMessage = sanitizedRsvpConfirmationMessage;
+    } else if (draftEvent?.rsvpConfirmationMessage) {
+      unsetFields.push("rsvpConfirmationMessage");
+    }
 
     const credentialIdByKey = new Map<string, Id<"listCredentials">>();
     if (draftCredentials) {
@@ -733,7 +763,7 @@ export default function EventCreateWizard() {
         };
       });
 
-    return { patch, lists: listsForPatch };
+    return { patch, unsetFields, lists: listsForPatch };
   };
 
   const ensureDraftEventId = async (): Promise<Id<"events">> => {
@@ -764,11 +794,12 @@ export default function EventCreateWizard() {
     setSubmitting(true);
     try {
       const eventId = await ensureDraftEventId();
-      const { patch, lists: listsForPatch } = buildDraftPayload();
+      const { patch, unsetFields, lists: listsForPatch } = buildDraftPayload();
       await updateEventAction({
         eventId,
         ...workspaceScope.queryArgs,
         patch,
+        unsetFields: unsetFields.length > 0 ? unsetFields : undefined,
         lists: listsForPatch,
       });
       toast.success("Draft saved");
@@ -823,11 +854,12 @@ export default function EventCreateWizard() {
       const timestamp = createTimestamp(values.eventDate, values.eventTime, values.eventTimezone);
 
       if (draftEventId) {
-        const { patch, lists: listsForPatch } = buildDraftPayload();
+        const { patch, unsetFields, lists: listsForPatch } = buildDraftPayload();
         await updateAndPublishEventAction({
           eventId: draftEventId,
           ...workspaceScope.queryArgs,
           patch,
+          unsetFields: unsetFields.length > 0 ? unsetFields : undefined,
           lists: listsForPatch,
         });
         toast.success("Event published");
@@ -883,6 +915,10 @@ export default function EventCreateWizard() {
         sendQrOnApproval,
         attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
         referralSharingEnabled: values.referralSharingEnabled ?? false,
+        rsvpConfirmationMessageEnabled: values.rsvpConfirmationMessageEnabled ?? true,
+        rsvpConfirmationMessage: sanitizeOptionalRsvpConfirmationMessage(
+          values.rsvpConfirmationMessage,
+        ),
         lists: listsFiltered,
         customFields: customFields.map((field) => ({
           key: field.key.trim(),
@@ -1054,17 +1090,36 @@ export default function EventCreateWizard() {
               />
             )}
             {stepIndex === 6 && (
-              <ListConfirmationTextsSection
-                lists={lists}
-                defaultApprovalMessage={defaultApprovalMessage}
-                onApprovalMessageChange={setListApprovalMessage}
-                resolveQrAttachmentEnabled={(list) =>
-                  list.shouldGenerateQrCode && (list.sendQrOnApprovalOverride ?? sendQrOnApproval)
-                }
-                onQrAttachmentChange={setListQrAttachmentEnabled}
-                previewVariables={confirmationPreviewVariables}
-                className="border-border/60"
-              />
+              <div className="space-y-6">
+                <RsvpConfirmationTextSection
+                  rsvpConfirmationMessageEnabled={rsvpConfirmationMessageEnabled}
+                  rsvpConfirmationMessage={rsvpConfirmationMessage}
+                  defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}
+                  onEnabledChange={(enabled) =>
+                    form.setValue("rsvpConfirmationMessageEnabled", enabled, {
+                      shouldDirty: true,
+                    })
+                  }
+                  onMessageChange={(message) =>
+                    form.setValue("rsvpConfirmationMessage", message, {
+                      shouldDirty: true,
+                    })
+                  }
+                  previewVariables={confirmationPreviewVariables}
+                  className="border-border/60"
+                />
+                <ListConfirmationTextsSection
+                  lists={lists}
+                  defaultApprovalMessage={defaultApprovalMessage}
+                  onApprovalMessageChange={setListApprovalMessage}
+                  resolveQrAttachmentEnabled={(list) =>
+                    list.shouldGenerateQrCode && (list.sendQrOnApprovalOverride ?? sendQrOnApproval)
+                  }
+                  onQrAttachmentChange={setListQrAttachmentEnabled}
+                  previewVariables={confirmationPreviewVariables}
+                  className="border-border/60"
+                />
+              </div>
             )}
             {stepIndex === 7 && (
               <StepCustomFields

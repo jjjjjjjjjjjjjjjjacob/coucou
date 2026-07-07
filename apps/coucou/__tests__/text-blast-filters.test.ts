@@ -3,6 +3,7 @@ import {
   decodeRecipientFilter,
   describeRecipientFilter,
   encodeRecipientFilter,
+  isRecipientFilterConfigured,
   RECIPIENT_FILTER_LABELS,
   type RecipientHistoryFilterState,
   recipientHistoryFilterIsConfigured,
@@ -44,6 +45,41 @@ describe("text blast filters", () => {
     );
     expect(RECIPIENT_FILTER_LABELS.approved_with_approval_sms).toBe(
       "Approved with Approval SMS Sent",
+    );
+  });
+
+  it("encodes, decodes, describes, and validates previous-event RSVP exclusions", () => {
+    const encodedFilter = encodeRecipientFilter({
+      type: "previous_approved_not_rsvped",
+      excludedEventId: "event_current",
+    });
+
+    expect(encodedFilter).toBe(
+      JSON.stringify({
+        type: "previous_approved_not_rsvped",
+        excludedEventId: "event_current",
+      }),
+    );
+    expect(decodeRecipientFilter(encodedFilter)).toEqual({
+      type: "previous_approved_not_rsvped",
+      excludedEventId: "event_current",
+    });
+    expect(
+      describeRecipientFilter({
+        type: "previous_approved_not_rsvped",
+        excludedEventId: "event_current",
+      }),
+    ).toBe(
+      "Approved RSVPs from the selected source events, excluding anyone who RSVP'd to the excluded event",
+    );
+    expect(
+      isRecipientFilterConfigured({
+        type: "previous_approved_not_rsvped",
+        excludedEventId: "",
+      }),
+    ).toBe(false);
+    expect(RECIPIENT_FILTER_LABELS.previous_approved_not_rsvped).toBe(
+      "Approved previous RSVPs who have not RSVP'd to an event",
     );
   });
 

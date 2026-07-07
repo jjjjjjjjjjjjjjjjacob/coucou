@@ -1,6 +1,7 @@
 "use node";
 import { sanitizeOptionalApprovalMessage } from "@coucou/sdk/shared/approval-messages";
 import type { WorkspaceEventDefaults } from "@coucou/sdk/shared/primary-fields";
+import { sanitizeOptionalRsvpConfirmationMessage } from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -40,6 +41,7 @@ const eventUnsetFieldValidator = v.union(
   v.literal("guestPortalLinkLabel"),
   v.literal("guestPortalLinkUrl"),
   v.literal("primaryFieldConfig"),
+  v.literal("rsvpConfirmationMessage"),
 );
 
 const eventUpdatePatchValidator = v.object({
@@ -82,6 +84,8 @@ const eventUpdatePatchValidator = v.object({
   themeBackgroundColor: v.optional(v.string()),
   themeTextColor: v.optional(v.string()),
   approvalMessage: v.optional(v.string()),
+  rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
+  rsvpConfirmationMessage: v.optional(v.string()),
   qrCodeColor: v.optional(v.string()),
 });
 
@@ -275,6 +279,8 @@ export const create = action({
     themeBackgroundColor: v.optional(v.string()),
     themeTextColor: v.optional(v.string()),
     approvalMessage: v.optional(v.string()),
+    rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
+    rsvpConfirmationMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ eventId: Id<"events"> }> => {
@@ -398,6 +404,10 @@ export const create = action({
       themeBackgroundColor: normalizedThemeBackgroundColor,
       themeTextColor: normalizedThemeTextColor,
       approvalMessage: args.approvalMessage,
+      rsvpConfirmationMessageEnabled: args.rsvpConfirmationMessageEnabled,
+      rsvpConfirmationMessage: sanitizeOptionalRsvpConfirmationMessage(
+        args.rsvpConfirmationMessage,
+      ),
       qrCodeColor: normalizeOptionalHexColor(args.qrCodeColor, "QR code color"),
       creds: derivedCredentials,
     });
@@ -473,6 +483,11 @@ export const update = action({
       }
       if (patch.approvalMessage !== undefined) {
         sanitizedPatch.approvalMessage = sanitizeOptionalApprovalMessage(patch.approvalMessage);
+      }
+      if (patch.rsvpConfirmationMessage !== undefined) {
+        sanitizedPatch.rsvpConfirmationMessage = sanitizeOptionalRsvpConfirmationMessage(
+          patch.rsvpConfirmationMessage,
+        );
       }
       if (patch.qrCodeColor !== undefined) {
         sanitizedPatch.qrCodeColor = normalizeOptionalHexColor(patch.qrCodeColor, "QR code color");

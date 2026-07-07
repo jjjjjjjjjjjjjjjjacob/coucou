@@ -1,4 +1,4 @@
-import { getSiteOrigin, siteConfigurations } from "@coucou/sdk";
+import { getSiteOrigin, getSiteOrigins, siteConfigurations } from "@coucou/sdk";
 import type { SiteKey } from "@coucou/sdk/site-config";
 import { normalizeDomainOrigin } from "./workspace-login-branding";
 
@@ -51,7 +51,9 @@ export function buildClientAuthAllowedRedirectOrigins(
 
   const siteConfig = siteConfigurations[siteKey];
   if (siteConfig) {
-    allowed.add(getSiteOrigin(siteConfig));
+    for (const siteOrigin of getSiteOrigins(siteConfig)) {
+      allowed.add(siteOrigin);
+    }
   }
 
   for (const candidate of (process.env.COUCOU_DEV_ALLOWED_SATELLITE_ORIGINS ?? "").split(",")) {

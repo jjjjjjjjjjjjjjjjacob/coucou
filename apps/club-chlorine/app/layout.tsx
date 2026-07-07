@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import type { Metadata } from "next";
 import { Bowlby_One, Noto_Emoji } from "next/font/google";
+import { headers } from "next/headers";
 import "./globals.css";
 import { DevColorTweakPanel } from "@/components/dev-color-tweak-panel";
 import { clubChlorineIconPaths, siteConfiguration } from "@/lib/site";
@@ -33,8 +34,57 @@ const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
   primaryBaseUrl: coucouBaseUrl,
   siteConfiguration,
 });
-const clerkSatelliteDomain =
+const fallbackSatelliteHost =
   process.env.NEXT_PUBLIC_CLERK_DOMAIN ?? new URL(siteConfiguration.domain).host;
+
+function getFirstHeaderValue(headerValue: string | null): string | null {
+  const firstHeaderValue = headerValue?.split(",")[0]?.trim();
+  return firstHeaderValue && firstHeaderValue.length > 0 ? firstHeaderValue : null;
+}
+
+function normalizeRequestHost(headerValue: string | null): string | null {
+  const requestHost = getFirstHeaderValue(headerValue);
+  if (!requestHost || /[\s/\\]/.test(requestHost)) {
+    return null;
+  }
+  return requestHost;
+}
+
+function isLocalRequestHost(requestHost: string): boolean {
+  try {
+    const hostname = new URL(`http://${requestHost}`).hostname;
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function resolveRequestProtocol(headersList: Headers, requestHost: string): "http" | "https" {
+  const forwardedProtocol = getFirstHeaderValue(headersList.get("x-forwarded-proto"));
+  if (forwardedProtocol === "http" || forwardedProtocol === "https") {
+    return forwardedProtocol;
+  }
+  return isLocalRequestHost(requestHost) ? "http" : "https";
+}
+
+function resolveRequestSatelliteContext(headersList: Headers): { host: string; origin: string } {
+  const requestHost =
+    normalizeRequestHost(headersList.get("x-forwarded-host")) ??
+    normalizeRequestHost(headersList.get("host")) ??
+    fallbackSatelliteHost;
+  const requestProtocol = resolveRequestProtocol(headersList, requestHost);
+
+  return {
+    host: requestHost,
+    origin: `${requestProtocol}://${requestHost}`,
+  };
+}
 
 export const metadata: Metadata = {
   title: siteConfiguration.brandName,
@@ -85,15 +135,17 @@ export const metadata: Metadata = {
 // shouldScaleBackground is opened. The body acts as the dark backdrop.
 const vaulDrawerWrapperAttribute = { "vaul-drawer-wrapper": "" };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const headersList = await headers();
+  const requestSatelliteContext = resolveRequestSatelliteContext(headersList);
   const inner = (
     <Providers>
       <div {...vaulDrawerWrapperAttribute} className="flex min-h-screen flex-col bg-background">
-        <AppChrome>{children}</AppChrome>
+        <AppChrome satelliteOrigin={requestSatelliteContext.origin}>{children}</AppChrome>
       </div>
       <DevColorTweakPanel />
     </Providers>
@@ -104,7 +156,7 @@ export default function RootLayout({
       <body className={`${bowlbyOne.variable} ${notoEmoji.variable} antialiased`}>
         <ClerkProvider
           isSatellite
-          domain={clerkSatelliteDomain}
+          domain={requestSatelliteContext.host}
           signInUrl={primaryTenantSignInUrl}
           signUpUrl={primaryTenantSignInUrl}
         >

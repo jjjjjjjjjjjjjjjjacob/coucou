@@ -77,6 +77,8 @@ export type EventPatch = Partial<
     | "themeBackgroundColor"
     | "themeTextColor"
     | "approvalMessage"
+    | "rsvpConfirmationMessageEnabled"
+    | "rsvpConfirmationMessage"
     | "qrCodeColor"
     | "defersQrDelivery"
     | "sendQrOnApproval"
@@ -92,7 +94,8 @@ export type EventUnsetField =
   | "guestPortalImageStorageId"
   | "guestPortalLinkLabel"
   | "guestPortalLinkUrl"
-  | "primaryFieldConfig";
+  | "primaryFieldConfig"
+  | "rsvpConfirmationMessage";
 
 /**
  * List credential patch type

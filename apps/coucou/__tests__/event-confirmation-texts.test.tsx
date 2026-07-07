@@ -19,6 +19,8 @@ type ListPayload = {
 
 type CreateEventActionArgs = {
   name: string;
+  rsvpConfirmationMessageEnabled?: boolean;
+  rsvpConfirmationMessage?: string;
   lists: ListPayload[];
 };
 
@@ -531,9 +533,19 @@ describe("event confirmation texts", () => {
     await clickContinue();
     await screen.findByText("How they get in.");
     await clickContinue();
-    await screen.findByText("Write the confirmations.");
+    await screen.findByText("Write the texts.");
 
-    expect(screen.getAllByPlaceholderText(/Use {{firstName}}/)).toHaveLength(2);
+    expect(screen.getByLabelText("Send initial confirmation text")).toBeChecked();
+    fireEvent.change(screen.getByLabelText("Confirmation copy"), {
+      target: {
+        value:
+          "Thanks {{firstName}} — your RSVP for {{eventName}} at {{eventLocation}} is pending.",
+      },
+    });
+    expect(
+      screen.getByText("Thanks John — your RSVP for Spring Gala at Main Room is pending."),
+    ).toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText(/Use {{firstName}}/)).toHaveLength(3);
 
     fireEvent.change(screen.getByLabelText("vip"), {
       target: {
@@ -562,7 +574,12 @@ describe("event confirmation texts", () => {
     fireEvent.click(screen.getByRole("button", { name: /Publish/ }));
 
     await waitFor(() => {
-      expect(getCreateEventActionArgs().lists).toContainEqual({
+      const createArgs = getCreateEventActionArgs();
+      expect(createArgs.rsvpConfirmationMessageEnabled).toBe(true);
+      expect(createArgs.rsvpConfirmationMessage).toBe(
+        "Thanks {{firstName}} — your RSVP for {{eventName}} at {{eventLocation}} is pending.",
+      );
+      expect(createArgs.lists).toContainEqual({
         listKey: "vip",
         password: "",
         generateQR: true,
@@ -599,6 +616,8 @@ describe("event confirmation texts", () => {
       hosts: ["Host One"],
       location: "Main Room",
       eventDate: Date.now() + 60_000,
+      rsvpConfirmationMessageEnabled: false,
+      rsvpConfirmationMessage: "Submitted for {{eventName}}.",
       approvalMessage: "Legacy {{eventLocation}} copy.",
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -612,10 +631,55 @@ describe("event confirmation texts", () => {
       expect(
         screen.getByDisplayValue("Hi {{firstName}}, VIP for {{eventName}}."),
       ).toBeInTheDocument();
+      expect(screen.getByLabelText("Send initial confirmation text")).not.toBeChecked();
+      expect(screen.getByDisplayValue("Submitted for {{eventName}}.")).toBeInTheDocument();
+      expect(screen.getByText("No initial confirmation text will send.")).toBeInTheDocument();
       expect(screen.getByDisplayValue("Legacy {{eventLocation}} copy.")).toBeInTheDocument();
       expect(screen.getByText("Hi John, VIP for Spring Gala.")).toBeInTheDocument();
       expect(screen.getByText("Legacy Main Room copy.")).toBeInTheDocument();
       expect(screen.getAllByLabelText("Attach generated QR code")[0]).toBeChecked();
+    });
+  });
+
+  it("submits edit dialog changes when the initial confirmation text is disabled", async () => {
+    actionHookFallbackHandlers = [mockUpdateActionHandler, mockGetStoredPasswordsActionHandler];
+    actionHookFallbackIndex = 0;
+    credentialQueryResult = [
+      {
+        _id: "credential_vip",
+        listKey: "vip",
+        hasPassword: false,
+        generateQR: false,
+      },
+    ];
+
+    const event = {
+      _id: "event_1",
+      name: "Spring Gala",
+      hosts: ["Host One"],
+      location: "Main Room",
+      eventDate: Date.now() + 60_000,
+      rsvpConfirmationMessageEnabled: true,
+      rsvpConfirmationMessage: "We got your RSVP for {{eventName}}.",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    } as unknown as Event;
+
+    render(<EditEventDialog event={event} open onOpenChange={() => {}} showTrigger={false} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Send initial confirmation text")).toBeChecked();
+    });
+    fireEvent.click(screen.getByLabelText("Send initial confirmation text"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const updateCall = actionCalls.find((actionCall) => actionCall.actionName === "update");
+      expect(updateCall).toBeDefined();
+      const updateArgs = updateCall?.args as {
+        patch: { rsvpConfirmationMessageEnabled?: boolean };
+      };
+      expect(updateArgs.patch.rsvpConfirmationMessageEnabled).toBe(false);
     });
   });
 });

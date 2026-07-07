@@ -4,6 +4,7 @@ import {
   buildTenantSatelliteSignInUrl,
   CLERK_SATELLITE_SYNC_PARAM,
   getClientSiteRedirectOrigins,
+  getSiteOrigins,
 } from "../src/auth-domains";
 import { siteConfigurations } from "../src/site-config";
 
@@ -11,9 +12,17 @@ describe("auth domain helpers", () => {
   it("lists configured client site redirect origins", () => {
     expect(getClientSiteRedirectOrigins()).toContain("https://dojopomodoro.club");
     expect(getClientSiteRedirectOrigins()).toContain("https://clubchlorine.party");
+    expect(getClientSiteRedirectOrigins()).toContain("https://clubchlorine.club");
     expect(getClientSiteRedirectOrigins()).toContain("http://localhost:5678");
     expect(getClientSiteRedirectOrigins()).toContain("http://localhost:5679");
     expect(getClientSiteRedirectOrigins()).not.toContain("https://coucou.events");
+  });
+
+  it("lists configured aliases for a client site", () => {
+    expect(getSiteOrigins(siteConfigurations["club-chlorine"])).toEqual([
+      "https://clubchlorine.party",
+      "https://clubchlorine.club",
+    ]);
   });
 
   it("builds a satellite return URL that triggers Clerk session sync", () => {

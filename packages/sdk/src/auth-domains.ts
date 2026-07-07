@@ -12,10 +12,19 @@ export function getSiteOrigin(siteConfiguration: SiteConfiguration): string {
   return new URL(siteConfiguration.domain).origin;
 }
 
+export function getSiteOrigins(siteConfiguration: SiteConfiguration): string[] {
+  const configuredDomains = [siteConfiguration.domain, ...(siteConfiguration.domainAliases ?? [])];
+  const configuredOrigins = configuredDomains.map((configuredDomain) => {
+    return new URL(configuredDomain).origin;
+  });
+
+  return [...new Set(configuredOrigins)];
+}
+
 export function getClientSiteRedirectOrigins(): string[] {
   const redirectOrigins = Object.values(siteConfigurations)
     .filter((siteConfiguration) => siteConfiguration.appKind === "client")
-    .map(getSiteOrigin);
+    .flatMap(getSiteOrigins);
   if (process.env.NODE_ENV !== "production") {
     redirectOrigins.push(...Object.values(localClientSiteOrigins));
   }

@@ -95,6 +95,7 @@ const eventUnsetFieldValidator = v.union(
   v.literal("guestPortalLinkLabel"),
   v.literal("guestPortalLinkUrl"),
   v.literal("primaryFieldConfig"),
+  v.literal("rsvpConfirmationMessage"),
 );
 
 const publicInstagramDevSeedSocialPlatform = {
@@ -251,6 +252,8 @@ export const insertWithCreds = mutation({
     themeBackgroundColor: v.optional(v.string()),
     themeTextColor: v.optional(v.string()),
     approvalMessage: v.optional(v.string()),
+    rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
+    rsvpConfirmationMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()),
     defersQrDelivery: v.optional(v.boolean()),
     sendQrOnApproval: v.optional(v.boolean()),
@@ -309,6 +312,8 @@ export const insertWithCreds = mutation({
       themeBackgroundColor: args.themeBackgroundColor,
       themeTextColor: args.themeTextColor,
       approvalMessage: args.approvalMessage,
+      rsvpConfirmationMessageEnabled: args.rsvpConfirmationMessageEnabled,
+      rsvpConfirmationMessage: args.rsvpConfirmationMessage,
       qrCodeColor: args.qrCodeColor,
       createdAt: now,
       updatedAt: now,
@@ -588,6 +593,8 @@ export const update = mutation({
     themeBackgroundColor: v.optional(v.string()),
     themeTextColor: v.optional(v.string()),
     approvalMessage: v.optional(v.string()),
+    rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
+    rsvpConfirmationMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()),
     customIconStorageId: v.optional(v.union(v.id("_storage"), v.null())),
     unsetFields: v.optional(v.array(eventUnsetFieldValidator)),
@@ -668,6 +675,8 @@ export const update = mutation({
       "themeBackgroundColor",
       "themeTextColor",
       "approvalMessage",
+      "rsvpConfirmationMessageEnabled",
+      "rsvpConfirmationMessage",
       "qrCodeColor",
     ] as const;
 

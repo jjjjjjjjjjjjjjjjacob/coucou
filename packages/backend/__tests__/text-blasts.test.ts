@@ -21,6 +21,11 @@ const WORKSPACE_SLUG = "dojo-pomodoro";
 const SITE_KEY = "dojo";
 const CLERK_ORGANIZATION_ID = "org_dojo";
 
+async function finishQueuedFunctions(testBackend: TestBackend) {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await testBackend.finishInProgressScheduledFunctions();
+}
+
 function createWorkspaceIdentity(subject: string): Partial<UserIdentity> {
   return {
     subject,
@@ -164,6 +169,38 @@ async function seedTextBlast(testBackend: TestBackend, eventId: Id<"events">, na
       status: "sent",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+    });
+  });
+}
+
+async function seedQueuedTextBlast(
+  testBackend: TestBackend,
+  args: {
+    eventId: Id<"events">;
+    name: string;
+    message: string;
+    targetLists?: string[];
+    includeQrCodes?: boolean;
+    recipientCount?: number;
+  },
+) {
+  return await testBackend.run(async (databaseContext) => {
+    return await databaseContext.db.insert("textBlasts", {
+      eventId: args.eventId,
+      targetEventIds: [args.eventId],
+      name: args.name,
+      message: args.message,
+      targetLists: args.targetLists ?? ["vip"],
+      includeQrCodes: args.includeQrCodes ?? false,
+      deliveryTrackingEnabled: true,
+      recipientCount: args.recipientCount ?? 0,
+      sentCount: 0,
+      failedCount: 0,
+      sentBy: "host_1",
+      status: "sending",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      sentAt: Date.now(),
     });
   });
 }
@@ -419,10 +456,128 @@ describe("text blast recipient selection", () => {
 
     expect(result.status).toBe("submitted");
     expect(result.shouldRespond).toBe(true);
+    expect(result.responseMessage).toBe(
+      "RSVP submitted for Target Event. Your request is pending approval.",
+    );
     expect(targetRsvp?.approvalStatus).toBe("pending");
     expect(targetRsvp?.listKey).toBe("ga");
     expect(targetRsvp?.smsConsent).toBe(true);
     expect(targetRsvp?.customFieldValues).toEqual({ shirt: "Large" });
+  });
+
+  it("uses custom RSVP confirmation text for matching reply action submissions", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    const sourceEventId = await seedEvent(testBackend, "Custom Confirmation Source");
+    const targetEventId = await seedEvent(testBackend, "Custom Confirmation Target");
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(targetEventId, {
+        rsvpConfirmationMessage:
+          "Hi {{firstName}}, we received your RSVP for {{eventName}} at {{eventLocation}}.",
+      });
+    });
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+      password: "return",
+    });
+    await seedUser(testBackend, "user_custom_confirmation", "555-555-0103", "Riley");
+    const sourceRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "user_custom_confirmation",
+      listKey: "vip",
+    });
+    const textBlastId = await seedTextBlast(
+      testBackend,
+      sourceEventId,
+      "Custom confirmation reply blast",
+    );
+    await seedDelivery(testBackend, {
+      textBlastId,
+      phone: "555-555-0103",
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId: sourceRsvpId,
+      clerkUserId: "user_custom_confirmation",
+      listKey: "vip",
+    });
+    await seedReplyAction(testBackend, {
+      textBlastId,
+      replyCode: "RETURN",
+      targetEventId,
+      targetListKey: "ga",
+    });
+
+    const result = await testBackend.mutation(internal.textBlasts.processIncomingSmsReply, {
+      fromPhoneNumber: "555-555-0103",
+      messageBody: "RETURN",
+    });
+
+    expect(result.status).toBe("submitted");
+    expect(result.shouldRespond).toBe(true);
+    expect(result.responseMessage).toBe(
+      "Hi Riley, we received your RSVP for Custom Confirmation Target at Test Venue.",
+    );
+  });
+
+  it("submits reply action RSVPs without responding when initial confirmation is disabled", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    const sourceEventId = await seedEvent(testBackend, "Disabled Confirmation Source");
+    const targetEventId = await seedEvent(testBackend, "Disabled Confirmation Target");
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(targetEventId, {
+        rsvpConfirmationMessageEnabled: false,
+        rsvpConfirmationMessage: "This text should not be returned.",
+      });
+    });
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+      password: "return",
+    });
+    await seedUser(testBackend, "user_disabled_confirmation", "555-555-0104", "Drew");
+    const sourceRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "user_disabled_confirmation",
+      listKey: "vip",
+    });
+    const textBlastId = await seedTextBlast(
+      testBackend,
+      sourceEventId,
+      "Disabled confirmation reply blast",
+    );
+    await seedDelivery(testBackend, {
+      textBlastId,
+      phone: "555-555-0104",
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId: sourceRsvpId,
+      clerkUserId: "user_disabled_confirmation",
+      listKey: "vip",
+    });
+    await seedReplyAction(testBackend, {
+      textBlastId,
+      replyCode: "RETURN",
+      targetEventId,
+      targetListKey: "ga",
+    });
+
+    const result = await testBackend.mutation(internal.textBlasts.processIncomingSmsReply, {
+      fromPhoneNumber: "555-555-0104",
+      messageBody: "RETURN",
+    });
+    const targetRsvp = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder.eq("eventId", targetEventId).eq("clerkUserId", "user_disabled_confirmation"),
+        )
+        .unique();
+    });
+
+    expect(result.status).toBe("submitted");
+    expect(result.shouldRespond).toBe(false);
+    expect(result.responseMessage).toBeUndefined();
+    expect(targetRsvp?.approvalStatus).toBe("pending");
   });
 
   it("keeps an existing destination RSVP unchanged for reply actions", async () => {
@@ -637,6 +792,68 @@ describe("text blast recipient selection", () => {
     expect(recipientCount).toBe(1);
   });
 
+  it("targets approved previous RSVPs while excluding anyone who RSVP'd to the excluded event", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    const previousEventId = await seedEvent(testBackend, "Previous Event");
+    const currentEventId = await seedEvent(testBackend, "Current Event");
+
+    await seedUser(testBackend, "user_previous_only", "555-210-0001", "Previous");
+    await seedUser(testBackend, "user_same_clerk", "555-210-0002", "Same");
+    await seedUser(testBackend, "user_previous_shared_phone", "555-210-0003", "Shared");
+    await seedUser(testBackend, "user_current_shared_phone", "(555) 210-0003", "Current");
+
+    await seedRsvp(testBackend, {
+      eventId: previousEventId,
+      clerkUserId: "user_previous_only",
+      listKey: "vip",
+    });
+    await seedRsvp(testBackend, {
+      eventId: previousEventId,
+      clerkUserId: "user_same_clerk",
+      listKey: "vip",
+    });
+    await seedRsvp(testBackend, {
+      eventId: previousEventId,
+      clerkUserId: "user_previous_shared_phone",
+      listKey: "vip",
+    });
+    await seedRsvp(testBackend, {
+      eventId: currentEventId,
+      clerkUserId: "user_same_clerk",
+      listKey: "vip",
+      status: "pending",
+    });
+    await seedRsvp(testBackend, {
+      eventId: currentEventId,
+      clerkUserId: "user_current_shared_phone",
+      listKey: "vip",
+      status: "pending",
+    });
+
+    const recipientFilter = JSON.stringify({
+      type: "previous_approved_not_rsvped",
+      excludedEventId: currentEventId,
+    });
+    const recipientCount = await testBackend.query(internal.textBlasts.countRecipientsInternal, {
+      eventId: previousEventId,
+      targetEventIds: [previousEventId],
+      targetLists: ["vip"],
+      recipientFilter,
+    });
+    const recipients = await testBackend.action(
+      internal.textBlasts.getRecipientsWithPhonesInternal,
+      {
+        eventId: previousEventId,
+        targetEventIds: [previousEventId],
+        targetLists: ["vip"],
+        recipientFilter,
+      },
+    );
+
+    expect(recipientCount).toBe(1);
+    expect(recipients.map((recipient) => recipient.clerkUserId)).toEqual(["user_previous_only"]);
+  });
+
   it("filters history by sent delivery rows only", async () => {
     const testBackend = convexTest(schema, convexModules);
     const { firstEventId, secondEventId, firstRsvpId, uniqueRsvpId } =
@@ -799,7 +1016,7 @@ describe("text blast recipient selection", () => {
     ).rejects.toThrow("Multi-event text blasts can only use {{firstName}}");
   });
 
-  it("sends direct single-event blasts with QR enabled when the message contains the QR URL variable", async () => {
+  it("queues direct single-event blasts and finalizes Twilio-disabled failures", async () => {
     const testBackend = convexTest(schema, convexModules);
     await seedWorkspace(testBackend);
     const eventId = await seedEvent(testBackend, "QR Send Event");
@@ -820,18 +1037,24 @@ describe("text blast recipient selection", () => {
     process.env.DEV_TWILIO_ENABLED = "false";
 
     try {
-      await expect(
-        hostBackend.action(api.textBlasts.sendBlastDirect, {
-          eventId,
-          targetEventIds: [eventId],
-          siteKey: SITE_KEY,
-          workspaceSlug: WORKSPACE_SLUG,
-          name: "QR direct send",
-          message: "Hi {{firstName}}, your ticket is {{ qrCodeUrl }}",
-          targetLists: ["vip"],
-          includeQrCodes: false,
-        }),
-      ).rejects.toThrow("Failed to send text blast");
+      const result = await hostBackend.action(api.textBlasts.sendBlastDirect, {
+        eventId,
+        targetEventIds: [eventId],
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+        name: "QR direct send",
+        message: "Hi {{firstName}}, your ticket is {{ qrCodeUrl }}",
+        targetLists: ["vip"],
+        includeQrCodes: false,
+      });
+
+      expect(result).toMatchObject({
+        success: true,
+        totalRecipients: 1,
+        status: "sending",
+      });
+
+      await finishQueuedFunctions(testBackend);
     } finally {
       if (previousDevTwilioEnabled === undefined) {
         delete process.env.DEV_TWILIO_ENABLED;
@@ -843,13 +1066,225 @@ describe("text blast recipient selection", () => {
     const sendState = await testBackend.run(async (databaseContext) => {
       const blasts = await databaseContext.db.query("textBlasts").collect();
       const notifications = await databaseContext.db.query("smsNotifications").collect();
-      return { blasts, notifications };
+      const deliveries = await databaseContext.db.query("textBlastRecipients").collect();
+      const usageLogs = await databaseContext.db.query("smsUsageLogs").collect();
+      return { blasts, notifications, deliveries, usageLogs };
     });
 
     expect(sendState.blasts).toHaveLength(1);
     expect(sendState.blasts[0].includeQrCodes).toBe(true);
+    expect(sendState.blasts[0].status).toBe("failed");
+    expect(sendState.blasts[0].failedCount).toBe(1);
     expect(sendState.notifications[0].message).toContain(
       "https://dojopomodoro.club/redeem/qr-test-code",
     );
+    expect(sendState.notifications[0].status).toBe("failed");
+    expect(sendState.deliveries[0].status).toBe("failed");
+    expect(sendState.usageLogs).toHaveLength(0);
+  });
+
+  it("sends an existing draft only to saved selected RSVP IDs", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend, "Selected Draft Event");
+    await seedUser(testBackend, "user_selected", "555-888-0001", "Selena");
+    await seedUser(testBackend, "user_not_selected", "555-888-0002", "Nolan");
+    const selectedRsvpId = await seedRsvp(testBackend, {
+      eventId,
+      clerkUserId: "user_selected",
+      listKey: "vip",
+    });
+    await seedRsvp(testBackend, {
+      eventId,
+      clerkUserId: "user_not_selected",
+      listKey: "vip",
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+    const draftId = await hostBackend.mutation(api.textBlasts.createDraft, {
+      eventId,
+      targetEventIds: [eventId],
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "Selected draft",
+      message: "Selected only",
+      targetLists: ["vip"],
+      selectedRsvpIds: [selectedRsvpId],
+    });
+    const previousDevTwilioEnabled = process.env.DEV_TWILIO_ENABLED;
+    process.env.DEV_TWILIO_ENABLED = "false";
+
+    try {
+      const result = await hostBackend.action(api.textBlasts.sendBlast, {
+        blastId: draftId,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+      });
+
+      expect(result).toMatchObject({
+        success: true,
+        totalRecipients: 1,
+      });
+      await finishQueuedFunctions(testBackend);
+    } finally {
+      if (previousDevTwilioEnabled === undefined) {
+        delete process.env.DEV_TWILIO_ENABLED;
+      } else {
+        process.env.DEV_TWILIO_ENABLED = previousDevTwilioEnabled;
+      }
+    }
+
+    const sendState = await testBackend.run(async (databaseContext) => {
+      const blast = await databaseContext.db.get(draftId);
+      const deliveries = await databaseContext.db.query("textBlastRecipients").collect();
+      return { blast, deliveries };
+    });
+
+    expect(sendState.blast?.selectedRsvpIds).toEqual([selectedRsvpId]);
+    expect(sendState.blast?.recipientCount).toBe(1);
+    expect(sendState.deliveries).toHaveLength(1);
+    expect(sendState.deliveries[0].sourceRsvpIds).toEqual([selectedRsvpId]);
+    expect(sendState.deliveries[0].recipientClerkUserIds).toEqual(["user_selected"]);
+  });
+
+  it("finalizes successful bulk SMS results into notifications, deliveries, usage logs, and counts", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    const eventId = await seedEvent(testBackend, "Finalizer Event");
+    await seedUser(testBackend, "user_finalizer", "555-123-4567", "Finley");
+    const rsvpId = await seedRsvp(testBackend, {
+      eventId,
+      clerkUserId: "user_finalizer",
+      listKey: "vip",
+    });
+    const textBlastId = await seedQueuedTextBlast(testBackend, {
+      eventId,
+      name: "Finalizer blast",
+      message: "Hello",
+      recipientCount: 1,
+    });
+    const { phoneHash } = await normalizeAndHashPhoneNumber("555-123-4567");
+    const { textBlastRecipientId, notificationId } = await testBackend.run(
+      async (databaseContext) => {
+        const deliveryId = await databaseContext.db.insert("textBlastRecipients", {
+          textBlastId,
+          phoneHash,
+          status: "pending",
+          sourceEventIds: [eventId],
+          sourceRsvpIds: [rsvpId],
+          sourceListKeys: ["vip"],
+          recipientClerkUserIds: ["user_finalizer"],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        const smsNotificationId = await databaseContext.db.insert("smsNotifications", {
+          eventId,
+          recipientClerkUserId: "user_finalizer",
+          recipientPhoneObfuscated: "+1-***-***-4567",
+          type: "blast",
+          message: "Hello",
+          status: "pending",
+          textBlastId,
+          textBlastRecipientId: deliveryId,
+          createdAt: Date.now(),
+        });
+        await databaseContext.db.patch(deliveryId, {
+          smsNotificationId,
+        });
+        return { textBlastRecipientId: deliveryId, notificationId: smsNotificationId };
+      },
+    );
+
+    await testBackend.mutation(internal.textBlasts.finalizeQueuedBlastSend, {
+      blastId: textBlastId,
+      totalRecipients: 1,
+      results: [
+        {
+          notificationId,
+          textBlastRecipientId,
+          clerkUserId: "user_finalizer",
+          phoneHash,
+          success: true,
+          messageId: "SM_success",
+          messageLength: 5,
+          messageType: "Promotional",
+          estimatedCost: 0.00645,
+          sentAt: 123_456,
+        },
+      ],
+    });
+
+    const finalizedState = await testBackend.run(async (databaseContext) => {
+      const blast = await databaseContext.db.get(textBlastId);
+      const notification = await databaseContext.db.get(notificationId);
+      const delivery = await databaseContext.db.get(textBlastRecipientId);
+      const usageLogs = await databaseContext.db.query("smsUsageLogs").collect();
+      return { blast, notification, delivery, usageLogs };
+    });
+
+    expect(finalizedState.blast?.status).toBe("sent");
+    expect(finalizedState.blast?.sentCount).toBe(1);
+    expect(finalizedState.blast?.failedCount).toBe(0);
+    expect(finalizedState.notification?.status).toBe("sent");
+    expect(finalizedState.notification?.messageId).toBe("SM_success");
+    expect(finalizedState.delivery?.status).toBe("sent");
+    expect(finalizedState.delivery?.messageId).toBe("SM_success");
+    expect(finalizedState.usageLogs).toHaveLength(1);
+    expect(finalizedState.usageLogs[0]).toMatchObject({
+      messageId: "SM_success",
+      phoneNumber: phoneHash,
+      messageLength: 5,
+      messageType: "Promotional",
+      estimatedCost: 0.00645,
+      timestamp: 123_456,
+    });
+  });
+
+  it("skips opted-out recipients before Twilio and marks their delivery failed", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    const eventId = await seedEvent(testBackend, "Opt Out Event");
+    await seedUser(testBackend, "user_opted_out", "555-222-3333", "Opal");
+    await seedRsvp(testBackend, {
+      eventId,
+      clerkUserId: "user_opted_out",
+      listKey: "vip",
+    });
+    const textBlastId = await seedQueuedTextBlast(testBackend, {
+      eventId,
+      name: "Opt out blast",
+      message: "This should not send",
+      recipientCount: 1,
+    });
+    const { phoneHash } = await normalizeAndHashPhoneNumber("555-222-3333");
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("smsOptOuts", {
+        phoneNumber: phoneHash,
+        optedOutAt: Date.now(),
+        reason: "user_request_sms",
+      });
+    });
+
+    await testBackend.action(internal.textBlasts.processQueuedBlastSend, {
+      blastId: textBlastId,
+    });
+
+    const finalState = await testBackend.run(async (databaseContext) => {
+      const blast = await databaseContext.db.get(textBlastId);
+      const notifications = await databaseContext.db.query("smsNotifications").collect();
+      const deliveries = await databaseContext.db.query("textBlastRecipients").collect();
+      const usageLogs = await databaseContext.db.query("smsUsageLogs").collect();
+      return { blast, notifications, deliveries, usageLogs };
+    });
+
+    expect(finalState.blast?.status).toBe("failed");
+    expect(finalState.blast?.sentCount).toBe(0);
+    expect(finalState.blast?.failedCount).toBe(1);
+    expect(finalState.notifications).toHaveLength(1);
+    expect(finalState.notifications[0].status).toBe("failed");
+    expect(finalState.notifications[0].errorMessage).toBe(
+      "User has opted out of SMS notifications",
+    );
+    expect(finalState.deliveries).toHaveLength(1);
+    expect(finalState.deliveries[0].status).toBe("failed");
+    expect(finalState.deliveries[0].errorMessage).toBe("User has opted out of SMS notifications");
+    expect(finalState.usageLogs).toHaveLength(0);
   });
 });
