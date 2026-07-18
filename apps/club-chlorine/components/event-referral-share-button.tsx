@@ -3,7 +3,7 @@
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { buildPublicEventUrl, buildReferralUrl } from "@coucou/sdk/shared/event-routes";
-import { useConvexAuth, useMutation } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { Share } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +13,8 @@ import { siteConfiguration } from "@/lib/site";
 interface EventReferralShareButtonProps {
   event: {
     _id: Id<"events">;
+    workspaceSlug?: string | null;
+    siteKey?: string | null;
     shortId?: string | null;
     name?: string | null;
   };
@@ -26,12 +28,42 @@ interface ClipboardCopyResult {
   errorMessage?: string;
 }
 
+type ShareWorkspaceSite = {
+  siteKey: string;
+  domain?: string;
+  appKind?: string;
+};
+
+type ShareWorkspace = {
+  primaryDomain?: string;
+  sites?: ShareWorkspaceSite[];
+} | null;
+
 function getErrorMessage(error: unknown): string | undefined {
   return error instanceof Error ? error.message : undefined;
 }
 
 function isShareAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function resolveConfiguredShareDomain(
+  workspace: ShareWorkspace | undefined,
+  siteKey: string,
+): string | null {
+  const primaryDomain = workspace?.primaryDomain?.trim();
+  if (primaryDomain) return primaryDomain;
+
+  const sites = workspace?.sites ?? [];
+  const matchingClientSite =
+    sites.find((site) => site.siteKey === siteKey && site.appKind !== "admin") ??
+    sites.find((site) => site.appKind === "client") ??
+    sites.find((site) => site.appKind !== "admin");
+  return matchingClientSite?.domain?.trim() || null;
 }
 
 async function copyTextToClipboard(text: string): Promise<ClipboardCopyResult> {
@@ -97,11 +129,22 @@ export function EventReferralShareButton({
   const [isPreparing, setIsPreparing] = useState(true);
   const [isSharing, setIsSharing] = useState(false);
   const eventDocumentId = event._id;
+  const eventWorkspaceSlug = event.workspaceSlug?.trim() || null;
   const eventShortId = event.shortId;
   const vercelEnvironment = process.env.NEXT_PUBLIC_VERCEL_ENV;
+  const workspace = useQuery(
+    api.workspaces.getWorkspaceBySlug,
+    eventWorkspaceSlug ? { slug: eventWorkspaceSlug } : "skip",
+  ) as ShareWorkspace | undefined;
+  const configuredShareDomain = resolveConfiguredShareDomain(workspace, siteConfiguration.siteKey);
+  const isWorkspaceLoading = Boolean(eventWorkspaceSlug) && workspace === undefined;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (isWorkspaceLoading) {
+      setIsPreparing(true);
+      return;
+    }
     if (isConvexAuthLoading) {
       setIsPreparing(true);
       return;
@@ -127,16 +170,22 @@ export function EventReferralShareButton({
           console.warn("Failed to prepare event short link for referral sharing.", error);
           return null;
         });
-        const publicEventUrl = buildPublicEventUrl({
-          event: {
-            _id: eventDocumentId,
-            shortId: eventShortIdResult?.shortId ?? eventShortId,
-          },
-          siteConfiguration,
-          currentOrigin: window.location.origin,
-          localOrigin: window.location.origin,
-          vercelEnvironment,
-        });
+        const eventRouteRecord = {
+          _id: eventDocumentId,
+          shortId: eventShortIdResult?.shortId ?? eventShortId,
+        };
+        const publicEventUrl = configuredShareDomain
+          ? buildPublicEventUrl({
+              event: eventRouteRecord,
+              siteConfiguration,
+              currentOrigin: window.location.origin,
+              domain: configuredShareDomain,
+              localOrigin: window.location.origin,
+              vercelEnvironment,
+            })
+          : `${trimTrailingSlash(window.location.origin)}/events/${
+              eventRouteRecord.shortId?.trim() || eventRouteRecord._id
+            }`;
         const eventUrl = buildReferralUrl(publicEventUrl, referralCode);
         if (!isCancelled) {
           setPreparedReferralUrl(eventUrl);
@@ -160,12 +209,14 @@ export function EventReferralShareButton({
       isCancelled = true;
     };
   }, [
+    configuredShareDomain,
     eventDocumentId,
     eventShortId,
     ensureCurrentReferralCode,
     ensureEventShortId,
     isConvexAuthenticated,
     isConvexAuthLoading,
+    isWorkspaceLoading,
     vercelEnvironment,
   ]);
 

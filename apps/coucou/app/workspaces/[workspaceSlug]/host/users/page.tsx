@@ -203,6 +203,10 @@ export default function UsersPage() {
   };
 
   React.useEffect(() => {
+    if (searchParams.get("page") === "0") {
+      return;
+    }
+
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", "0");
     router.replace(`${usersPath}?${params.toString()}`, { scroll: false });

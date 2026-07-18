@@ -1,11 +1,13 @@
 import type { UserIdentity } from "convex/server";
-import type { QueryCtx } from "../_generated/server";
+import { api } from "../_generated/api";
+import type { ActionCtx, QueryCtx } from "../_generated/server";
 
 interface PlatformAuthReader {
   auth: {
     getUserIdentity: () => Promise<UserIdentity | null>;
   };
   db?: QueryCtx["db"];
+  runQuery?: ActionCtx["runQuery"];
 }
 
 function getStringClaim(identity: UserIdentity, keys: string[]): string | null {
@@ -80,6 +82,27 @@ async function hasStoredCoucouMembership(
   return Boolean(membership);
 }
 
+async function hasStoredCoucouMembershipFromAction(
+  ctx: PlatformAuthReader,
+  identity: UserIdentity,
+): Promise<boolean> {
+  if (!ctx.runQuery) {
+    return false;
+  }
+
+  const storedMemberships = await ctx.runQuery(api.orgMemberships.listForUser, {
+    clerkUserId: identity.subject,
+  });
+  const dashboardWorkspaceAccess = await ctx.runQuery(api.workspaces.getDashboardWorkspaceAccess, {
+    memberships: storedMemberships.map((storedMembership) => ({
+      organizationId: storedMembership.organizationId,
+      role: storedMembership.role,
+    })),
+  });
+
+  return dashboardWorkspaceAccess.hasCoucouOrganizationAccess;
+}
+
 export async function requireCoucouPlatformMember(ctx: PlatformAuthReader): Promise<UserIdentity> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
@@ -88,6 +111,10 @@ export async function requireCoucouPlatformMember(ctx: PlatformAuthReader): Prom
 
   const activeOrganizationSlug = getIdentityOrganizationSlug(identity);
   if (activeOrganizationSlug?.toLowerCase() !== getCoucouOrganizationSlug()) {
+    if (ctx.runQuery && (await hasStoredCoucouMembershipFromAction(ctx, identity))) {
+      return identity;
+    }
+
     const coucouOrganizationId = await getCoucouWorkspaceOrganizationId(ctx);
     const activeOrganizationId = getIdentityOrganizationId(identity);
     const hasActiveCoucouOrganization =

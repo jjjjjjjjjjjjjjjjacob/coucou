@@ -6,6 +6,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
 import { generateRsvpHandoffToken } from "./lib/codeGenerators";
+import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
 import { hashOpaqueValue, normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import {
@@ -104,16 +105,7 @@ async function buildReferralPatch(
   };
 }
 
-const GUEST_CLERK_USER_ID_PREFIX = "guest:";
 const RSVP_HANDOFF_TTL_MS = 15 * 60 * 1000;
-
-function buildGuestClerkUserId(phoneHash: string): string {
-  return `${GUEST_CLERK_USER_ID_PREFIX}${phoneHash}`;
-}
-
-function isGuestClerkUserId(clerkUserId: string): boolean {
-  return clerkUserId.startsWith(GUEST_CLERK_USER_ID_PREFIX);
-}
 
 async function canAutoSendGuestRsvpHandoffCode(
   ctx: QueryCtx,
@@ -911,6 +903,29 @@ export const submitGuestRequest = mutation({
       sanitizedSmsConsentIpAddress,
     } = await prepareRsvpSubmission(ctx, args, guestClerkUserId);
 
+    // Durable phoneHash → plaintext map so partner webhooks can carry the
+    // guest's phone number. Written before the RSVP row because the webhook
+    // trigger resolves guest identity at RSVP-write time.
+    const existingGuestContact = await ctx.db
+      .query("guestContacts")
+      .withIndex("by_phoneHash", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
+      .unique();
+    if (existingGuestContact) {
+      if (existingGuestContact.phoneNumber !== normalizedPhoneNumber) {
+        await ctx.db.patch(existingGuestContact._id, {
+          phoneNumber: normalizedPhoneNumber,
+          updatedAt: now,
+        });
+      }
+    } else {
+      await ctx.db.insert("guestContacts", {
+        phoneHash,
+        phoneNumber: normalizedPhoneNumber,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
     const existingGuestRsvps = await ctx.db
       .query("rsvps")
       .withIndex("by_event_guestPhoneHash", (queryBuilder) =>
@@ -918,6 +933,16 @@ export const submitGuestRequest = mutation({
       )
       .collect();
     const existing = existingGuestRsvps.find((rsvp) => isGuestClerkUserId(rsvp.clerkUserId));
+    let smsConsentChange: "enabled" | "disabled" | null = null;
+    if (!existing) {
+      if (args.smsConsent === true) {
+        smsConsentChange = "enabled";
+      }
+    } else if (args.smsConsent === true && existing.smsConsent !== true) {
+      smsConsentChange = "enabled";
+    } else if (args.smsConsent === false && existing.smsConsent === true) {
+      smsConsentChange = "disabled";
+    }
 
     let rsvpId: Id<"rsvps">;
     if (!existing) {
@@ -1026,6 +1051,15 @@ export const submitGuestRequest = mutation({
       expiresAt,
       createdAt: now,
     });
+
+    if (smsConsentChange) {
+      await ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
+        eventId: args.eventId,
+        clerkUserId: guestClerkUserId,
+        consentEnabled: smsConsentChange === "enabled",
+        phoneNumber: normalizedPhoneNumber,
+      });
+    }
 
     return {
       ok: true as const,

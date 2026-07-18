@@ -1,0 +1,54 @@
+# Backend learnings (packages/backend)
+
+Contextual advice for future tasks in the Convex backend. Reference before working on
+partner-API, webhook, trigger, or convex-test tasks.
+
+## Partner API / webhooks (added 2026-07-17)
+
+- **Single choke-point for table-change side effects**: `convex/functions.ts` wraps every
+  mutation with a convex-helpers `Triggers` registry. To react to ALL writes on a table
+  (regardless of which mutation performs them), register a trigger there — do not wire
+  per-mutation calls. Partner webhook emission lives in `convex/lib/webhookEmission.ts`
+  and is registered for `rsvps` and `events`.
+- **Trigger ordering matters**: triggers fire immediately at each `ctx.db` write. If a
+  trigger reads sibling rows (e.g. webhook identity resolution reads `guestContacts`),
+  those rows must be written BEFORE the row that fires the trigger. This is why
+  `submitGuestRequest` upserts `guestContacts` before inserting the RSVP.
+- **Guest identity**: synthetic clerk ids (`guest:<phoneHash>`) helpers live in
+  `convex/lib/guestIdentity.ts` (extracted from rsvps.ts). Guest plaintext phone is
+  durably stored only in `guestContacts` (by design; handoff rows expire).
+- **API keys**: stored SHA-256-hashed (`lib/apiKeys.ts` reuses `hashOpaqueValue`).
+  Webhook endpoint secrets are stored readable (AES needs key recovery) — an accepted,
+  documented tradeoff (docs/partner-api.md).
+- **HTTP surface**: `/api/v1/*` httpActions live in `convex/apiV1.ts` (auth middleware
+  in `lib/apiRequestAuth.ts`), backed by internal functions in `convex/apiV1Data.ts`.
+  Deliberately no CORS. `API_VERSION` and webhook event types come from
+  `@coucou/sdk/api-v1` — single source shared with consumers; keep the sdk consumer
+  helpers byte-compatible with `convex/lib/webhookCrypto.ts` (roundtrip-tested in
+  `packages/sdk/__tests__/webhook-consumer.test.ts`).
+
+## convex-test gotchas (bun test)
+
+- **Scheduled function leaks**: mutations that `ctx.scheduler.runAfter(0, ...)` leave real
+  timers that can fire after a test file ends → "Write outside of transaction" /
+  "test began while previous transaction was still open" in LATER files. Either
+  (a) `vi.useFakeTimers()` in beforeEach + `testBackend.finishAllScheduledFunctions(vi.runAllTimers)`
+  after each mutation (see webhook-pipeline.test.ts, text-blasts.test.ts), or
+  (b) track backends and drain in afterEach (see rsvp-guest-handoff.test.ts).
+  Never switch to fake timers AFTER a real 0-delay timer is already queued — that races.
+- **Parallel component calls fail**: `Promise.all` over aggregate `count()` calls inside
+  one query throws "Bad queryId" under convex-test. Run component sub-queries
+  sequentially.
+- **httpAction tests**: `testBackend.fetch("/api/v1/...", init)` works; module map must
+  include `http.ts` and every module reachable from the routed handlers.
+- **Aggregate component**: register with `testBackend.registerComponent("rsvpAggregate",
+  schema, modules)` importing from `node_modules/@convex-dev/aggregate/dist/esm/component/*`
+  (copy the block from an existing test).
+- **WebCrypto in mutations**: `crypto.subtle.digest` and `crypto.getRandomValues` work in
+  the Convex default runtime and in convex-test — hashing/keygen inside mutations is fine.
+
+## TypeScript
+
+- Under TS 5.7+ libs, annotate WebCrypto-bound byte helpers to return
+  ArrayBuffer-backed arrays (`new Uint8Array(new ArrayBuffer(n))`, inferred return type)
+  or `crypto.subtle` calls fail on `Uint8Array<ArrayBufferLike>` vs `BufferSource`.

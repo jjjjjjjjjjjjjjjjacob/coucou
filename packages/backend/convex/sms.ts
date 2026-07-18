@@ -7,6 +7,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import { ensureEventInSiteScope, eventMatchesSiteScope } from "./lib/siteScope";
+import { updateSmsConversationProviderStatus } from "./lib/smsConversationRecords";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 /**
@@ -17,6 +18,7 @@ export const createNotification = internalMutation({
     eventId: v.id("events"),
     recipientClerkUserId: v.string(),
     recipientPhoneObfuscated: v.string(),
+    recipientPhoneHash: v.optional(v.string()),
     type: v.string(),
     message: v.string(),
     textBlastId: v.optional(v.id("textBlasts")),
@@ -60,6 +62,15 @@ export const updateNotificationStatus = internalMutation({
     };
 
     await ctx.db.patch(args.notificationId, updateData);
+
+    const providerMessageId = args.messageId ?? notification.messageId;
+    if (providerMessageId) {
+      await updateSmsConversationProviderStatus(ctx, {
+        providerMessageId,
+        providerStatus: args.status,
+        smsNotificationId: args.notificationId,
+      });
+    }
 
     if (notification.textBlastRecipientId) {
       await ctx.db.patch(notification.textBlastRecipientId, {
@@ -151,6 +162,11 @@ export const updateNotificationByMessageId = internalMutation({
     };
 
     await ctx.db.patch(notification._id, updateData);
+    await updateSmsConversationProviderStatus(ctx, {
+      providerMessageId: args.messageId,
+      providerStatus: args.status,
+      smsNotificationId: notification._id,
+    });
   },
 });
 

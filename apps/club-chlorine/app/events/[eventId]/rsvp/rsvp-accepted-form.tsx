@@ -12,16 +12,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { type Path, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { GuestInfoFields, NoteForHostsField } from "@/components/guest-info-form";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { SmsProgramDisclosure } from "@/components/sms-program-disclosure";
 import { Badge } from "@/components/ui/badge";
 import {
   Form,
@@ -32,12 +23,12 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Spinner } from "@/components/ui/spinner";
-import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { validateRequiredPrimaryFields, validateRequiredWithFirstName } from "@/lib/mini-zod";
 import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import { clubChlorineSmsProgram } from "@/lib/sms-program";
 import type {
   ApplicationError,
   ClerkUser,
@@ -395,10 +386,6 @@ export function RsvpAcceptedForm({
     eventId,
     siteKey: siteConfiguration.siteKey,
   }) as CurrentUserRsvpFormStatus | null | undefined;
-  const organizerSmsPreference = useQuery(api.rsvps.smsPreferenceForUserEvent, {
-    eventId,
-    siteKey: siteConfiguration.siteKey,
-  });
   const userDoc = useQuery(
     api.users.getByClerkUser,
     user?.id ? { clerkUserId: user.id } : "skip",
@@ -431,9 +418,6 @@ export function RsvpAcceptedForm({
   const [smsConsentEnabled, setSmsConsentEnabled] = useState<boolean>(false);
   const [hasInitializedSmsConsent, setHasInitializedSmsConsent] = useState<boolean>(false);
   const [smsConsentIpAddress, setSmsConsentIpAddress] = useState<string | undefined>(undefined);
-  const [hasAcknowledgedSmsOptOutPrompt, setHasAcknowledgedSmsOptOutPrompt] =
-    useState<boolean>(false);
-  const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<"encourage" | null>(null);
   const [hasHydratedRsvpDraft, setHasHydratedRsvpDraft] = useState<boolean>(false);
   const hydratedRsvpDraftStorageKeyRef = useRef<string | null>(null);
   const restoredRsvpDraftFieldsRef = useRef<RestoredRsvpDraftFields>({
@@ -441,20 +425,6 @@ export function RsvpAcceptedForm({
     phone: false,
   });
   const shouldPreserveSmsConsentDraftRef = useRef<boolean>(false);
-
-  const smsSenderDisplayName = useMemo(
-    () =>
-      resolveEventMessagingBrandName(
-        {
-          name: event?.name,
-          secondaryTitle: event?.secondaryTitle,
-          hosts: event?.hosts,
-          productionCompany: event?.productionCompany,
-        },
-        { fallback: event?.name?.trim() ?? "Event Host" },
-      ),
-    [event?.hosts, event?.name, event?.secondaryTitle, event?.productionCompany],
-  );
 
   const upsertContact = useMutation(api.users.upsertContactPhone);
   const submitRsvp = useMutation(api.rsvps.submitRequest);
@@ -575,9 +545,7 @@ export function RsvpAcceptedForm({
       setAttendanceStatus(storedDraft.attendanceStatus);
       setAccessPassword(storedDraft.accessPassword || initialPassword);
       setSmsConsentEnabled(storedDraft.smsConsentEnabled);
-      setHasAcknowledgedSmsOptOutPrompt(storedDraft.hasAcknowledgedSmsOptOutPrompt);
-      shouldPreserveSmsConsentDraftRef.current =
-        storedDraft.smsConsentEnabled || storedDraft.hasAcknowledgedSmsOptOutPrompt;
+      shouldPreserveSmsConsentDraftRef.current = storedDraft.smsConsentEnabled;
       form.setValue("attendees", storedDraft.attendees, {
         shouldValidate: false,
         shouldDirty: false,
@@ -760,14 +728,13 @@ export function RsvpAcceptedForm({
       attendees: attendeesFromUnknown(watchedAttendees),
       accessPassword,
       smsConsentEnabled,
-      hasAcknowledgedSmsOptOutPrompt,
+      hasAcknowledgedSmsOptOutPrompt: false,
     }),
     [
       accessPassword,
       attendanceStatus,
       custom,
       firstName,
-      hasAcknowledgedSmsOptOutPrompt,
       invitedByName,
       lastName,
       name,
@@ -826,23 +793,18 @@ export function RsvpAcceptedForm({
       setHasInitializedSmsConsent(true);
       setSmsConsentEnabled(isEnabled);
       if (isEnabled) {
-        setHasAcknowledgedSmsOptOutPrompt(false);
         if (!smsConsentIpAddress) {
           const ipAddress = await fetchSmsConsentIpAddress();
           if (ipAddress) {
             setSmsConsentIpAddress(ipAddress);
           }
         }
-      } else {
-        setHasAcknowledgedSmsOptOutPrompt(false);
       }
     },
     [smsConsentIpAddress],
   );
 
-  const performSubmission = async (
-    options: { smsConsentOverride?: boolean; smsConsentIpAddressOverride?: string } = {},
-  ) => {
+  const performSubmission = async () => {
     try {
       setMessage("");
       const eventCustomFields: CustomField[] = event?.customFields ?? [];
@@ -963,8 +925,8 @@ export function RsvpAcceptedForm({
         await upsertContact({ phone: effectivePhone || undefined });
       }
 
-      const effectiveSmsConsentEnabled = options.smsConsentOverride ?? smsConsentEnabled;
-      let consentIpAddress = options.smsConsentIpAddressOverride ?? smsConsentIpAddress;
+      const effectiveSmsConsentEnabled = smsConsentEnabled;
+      let consentIpAddress = smsConsentIpAddress;
       if (effectiveSmsConsentEnabled && !consentIpAddress) {
         consentIpAddress = await fetchSmsConsentIpAddress();
         if (consentIpAddress) {
@@ -1039,40 +1001,12 @@ export function RsvpAcceptedForm({
   };
 
   const onSubmit = async () => {
-    if (!smsConsentEnabled && !hasAcknowledgedSmsOptOutPrompt) {
-      setSmsConsentDialogMode("encourage");
-      return;
-    }
-    await performSubmission();
-  };
-
-  const handleEncourageEnable = async () => {
-    setSmsConsentEnabled(true);
-    setHasAcknowledgedSmsOptOutPrompt(false);
-    let consentIpAddress = smsConsentIpAddress;
-    if (!consentIpAddress) {
-      consentIpAddress = await fetchSmsConsentIpAddress();
-      if (consentIpAddress) {
-        setSmsConsentIpAddress(consentIpAddress);
-      }
-    }
-    setSmsConsentDialogMode(null);
-    await performSubmission({
-      smsConsentOverride: true,
-      smsConsentIpAddressOverride: consentIpAddress,
-    });
-  };
-
-  const handleEncourageContinue = async () => {
-    setHasAcknowledgedSmsOptOutPrompt(true);
-    setSmsConsentDialogMode(null);
     await performSubmission();
   };
 
   useEffect(() => {
     const statusHasLoaded = status !== undefined;
     const statusSmsConsent = status?.smsConsent;
-    const organizerSmsPreferenceHasLoaded = organizerSmsPreference !== undefined;
     const shouldPreserveSmsConsentDraft = shouldPreserveSmsConsentDraftRef.current;
 
     if (!hasInitializedSmsConsent && statusSmsConsent !== undefined) {
@@ -1080,49 +1014,19 @@ export function RsvpAcceptedForm({
       setHasInitializedSmsConsent(true);
     } else if (!hasInitializedSmsConsent && statusHasLoaded && shouldPreserveSmsConsentDraft) {
       setHasInitializedSmsConsent(true);
-    } else if (
-      !hasInitializedSmsConsent &&
-      statusHasLoaded &&
-      organizerSmsPreferenceHasLoaded &&
-      organizerSmsPreference
-    ) {
-      setSmsConsentEnabled(organizerSmsPreference.smsConsent);
+    } else if (!hasInitializedSmsConsent && statusHasLoaded) {
+      setSmsConsentEnabled(false);
       setHasInitializedSmsConsent(true);
     }
 
-    const shouldUseOrganizerSmsPreference = !(
-      shouldPreserveSmsConsentDraft && statusSmsConsent === undefined
-    );
-    const effectiveSmsConsent =
-      statusSmsConsent ??
-      (shouldUseOrganizerSmsPreference ? organizerSmsPreference?.smsConsent : undefined);
-    const effectiveSmsConsentSource =
-      statusSmsConsent !== undefined
-        ? "event"
-        : shouldUseOrganizerSmsPreference
-          ? organizerSmsPreference?.source
-          : undefined;
-
-    if (effectiveSmsConsent === true) {
-      setHasAcknowledgedSmsOptOutPrompt(false);
-    }
-    if (
-      effectiveSmsConsent === false &&
-      (effectiveSmsConsentSource === "event" || effectiveSmsConsentSource === "organizer")
-    ) {
-      setHasAcknowledgedSmsOptOutPrompt(true);
-    }
-
-    const effectiveSmsConsentIpAddress =
-      status?.smsConsentIpAddress ??
-      (shouldUseOrganizerSmsPreference ? organizerSmsPreference?.smsConsentIpAddress : undefined);
+    const effectiveSmsConsentIpAddress = status?.smsConsentIpAddress;
     if (
       typeof effectiveSmsConsentIpAddress === "string" &&
       effectiveSmsConsentIpAddress.length > 0
     ) {
       setSmsConsentIpAddress(effectiveSmsConsentIpAddress);
     }
-  }, [status, organizerSmsPreference, hasInitializedSmsConsent]);
+  }, [status, hasInitializedSmsConsent]);
 
   const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1278,20 +1182,27 @@ export function RsvpAcceptedForm({
             </div>
           ) : null}
 
-          <div className="flex items-center justify-between gap-4 pt-2">
-            <label
-              htmlFor="sms-opt-in"
-              className="flex min-w-0 items-center gap-2 text-sm text-foreground"
-            >
-              <input
-                id="sms-opt-in"
-                type="checkbox"
-                checked={smsConsentEnabled}
-                onChange={(event) => handleSmsConsentChange(event.target.checked)}
-                className="shrink-0"
-              />
-              <span className="truncate text-sm font-medium text-foreground">Enable SMS</span>
-            </label>
+          <div className="flex flex-col gap-4 pt-2 sm:flex-row sm:items-end sm:justify-between">
+            <div className="max-w-2xl space-y-2">
+              <label
+                htmlFor="sms-opt-in"
+                className="flex items-start gap-2 text-sm text-foreground"
+              >
+                <input
+                  id="sms-opt-in"
+                  type="checkbox"
+                  checked={smsConsentEnabled}
+                  onChange={(event) => handleSmsConsentChange(event.target.checked)}
+                  className="mt-0.5 shrink-0"
+                />
+                <span className="font-medium text-foreground">
+                  {clubChlorineSmsProgram.consentLabel}
+                </span>
+              </label>
+              <p className="text-[10px] leading-tight text-muted-foreground">
+                <SmsProgramDisclosure />
+              </p>
+            </div>
             <TenantButton
               type="submit"
               className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap"
@@ -1315,20 +1226,6 @@ export function RsvpAcceptedForm({
               )}
             </TenantButton>
           </div>
-
-          <p className="pt-2 text-[10px] leading-tight text-muted-foreground">
-            RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-            {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply STOP
-            to cancel. Consent not required for purchase.{" "}
-            <a href="/terms" className="underline">
-              Terms
-            </a>{" "}
-            &amp;{" "}
-            <a href="/privacy" className="underline">
-              Privacy
-            </a>
-            .
-          </p>
         </form>
       </Form>
 
@@ -1342,63 +1239,6 @@ export function RsvpAcceptedForm({
           {message}
         </div>
       ) : null}
-
-      <AlertDialog
-        open={smsConsentDialogMode === "encourage"}
-        onOpenChange={(open) => {
-          if (!open) setSmsConsentDialogMode(null);
-        }}
-      >
-        <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
-          <AlertDialogHeader className="space-y-3 text-left">
-            <AlertDialogTitle className="text-lg font-semibold text-foreground break-words">
-              Get Event Updates by SMS
-            </AlertDialogTitle>
-            <p className="text-sm text-foreground break-words">
-              Turn on SMS updates and we will text you the moment your RSVP status changes, so you
-              never have to refresh this page to see if you are approved.
-            </p>
-            <AlertDialogDescription className="text-[10px] leading-tight text-muted-foreground break-words">
-              RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-              {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply STOP
-              to cancel. Consent not required for purchase.{" "}
-              <a href="/terms" className="break-words underline">
-                Terms
-              </a>{" "}
-              &amp;{" "}
-              <a href="/privacy" className="break-words underline">
-                Privacy
-              </a>
-              .
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
-            <AlertDialogCancel
-              type="button"
-              onClick={() => setSmsConsentDialogMode(null)}
-              className="w-full order-2 sm:order-1 sm:w-auto"
-            >
-              Back
-            </AlertDialogCancel>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <AlertDialogAction
-                type="button"
-                onClick={handleEncourageContinue}
-                className="order-2 w-full border border-input bg-background text-primary hover:bg-accent hover:text-accent-foreground sm:w-auto"
-              >
-                No SMS
-              </AlertDialogAction>
-              <AlertDialogAction
-                type="button"
-                onClick={handleEncourageEnable}
-                className="order-1 w-full sm:w-auto"
-              >
-                Enable SMS
-              </AlertDialogAction>
-            </div>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

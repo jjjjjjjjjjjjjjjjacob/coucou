@@ -42,6 +42,19 @@ describe("event sharing", () => {
     ).toBe("https://clubchlorine.party/events/abc1234");
   });
 
+  it("uses the event owner's configured primary URL for Club Chlorine share links", () => {
+    const publicEventUrl = buildPublicEventUrl(
+      {
+        primaryDomain: "clubchlorine.club",
+        sites: [{ siteKey: "club-chlorine", domain: "clubchlorine.party", appKind: "client" }],
+      },
+      { _id: "event_123", shortId: "abc1234" },
+      { currentOrigin: "https://coucou.events" },
+    );
+
+    expect(publicEventUrl).toBe("https://clubchlorine.club/events/abc1234");
+  });
+
   it("falls back to the Club Chlorine production event URL when workspace data is unavailable", () => {
     expect(
       resolveShareEventBaseUrl({
@@ -50,6 +63,16 @@ describe("event sharing", () => {
         siteKey: "club-chlorine",
       }),
     ).toBe("https://clubchlorine.party/events/event_123");
+  });
+
+  it("uses the current Club Chlorine origin when it is a configured domain alias", () => {
+    expect(
+      resolveShareEventBaseUrl({
+        eventId: "event_123",
+        origin: "https://clubchlorine.club",
+        siteKey: "club-chlorine",
+      }),
+    ).toBe("https://clubchlorine.club/events/event_123");
   });
 
   it("uses local client origins when sharing from a local coucou dashboard", () => {

@@ -8,6 +8,7 @@ import {
   extractClerkUserWebhookProfile,
   parseClerkWebhookEvent,
 } from "./lib/clerkWebhookPayloads";
+import * as apiV1 from "./apiV1";
 import { getCoucouOrganizationSlug } from "./lib/platformAuth";
 import { handleDeliveryStatus, handleIncomingSms, handleOptOut } from "./webhooks";
 
@@ -138,6 +139,20 @@ export const clerkWebhook = httpAction(async (ctx, request) => {
 
 const http = httpRouter();
 http.route({ path: "/webhooks/clerk", method: "POST", handler: clerkWebhook });
+// Partner API v1 (see docs/partner-api.md)
+http.route({ path: "/api/v1/events", method: "GET", handler: apiV1.listEvents });
+http.route({
+  pathPrefix: "/api/v1/events/",
+  method: "GET",
+  handler: apiV1.handleEventSubresourceGet,
+});
+http.route({
+  pathPrefix: "/api/v1/events/",
+  method: "POST",
+  handler: apiV1.handleEventSubresourcePost,
+});
+http.route({ pathPrefix: "/api/v1/rsvps/", method: "PATCH", handler: apiV1.handleRsvpPatch });
+http.route({ pathPrefix: "/api/v1/rsvps/", method: "DELETE", handler: apiV1.handleRsvpDelete });
 http.route({ path: "/webhooks/twilio/status", method: "POST", handler: handleDeliveryStatus });
 http.route({ path: "/webhooks/twilio/opt-out", method: "POST", handler: handleOptOut });
 http.route({ path: "/webhooks/twilio/incoming", method: "POST", handler: handleIncomingSms });

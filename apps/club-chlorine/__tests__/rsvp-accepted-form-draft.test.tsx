@@ -244,7 +244,7 @@ describe("RsvpAcceptedForm draft persistence", () => {
       target: { value: "Arriving late" },
     });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "pool" } });
-    fireEvent.click(screen.getByLabelText(/enable sms/i));
+    fireEvent.click(screen.getByLabelText(/recurring sms messages from club chlorine/i));
 
     await waitFor(() => {
       const rawDraft = window.localStorage.getItem(storageKey);
@@ -284,7 +284,7 @@ describe("RsvpAcceptedForm draft persistence", () => {
         "Arriving late",
       );
       expect(screen.getByLabelText(/password/i)).toHaveValue("pool");
-      expect(screen.getByLabelText(/enable sms/i)).toBeChecked();
+      expect(screen.getByLabelText(/recurring sms messages from club chlorine/i)).toBeChecked();
     });
   });
 
@@ -311,7 +311,6 @@ describe("RsvpAcceptedForm draft persistence", () => {
     fireEvent.change(screen.getByLabelText(/phone number/i), {
       target: { value: "5105080309" },
     });
-    fireEvent.click(screen.getByLabelText(/enable sms/i));
 
     await waitFor(() => {
       const rawDraft = window.localStorage.getItem(storageKey);
@@ -331,6 +330,7 @@ describe("RsvpAcceptedForm draft persistence", () => {
     await waitFor(() => {
       expect(onCollect).toHaveBeenCalledTimes(1);
     });
+    expect(onCollect.mock.calls[0]?.[0]).toMatchObject({ smsConsent: false });
     const rawDraftAfterSubmit = window.localStorage.getItem(storageKey);
     expect(rawDraftAfterSubmit).not.toBeNull();
     const draftAfterSubmit = JSON.parse(rawDraftAfterSubmit ?? "{}") as Record<string, unknown>;
@@ -436,7 +436,28 @@ describe("RsvpAcceptedForm draft persistence", () => {
       expect(screen.getByPlaceholderText("Dietary")).toHaveValue("Database meal");
       expect(screen.getByLabelText(/instagram/i)).toHaveValue("@database");
       expect(screen.getByLabelText(/invited by/i)).toHaveValue("Database Host");
-      expect(screen.getByLabelText(/enable sms/i)).not.toBeChecked();
+      expect(screen.getByLabelText(/recurring sms messages from club chlorine/i)).not.toBeChecked();
     });
+  });
+
+  it("shows first-time SMS consent as optional and unchecked without an encouragement dialog", () => {
+    render(
+      <RsvpAcceptedForm
+        eventId={createEvent()._id}
+        eventRouteId="chlorine-night"
+        event={createEvent()}
+        hasPasswordList={false}
+        isSignedIn={false}
+      />,
+    );
+
+    const smsConsentCheckbox = screen.getByLabelText(/recurring sms messages from club chlorine/i);
+    expect(smsConsentCheckbox).not.toBeChecked();
+    expect(
+      screen.getByText(
+        /Club Chlorine may send account notifications, RSVP and guest-list updates/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Get Event Updates by SMS/i)).not.toBeInTheDocument();
   });
 });

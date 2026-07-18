@@ -39,6 +39,14 @@ function buildTwilioSignaturePayload(requestUrl: string, params: URLSearchParams
   return payloadParts.join("");
 }
 
+function twilioParamsToRecord(params: URLSearchParams): Record<string, string> {
+  const record: Record<string, string> = {};
+  for (const [key, value] of params.entries()) {
+    record[key] = value;
+  }
+  return record;
+}
+
 export async function verifyTwilioRequestSignature(
   request: Request,
   rawBody: string,
@@ -119,7 +127,7 @@ export const handleOptOut = httpAction(async (ctx, request) => {
 
   const from = params.get("From"); // User's phone number
   const bodyText = params.get("Body")?.toLowerCase().trim();
-  const _messageSid = params.get("MessageSid");
+  const messageSid = params.get("MessageSid") ?? undefined;
 
   if (!from) {
     return new Response("Missing phone number", { status: 400 });
@@ -136,12 +144,28 @@ export const handleOptOut = httpAction(async (ctx, request) => {
         phoneNumber: from,
         reason: "user_request_stop",
       });
+      await ctx.runMutation(internal.smsConversations.recordInboundForExistingThreads, {
+        fromPhoneNumber: from,
+        body: params.get("Body")?.trim() ?? bodyText,
+        kind: "opt_out",
+        providerMessageId: messageSid,
+        providerStatus: "received",
+        rawPayload: twilioParamsToRecord(params),
+      });
 
       console.log(`SMS opt-out recorded for ${from}`);
     } else if (bodyText && optInKeywords.includes(bodyText)) {
       // Handle opt-in (remove from opt-out list)
       await ctx.runAction(internal.smsMonitoringActions.removeOptOutAction, {
         phoneNumber: from,
+      });
+      await ctx.runMutation(internal.smsConversations.recordInboundForExistingThreads, {
+        fromPhoneNumber: from,
+        body: params.get("Body")?.trim() ?? bodyText,
+        kind: "opt_out",
+        providerMessageId: messageSid,
+        providerStatus: "received",
+        rawPayload: twilioParamsToRecord(params),
       });
 
       console.log(`SMS opt-in recorded for ${from}`);
@@ -185,6 +209,14 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
         phoneNumber: from,
         reason: "user_request_sms",
       });
+      await ctx.runMutation(internal.smsConversations.recordInboundForExistingThreads, {
+        fromPhoneNumber: from,
+        body: rawMessageBody,
+        kind: "opt_out",
+        providerMessageId: messageSid,
+        providerStatus: "received",
+        rawPayload: twilioParamsToRecord(params),
+      });
 
       // Send automatic confirmation (Twilio handles this automatically)
       console.log(`Opt-out processed for ${from}`);
@@ -192,23 +224,29 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
       await ctx.runAction(internal.smsMonitoringActions.removeOptOutAction, {
         phoneNumber: from,
       });
+      await ctx.runMutation(internal.smsConversations.recordInboundForExistingThreads, {
+        fromPhoneNumber: from,
+        body: rawMessageBody,
+        kind: "opt_out",
+        providerMessageId: messageSid,
+        providerStatus: "received",
+        rawPayload: twilioParamsToRecord(params),
+      });
 
       console.log(`Opt-in processed for ${from}`);
     } else if (helpKeywords.includes(messageBody)) {
-      // Send help response via Twilio action
-      // The action will handle dev/production logic internally
-      try {
-        await ctx.runAction(internal.smsActions.sendHelpResponse, {
-          to: from,
-          from: to || "",
-        });
-      } catch (error) {
-        // In production, missing credentials will throw - log and continue
-        // In dev with SMS disabled, it will return gracefully
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error("Failed to send help response:", errorMessage);
-        // Don't throw - webhook should still return 200 even if help response fails
-      }
+      await ctx.runMutation(internal.smsConversations.recordInboundForExistingThreads, {
+        fromPhoneNumber: from,
+        body: rawMessageBody,
+        kind: "help",
+        providerMessageId: messageSid,
+        providerStatus: "received",
+        rawPayload: twilioParamsToRecord(params),
+      });
+      // Twilio Advanced Opt-Out owns the branded HELP response for each
+      // Messaging Service. Sending another application-level response here
+      // would duplicate the reply and can identify the wrong client Brand.
+      console.log(`SMS help request recorded for ${from} to ${to ?? "unknown number"}`);
     } else {
       const replyResult = await ctx.runMutation(internal.textBlasts.processIncomingSmsReply, {
         fromPhoneNumber: from,
@@ -221,6 +259,12 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
             phoneNumber: from,
             message: replyResult.responseMessage,
             messageType: "Transactional",
+          });
+          await ctx.runMutation(internal.smsConversations.recordOutboundForExistingThreads, {
+            toPhoneNumber: from,
+            body: replyResult.responseMessage,
+            kind: "reply_action",
+            providerStatus: "sent",
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);

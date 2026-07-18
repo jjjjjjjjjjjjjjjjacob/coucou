@@ -1,13 +1,10 @@
 import { LegalPage, LegalSection } from "@coucou/ui/tenant-template";
 import { siteConfiguration } from "@/lib/site";
+import { clubChlorineSmsProgram } from "@/lib/sms-program";
 
 export default function TermsOfService() {
   const brandName = siteConfiguration.brandName;
-  const lastUpdated = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const lastUpdated = clubChlorineSmsProgram.lastUpdated;
 
   return (
     <LegalPage
@@ -30,40 +27,38 @@ export default function TermsOfService() {
           the Service.
         </p>
         <p>
-          SMS notifications are optional. When you affirmatively select the SMS opt-in for a
-          specific event, you consent to receive messages from that event&apos;s host (for example,
-          Party Nights Presents). Messages are sent by Coucou on behalf of the event host using{" "}
-          {brandName} as a messaging platform service provider. You may withhold or withdraw that
-          consent at any time.
+          SMS notifications are optional. When you affirmatively select the separate SMS consent
+          checkbox, you consent to receive recurring messages from Club Chlorine. Coucou provides
+          Club Chlorine&apos;s event-management and messaging technology. You may withhold or
+          withdraw SMS consent at any time without affecting your ability to RSVP, purchase, or
+          attend.
         </p>
       </LegalSection>
 
       <LegalSection title="2. Roles and Responsibilities">
         <p>
-          Coucou operates {brandName} as an Independent Software Vendor (&ldquo;ISV&rdquo;) that
-          supplies communication tooling, event management workflows, and SMS delivery
-          infrastructure. Coucou does not author or control the messaging content that event
-          attendees receive.
+          Club Chlorine is the operator and sender of the Club Chlorine SMS program. Authorized
+          event organizers may use Club Chlorine&apos;s tools to communicate about Club Chlorine
+          events, but those organizers do not become separate SMS senders under this program.
         </p>
         <p>
-          The &ldquo;End Business&rdquo; for each event is the specific host or organizer identified
-          on the RSVP form and event materials. This host brand creates the message content, manages
-          opt-ins, and is the organization you are consenting to hear from when you enable SMS
-          updates.
+          Coucou supplies software, event-management workflows, consent-recording tools, and
+          operational messaging services to Club Chlorine. Twilio supplies telecommunications
+          delivery infrastructure. Coucou and Twilio are service providers and are not separate
+          messaging programs that you join.
         </p>
         <ul className="ml-5 list-disc space-y-2">
           <li>
-            <strong>End Business obligations:</strong> Provide accurate branding, publish clear
-            opt-in disclosures, and honor unsubscribe requests immediately.
+            <strong>Club Chlorine obligations:</strong> Determine the program&apos;s operational
+            message content, publish clear opt-in disclosures, and honor messaging preferences.
           </li>
           <li>
-            <strong>Coucou (ISV) obligations:</strong> Capture SMS consent records, transmit opt-out
-            commands to the End Business, and deliver messages securely via Twilio while enforcing
-            compliance safeguards.
+            <strong>Coucou obligations:</strong> Provide the software used to capture consent,
+            transmit messages, and process messaging preferences on Club Chlorine&apos;s behalf.
           </li>
           <li>
-            Every consent checkbox, dialog, and confirmation screen prominently displays the End
-            Business name so you always know which organization will send SMS messages.
+            <strong>Twilio obligations:</strong> Provide telecommunications infrastructure for SMS
+            delivery, subject to carrier availability.
           </li>
         </ul>
       </LegalSection>
@@ -85,38 +80,43 @@ export default function TermsOfService() {
         </ul>
       </LegalSection>
 
-      <LegalSection title="5. SMS and Text Messaging Services">
-        <ul className="ml-5 list-disc space-y-2">
-          <li>
-            SMS consent is captured through an unchecked opt-in checkbox on every RSVP submission,
-            and the End Business brand name appears directly alongside the checkbox.
-          </li>
-          <li>
-            By opting in, you agree to receive RSVP status updates, event reminders, account
-            notifications, and occasional marketing messages from the event host named on the RSVP
-            form (for example, Party Nights Presents). That event host controls message content and
-            frequency.
-          </li>
-          <li>Message frequency varies based on event activity and marketing campaigns.</li>
-          <li>Message and data rates may apply from your wireless carrier.</li>
-          <li>
-            SMS messages are transmitted by Coucou on behalf of the event host using {brandName} as
-            a messaging platform service provider.
-          </li>
-          <li>Reply STOP to cancel SMS messages or HELP for assistance at any time.</li>
-          <li>Consent is not a condition of purchase or admission to any event.</li>
-          <li>
-            We use Twilio as our SMS infrastructure provider to deliver messages securely on behalf
-            of the End Business, facilitated through the {brandName} platform.
-          </li>
-          <li>
-            We do not sell or rent your phone number and only share it with the hosting business as
-            required to deliver SMS services.
-          </li>
-          <li>
-            You can manage your SMS preferences from your RSVP status page or profile at any time.
-          </li>
-        </ul>
+      <LegalSection title="5. Club Chlorine SMS Program">
+        <p>
+          Club Chlorine offers an optional recurring text messaging program for account
+          notifications, RSVP and guest-list status, tickets or QR codes, event updates, schedule or
+          venue changes, and replies to questions about Club Chlorine events or reservations.
+        </p>
+        <p>
+          By affirmatively selecting the separate SMS consent checkbox, you agree to receive these
+          messages from Club Chlorine. Coucou provides Club Chlorine&apos;s event-management and
+          messaging technology, and Twilio provides message-delivery infrastructure. Coucou and
+          Twilio are service providers and are not separate messaging programs you are joining.
+        </p>
+        <p>
+          Message frequency varies based on your account, RSVPs, event activity, and conversations
+          with Club Chlorine. Message and data rates may apply. Consent is not a condition of
+          purchase, RSVP, admission, or use of the Club Chlorine service. Promotional and marketing
+          messages are not covered by this consent.
+        </p>
+        <p>
+          <strong>Reply STOP to opt out at any time. Reply HELP for assistance.</strong> After
+          opting out, you may reply START to resubscribe. For additional support, contact{" "}
+          <a href={`mailto:${clubChlorineSmsProgram.supportEmail}`} className="underline">
+            {clubChlorineSmsProgram.supportEmail}
+          </a>
+          .
+        </p>
+        <p>
+          Wireless carriers are not liable for delayed or undelivered messages. SMS delivery may not
+          be available through every carrier or in every location.
+        </p>
+        <p>
+          Club Chlorine handles mobile information according to its{" "}
+          <a href="/privacy" className="underline">
+            Privacy Policy
+          </a>
+          .
+        </p>
       </LegalSection>
 
       <LegalSection title="6. Event Access and Passwords">
@@ -184,7 +184,11 @@ export default function TermsOfService() {
 
       <LegalSection title="13. Contact">
         <p>
-          If you have questions about these Terms, contact us through our platform or visit{" "}
+          If you have questions about these Terms, email{" "}
+          <a href={`mailto:${clubChlorineSmsProgram.supportEmail}`} className="underline">
+            {clubChlorineSmsProgram.supportEmail}
+          </a>{" "}
+          or visit{" "}
           <a href={siteConfiguration.domain} className="underline" target="_blank" rel="noreferrer">
             {siteConfiguration.domain.replace(/^https?:\/\//, "")}
           </a>

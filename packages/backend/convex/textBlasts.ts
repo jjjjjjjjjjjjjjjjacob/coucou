@@ -48,11 +48,30 @@ import {
   getEventInSiteScope,
   getTextBlastInSiteScope,
 } from "./lib/siteScope";
+import {
+  recordSmsConversationMessage,
+  type SmsConversationKind,
+} from "./lib/smsConversationRecords";
+import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function notificationTypeToConversationKind(type: string): SmsConversationKind {
+  switch (type) {
+    case "approval":
+      return "approval";
+    case "blast":
+      return "blast";
+    case "sms_consent_enabled":
+    case "sms_consent_disabled":
+      return "consent";
+    default:
+      return "system";
+  }
 }
 
 type RsvpStatus = ApprovalStatus;
@@ -1167,11 +1186,14 @@ async function createSmsRecipientsForBlast(args: {
       }
     }
 
-    const personalizedMessage = applyMessageTemplateVariables(args.message, {
-      ...templateBase,
-      firstName: resolveRecipientFirstName(recipient),
-      qrCodeUrl: redemptionLink || "",
-    });
+    const personalizedMessage = formatSmsMessageForSite(
+      args.primaryEvent.siteKey,
+      applyMessageTemplateVariables(args.message, {
+        ...templateBase,
+        firstName: resolveRecipientFirstName(recipient),
+        qrCodeUrl: redemptionLink || "",
+      }),
+    );
 
     const textBlastRecipientId = await args.ctx.runMutation(
       internal.textBlasts.upsertRecipientDelivery,
@@ -1189,6 +1211,7 @@ async function createSmsRecipientsForBlast(args: {
       eventId: recipient.sourceEventIds[0] ?? args.primaryEvent._id,
       recipientClerkUserId: recipient.clerkUserId,
       recipientPhoneObfuscated: recipient.phoneObfuscated,
+      recipientPhoneHash: recipient.phoneHash,
       type: "blast",
       message: personalizedMessage,
       textBlastId: args.blastId,
@@ -2550,6 +2573,30 @@ export const finalizeQueuedBlastSend = internalMutation({
         });
       }
 
+      const conversationPhoneHash = notification?.recipientPhoneHash ?? delivery?.phoneHash;
+      if (notification && conversationPhoneHash) {
+        await recordSmsConversationMessage(ctx, {
+          eventId: notification.eventId,
+          phoneHash: conversationPhoneHash,
+          phoneObfuscated: notification.recipientPhoneObfuscated,
+          participantClerkUserIds: Array.from(
+            new Set([
+              notification.recipientClerkUserId,
+              ...(delivery?.recipientClerkUserIds ?? []),
+            ]),
+          ),
+          direction: "outbound",
+          kind: notificationTypeToConversationKind(notification.type),
+          body: notification.message,
+          smsNotificationId: notification._id,
+          textBlastId: notification.textBlastId,
+          textBlastRecipientId: notification.textBlastRecipientId,
+          providerMessageId: result.messageId ?? notification.messageId ?? delivery?.messageId,
+          providerStatus: status,
+          createdAt: sentAt ?? notification.createdAt,
+        });
+      }
+
       if (
         result.success &&
         result.messageId &&
@@ -2615,10 +2662,61 @@ async function logReplyAttempt(
     messageSid?: string;
     receivedAt: number;
   },
-): Promise<void> {
-  await ctx.db.insert("textBlastReplyAttempts", {
+): Promise<Id<"textBlastReplyAttempts">> {
+  return await ctx.db.insert("textBlastReplyAttempts", {
     ...args,
     createdAt: Date.now(),
+  });
+}
+
+async function recordReplyActionConversation(
+  ctx: MutationCtx,
+  args: {
+    eventId: Id<"events">;
+    phoneHash: string;
+    fromPhoneObfuscated: string;
+    participantClerkUserIds: readonly string[];
+    inboundMessage: string;
+    messageSid?: string;
+    textBlastId?: Id<"textBlasts">;
+    textBlastRecipientId?: Id<"textBlastRecipients">;
+    replyAttemptId: Id<"textBlastReplyAttempts">;
+    status: ReplyActionAttemptStatus;
+    responseMessage?: string;
+    receivedAt: number;
+  },
+) {
+  await recordSmsConversationMessage(ctx, {
+    eventId: args.eventId,
+    phoneHash: args.phoneHash,
+    phoneObfuscated: args.fromPhoneObfuscated,
+    participantClerkUserIds: args.participantClerkUserIds,
+    direction: "inbound",
+    kind: "sms",
+    body: args.inboundMessage,
+    providerMessageId: args.messageSid,
+    providerStatus: "received",
+    textBlastId: args.textBlastId,
+    textBlastRecipientId: args.textBlastRecipientId,
+    createdAt: args.receivedAt,
+  });
+
+  const systemMessage = args.responseMessage
+    ? `Reply action ${args.status}: ${args.responseMessage}`
+    : `Reply action ${args.status}`;
+  await recordSmsConversationMessage(ctx, {
+    eventId: args.eventId,
+    phoneHash: args.phoneHash,
+    phoneObfuscated: args.fromPhoneObfuscated,
+    participantClerkUserIds: args.participantClerkUserIds,
+    direction: "system",
+    kind: "reply_action",
+    body: systemMessage,
+    textBlastId: args.textBlastId,
+    textBlastRecipientId: args.textBlastRecipientId,
+    replyAttemptId: args.replyAttemptId,
+    providerStatus: args.status,
+    createdAt: args.receivedAt + 1,
   });
 }
 
@@ -2781,16 +2879,19 @@ function formatRsvpConfirmationMessage(
   const recipientFullName =
     recipient.fullName ?? [recipient.firstName, recipient.lastName].filter(Boolean).join(" ");
 
-  return applyMessageTemplateVariables(messageTemplate, {
-    firstName: resolveMessageTemplateFirstName({
-      firstName: recipient.firstName,
-      fullName: recipientFullName,
+  return formatSmsMessageForSite(
+    event.siteKey,
+    applyMessageTemplateVariables(messageTemplate, {
+      firstName: resolveMessageTemplateFirstName({
+        firstName: recipient.firstName,
+        fullName: recipientFullName,
+      }),
+      eventName: formatEventTitleForMessageTemplate(event),
+      eventDate: formatEventDateForMessageTemplate(event.eventDate, event.eventTimezone),
+      eventLocation: event.location?.trim() ?? "",
+      qrCodeUrl: "",
     }),
-    eventName: formatEventTitleForMessageTemplate(event),
-    eventDate: formatEventDateForMessageTemplate(event.eventDate, event.eventTimezone),
-    eventLocation: event.location?.trim() ?? "",
-    qrCodeUrl: "",
-  });
+  );
 }
 
 export const processIncomingSmsReply = internalMutation({
@@ -2827,13 +2928,17 @@ export const processIncomingSmsReply = internalMutation({
       });
       return { shouldRespond: false, status: "unknown_sender" };
     }
+    const sourceEvent = await ctx.db.get(candidate.blast.eventId);
 
     const matchingReplyAction = candidate.replyActions.find(
       (replyAction) => replyAction.replyCodeNormalized === normalizedReplyCode,
     );
     if (!matchingReplyAction) {
-      const responseMessage = "We could not match that reply code. Check the text and try again.";
-      await logReplyAttempt(ctx, {
+      const responseMessage = formatSmsMessageForSite(
+        sourceEvent?.siteKey,
+        "We could not match that reply code. Check the text and try again.",
+      );
+      const replyAttemptId = await logReplyAttempt(ctx, {
         textBlastId: candidate.blast._id,
         textBlastRecipientId: candidate.delivery._id,
         phoneHash: phoneResolution.phoneHash,
@@ -2845,14 +2950,30 @@ export const processIncomingSmsReply = internalMutation({
         messageSid: args.messageSid,
         receivedAt,
       });
+      await recordReplyActionConversation(ctx, {
+        eventId: candidate.blast.eventId,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
+        inboundMessage,
+        messageSid: args.messageSid,
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyAttemptId,
+        status: "invalid_code",
+        responseMessage,
+        receivedAt,
+      });
       return { shouldRespond: true, responseMessage, status: "invalid_code" };
     }
 
     const uniqueRecipientClerkUserIds = getUniqueIds(candidate.delivery.recipientClerkUserIds);
     if (uniqueRecipientClerkUserIds.length !== 1) {
-      const responseMessage =
-        "We could not submit this RSVP by text because this phone matches more than one guest.";
-      await logReplyAttempt(ctx, {
+      const responseMessage = formatSmsMessageForSite(
+        sourceEvent?.siteKey,
+        "We could not submit this RSVP by text because this phone matches more than one guest.",
+      );
+      const replyAttemptId = await logReplyAttempt(ctx, {
         textBlastId: candidate.blast._id,
         textBlastRecipientId: candidate.delivery._id,
         replyActionId: matchingReplyAction._id,
@@ -2867,6 +2988,20 @@ export const processIncomingSmsReply = internalMutation({
         messageSid: args.messageSid,
         receivedAt,
       });
+      await recordReplyActionConversation(ctx, {
+        eventId: candidate.blast.eventId,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
+        inboundMessage,
+        messageSid: args.messageSid,
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyAttemptId,
+        status: "ambiguous_recipient",
+        responseMessage,
+        receivedAt,
+      });
       return { shouldRespond: true, responseMessage, status: "ambiguous_recipient" };
     }
 
@@ -2878,8 +3013,11 @@ export const processIncomingSmsReply = internalMutation({
     ).filter((sourceRsvp): sourceRsvp is Doc<"rsvps"> => sourceRsvp !== null);
     const sourceRsvp = selectSourceRsvpForReplyAction(sourceRsvps, clerkUserId);
     if (!sourceRsvp) {
-      const responseMessage = "We could not find the original RSVP needed for this text reply.";
-      await logReplyAttempt(ctx, {
+      const responseMessage = formatSmsMessageForSite(
+        sourceEvent?.siteKey,
+        "We could not find the original RSVP needed for this text reply.",
+      );
+      const replyAttemptId = await logReplyAttempt(ctx, {
         textBlastId: candidate.blast._id,
         textBlastRecipientId: candidate.delivery._id,
         replyActionId: matchingReplyAction._id,
@@ -2893,6 +3031,20 @@ export const processIncomingSmsReply = internalMutation({
         responseMessage,
         errorMessage: "Source RSVP not found",
         messageSid: args.messageSid,
+        receivedAt,
+      });
+      await recordReplyActionConversation(ctx, {
+        eventId: candidate.blast.eventId,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
+        inboundMessage,
+        messageSid: args.messageSid,
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyAttemptId,
+        status: "error",
+        responseMessage,
         receivedAt,
       });
       return { shouldRespond: true, responseMessage, status: "error" };
@@ -2909,8 +3061,11 @@ export const processIncomingSmsReply = internalMutation({
           .unique()
       : null;
     if (!targetEvent || !targetListCredential || !isEventOpenForRsvp(targetEvent, receivedAt)) {
-      const responseMessage = "This reply code is no longer accepting RSVPs.";
-      await logReplyAttempt(ctx, {
+      const responseMessage = formatSmsMessageForSite(
+        targetEvent?.siteKey ?? sourceEvent?.siteKey,
+        "This reply code is no longer accepting RSVPs.",
+      );
+      const replyAttemptId = await logReplyAttempt(ctx, {
         textBlastId: candidate.blast._id,
         textBlastRecipientId: candidate.delivery._id,
         replyActionId: matchingReplyAction._id,
@@ -2926,6 +3081,20 @@ export const processIncomingSmsReply = internalMutation({
         messageSid: args.messageSid,
         receivedAt,
       });
+      await recordReplyActionConversation(ctx, {
+        eventId: targetEvent?._id ?? candidate.blast.eventId,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
+        inboundMessage,
+        messageSid: args.messageSid,
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyAttemptId,
+        status: "target_unavailable",
+        responseMessage,
+        receivedAt,
+      });
       return { shouldRespond: true, responseMessage, status: "target_unavailable" };
     }
 
@@ -2937,8 +3106,11 @@ export const processIncomingSmsReply = internalMutation({
       .unique();
     if (existingDestinationRsvp) {
       const existingStatus = resolveApprovalStatus(existingDestinationRsvp);
-      const responseMessage = `You already have an RSVP for ${formatReplyActionEventName(targetEvent)} (${existingStatus}).`;
-      await logReplyAttempt(ctx, {
+      const responseMessage = formatSmsMessageForSite(
+        targetEvent.siteKey,
+        `You already have an RSVP for ${formatReplyActionEventName(targetEvent)} (${existingStatus}).`,
+      );
+      const replyAttemptId = await logReplyAttempt(ctx, {
         textBlastId: candidate.blast._id,
         textBlastRecipientId: candidate.delivery._id,
         replyActionId: matchingReplyAction._id,
@@ -2955,6 +3127,20 @@ export const processIncomingSmsReply = internalMutation({
         messageSid: args.messageSid,
         receivedAt,
       });
+      await recordReplyActionConversation(ctx, {
+        eventId: targetEvent._id,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
+        inboundMessage,
+        messageSid: args.messageSid,
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyAttemptId,
+        status: "already_exists",
+        responseMessage,
+        receivedAt,
+      });
       return { shouldRespond: true, responseMessage, status: "already_exists" };
     }
 
@@ -2965,8 +3151,11 @@ export const processIncomingSmsReply = internalMutation({
       missingRequiredFields.push(copiedPrimaryFields.missingRequiredMessage);
     }
     if (missingRequiredFields.length > 0) {
-      const responseMessage = buildMissingFieldsResponse(missingRequiredFields);
-      await logReplyAttempt(ctx, {
+      const responseMessage = formatSmsMessageForSite(
+        targetEvent.siteKey,
+        buildMissingFieldsResponse(missingRequiredFields),
+      );
+      const replyAttemptId = await logReplyAttempt(ctx, {
         textBlastId: candidate.blast._id,
         textBlastRecipientId: candidate.delivery._id,
         replyActionId: matchingReplyAction._id,
@@ -2981,6 +3170,20 @@ export const processIncomingSmsReply = internalMutation({
         responseMessage,
         errorMessage: missingRequiredFields.join(", "),
         messageSid: args.messageSid,
+        receivedAt,
+      });
+      await recordReplyActionConversation(ctx, {
+        eventId: targetEvent._id,
+        phoneHash: phoneResolution.phoneHash,
+        fromPhoneObfuscated,
+        participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
+        inboundMessage,
+        messageSid: args.messageSid,
+        textBlastId: candidate.blast._id,
+        textBlastRecipientId: candidate.delivery._id,
+        replyAttemptId,
+        status: "missing_required_fields",
+        responseMessage,
         receivedAt,
       });
       return { shouldRespond: true, responseMessage, status: "missing_required_fields" };
@@ -3058,7 +3261,7 @@ export const processIncomingSmsReply = internalMutation({
       lastName: user?.lastName,
       fullName: userName || sourceRsvp.userName,
     });
-    await logReplyAttempt(ctx, {
+    const replyAttemptId = await logReplyAttempt(ctx, {
       textBlastId: candidate.blast._id,
       textBlastRecipientId: candidate.delivery._id,
       replyActionId: matchingReplyAction._id,
@@ -3073,6 +3276,20 @@ export const processIncomingSmsReply = internalMutation({
       status: "submitted",
       responseMessage,
       messageSid: args.messageSid,
+      receivedAt,
+    });
+    await recordReplyActionConversation(ctx, {
+      eventId: targetEvent._id,
+      phoneHash: phoneResolution.phoneHash,
+      fromPhoneObfuscated,
+      participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
+      inboundMessage,
+      messageSid: args.messageSid,
+      textBlastId: candidate.blast._id,
+      textBlastRecipientId: candidate.delivery._id,
+      replyAttemptId,
+      status: "submitted",
+      responseMessage,
       receivedAt,
     });
 

@@ -8,6 +8,7 @@ import { Bell, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import React from "react";
 import { toast } from "sonner";
+import { SmsProgramDisclosure } from "@/components/sms-program-disclosure";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { coucouBaseUrl, siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
 import type { UserEventSharing } from "@/lib/types";
@@ -79,15 +79,6 @@ export default function ProfilePage() {
       if (!sharedEvent.smsConsent) {
         consentIpAddress = await fetchSmsConsentIpAddress();
       }
-      const smsSenderDisplayNameForToast = resolveEventMessagingBrandName(
-        {
-          name: sharedEvent.eventName,
-          secondaryTitle: sharedEvent.eventSecondaryTitle,
-          eventHostNames: sharedEvent.eventHostNames,
-          productionCompany: sharedEvent.productionCompany,
-        },
-        { fallback: sharedEvent.eventName ?? "Event Host" },
-      );
       await updateSmsPreference({
         rsvpId: sharedEvent.rsvpId as Id<"rsvps">,
         smsConsent: !sharedEvent.smsConsent,
@@ -96,8 +87,8 @@ export default function ProfilePage() {
       });
       toast.success(
         !sharedEvent.smsConsent
-          ? `SMS from ${smsSenderDisplayNameForToast} enabled.`
-          : `SMS from ${smsSenderDisplayNameForToast} disabled.`,
+          ? "Club Chlorine SMS updates enabled."
+          : "Club Chlorine SMS updates disabled.",
       );
     } catch (error) {
       const errorDetails = error as Error;
@@ -312,19 +303,9 @@ export default function ProfilePage() {
           ) : (
             <div className="space-y-6">
               <p className="text-[10px] leading-tight text-primary/60">
-                RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of each event
-                host using Club Chlorine. Msg & data rates may apply. Reply STOP to cancel.
+                <SmsProgramDisclosure />
               </p>
               {sharedEvents?.map((sharedEvent) => {
-                const smsSenderDisplayName = resolveEventMessagingBrandName(
-                  {
-                    name: sharedEvent.eventName,
-                    secondaryTitle: sharedEvent.eventSecondaryTitle,
-                    eventHostNames: sharedEvent.eventHostNames,
-                    productionCompany: sharedEvent.productionCompany,
-                  },
-                  { fallback: sharedEvent.eventName ?? "Event Host" },
-                );
                 const sharedFieldValues = sharedEvent.customFields.filter(
                   (field) => field.value && field.value.length > 0,
                 );
@@ -358,11 +339,9 @@ export default function ProfilePage() {
                             {formatEventDateTime(sharedEvent.eventDate, sharedEvent.eventTimezone)}
                           </p>
                         )}
-                        {smsSenderDisplayName && (
-                          <p className="text-[11px] uppercase tracking-[0.1em] text-primary/60">
-                            SMS sender: {smsSenderDisplayName} (delivered via Club Chlorine)
-                          </p>
-                        )}
+                        <p className="text-[11px] uppercase tracking-[0.1em] text-primary/60">
+                          SMS sender: Club Chlorine (delivered via Coucou)
+                        </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <Button

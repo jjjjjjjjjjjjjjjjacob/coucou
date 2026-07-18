@@ -303,6 +303,7 @@ export default defineSchema({
     approvalStatus: v.optional(v.string()), // 'pending' | 'approved' | 'denied'
     attendanceStatus: v.optional(v.string()), // 'yes' | 'no' | 'maybe'
     ticketViewedAt: v.optional(v.number()),
+    apiClientId: v.optional(v.id("apiClients")), // set when created/updated via the partner API
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -475,6 +476,7 @@ export default defineSchema({
     eventId: v.id("events"),
     recipientClerkUserId: v.string(),
     recipientPhoneObfuscated: v.string(), // ***-***-1234 format for display
+    recipientPhoneHash: v.optional(v.string()),
     type: v.string(), // 'approval' | 'blast' | 'reminder' | 'sms_consent_enabled' | 'sms_consent_disabled'
     message: v.string(),
     status: v.string(), // 'pending' | 'sent' | 'failed'
@@ -580,6 +582,79 @@ export default defineSchema({
     .index("by_reply_action", ["replyActionId"])
     .index("by_status", ["status"]),
 
+  smsConversationThreads: defineTable({
+    eventId: v.id("events"),
+    phoneHash: v.string(),
+    phoneObfuscated: v.string(),
+    participantClerkUserIds: v.array(v.string()),
+    lastMessageBody: v.optional(v.string()),
+    lastMessageAt: v.optional(v.number()),
+    lastMessageDirection: v.optional(
+      v.union(v.literal("inbound"), v.literal("outbound"), v.literal("system")),
+    ),
+    lastMessageKind: v.optional(
+      v.union(
+        v.literal("sms"),
+        v.literal("manual"),
+        v.literal("blast"),
+        v.literal("approval"),
+        v.literal("consent"),
+        v.literal("reply_action"),
+        v.literal("opt_out"),
+        v.literal("help"),
+        v.literal("delivery_status"),
+        v.literal("system"),
+      ),
+    ),
+    messageCount: v.number(),
+    inboundCount: v.number(),
+    outboundCount: v.number(),
+    systemCount: v.number(),
+    lastInboundAt: v.optional(v.number()),
+    lastOutboundAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_event", ["eventId"])
+    .index("by_event_phone", ["eventId", "phoneHash"])
+    .index("by_phone", ["phoneHash"]),
+
+  smsConversationMessages: defineTable({
+    threadId: v.id("smsConversationThreads"),
+    eventId: v.id("events"),
+    phoneHash: v.string(),
+    direction: v.union(v.literal("inbound"), v.literal("outbound"), v.literal("system")),
+    kind: v.union(
+      v.literal("sms"),
+      v.literal("manual"),
+      v.literal("blast"),
+      v.literal("approval"),
+      v.literal("consent"),
+      v.literal("reply_action"),
+      v.literal("opt_out"),
+      v.literal("help"),
+      v.literal("delivery_status"),
+      v.literal("system"),
+    ),
+    body: v.optional(v.string()),
+    mediaUrls: v.optional(v.array(v.string())),
+    providerMessageId: v.optional(v.string()),
+    providerStatus: v.optional(v.string()),
+    smsNotificationId: v.optional(v.id("smsNotifications")),
+    textBlastId: v.optional(v.id("textBlasts")),
+    textBlastRecipientId: v.optional(v.id("textBlastRecipients")),
+    replyAttemptId: v.optional(v.id("textBlastReplyAttempts")),
+    adminClerkUserId: v.optional(v.string()),
+    rawPayload: v.optional(v.any()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_thread", ["threadId"])
+    .index("by_thread_created", ["threadId", "createdAt"])
+    .index("by_event_phone", ["eventId", "phoneHash"])
+    .index("by_providerMessageId", ["providerMessageId"])
+    .index("by_sms_notification", ["smsNotificationId"]),
+
   // SMS usage tracking for cost monitoring and analytics
   smsUsageLogs: defineTable({
     messageId: v.string(), // AWS SNS Message ID
@@ -656,6 +731,78 @@ export default defineSchema({
   })
     .index("by_workspace", ["workspaceId"])
     .index("by_phoneNumber", ["phoneNumber"]),
+
+  // Partner API clients — one row per issued API key (hash stored, plaintext shown once)
+  apiClients: defineTable({
+    workspaceId: v.id("workspaces"),
+    displayName: v.string(),
+    keyPrefix: v.string(), // first characters of the plaintext key, for display/identification only
+    keyHash: v.string(), // SHA-256 hex of the full plaintext key
+    scopes: v.array(
+      v.union(v.literal("events:read"), v.literal("rsvps:read"), v.literal("rsvps:write")),
+    ),
+    createdByClerkUserId: v.string(),
+    createdAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_keyHash", ["keyHash"])
+    .index("by_workspace", ["workspaceId"]),
+
+  // Partner webhook endpoints — outbound delivery targets with per-endpoint secrets.
+  // Secrets are stored readable by necessity: the encryption secret must be recoverable
+  // to AES-encrypt payloads (hashing is not an option). Convex platform-side encryption
+  // at rest is the mitigation; future hardening is envelope encryption with a master key.
+  webhookEndpoints: defineTable({
+    workspaceId: v.id("workspaces"),
+    url: v.string(), // https:// only, enforced at write time
+    description: v.optional(v.string()),
+    encryptionSecretBase64: v.string(), // 32 random bytes, base64url — AES-256-GCM key
+    signingSecretBase64: v.string(), // 32 random bytes, base64url — independent HMAC-SHA256 key
+    secretGeneration: v.number(), // starts at 1, bumped on rotate; sent as keyGeneration
+    subscribedEventTypes: v.array(v.string()), // validated against WEBHOOK_EVENT_TYPES at write time
+    isActive: v.boolean(),
+    disabledReason: v.optional(v.union(v.literal("manual"), v.literal("auto_failure"))),
+    consecutiveFailureCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_active", ["workspaceId", "isActive"]),
+
+  // Partner webhook delivery log — one row per (emitted event × endpoint)
+  webhookDeliveries: defineTable({
+    endpointId: v.id("webhookEndpoints"),
+    workspaceId: v.id("workspaces"),
+    eventType: v.string(),
+    eventId: v.optional(v.id("events")),
+    rsvpId: v.optional(v.id("rsvps")),
+    payloadJson: v.string(), // plaintext payload snapshot; encrypted fresh per delivery attempt
+    status: v.union(
+      v.literal("pending"),
+      v.literal("success"),
+      v.literal("exhausted"),
+      v.literal("skipped_inactive"),
+    ),
+    attemptCount: v.number(),
+    nextAttemptAt: v.optional(v.number()),
+    lastAttemptAt: v.optional(v.number()),
+    lastResponseStatus: v.optional(v.number()),
+    lastErrorMessage: v.optional(v.string()),
+    occurredAt: v.number(),
+  })
+    .index("by_endpoint", ["endpointId", "occurredAt"])
+    .index("by_workspace", ["workspaceId", "occurredAt"]),
+
+  // Durable phoneHash → plaintext E.164 map for guest identity in partner webhooks.
+  // Guest RSVPs only persist a phone hash; partner integrations need the real number
+  // to match users across systems, so guest submissions record it here.
+  guestContacts: defineTable({
+    phoneHash: v.string(),
+    phoneNumber: v.string(), // normalized E.164
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_phoneHash", ["phoneHash"]),
 
   // Cross-tenancy audit log
   auditLog: defineTable({

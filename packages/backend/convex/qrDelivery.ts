@@ -2,9 +2,11 @@ import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { action, internalMutation, query } from "./_generated/server";
+import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
 import { ensureEventInSiteScope } from "./lib/siteScope";
+import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 type QrBatchResult = {
@@ -190,14 +192,19 @@ export const sendDeferredQrBatch = action({
           continue;
         }
 
-        const message = `Your QR code for ${event.name?.trim() || "the event"}.
+        const message = formatSmsMessageForSite(
+          event.siteKey,
+          `Your QR code for ${event.name?.trim() || "the event"}.
 
-View your ticket here: ${ticketUrl}`;
+View your ticket here: ${ticketUrl}`,
+        );
+        const phoneResolution = await normalizeAndHashPhoneNumber(recipient.phone);
 
         const notificationId = await ctx.runMutation(internal.sms.createNotification, {
           eventId: args.eventId,
           recipientClerkUserId: recipient.clerkUserId,
-          recipientPhoneObfuscated: obfuscatePhoneNumber(recipient.phone),
+          recipientPhoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
+          recipientPhoneHash: phoneResolution.phoneHash,
           type: "approval",
           message,
         });

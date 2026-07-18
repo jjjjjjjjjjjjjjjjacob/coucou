@@ -422,6 +422,54 @@ describe("text blast recipient selection", () => {
     ).rejects.toThrow("reserved");
   });
 
+  it("brands Club Chlorine reply-action errors and includes the opt-out reminder", async () => {
+    const testBackend = setupTestBackend();
+    const sourceEventId = await seedEvent(testBackend, "Club Chlorine Source Event");
+    const targetEventId = await seedEvent(testBackend, "Club Chlorine Target Event");
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(sourceEventId, { siteKey: "club-chlorine" });
+      await databaseContext.db.patch(targetEventId, { siteKey: "club-chlorine" });
+    });
+    await seedUser(testBackend, "user_club_reply", "555-555-0199", "Casey");
+    const sourceRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "user_club_reply",
+      listKey: "vip",
+    });
+    const textBlastId = await seedTextBlast(
+      testBackend,
+      sourceEventId,
+      "Club Chlorine reply blast",
+    );
+    await seedDelivery(testBackend, {
+      textBlastId,
+      phone: "555-555-0199",
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId: sourceRsvpId,
+      clerkUserId: "user_club_reply",
+      listKey: "vip",
+    });
+    await seedReplyAction(testBackend, {
+      textBlastId,
+      replyCode: "RETURN",
+      targetEventId,
+      targetListKey: "ga",
+    });
+
+    const result = await testBackend.mutation(internal.textBlasts.processIncomingSmsReply, {
+      fromPhoneNumber: "555-555-0199",
+      messageBody: "NOT-A-MATCH",
+    });
+
+    expect(result).toEqual({
+      shouldRespond: true,
+      status: "invalid_code",
+      responseMessage:
+        "CLUB CHLORINE: We could not match that reply code. Check the text and try again.\n\nReply STOP to opt out.",
+    });
+  });
+
   it("submits a pending RSVP from a matching text blast reply action", async () => {
     const testBackend = setupTestBackend();
     const sourceEventId = await seedEvent(testBackend, "Source Event");
@@ -472,6 +520,15 @@ describe("text blast recipient selection", () => {
         )
         .unique();
     });
+    const { phoneHash } = await normalizeAndHashPhoneNumber("555-555-0100");
+    const conversationMessages = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("smsConversationMessages")
+        .withIndex("by_event_phone", (queryBuilder) =>
+          queryBuilder.eq("eventId", targetEventId).eq("phoneHash", phoneHash),
+        )
+        .collect();
+    });
 
     expect(result.status).toBe("submitted");
     expect(result.shouldRespond).toBe(true);
@@ -482,6 +539,12 @@ describe("text blast recipient selection", () => {
     expect(targetRsvp?.listKey).toBe("ga");
     expect(targetRsvp?.smsConsent).toBe(true);
     expect(targetRsvp?.customFieldValues).toEqual({ shirt: "Large" });
+    expect(conversationMessages.map((message) => message.direction)).toEqual([
+      "inbound",
+      "system",
+    ]);
+    expect(conversationMessages[0]?.body).toBe("return");
+    expect(conversationMessages[1]?.body).toContain("Reply action submitted");
   });
 
   it("uses custom RSVP confirmation text for matching reply action submissions", async () => {

@@ -64,6 +64,36 @@ function createAuthContextWithStoredCoucouMembership(identity: UserIdentity | nu
   };
 }
 
+function createActionAuthContext(
+  identity: UserIdentity | null,
+  hasCoucouOrganizationAccess: boolean,
+) {
+  let queryCallCount = 0;
+
+  return {
+    ...createAuthContext(identity),
+    runQuery: async () => {
+      queryCallCount += 1;
+
+      if (queryCallCount === 1) {
+        return hasCoucouOrganizationAccess
+          ? [
+              {
+                organizationId: "org_coucou",
+                role: "org:member",
+              },
+            ]
+          : [];
+      }
+
+      return {
+        hasCoucouOrganizationAccess,
+        tenantWorkspaces: [],
+      };
+    },
+  };
+}
+
 describe("requireCoucouPlatformMember", () => {
   it("allows active members of the Coucou organization", async () => {
     const identity = createIdentity({ org_slug: "coucou" });
@@ -88,6 +118,28 @@ describe("requireCoucouPlatformMember", () => {
     await expect(
       requireCoucouPlatformMember(createAuthContextWithStoredCoucouMembership(identity)),
     ).resolves.toBe(identity);
+  });
+
+  it("allows synced Coucou members from an action context", async () => {
+    const identity = createIdentity({
+      org_id: "org_tenant",
+      org_slug: "tenant-house",
+    });
+
+    await expect(
+      requireCoucouPlatformMember(createActionAuthContext(identity, true)),
+    ).resolves.toBe(identity);
+  });
+
+  it("rejects action callers without synced Coucou membership", async () => {
+    const identity = createIdentity({
+      org_id: "org_tenant",
+      org_slug: "tenant-house",
+    });
+
+    await expect(
+      requireCoucouPlatformMember(createActionAuthContext(identity, false)),
+    ).rejects.toThrow("Forbidden");
   });
 
   it("rejects signed-out requests", async () => {

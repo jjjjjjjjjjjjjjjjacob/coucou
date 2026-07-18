@@ -24,6 +24,14 @@ type CreateEventActionArgs = {
   lists: ListPayload[];
 };
 
+type NextNavigationTestGlobal = typeof globalThis & {
+  __setNextNavigationTestState?: (nextState: {
+    pathname?: string;
+    searchParams?: string | URLSearchParams;
+    params?: Record<string, string>;
+  }) => void;
+};
+
 type CredentialQueryResult = Array<{
   _id: string;
   listKey: string;
@@ -38,7 +46,6 @@ type CredentialQueryResult = Array<{
 const actionCalls: ActionCall[] = [];
 let credentialQueryResult: CredentialQueryResult | undefined;
 let draftEventQueryResult: Event | null | undefined;
-let currentSearchParams = new URLSearchParams();
 let draftEventQueryFallbackIndex = 0;
 let actionHookFallbackIndex = 0;
 let workspaceQueryResult = {
@@ -72,6 +79,16 @@ function getCreateEventActionArgs(): CreateEventActionArgs {
     throw new Error("Create event action was not called");
   }
   return matchingCall.args;
+}
+
+function setNavigationSearchParams(searchParams: URLSearchParams = new URLSearchParams()) {
+  (globalThis as NextNavigationTestGlobal).__setNextNavigationTestState?.({
+    pathname: `/workspaces/${workspaceScope.workspaceSlug}/host/new`,
+    searchParams,
+    params: {
+      workspaceSlug: workspaceScope.workspaceSlug,
+    },
+  });
 }
 
 const mockUseQuery = mock((queryReference: unknown, args: unknown) => {
@@ -142,24 +159,6 @@ mock.module("convex/react", () => ({
   useAction: mockUseAction,
   useMutation: mockUseMutation,
   useQuery: mockUseQuery,
-}));
-
-mock.module("next/navigation", () => ({
-  useRouter: () => ({
-    push: () => {},
-    replace: () => {},
-    prefetch: () => {},
-    back: () => {},
-    forward: () => {},
-    refresh: () => {},
-  }),
-  usePathname: () => `/workspaces/${workspaceScope.workspaceSlug}/host/new`,
-  useSearchParams: () => currentSearchParams,
-  useParams: () => ({
-    workspaceSlug: workspaceScope.workspaceSlug,
-  }),
-  redirect: () => null,
-  notFound: () => null,
 }));
 
 mock.module("@/lib/use-workspace-scope", () => ({
@@ -256,7 +255,6 @@ describe("event confirmation texts", () => {
     actionCalls.length = 0;
     credentialQueryResult = undefined;
     draftEventQueryResult = undefined;
-    currentSearchParams = new URLSearchParams();
     draftEventQueryFallbackIndex = 0;
     actionHookFallbackIndex = 0;
     workspaceQueryResult = {
@@ -287,6 +285,7 @@ describe("event confirmation texts", () => {
       mockUpdateActionHandler,
       mockUpdateAndPublishActionHandler,
     ];
+    setNavigationSearchParams();
   });
 
   it("prefills new event colors and lists from workspace defaults", async () => {
@@ -374,7 +373,7 @@ describe("event confirmation texts", () => {
   });
 
   it("disables draft save while an existing draft is loading", () => {
-    currentSearchParams = new URLSearchParams("draftId=draft_event");
+    setNavigationSearchParams(new URLSearchParams("draftId=draft_event"));
     credentialQueryResult = undefined;
     draftEventQueryResult = undefined;
 
@@ -384,7 +383,7 @@ describe("event confirmation texts", () => {
   });
 
   it("hydrates an existing draft before saving so stored event and list values win", async () => {
-    currentSearchParams = new URLSearchParams("draftId=draft_event");
+    setNavigationSearchParams(new URLSearchParams("draftId=draft_event"));
     draftEventQueryResult = {
       _id: "draft_event",
       name: "Stored Draft",
@@ -444,7 +443,7 @@ describe("event confirmation texts", () => {
   });
 
   it("publishes existing drafts through updateAndPublish with the full patch and lists", async () => {
-    currentSearchParams = new URLSearchParams("draftId=draft_event");
+    setNavigationSearchParams(new URLSearchParams("draftId=draft_event"));
     draftEventQueryResult = {
       _id: "draft_event",
       name: "Stored Draft",

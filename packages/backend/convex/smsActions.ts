@@ -8,6 +8,7 @@ import { v } from "convex/values";
 import twilio from "twilio";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import { internalAction } from "./_generated/server";
 import { formatPhoneNumberForSms, obfuscatePhoneNumber } from "./lib/phoneUtils";
 
@@ -58,6 +59,43 @@ function validateTwilioCredentials(): {
   return { accountSid, authToken, fromNumber };
 }
 
+async function recordNotificationConversationMessage(
+  ctx: Pick<ActionCtx, "runQuery" | "runMutation">,
+  args: {
+    notificationId?: Id<"smsNotifications">;
+    providerMessageId?: string;
+    providerStatus: string;
+    createdAt?: number;
+  },
+) {
+  if (!args.notificationId) {
+    return;
+  }
+
+  const mirrorContext = await ctx.runQuery(internal.smsConversations.getNotificationMirrorContext, {
+    notificationId: args.notificationId,
+  });
+  if (!mirrorContext) {
+    return;
+  }
+
+  await ctx.runMutation(internal.smsConversations.recordMessage, {
+    eventId: mirrorContext.eventId,
+    phoneHash: mirrorContext.phoneHash,
+    phoneObfuscated: mirrorContext.phoneObfuscated,
+    participantClerkUserIds: mirrorContext.participantClerkUserIds,
+    direction: mirrorContext.direction,
+    kind: mirrorContext.kind,
+    body: mirrorContext.body,
+    smsNotificationId: mirrorContext.smsNotificationId,
+    textBlastId: mirrorContext.textBlastId,
+    textBlastRecipientId: mirrorContext.textBlastRecipientId,
+    providerMessageId: args.providerMessageId ?? mirrorContext.providerMessageId,
+    providerStatus: args.providerStatus,
+    createdAt: args.createdAt ?? Date.now(),
+  });
+}
+
 /**
  * Calculate SMS cost based on message length
  * Twilio charges per 160-character segment for US numbers
@@ -95,6 +133,10 @@ export const sendSmsInternal = internalAction({
           status: "failed",
           errorMessage,
         });
+        await recordNotificationConversationMessage(ctx, {
+          notificationId: args.notificationId,
+          providerStatus: "failed",
+        });
       }
       return {
         success: false,
@@ -120,6 +162,10 @@ export const sendSmsInternal = internalAction({
           notificationId: args.notificationId,
           status: "failed",
           errorMessage,
+        });
+        await recordNotificationConversationMessage(ctx, {
+          notificationId: args.notificationId,
+          providerStatus: "failed",
         });
       }
       return {
@@ -162,6 +208,10 @@ export const sendSmsInternal = internalAction({
           notificationId: args.notificationId,
           status: "failed",
           errorMessage,
+        });
+        await recordNotificationConversationMessage(ctx, {
+          notificationId: args.notificationId,
+          providerStatus: "failed",
         });
       }
       return {
@@ -235,6 +285,12 @@ export const sendSmsInternal = internalAction({
           messageId: message.sid,
           sentAt: Date.now(),
         });
+        await recordNotificationConversationMessage(ctx, {
+          notificationId: args.notificationId,
+          providerMessageId: message.sid,
+          providerStatus: "sent",
+          createdAt: Date.now(),
+        });
       }
 
       return {
@@ -254,6 +310,10 @@ export const sendSmsInternal = internalAction({
           notificationId: args.notificationId,
           status: "failed",
           errorMessage,
+        });
+        await recordNotificationConversationMessage(ctx, {
+          notificationId: args.notificationId,
+          providerStatus: "failed",
         });
       }
 
@@ -334,9 +394,13 @@ export const sendBulkSmsInternal = internalAction({
     );
 
     // Process recipients in batches
-    for (let i = 0; i < args.recipients.length; i += batchSize) {
-      const batch = args.recipients.slice(i, i + batchSize);
-      const batchNumber = Math.floor(i / batchSize) + 1;
+    for (
+      let recipientStartIndex = 0;
+      recipientStartIndex < args.recipients.length;
+      recipientStartIndex += batchSize
+    ) {
+      const batch = args.recipients.slice(recipientStartIndex, recipientStartIndex + batchSize);
+      const batchNumber = Math.floor(recipientStartIndex / batchSize) + 1;
       const totalBatches = Math.ceil(args.recipients.length / batchSize);
 
       console.log(
@@ -470,7 +534,7 @@ export const sendBulkSmsInternal = internalAction({
       });
 
       // Small delay between batches to be respectful to Twilio
-      if (i + batchSize < args.recipients.length) {
+      if (recipientStartIndex + batchSize < args.recipients.length) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
@@ -497,40 +561,5 @@ export const sendBulkSmsInternal = internalAction({
       failureCount,
       results,
     };
-  },
-});
-
-/**
- * Send automated help response via Twilio when users text HELP
- */
-export const sendHelpResponse = internalAction({
-  args: {
-    to: v.string(),
-    from: v.string(),
-  },
-  handler: async (_ctx, args) => {
-    // Validate credentials (throws error in production if missing, returns null in dev if disabled)
-    const credentials = validateTwilioCredentials();
-
-    if (!credentials) {
-      // Dev mode with SMS disabled - skip gracefully
-      return;
-    }
-
-    const { accountSid, authToken } = credentials;
-
-    try {
-      const twilioClient = twilio(accountSid, authToken);
-
-      await twilioClient.messages.create({
-        body: "Dojo Events SMS. Reply STOP to opt-out, START to opt-in. Questions? Visit our website.",
-        from: args.from,
-        to: args.to,
-      });
-
-      console.log(`Help response sent to ${args.to}`);
-    } catch (error) {
-      console.error("Failed to send help response:", error);
-    }
   },
 });

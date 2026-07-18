@@ -1,13 +1,10 @@
 import { LegalPage, LegalSection } from "@coucou/ui/tenant-template";
 import { siteConfiguration } from "@/lib/site";
+import { clubChlorineSmsProgram } from "@/lib/sms-program";
 
 export default function DataCollection() {
   const brandName = siteConfiguration.brandName;
-  const lastUpdated = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const lastUpdated = clubChlorineSmsProgram.lastUpdated;
 
   return (
     <LegalPage
@@ -74,7 +71,7 @@ export default function DataCollection() {
           <li>Process RSVP requests and approvals.</li>
           <li>Generate digital tickets and QR codes.</li>
           <li>Manage event capacity and logistics.</li>
-          <li>Send event updates and reminders from the event host you RSVP&apos;d to.</li>
+          <li>Send requested Club Chlorine event updates and reminders.</li>
           <li>Provide personalized event experiences.</li>
           <li>Document express consent for compliance requirements.</li>
         </ul>
@@ -96,8 +93,9 @@ export default function DataCollection() {
             event operations.
           </li>
           <li>
-            <strong>Deletion:</strong> Phone numbers are permanently deleted when consent is
-            withdrawn, while minimal consent logs are retained for compliance.
+            <strong>Retention:</strong> Phone and messaging records are retained only as long as
+            reasonably necessary to operate the service, honor preferences, and meet legal
+            obligations.
           </li>
         </ul>
         <p className="mt-4">SMS consent tracking:</p>
@@ -106,13 +104,12 @@ export default function DataCollection() {
           <li>Timestamp when consent was given or withdrawn.</li>
           <li>IP address for legal compliance and fraud prevention.</li>
           <li>Method of consent (RSVP form, direct opt-in, etc.).</li>
-          <li>Associated event host for each consent.</li>
+          <li>Associated Club Chlorine event for each consent.</li>
           <li>Opt-out history and reasons for legal compliance.</li>
         </ul>
         <p style={{ color: "var(--tt-fg-dim)" }}>
-          SMS messages are sent by Coucou on behalf of the event host you RSVP&apos;d to using{" "}
-          {brandName} as a messaging platform service provider, and delivered through Twilio SMS
-          infrastructure.
+          Club Chlorine is the SMS sender. Coucou provides Club Chlorine&apos;s event-management and
+          messaging technology, and Twilio provides telecommunications delivery infrastructure.
         </p>
       </LegalSection>
 
@@ -170,8 +167,9 @@ export default function DataCollection() {
             analytics. Personal identifiers anonymized after 2 years unless consent is maintained.
           </li>
           <li>
-            <strong>SMS consent and phone data:</strong> Deleted immediately upon consent
-            withdrawal. Opt-out records maintained indefinitely for compliance.
+            <strong>SMS consent and phone data:</strong> Retained for as long as reasonably
+            necessary to operate the service, honor messaging preferences, resolve disputes,
+            maintain security, and satisfy legal obligations.
           </li>
           <li>
             <strong>Operational diagnostics:</strong> Retained only as long as needed to investigate
@@ -201,7 +199,7 @@ export default function DataCollection() {
             <strong>Clerk:</strong> User authentication and account management.
           </li>
           <li>
-            <strong>Twilio:</strong> SMS message delivery on behalf of the hosting business.
+            <strong>Twilio:</strong> Telecommunications delivery for Club Chlorine SMS messages.
           </li>
           <li>
             <strong>Convex:</strong> Secure database hosting and real-time features.

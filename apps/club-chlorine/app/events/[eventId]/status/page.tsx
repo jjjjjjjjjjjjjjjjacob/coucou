@@ -10,13 +10,13 @@ import { useQuery as useConvexQuery, useMutation } from "convex/react";
 import { CircleDashed } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { use, useEffect, useMemo, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
+import { SmsProgramDisclosure } from "@/components/sms-program-disclosure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import {
   buildEventDetailPathWithPreservedQuery,
   buildPathWithPreservedQuery,
@@ -79,20 +79,6 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
       });
   }, [claimGuestRsvps, isLoaded, isSignedIn, statusQuery]);
 
-  const smsSenderDisplayName = useMemo(
-    () =>
-      resolveEventMessagingBrandName(
-        {
-          name: event?.name,
-          secondaryTitle: event?.secondaryTitle,
-          hosts: event?.hosts,
-          productionCompany: event?.productionCompany,
-        },
-        { fallback: event?.name?.trim() ?? "Event Host" },
-      ),
-    [event?.hosts, event?.name, event?.secondaryTitle, event?.productionCompany],
-  );
-
   const guestPortalImageResponse = useConvexQuery(
     api.files.getUrl,
     event?.guestPortalImageStorageId
@@ -145,8 +131,8 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
       await statusQuery.refetch();
       toast.success(
         desiredSmsConsent
-          ? `SMS updates from ${smsSenderDisplayName} enabled.`
-          : `SMS from ${smsSenderDisplayName} disabled.`,
+          ? "Club Chlorine SMS updates enabled."
+          : "Club Chlorine SMS updates disabled.",
       );
     } catch (error) {
       const errorDetails = error as Error;
@@ -289,7 +275,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
                     style={{ color: "var(--tt-fg)" }}
                   >
                     <CircleDashed className="h-4 w-4" />
-                    <span>SMS from {smsSenderDisplayName} disabled</span>
+                    <span>Club Chlorine SMS is disabled</span>
                   </div>
                   <Button
                     size="sm"
@@ -307,17 +293,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
                   className="max-w-sm text-[10px] leading-tight"
                   style={{ color: "var(--tt-fg-mute)" }}
                 >
-                  RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-                  {smsSenderDisplayName} using Club Chlorine. Msg &amp; data rates may apply. Reply
-                  STOP to cancel. Consent not required for purchase.{" "}
-                  <a href="/terms" className="underline">
-                    Terms
-                  </a>{" "}
-                  &amp;{" "}
-                  <a href="/privacy" className="underline">
-                    Privacy
-                  </a>
-                  .
+                  <SmsProgramDisclosure />
                 </p>
               </div>
             ) : null}

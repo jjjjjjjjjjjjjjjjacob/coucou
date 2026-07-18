@@ -254,6 +254,63 @@ export interface TextBlast {
   replyActionCount?: number;
 }
 
+export type SmsConversationDirection = "inbound" | "outbound" | "system";
+
+export type SmsConversationKind =
+  | "sms"
+  | "manual"
+  | "blast"
+  | "approval"
+  | "consent"
+  | "reply_action"
+  | "opt_out"
+  | "help"
+  | "delivery_status"
+  | "system";
+
+export interface SmsConversationThread {
+  _id: Id<"smsConversationThreads">;
+  eventId: Id<"events">;
+  phoneHash: string;
+  phoneObfuscated: string;
+  participantClerkUserIds: string[];
+  participantName: string;
+  lastMessageBody?: string;
+  lastMessageAt?: number;
+  lastMessageDirection?: SmsConversationDirection;
+  lastMessageKind?: SmsConversationKind;
+  messageCount: number;
+  inboundCount: number;
+  outboundCount: number;
+  systemCount: number;
+  lastInboundAt?: number;
+  lastOutboundAt?: number;
+  canSend: boolean;
+  sendDisabledReason?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SmsConversationMessage {
+  _id: Id<"smsConversationMessages">;
+  threadId: Id<"smsConversationThreads">;
+  eventId: Id<"events">;
+  phoneHash: string;
+  direction: SmsConversationDirection;
+  kind: SmsConversationKind;
+  body?: string;
+  mediaUrls?: string[];
+  providerMessageId?: string;
+  providerStatus?: string;
+  smsNotificationId?: Id<"smsNotifications">;
+  textBlastId?: Id<"textBlasts">;
+  textBlastRecipientId?: Id<"textBlastRecipients">;
+  replyAttemptId?: Id<"textBlastReplyAttempts">;
+  adminClerkUserId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface UserEventSharing {
   rsvpId: string;
   eventId: Id<"events">;

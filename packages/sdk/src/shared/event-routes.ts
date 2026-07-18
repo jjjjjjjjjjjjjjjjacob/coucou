@@ -63,6 +63,21 @@ function normalizeOrigin(value: string): string {
   return trimTrailingSlash(ensureProtocol(value));
 }
 
+function resolveMatchingConfiguredCurrentOrigin(
+  siteConfiguration: SiteConfiguration,
+  currentOrigin: string | null | undefined,
+): string | null {
+  const parsedCurrentOrigin = parseOrigin(currentOrigin);
+  if (!parsedCurrentOrigin) return null;
+
+  const configuredOrigins = [
+    siteConfiguration.domain,
+    ...(siteConfiguration.domainAliases ?? []),
+  ].map((configuredDomain) => normalizeOrigin(configuredDomain));
+
+  return configuredOrigins.includes(parsedCurrentOrigin.origin) ? parsedCurrentOrigin.origin : null;
+}
+
 function buildDevelopmentOrigin(domain: string): string {
   const parsedUrl = parseOrigin(domain);
   if (!parsedUrl) {
@@ -118,7 +133,11 @@ export function resolvePublicSiteOrigin({
     return normalizeOrigin(localOrigin ?? localSiteOrigins[siteConfiguration.siteKey]);
   }
 
-  const productionDomain = domain?.trim() || siteConfiguration.domain;
+  const configuredDomain = domain?.trim();
+  const productionDomain =
+    configuredDomain ??
+    resolveMatchingConfiguredCurrentOrigin(siteConfiguration, currentOrigin) ??
+    siteConfiguration.domain;
   if (originEnvironment === "development") {
     return buildDevelopmentOrigin(productionDomain);
   }

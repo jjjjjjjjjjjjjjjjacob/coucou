@@ -4,6 +4,10 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { writeAuditEntry } from "./audit";
 import { action, internalMutation, mutation, query } from "./functions";
+import {
+  getOrCreateCoucouTenantOrganization,
+  getOrCreateTenantAdminInvitation,
+} from "./lib/clerkTenantProvisioning";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
 import {
   normalizeTenantWorkspaceSlug,
@@ -201,24 +205,16 @@ export const acceptApplication = action({
     }
 
     const clerk = createClerkClient({ secretKey: clerkSecretKey });
-    const organization = await clerk.organizations.createOrganization({
+    const organization = await getOrCreateCoucouTenantOrganization(clerk.organizations, {
       name: application.name,
       slug: normalizedSlug,
-      createdBy: identity.subject,
-      publicMetadata: {
-        coucouTenant: "true",
-        workspaceSlug: normalizedSlug,
-      },
+      createdByClerkUserId: identity.subject,
     });
-    const invitation = await clerk.organizations.createOrganizationInvitation({
+    const invitation = await getOrCreateTenantAdminInvitation(clerk.organizations, {
       organizationId: organization.id,
-      inviterUserId: identity.subject,
-      emailAddress: normalizedTenantAdminEmail,
-      role: "org:admin",
-      redirectUrl: `/workspaces/${normalizedSlug}/dashboard`,
-      publicMetadata: {
-        workspaceSlug: normalizedSlug,
-      },
+      workspaceSlug: normalizedSlug,
+      tenantAdminEmail: normalizedTenantAdminEmail,
+      inviterClerkUserId: identity.subject,
     });
 
     return await ctx.runMutation(internal.tenantApplications.acceptApplicationInDatabase, {

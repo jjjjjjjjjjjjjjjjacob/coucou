@@ -33,6 +33,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/public(.*)",
   "/terms",
   "/privacy",
+  "/sms",
   "/cookies",
   "/data",
   // Next.js metadata file convention routes — Twitter/Facebook/etc. crawlers

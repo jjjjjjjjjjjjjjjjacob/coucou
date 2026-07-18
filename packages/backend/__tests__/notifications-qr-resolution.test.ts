@@ -87,4 +87,18 @@ describe("approval SMS template variables", () => {
       "COUCOU:\n\nHi Riley, approved for Spring Gala: After Dark. Ticket arrives later: ",
     );
   });
+
+  it("uses the fixed Club Chlorine sender and opt-out reminder for Club Chlorine events", () => {
+    const message = formatApprovalMessage(
+      { ...event, siteKey: "club-chlorine" },
+      recipient,
+      "ticket-code",
+      "https://clubchlorine.party",
+      "You are approved for {{eventName}}. {{qrCodeUrl}}",
+    );
+
+    expect(message).toBe(
+      "CLUB CHLORINE:\n\nYou are approved for Spring Gala: After Dark. https://clubchlorine.party/redeem/ticket-code\n\nReply STOP to opt out.",
+    );
+  });
 });

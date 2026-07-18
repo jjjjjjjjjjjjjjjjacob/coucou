@@ -79,6 +79,15 @@ const routerReplaceCalls: string[] = [];
 const routerPushCalls: string[] = [];
 const locationAssignCalls: string[] = [];
 const locationReplaceCalls: string[] = [];
+let nextNavigationPathname = "/";
+let nextNavigationSearchParams = new URLSearchParams([
+  ["password", "test123"],
+  ["eventId", "event_123"],
+]);
+let nextNavigationParams: Record<string, string> = {
+  eventId: "event_123",
+  code: "abc123",
+};
 const clerkSetActiveCalls: Array<{ organization: string }> = [];
 const pendingClerkSetActiveResolutions: Array<() => void> = [];
 let shouldDeferClerkSetActive = false;
@@ -123,6 +132,12 @@ interface ClerkTestGlobal {
   __clearLocationAssignCalls?: () => void;
   __getLocationReplaceCalls?: () => string[];
   __clearLocationReplaceCalls?: () => void;
+  __setNextNavigationTestState?: (nextState: {
+    pathname?: string;
+    searchParams?: string | URLSearchParams;
+    params?: Record<string, string>;
+  }) => void;
+  __resetNextNavigationTestState?: () => void;
   __getClerkSetActiveCalls?: () => Array<{ organization: string }>;
   __clearClerkSetActiveCalls?: () => void;
   __setClerkSetActiveDeferred?: (nextShouldDefer: boolean) => void;
@@ -164,6 +179,31 @@ clerkTestGlobal.__clearLocationAssignCalls = () => {
 clerkTestGlobal.__getLocationReplaceCalls = () => [...locationReplaceCalls];
 clerkTestGlobal.__clearLocationReplaceCalls = () => {
   locationReplaceCalls.length = 0;
+};
+clerkTestGlobal.__setNextNavigationTestState = (nextState) => {
+  if (nextState.pathname !== undefined) {
+    nextNavigationPathname = nextState.pathname;
+  }
+  if (nextState.searchParams !== undefined) {
+    nextNavigationSearchParams =
+      typeof nextState.searchParams === "string"
+        ? new URLSearchParams(nextState.searchParams)
+        : new URLSearchParams(nextState.searchParams);
+  }
+  if (nextState.params !== undefined) {
+    nextNavigationParams = { ...nextState.params };
+  }
+};
+clerkTestGlobal.__resetNextNavigationTestState = () => {
+  nextNavigationPathname = "/";
+  nextNavigationSearchParams = new URLSearchParams([
+    ["password", "test123"],
+    ["eventId", "event_123"],
+  ]);
+  nextNavigationParams = {
+    eventId: "event_123",
+    code: "abc123",
+  };
 };
 clerkTestGlobal.__getClerkSetActiveCalls = () => [...clerkSetActiveCalls];
 clerkTestGlobal.__clearClerkSetActiveCalls = () => {
@@ -373,24 +413,9 @@ mock.module("next/navigation", () => ({
     query: {},
     asPath: "/",
   }),
-  usePathname: () => "/",
-  useSearchParams: () => ({
-    get: (key: string) => {
-      if (key === "password") return "test123";
-      if (key === "eventId") return "event_123";
-      return null;
-    },
-    has: () => false,
-    getAll: () => [],
-    keys: () => [],
-    values: () => [],
-    entries: () => [],
-    toString: () => "",
-  }),
-  useParams: () => ({
-    eventId: "event_123",
-    code: "abc123",
-  }),
+  usePathname: () => nextNavigationPathname,
+  useSearchParams: () => new URLSearchParams(nextNavigationSearchParams),
+  useParams: () => nextNavigationParams,
   redirect: () => {
     // Mock redirect without throwing
     return null;
@@ -606,6 +631,7 @@ afterEach(() => {
   clerkTestGlobal.__clearRouterPushCalls?.();
   clerkTestGlobal.__clearLocationAssignCalls?.();
   clerkTestGlobal.__clearLocationReplaceCalls?.();
+  clerkTestGlobal.__resetNextNavigationTestState?.();
   clerkTestGlobal.__clearClerkSetActiveCalls?.();
   clerkTestGlobal.__clearConvexQueryResponse?.();
   clerkTestGlobal.__clearConvexMutationCalls?.();

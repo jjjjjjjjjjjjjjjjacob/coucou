@@ -14,11 +14,20 @@ import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { action } from "./_generated/server";
+import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import {
+  CLUB_CHLORINE_MESSAGE_PREFIX,
+  CLUB_CHLORINE_OPT_IN_CONFIRMATION,
+  CLUB_CHLORINE_OPT_OUT_CONFIRMATION,
+  formatSmsMessageForSite,
+  isClubChlorineSite,
+} from "./lib/smsProgramCopy";
 
 type ApprovalEventSummary = {
   name: string;
+  siteKey?: string;
   secondaryTitle?: string;
   hosts?: string[];
   productionCompany?: string;
@@ -35,6 +44,7 @@ type ApprovalRecipientSummary = {
 
 type SmsConsentEventSummary = {
   name?: string | null;
+  siteKey?: string | null;
   secondaryTitle?: string | null;
   hosts?: Array<string | null | undefined> | null;
   eventHostNames?: Array<string | null | undefined> | null;
@@ -156,9 +166,12 @@ export function formatApprovalMessage(
     ? ""
     : `\n\nView your ticket here: ${ticketUrl}`;
 
-  return `${header}:
+  return formatSmsMessageForSite(
+    event.siteKey,
+    `${header}:
 
-${approvalMessage}${ticketFooter}`;
+${approvalMessage}${ticketFooter}`,
+  );
 }
 
 export function formatDeferredApprovalMessage(
@@ -176,18 +189,28 @@ export function formatDeferredApprovalMessage(
       customApprovalMessage,
       buildApprovalTemplateVariables(event, recipient, ""),
     );
-    return `${header}:
+    return formatSmsMessageForSite(
+      event.siteKey,
+      `${header}:
 
-${approvalMessage}`;
+${approvalMessage}`,
+    );
   }
 
   const eventLabel = event.name?.trim() || "the event";
-  return `${header}:
+  return formatSmsMessageForSite(
+    event.siteKey,
+    `${header}:
 
-You're approved for ${eventLabel}. Your QR code will arrive closer to the event.`;
+You're approved for ${eventLabel}. Your QR code will arrive closer to the event.`,
+  );
 }
 
 function getSmsMessageHeader(event: SmsConsentEventSummary): string {
+  if (isClubChlorineSite(event.siteKey)) {
+    return CLUB_CHLORINE_MESSAGE_PREFIX.slice(0, -1);
+  }
+
   // Production company takes precedence
   if (event.productionCompany?.trim()) {
     return event.productionCompany.trim().toUpperCase();
@@ -229,6 +252,10 @@ function formatSmsConsentMessage(
   baseUrl: string,
   consentEnabled: boolean,
 ): string {
+  if (isClubChlorineSite(event.siteKey)) {
+    return consentEnabled ? CLUB_CHLORINE_OPT_IN_CONFIRMATION : CLUB_CHLORINE_OPT_OUT_CONFIRMATION;
+  }
+
   const header = getSmsMessageHeader(event);
   const eventLabel = event.name?.trim() || "this event";
   const statusUrl = `${baseUrl}/events/${eventId}/status`;
@@ -371,12 +398,14 @@ export const sendApprovalSms = action({
               validatedBaseUrl,
               matchingCredential?.approvalMessage,
             );
+      const phoneResolution = await normalizeAndHashPhoneNumber(userRecord.phone);
 
       // Create SMS notification record
       const notificationId = await ctx.runMutation(internal.sms.createNotification, {
         eventId: args.eventId,
         recipientClerkUserId: args.clerkUserId,
-        recipientPhoneObfuscated: obfuscatePhoneNumber(userRecord.phone),
+        recipientPhoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
+        recipientPhoneHash: phoneResolution.phoneHash,
         type: "approval",
         message: approvalMessage,
       });
@@ -419,6 +448,7 @@ export const sendSmsConsentStatusMessage = action({
     eventId: v.id("events"),
     clerkUserId: v.string(),
     consentEnabled: v.boolean(),
+    phoneNumber: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<SmsActionResult> => {
     // Check if Twilio is disabled in development
@@ -462,7 +492,8 @@ export const sendSmsConsentStatusMessage = action({
       clerkUserId: args.clerkUserId,
     });
 
-    if (!userRecord?.phone) {
+    const recipientPhoneNumber = args.phoneNumber?.trim() || userRecord?.phone;
+    if (!recipientPhoneNumber) {
       return { skipped: "no_phone" };
     }
 
@@ -473,17 +504,19 @@ export const sendSmsConsentStatusMessage = action({
         validatedBaseUrl,
         args.consentEnabled,
       );
+      const phoneResolution = await normalizeAndHashPhoneNumber(recipientPhoneNumber);
 
       const notificationId = await ctx.runMutation(internal.sms.createNotification, {
         eventId: args.eventId,
         recipientClerkUserId: args.clerkUserId,
-        recipientPhoneObfuscated: obfuscatePhoneNumber(userRecord.phone),
+        recipientPhoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
+        recipientPhoneHash: phoneResolution.phoneHash,
         type: args.consentEnabled ? "sms_consent_enabled" : "sms_consent_disabled",
         message,
       });
 
       const result = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
-        phoneNumber: userRecord.phone,
+        phoneNumber: recipientPhoneNumber,
         message,
         notificationId,
         messageType: "Transactional",

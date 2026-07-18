@@ -9,6 +9,7 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./api-v1": "./src/api-v1/index.ts",
     "./auth-domains": "./src/auth-domains.ts",
     "./site-config": "./src/site-config.ts",
     "./routes": "./src/routes.ts",

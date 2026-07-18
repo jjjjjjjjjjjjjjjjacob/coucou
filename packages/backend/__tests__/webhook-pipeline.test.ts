@@ -1,0 +1,377 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import type { UserIdentity } from "convex/server";
+import { convexTest } from "convex-test";
+import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
+import { api, internal } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
+import { decryptWebhookEnvelope, verifyWebhookSignatureHeader } from "../convex/lib/webhookCrypto";
+import schema from "../convex/schema";
+
+const convexModules = {
+  "../convex/_generated/api.js": () => import("../convex/_generated/api.js"),
+  "../convex/events.ts": () => import("../convex/events"),
+  "../convex/notifications.ts": () => import("../convex/notifications"),
+  "../convex/rsvps.ts": () => import("../convex/rsvps"),
+  "../convex/webhookDeliveries.ts": () => import("../convex/webhookDeliveries"),
+  "../convex/webhookDispatch.ts": () => import("../convex/webhookDispatch"),
+  "../convex/webhookEndpoints.ts": () => import("../convex/webhookEndpoints"),
+  "../convex/workspaces.ts": () => import("../convex/workspaces"),
+};
+
+const aggregateComponentModules = {
+  "../../../node_modules/@convex-dev/aggregate/dist/esm/component/_generated/api.js": () =>
+    import("../../../node_modules/@convex-dev/aggregate/dist/esm/component/_generated/api.js"),
+  "../../../node_modules/@convex-dev/aggregate/dist/esm/component/btree.js": () =>
+    import("../../../node_modules/@convex-dev/aggregate/dist/esm/component/btree.js"),
+  "../../../node_modules/@convex-dev/aggregate/dist/esm/component/public.js": () =>
+    import("../../../node_modules/@convex-dev/aggregate/dist/esm/component/public.js"),
+};
+
+const WORKSPACE_SLUG = "dojo-pomodoro";
+const SITE_KEY = "dojo";
+const CLERK_ORGANIZATION_ID = "org_dojo";
+const ENDPOINT_URL = "https://consumer.example.com/webhooks/coucou";
+
+type TestBackend = ReturnType<typeof convexTest>;
+
+interface CapturedWebhookRequest {
+  url: string;
+  headers: Record<string, string>;
+  rawBody: string;
+}
+
+let capturedWebhookRequests: CapturedWebhookRequest[] = [];
+let webhookResponseStatus = 200;
+const originalFetch = globalThis.fetch;
+
+beforeEach(() => {
+  capturedWebhookRequests = [];
+  webhookResponseStatus = 200;
+  vi.useFakeTimers();
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.startsWith("https://consumer.example.com/")) {
+      capturedWebhookRequests.push({
+        url,
+        headers: Object.fromEntries(new Headers(init?.headers).entries()),
+        rawBody: String(init?.body ?? ""),
+      });
+      return new Response("", { status: webhookResponseStatus });
+    }
+    return originalFetch(input as never, init);
+  }) as typeof fetch;
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  vi.useRealTimers();
+});
+
+function setupTestBackend(): TestBackend {
+  const testBackend = convexTest(schema, convexModules);
+  testBackend.registerComponent(
+    "rsvpAggregate",
+    aggregateComponentSchema,
+    aggregateComponentModules,
+  );
+  return testBackend;
+}
+
+function createHostIdentity(subject: string): Partial<UserIdentity> {
+  return {
+    subject,
+    org_id: CLERK_ORGANIZATION_ID,
+    role: "org:admin",
+  } as unknown as Partial<UserIdentity>;
+}
+
+async function drainScheduledFunctions(testBackend: TestBackend) {
+  await testBackend.finishAllScheduledFunctions(vi.runAllTimers);
+}
+
+async function seedWorkspace(testBackend: TestBackend) {
+  return await testBackend.run(async (databaseContext) => {
+    return await databaseContext.db.insert("workspaces", {
+      slug: WORKSPACE_SLUG,
+      name: "Dojo Pomodoro",
+      clerkOrganizationId: CLERK_ORGANIZATION_ID,
+      clerkOrganizationSlug: WORKSPACE_SLUG,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+async function seedEvent(
+  testBackend: TestBackend,
+  overrides: Record<string, unknown> = {},
+): Promise<Id<"events">> {
+  return await testBackend.run(async (databaseContext) => {
+    return await databaseContext.db.insert("events", {
+      workspaceSlug: WORKSPACE_SLUG,
+      siteKey: SITE_KEY,
+      shortId: "evt-webhooks",
+      name: "Webhook Event",
+      location: "Main Room",
+      eventDate: Date.now() + 86_400_000,
+      status: "active",
+      lifecycle: "published",
+      maxAttendees: 2,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...overrides,
+    });
+  });
+}
+
+async function createEndpoint(
+  testBackend: TestBackend,
+  subscribedEventTypes: string[],
+): Promise<{
+  endpointId: Id<"webhookEndpoints">;
+  encryptionSecretBase64: string;
+  signingSecretBase64: string;
+}> {
+  const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+  const created = await hostBackend.mutation(api.webhookEndpoints.create, {
+    workspaceSlug: WORKSPACE_SLUG,
+    url: ENDPOINT_URL,
+    subscribedEventTypes,
+  });
+  return {
+    endpointId: created.endpointId,
+    encryptionSecretBase64: created.encryptionSecretBase64,
+    signingSecretBase64: created.signingSecretBase64,
+  };
+}
+
+async function submitGuestRsvp(testBackend: TestBackend, eventId: Id<"events">, phone: string) {
+  return await testBackend.mutation(api.rsvps.submitGuestRequest, {
+    eventId,
+    siteKey: SITE_KEY,
+    listKey: "ga",
+    firstName: "Ava",
+    lastName: "Green",
+    phone,
+    shareContact: true,
+    attendees: 1,
+    customFields: {},
+    socialProfiles: [],
+  });
+}
+
+async function decryptCapturedRequest(
+  capturedRequest: CapturedWebhookRequest,
+  encryptionSecretBase64: string,
+) {
+  const envelope = JSON.parse(capturedRequest.rawBody);
+  const payloadJson = await decryptWebhookEnvelope(envelope, encryptionSecretBase64);
+  return { envelope, payload: JSON.parse(payloadJson) };
+}
+
+describe("webhook pipeline", () => {
+  it("delivers an encrypted, signed rsvp.created payload for a guest RSVP", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const endpoint = await createEndpoint(testBackend, ["rsvp.created", "rsvp.approved"]);
+
+    await submitGuestRsvp(testBackend, eventId, "(310) 499-6272");
+    await drainScheduledFunctions(testBackend);
+
+    expect(capturedWebhookRequests).toHaveLength(1);
+    const capturedRequest = capturedWebhookRequests[0];
+    expect(capturedRequest.url).toBe(ENDPOINT_URL);
+    expect(capturedRequest.headers["x-coucou-event-type"]).toBe("rsvp.created");
+    expect(capturedRequest.headers["x-coucou-key-generation"]).toBe("1");
+    expect(capturedRequest.headers["x-coucou-delivery-id"]).toBeTruthy();
+
+    // The raw body must never contain plaintext PII.
+    expect(capturedRequest.rawBody).not.toContain("310");
+    expect(capturedRequest.rawBody).not.toContain("Ava");
+
+    const signatureIsValid = await verifyWebhookSignatureHeader({
+      rawBody: capturedRequest.rawBody,
+      signatureHeader: capturedRequest.headers["x-coucou-signature"],
+      signingSecretBase64: endpoint.signingSecretBase64,
+      nowSeconds: Math.floor(Date.now() / 1000),
+      toleranceSeconds: 300,
+    });
+    expect(signatureIsValid).toBe(true);
+
+    const { payload } = await decryptCapturedRequest(
+      capturedRequest,
+      endpoint.encryptionSecretBase64,
+    );
+    expect(payload.eventType).toBe("rsvp.created");
+    expect(payload.deliveryId).toBe(capturedRequest.headers["x-coucou-delivery-id"]);
+    expect(payload.workspaceSlug).toBe(WORKSPACE_SLUG);
+    expect(payload.data.identity.phone).toBe("+13104996272");
+    expect(payload.data.identity.isGuest).toBe(true);
+    expect(payload.data.identity.name).toBe("Ava Green");
+    expect(payload.data.rsvp.approvalStatus).toBe("pending");
+    expect(payload.data.origin.type).toBe("app");
+    expect(payload.data.event.name).toBe("Webhook Event");
+
+    const delivery = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("webhookDeliveries")
+        .withIndex("by_endpoint", (queryBuilder) =>
+          queryBuilder.eq("endpointId", endpoint.endpointId),
+        )
+        .unique();
+    });
+    expect(delivery?.status).toBe("success");
+    expect(delivery?.attemptCount).toBe(1);
+  });
+
+  it("delivers rsvp.approved on bulk approval", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const endpoint = await createEndpoint(testBackend, ["rsvp.approved"]);
+
+    const submissionResult = await submitGuestRsvp(testBackend, eventId, "(310) 499-6272");
+    await drainScheduledFunctions(testBackend);
+    expect(capturedWebhookRequests).toHaveLength(0); // not subscribed to rsvp.created
+
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    await hostBackend.mutation(api.rsvps.bulkUpdateApproval, {
+      workspaceSlug: WORKSPACE_SLUG,
+      updates: [{ rsvpId: submissionResult.rsvpId, approvalStatus: "approved" }],
+    });
+    await drainScheduledFunctions(testBackend);
+
+    expect(capturedWebhookRequests).toHaveLength(1);
+    const { payload } = await decryptCapturedRequest(
+      capturedWebhookRequests[0],
+      endpoint.encryptionSecretBase64,
+    );
+    expect(payload.eventType).toBe("rsvp.approved");
+    expect(payload.data.changes.previousApprovalStatus).toBe("pending");
+  });
+
+  it("delivers event.updated and event.unpublished for event changes", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const endpoint = await createEndpoint(testBackend, ["event.updated", "event.unpublished"]);
+
+    const newEventDate = Date.now() + 2 * 86_400_000;
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    await hostBackend.mutation(api.events.update, {
+      eventId,
+      workspaceSlug: WORKSPACE_SLUG,
+      eventDate: newEventDate,
+    });
+    await drainScheduledFunctions(testBackend);
+
+    expect(capturedWebhookRequests).toHaveLength(1);
+    const { payload } = await decryptCapturedRequest(
+      capturedWebhookRequests[0],
+      endpoint.encryptionSecretBase64,
+    );
+    expect(payload.eventType).toBe("event.updated");
+    expect(payload.data.event.eventDate).toBe(newEventDate);
+    expect(payload.data.changes.changedFields).toContain("eventDate");
+
+    await hostBackend.mutation(api.events.unpublishEvent, {
+      eventId,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    await drainScheduledFunctions(testBackend);
+
+    expect(capturedWebhookRequests).toHaveLength(2);
+    const { payload: unpublishPayload } = await decryptCapturedRequest(
+      capturedWebhookRequests[1],
+      endpoint.encryptionSecretBase64,
+    );
+    expect(unpublishPayload.eventType).toBe("event.unpublished");
+  });
+
+  it("does not deliver to inactive endpoints and skips unsubscribed types", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const endpoint = await createEndpoint(testBackend, ["rsvp.created"]);
+
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    await hostBackend.mutation(api.webhookEndpoints.update, {
+      workspaceSlug: WORKSPACE_SLUG,
+      endpointId: endpoint.endpointId,
+      isActive: false,
+    });
+
+    await submitGuestRsvp(testBackend, eventId, "(310) 499-6272");
+    await drainScheduledFunctions(testBackend);
+    expect(capturedWebhookRequests).toHaveLength(0);
+  });
+
+  it("retries failed deliveries with backoff and marks them exhausted", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const endpoint = await createEndpoint(testBackend, ["rsvp.created"]);
+    webhookResponseStatus = 500;
+
+    await submitGuestRsvp(testBackend, eventId, "(310) 499-6272");
+    await drainScheduledFunctions(testBackend);
+
+    // 1 initial attempt + 5 retries
+    expect(capturedWebhookRequests).toHaveLength(6);
+    const delivery = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("webhookDeliveries")
+        .withIndex("by_endpoint", (queryBuilder) =>
+          queryBuilder.eq("endpointId", endpoint.endpointId),
+        )
+        .unique();
+    });
+    expect(delivery?.status).toBe("exhausted");
+    expect(delivery?.attemptCount).toBe(6);
+    expect(delivery?.lastResponseStatus).toBe(500);
+
+    const endpointDocument = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.get(endpoint.endpointId);
+    });
+    expect(endpointDocument?.consecutiveFailureCount).toBe(1);
+    expect(endpointDocument?.isActive).toBe(true);
+  });
+
+  it("auto-disables an endpoint after sustained failures", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const endpoint = await createEndpoint(testBackend, ["rsvp.created"]);
+
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(endpoint.endpointId, { consecutiveFailureCount: 9 });
+    });
+
+    const deliveryId = await testBackend.run(async (databaseContext) => {
+      const endpointDocument = await databaseContext.db.get(endpoint.endpointId);
+      if (!endpointDocument) throw new Error("endpoint missing");
+      return await databaseContext.db.insert("webhookDeliveries", {
+        endpointId: endpoint.endpointId,
+        workspaceId: endpointDocument.workspaceId,
+        eventType: "rsvp.created",
+        payloadJson: "{}",
+        status: "pending",
+        attemptCount: 5, // next failure exhausts the delivery
+        occurredAt: Date.now(),
+      });
+    });
+
+    await testBackend.mutation(internal.webhookDeliveries.recordDeliveryAttempt, {
+      deliveryId,
+      responseStatus: 500,
+      errorMessage: "HTTP 500",
+    });
+
+    const endpointDocument = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.get(endpoint.endpointId);
+    });
+    expect(endpointDocument?.isActive).toBe(false);
+    expect(endpointDocument?.disabledReason).toBe("auto_failure");
+    expect(endpointDocument?.consecutiveFailureCount).toBe(10);
+  });
+});

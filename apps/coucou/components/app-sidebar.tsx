@@ -4,6 +4,7 @@ import { useUser } from "@clerk/nextjs";
 import {
   BarChart3,
   Calendar,
+  Code,
   DoorOpen,
   FileText,
   Home,
@@ -115,6 +116,13 @@ export const navigationItems: DashboardNavigationItem[] = [
     icon: DoorOpen,
     isActive: false,
     access: "read",
+  },
+  {
+    title: "Developers",
+    url: "/host/developers",
+    icon: Code,
+    isActive: false,
+    access: "write",
   },
   {
     title: "Settings",

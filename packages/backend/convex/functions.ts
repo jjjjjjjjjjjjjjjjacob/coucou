@@ -16,6 +16,10 @@ import { internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { cascadeListKeyUpdate, shouldBatchCascade } from "./lib/cascadeHelpers";
 import { resolveStoredUserDisplayName } from "./lib/rsvpUserName";
+import {
+  enqueueEventWebhookDeliveries,
+  enqueueRsvpWebhookDeliveries,
+} from "./lib/webhookEmission";
 
 // Initialize triggers with our data model types
 export const triggers = new Triggers<DataModel>();
@@ -47,8 +51,17 @@ triggers.register("listCredentials", async (ctx, change) => {
   }
 });
 
+// Register trigger for rsvps table - emits partner webhook deliveries for
+// every RSVP change, regardless of which mutation performed it.
+triggers.register("rsvps", async (ctx, change) => {
+  await enqueueRsvpWebhookDeliveries(ctx, change);
+});
+
 // Register trigger for events table - handles deletes and status changes
 triggers.register("events", async (ctx, change) => {
+  // Emit partner webhooks for publish/unpublish/public-field/delete changes.
+  await enqueueEventWebhookDeliveries(ctx, change);
+
   // Handle event deletes - cascade to all dependent records
   if (change.operation === "delete" && change.oldDoc) {
     console.log(`[TRIGGER] Event deleted: ${change.oldDoc.name} (${change.oldDoc._id})`);

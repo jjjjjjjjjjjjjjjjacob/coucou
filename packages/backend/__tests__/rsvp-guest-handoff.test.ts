@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import type { UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
@@ -8,8 +8,20 @@ import schema from "../convex/schema";
 
 const convexModules = {
   "../convex/_generated/api.js": () => import("../convex/_generated/api.js"),
+  "../convex/notifications.ts": () => import("../convex/notifications"),
   "../convex/rsvps.ts": () => import("../convex/rsvps"),
 };
+
+const originalDevTwilioEnabled = process.env.DEV_TWILIO_ENABLED;
+process.env.DEV_TWILIO_ENABLED = "false";
+
+afterAll(() => {
+  if (originalDevTwilioEnabled === undefined) {
+    delete process.env.DEV_TWILIO_ENABLED;
+  } else {
+    process.env.DEV_TWILIO_ENABLED = originalDevTwilioEnabled;
+  }
+});
 
 type TestBackend = ReturnType<typeof convexTest>;
 
@@ -22,6 +34,8 @@ const aggregateComponentModules = {
     import("../../../node_modules/@convex-dev/aggregate/dist/esm/component/public.js"),
 };
 
+const activeTestBackends: TestBackend[] = [];
+
 function setupTestBackend(): TestBackend {
   const testBackend = convexTest(schema, convexModules);
   testBackend.registerComponent(
@@ -29,8 +43,18 @@ function setupTestBackend(): TestBackend {
     aggregateComponentSchema,
     aggregateComponentModules,
   );
+  activeTestBackends.push(testBackend);
   return testBackend;
 }
+
+// Mutations here fire-and-forget SMS notification actions via the scheduler;
+// drain them so their writes can't land after this file's backend is gone.
+afterEach(async () => {
+  for (const testBackend of activeTestBackends.splice(0)) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await testBackend.finishInProgressScheduledFunctions();
+  }
+});
 
 function createPhoneIdentity(subject: string, phoneNumber: string): Partial<UserIdentity> {
   return {
@@ -87,6 +111,23 @@ describe("guest RSVP handoff", () => {
     expect(rsvp?.userName).toBe("Ava Green");
     expect(rsvp?.guestPhoneObfuscated).toContain("6272");
     expect(result.rsvpHandoffToken).not.toContain("3104996272");
+
+    const scheduledFunctions = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.system.query("_scheduled_functions").collect();
+    });
+    expect(scheduledFunctions).toContainEqual(
+      expect.objectContaining({
+        name: "notifications:sendSmsConsentStatusMessage",
+        args: [
+          {
+            eventId,
+            clerkUserId: expect.stringMatching(/^guest:/),
+            consentEnabled: true,
+            phoneNumber: "+13104996272",
+          },
+        ],
+      }),
+    );
 
     const handoff = await testBackend.query(api.rsvps.resolveGuestRsvpHandoff, {
       token: result.rsvpHandoffToken,
