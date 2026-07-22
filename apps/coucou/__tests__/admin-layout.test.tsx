@@ -52,7 +52,7 @@ describe("AdminLayout", () => {
   it("activates and verifies Coucou access before mounting admin content", async () => {
     getAdminLayoutTestGlobal().__setClerkTestState?.({
       orgId: "org_tenant",
-      orgSlug: "tenant-house",
+      orgSlug: "tenant-partner",
     });
     getAdminLayoutTestGlobal().__setClerkTestMemberships?.([
       {

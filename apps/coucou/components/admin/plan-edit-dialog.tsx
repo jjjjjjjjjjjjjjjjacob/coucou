@@ -81,7 +81,7 @@ export function PlanEditDialog({
             <Input
               value={tier}
               onChange={(event) => setTier(event.target.value)}
-              placeholder="house, white-label, resident…"
+              placeholder="partner, white-label, resident…"
             />
           </div>
           <div className="space-y-1">

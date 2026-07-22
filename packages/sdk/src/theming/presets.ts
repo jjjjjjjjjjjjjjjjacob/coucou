@@ -9,7 +9,7 @@
 // tenant.jsx and auth.jsx. Do not modify these without re-grounding against
 // the handoff.
 
-export type PresetKey = "maison" | "dojo" | "atrium" | "coucou" | "chlorine";
+export type PresetKey = "maison" | "dojo" | "atrium" | "coucou" | "chlorine" | "danza";
 
 export type PresetCtaShape = "rounded" | "ghost-link" | "ghost-bordered";
 
@@ -55,7 +55,14 @@ export interface PresetDefinition {
 // land on the right metrics. No Google Font needs to be loaded.
 const HELVETICA_STACK = '"Helvetica Neue", "Helvetica", "Arial", system-ui, sans-serif';
 
-export const PRESET_KEYS: readonly PresetKey[] = ["maison", "dojo", "atrium", "coucou", "chlorine"];
+export const PRESET_KEYS: readonly PresetKey[] = [
+  "maison",
+  "dojo",
+  "atrium",
+  "coucou",
+  "chlorine",
+  "danza",
+];
 
 export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
   // Maison Obscur — the original quiet/dark editorial preset from the design.
@@ -174,6 +181,36 @@ export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
       eyebrow: "Pool hours",
     },
   },
+  // Danza Organica — the Dojo Pomodoro identity (Geist, uppercase, rounded)
+  // recolored to bright turquoise with near-black type. Used by
+  // apps/danza-organica.
+  danza: {
+    key: "danza",
+    name: "Danza Organica",
+    tagline: "",
+    bg: "#2EC4B6",
+    bg2: "#4BD6C9",
+    fg: "#0A0A0A",
+    fgDim: "rgba(10, 10, 10, 0.65)",
+    fgMute: "rgba(10, 10, 10, 0.38)",
+    rule: "rgba(10, 10, 10, 0.20)",
+    ruleStrong: "rgba(10, 10, 10, 0.40)",
+    accent: "#0A0A0A",
+    display: 'var(--font-geist-sans), "Geist", "Inter", ui-sans-serif, system-ui, sans-serif',
+    text: 'var(--font-geist-sans), "Geist", "Inter", ui-sans-serif, system-ui, sans-serif',
+    titleSize: 44,
+    upper: true,
+    ctaShape: "rounded",
+    buttonRadius: 8,
+    brandMarkStyle: "filled-circle",
+    qrFg: "#0A0A0A",
+    qrBg: "#2EC4B6",
+    authCopy: {
+      heading: "Sign in to RSVP.",
+      sub: "We'll text a code. Use the same number you'll show at the door.",
+      eyebrow: "Members & guests",
+    },
+  },
   // Coucou is the platform itself — dark, helvetica, distinct from any
   // tenant. Used by apps/coucou for landing, admin, sign-in, legal pages.
   // No tagline: tenants get event-style taglines; the platform shows an
@@ -214,7 +251,8 @@ export function isPresetKey(value: unknown): value is PresetKey {
       value === "dojo" ||
       value === "atrium" ||
       value === "coucou" ||
-      value === "chlorine")
+      value === "chlorine" ||
+      value === "danza")
   );
 }
 

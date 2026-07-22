@@ -11,7 +11,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SectionCard } from "@/components/ui/section-card";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export type CustomFieldDef = {
@@ -28,11 +30,11 @@ function CustomFieldPreview({ field }: { field: CustomFieldDef }) {
   if (!field.label || !field.key) return null;
 
   return (
-    <div className="bg-muted/50 rounded p-3 border-l-2 border-primary/20">
-      <div className="text-xs text-muted-foreground mb-1">PREVIEW:</div>
+    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-3)]/40 p-3">
+      <div className="mb-2 text-xs font-medium text-[var(--text-tertiary)]">Preview</div>
       <div className="space-y-1">
-        <label className="text-sm font-medium">
-          {field.label} {field.required && <span className="text-red-500">*</span>}
+        <label className="text-sm font-medium text-[var(--text-primary)]">
+          {field.label} {field.required && <span className="text-destructive">*</span>}
         </label>
         <Input
           placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
@@ -185,67 +187,74 @@ function CustomFieldsBuilder({
   );
 
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-4">
-      <h3 className="font-medium text-sm text-muted-foreground">CUSTOM RSVP FIELDS</h3>
-      <div className="space-y-6">
+    <SectionCard
+      title="Custom RSVP fields"
+      description="Collect additional information from guests during RSVP."
+    >
+      <div className="space-y-4">
         {fields.map((field, index) => {
           const conflict = reservedKeyConflict(field.key);
           return (
-            <div key={index} className="space-y-4">
-              {index > 0 && <div className="border-t" />}
+            <div
+              key={index}
+              className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4"
+            >
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Field Configuration */}
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground">Field Key</label>
+                    <Field data-invalid={conflict ? true : undefined}>
+                      <FieldLabel htmlFor={`custom-field-key-${index}`}>Field key</FieldLabel>
                       <Input
+                        id={`custom-field-key-${index}`}
                         placeholder="e.g. instagram, phone, dietary"
                         value={field.key}
                         onChange={(e) => set(index, "key", e.target.value)}
                         aria-invalid={conflict ? true : undefined}
                       />
                       {conflict ? (
-                        <p className="text-xs text-destructive mt-1">
+                        <FieldError>
                           &ldquo;{conflict}&rdquo; is reserved for a primary field. Pick a different
                           key or remove that primary field above.
-                        </p>
+                        </FieldError>
                       ) : null}
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground">
-                        Display Label
-                      </label>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor={`custom-field-label-${index}`}>Display label</FieldLabel>
                       <Input
+                        id={`custom-field-label-${index}`}
                         placeholder="e.g. Instagram Handle"
                         value={field.label}
                         onChange={(e) => set(index, "label", e.target.value)}
                       />
-                    </div>
+                    </Field>
                   </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Placeholder Text
-                    </label>
+                  <Field>
+                    <FieldLabel htmlFor={`custom-field-placeholder-${index}`}>
+                      Placeholder text
+                    </FieldLabel>
                     <Input
+                      id={`custom-field-placeholder-${index}`}
                       placeholder="e.g. @username or Enter your dietary restrictions"
                       value={field.placeholder || ""}
                       onChange={(e) => set(index, "placeholder", e.target.value)}
                     />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Prepend URL (optional)
-                    </label>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`custom-field-prepend-url-${index}`}>
+                      Prepend URL{" "}
+                      <span className="font-normal text-[var(--text-tertiary)]">(optional)</span>
+                    </FieldLabel>
                     <Input
+                      id={`custom-field-prepend-url-${index}`}
                       placeholder="e.g. https://instagram.com/ or https://twitter.com/"
                       value={field.prependUrl || ""}
                       onChange={(e) => set(index, "prependUrl", e.target.value)}
                     />
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <FieldDescription className="text-xs">
                       When provided, creates clickable links by prepending this URL to field values
-                    </p>
-                  </div>
+                    </FieldDescription>
+                  </Field>
                   <div className="flex items-center justify-between gap-2">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -347,15 +356,20 @@ function CustomFieldsBuilder({
         })}
 
         {fields.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">
-            <p className="text-sm">No custom fields added yet.</p>
-            <p className="text-xs">
+          <div className="rounded-lg border border-dashed border-[var(--border-subtle)] px-4 py-8 text-center">
+            <p className="text-sm text-[var(--text-secondary)]">No custom fields added yet.</p>
+            <p className="text-xs text-[var(--text-tertiary)]">
               Custom fields allow you to collect additional information from guests during RSVP.
             </p>
           </div>
         )}
 
-        <Button type="button" variant="outline" onClick={add} className="w-full">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={add}
+          className="w-full border-dashed border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+        >
           + Add Custom Field
         </Button>
       </div>
@@ -364,7 +378,7 @@ function CustomFieldsBuilder({
       {mode === "form" && (
         <input type="hidden" name="customFields" value={JSON.stringify(fields)} />
       )}
-    </div>
+    </SectionCard>
   );
 }
 

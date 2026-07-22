@@ -2,8 +2,12 @@
 
 import { AdminTable, AdminTableEmpty, AdminTableRow } from "@coucou/ui/admin";
 import type { ReactNode } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  AdminTableToolbar,
+  type AdminTableToolbarPagination,
+  type AdminTableToolbarSearch,
+} from "@/components/admin/admin-table-toolbar";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 
 export interface AdminDataTableColumn<TRow> {
   key: string;
@@ -22,23 +26,16 @@ export interface AdminDataTableProps<TRow> {
   emptyMessage?: ReactNode;
   loadingMessage?: ReactNode;
 
-  search?: {
-    value: string;
-    onChange: (value: string) => void;
-    placeholder?: string;
-  };
-  pagination?: {
-    cursor: string | null;
-    nextCursor: string | null;
-    isDone: boolean;
-    onCursorChange: (cursor: string | null) => void;
-    cursorStack: string[];
-    onCursorStackChange: (stack: string[]) => void;
-    totalCount?: number;
-  };
+  search?: AdminTableToolbarSearch;
+  pagination?: AdminTableToolbarPagination;
   filters?: ReactNode;
 
   onRowClick?: (row: TRow) => void;
+  /**
+   * Optional right-click context menu content for each row — render a
+   * <ContextMenuContent> with the row's relevant actions.
+   */
+  renderRowContextMenu?: (row: TRow) => ReactNode;
 }
 
 export function AdminDataTable<TRow>({
@@ -51,76 +48,13 @@ export function AdminDataTable<TRow>({
   pagination,
   filters,
   onRowClick,
+  renderRowContextMenu,
 }: AdminDataTableProps<TRow>) {
   const isLoading = rows === undefined;
 
   return (
     <div>
-      {(search || filters || pagination) && (
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 pb-4"
-          style={{ borderBottom: "1px solid var(--tt-rule)" }}
-        >
-          <div className="flex flex-wrap items-center gap-3">
-            {search ? (
-              <Input
-                value={search.value}
-                onChange={(event) => search.onChange(event.target.value)}
-                placeholder={search.placeholder ?? "search…"}
-                className="h-8 w-56 border-0 bg-transparent px-0 text-[13px] focus-visible:ring-0"
-                style={{
-                  borderBottom: "1px solid var(--tt-rule)",
-                  borderRadius: 0,
-                  color: "var(--tt-fg)",
-                }}
-              />
-            ) : null}
-            {filters}
-          </div>
-          {pagination ? (
-            <div
-              className="flex items-center gap-3 text-[12px]"
-              style={{ color: "var(--tt-fg-dim)" }}
-            >
-              {typeof pagination.totalCount === "number" ? (
-                <span>{pagination.totalCount} total</span>
-              ) : null}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={pagination.cursorStack.length === 0}
-                onClick={() => {
-                  const nextStack = [...pagination.cursorStack];
-                  const previous = nextStack.pop() ?? null;
-                  pagination.onCursorStackChange(nextStack);
-                  pagination.onCursorChange(previous);
-                }}
-                className="h-7 px-2 text-[12px]"
-                style={{ color: "var(--tt-fg)" }}
-              >
-                ← prev
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={pagination.isDone || !pagination.nextCursor}
-                onClick={() => {
-                  if (!pagination.nextCursor) return;
-                  pagination.onCursorStackChange([
-                    ...pagination.cursorStack,
-                    pagination.cursor ?? "",
-                  ]);
-                  pagination.onCursorChange(pagination.nextCursor);
-                }}
-                className="h-7 px-2 text-[12px]"
-                style={{ color: "var(--tt-fg)" }}
-              >
-                next →
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      )}
+      <AdminTableToolbar search={search} pagination={pagination} filters={filters} />
 
       <AdminTable columns={columns}>
         {isLoading ? (
@@ -128,22 +62,34 @@ export function AdminDataTable<TRow>({
         ) : rows.length === 0 ? (
           <AdminTableEmpty>{emptyMessage}</AdminTableEmpty>
         ) : (
-          rows.map((row) => (
-            <div
-              key={rowKey(row)}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
-              style={{ cursor: onRowClick ? "pointer" : undefined }}
-            >
-              <AdminTableRow
-                cells={columns.map((column) => ({
-                  content: column.render(row),
-                  width: column.width,
-                  alignRight: column.alignRight,
-                  style: column.cellStyle?.(row),
-                }))}
-              />
-            </div>
-          ))
+          rows.map((row) => {
+            const tableRow = (
+              <div
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                style={{ cursor: onRowClick ? "pointer" : undefined }}
+              >
+                <AdminTableRow
+                  cells={columns.map((column) => ({
+                    content: column.render(row),
+                    width: column.width,
+                    alignRight: column.alignRight,
+                    style: column.cellStyle?.(row),
+                  }))}
+                />
+              </div>
+            );
+
+            if (!renderRowContextMenu) {
+              return <div key={rowKey(row)}>{tableRow}</div>;
+            }
+
+            return (
+              <ContextMenu key={rowKey(row)}>
+                <ContextMenuTrigger asChild>{tableRow}</ContextMenuTrigger>
+                {renderRowContextMenu(row)}
+              </ContextMenu>
+            );
+          })
         )}
       </AdminTable>
     </div>

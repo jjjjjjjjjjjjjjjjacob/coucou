@@ -1,9 +1,6 @@
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
-import {
-  API_EVENTS_DEFAULT_PAGE_SIZE,
-  API_EVENTS_MAX_PAGE_SIZE,
-} from "./apiV1Data";
+import { API_EVENTS_DEFAULT_PAGE_SIZE, API_EVENTS_MAX_PAGE_SIZE } from "./apiV1Data";
 import {
   authenticateApiRequest,
   buildApiErrorResponse,
@@ -118,6 +115,31 @@ function isApiAttendanceStatus(value: unknown): value is ApiAttendanceStatus {
   );
 }
 
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === "string")
+  );
+}
+
+function isSubmittedSocialProfiles(
+  value: unknown,
+): value is Array<{ platformKey: string; handle: string }> {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        !Array.isArray(entry) &&
+        typeof (entry as Record<string, unknown>).platformKey === "string" &&
+        typeof (entry as Record<string, unknown>).handle === "string",
+    )
+  );
+}
+
 async function parseJsonRequestBody(
   request: Request,
 ): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; response: Response }> {
@@ -154,7 +176,18 @@ export const handleEventSubresourcePost = httpAction(async (ctx, request) => {
   if (!parsedBody.ok) {
     return parsedBody.response;
   }
-  const { phone, name, listKey, attendees, attendanceStatus, note } = parsedBody.body;
+  const {
+    phone,
+    name,
+    listKey,
+    listPassword,
+    attendees,
+    attendanceStatus,
+    note,
+    customFieldValues,
+    socialProfiles,
+    invitedByName,
+  } = parsedBody.body;
 
   if (typeof phone !== "string" || phone.trim().length === 0) {
     return buildApiErrorResponse("invalid_request", "phone is required");
@@ -162,8 +195,15 @@ export const handleEventSubresourcePost = httpAction(async (ctx, request) => {
   if (typeof name !== "string" || name.trim().length === 0) {
     return buildApiErrorResponse("invalid_request", "name is required");
   }
-  if (typeof listKey !== "string" || listKey.length === 0) {
-    return buildApiErrorResponse("invalid_request", "listKey is required");
+  if (listKey !== undefined && typeof listKey !== "string") {
+    return buildApiErrorResponse("invalid_request", "listKey must be a string", "listKey");
+  }
+  if (listPassword !== undefined && typeof listPassword !== "string") {
+    return buildApiErrorResponse(
+      "invalid_request",
+      "listPassword must be a string",
+      "listPassword",
+    );
   }
   if (attendees !== undefined && typeof attendees !== "number") {
     return buildApiErrorResponse("invalid_request", "attendees must be a number");
@@ -177,6 +217,27 @@ export const handleEventSubresourcePost = httpAction(async (ctx, request) => {
   if (note !== undefined && typeof note !== "string") {
     return buildApiErrorResponse("invalid_request", "note must be a string");
   }
+  if (customFieldValues !== undefined && !isStringRecord(customFieldValues)) {
+    return buildApiErrorResponse(
+      "invalid_request",
+      "customFieldValues must be an object whose values are strings",
+      "customFieldValues",
+    );
+  }
+  if (socialProfiles !== undefined && !isSubmittedSocialProfiles(socialProfiles)) {
+    return buildApiErrorResponse(
+      "invalid_request",
+      "socialProfiles must contain platformKey and handle strings",
+      "socialProfiles",
+    );
+  }
+  if (invitedByName !== undefined && typeof invitedByName !== "string") {
+    return buildApiErrorResponse(
+      "invalid_request",
+      "invitedByName must be a string",
+      "invitedByName",
+    );
+  }
 
   const writeResult = await ctx.runMutation(internal.apiV1Data.createRsvpFromApiClient, {
     apiClientId: authResult.apiClient._id,
@@ -184,18 +245,103 @@ export const handleEventSubresourcePost = httpAction(async (ctx, request) => {
     eventRouteId: pathSegments[0],
     phone,
     name,
-    listKey,
+    listKey: listKey as string | undefined,
+    listPassword: listPassword as string | undefined,
     attendees,
     attendanceStatus,
     note,
+    customFieldValues: customFieldValues as Record<string, string> | undefined,
+    socialProfiles: socialProfiles as Array<{ platformKey: string; handle: string }> | undefined,
+    invitedByName: invitedByName as string | undefined,
   });
   if (!writeResult.ok) {
-    return buildApiErrorResponse(writeResult.errorCode, writeResult.message);
+    return buildApiErrorResponse(writeResult.errorCode, writeResult.message, writeResult.field);
   }
   return buildApiJsonResponse(
     { created: writeResult.created, rsvp: writeResult.rsvp },
     writeResult.created ? 201 : 200,
   );
+});
+
+// PATCH /api/v1/events/{eventRouteId}
+export const handleEventPatch = httpAction(async (ctx, request) => {
+  const pathSegments = parsePathSegmentsAfterPrefix(request, EVENTS_PATH_PREFIX);
+  if (pathSegments.length !== 1) {
+    return buildApiErrorResponse("not_found", "Unknown API route");
+  }
+
+  const authResult = await authenticateApiRequest(ctx, request, "events:write");
+  if (!authResult.ok) {
+    return authResult.response;
+  }
+
+  const parsedBody = await parseJsonRequestBody(request);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
+  }
+  const {
+    name,
+    secondaryTitle,
+    description,
+    location,
+    eventDate,
+    eventEndDate,
+    eventTimezone,
+    maxAttendees,
+    flyerUrl,
+  } = parsedBody.body;
+
+  const stringFieldValidations: [string, unknown][] = [
+    ["name", name],
+    ["location", location],
+  ];
+  for (const [fieldName, fieldValue] of stringFieldValidations) {
+    if (fieldValue !== undefined && typeof fieldValue !== "string") {
+      return buildApiErrorResponse("invalid_request", `${fieldName} must be a string`);
+    }
+  }
+  const nullableStringFieldValidations: [string, unknown][] = [
+    ["secondaryTitle", secondaryTitle],
+    ["description", description],
+    ["eventTimezone", eventTimezone],
+    ["flyerUrl", flyerUrl],
+  ];
+  for (const [fieldName, fieldValue] of nullableStringFieldValidations) {
+    if (fieldValue !== undefined && fieldValue !== null && typeof fieldValue !== "string") {
+      return buildApiErrorResponse("invalid_request", `${fieldName} must be a string or null`);
+    }
+  }
+  if (eventDate !== undefined && typeof eventDate !== "number") {
+    return buildApiErrorResponse("invalid_request", "eventDate must be a number (ms epoch)");
+  }
+  if (eventEndDate !== undefined && eventEndDate !== null && typeof eventEndDate !== "number") {
+    return buildApiErrorResponse(
+      "invalid_request",
+      "eventEndDate must be a number (ms epoch) or null",
+    );
+  }
+  if (maxAttendees !== undefined && typeof maxAttendees !== "number") {
+    return buildApiErrorResponse("invalid_request", "maxAttendees must be a number");
+  }
+
+  const writeResult = await ctx.runMutation(internal.apiV1Data.updateEventFromApiClient, {
+    apiClientId: authResult.apiClient._id,
+    workspaceSlug: authResult.workspaceSlug,
+    eventRouteId: pathSegments[0],
+    name: name as string | undefined,
+    secondaryTitle: secondaryTitle as string | null | undefined,
+    description: description as string | null | undefined,
+    location: location as string | undefined,
+    eventDate: eventDate as number | undefined,
+    eventEndDate: eventEndDate as number | null | undefined,
+    eventTimezone: eventTimezone as string | null | undefined,
+    maxAttendees: maxAttendees as number | undefined,
+    flyerUrl: flyerUrl as string | null | undefined,
+  });
+  if (!writeResult.ok) {
+    return buildApiErrorResponse(writeResult.errorCode, writeResult.message);
+  }
+  return buildApiJsonResponse({ changed: writeResult.changed, event: writeResult.event });
 });
 
 // PATCH /api/v1/rsvps/{rsvpId}
@@ -260,4 +406,4 @@ export const handleRsvpDelete = httpAction(async (ctx, request) => {
   return buildApiJsonResponse({ cancelled: true, rsvp: writeResult.rsvp });
 });
 
-export { EVENTS_PATH_PREFIX, RSVPS_PATH_PREFIX, parsePathSegmentsAfterPrefix };
+export { EVENTS_PATH_PREFIX, parsePathSegmentsAfterPrefix, RSVPS_PATH_PREFIX };

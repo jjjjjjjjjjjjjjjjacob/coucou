@@ -153,6 +153,24 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_user_workspace_table_scope", ["clerkUserId", "workspaceId", "tableKey", "scopeKey"]),
 
+  // Organizer-set per-workspace guest annotations (tags, notes, default list).
+  // A person is matched by guestPhoneHash first (stable across guest-account
+  // claiming), then by clerkUserId; upserts write both when known.
+  workspaceGuestProfiles: defineTable({
+    workspaceId: v.id("workspaces"),
+    clerkUserId: v.optional(v.string()),
+    guestPhoneHash: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+    notes: v.optional(v.string()),
+    defaultListKey: v.optional(v.string()),
+    updatedByClerkUserId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_clerkUserId", ["workspaceId", "clerkUserId"])
+    .index("by_workspace_phoneHash", ["workspaceId", "guestPhoneHash"]),
+
   // Events & guest list credentials
   events: defineTable({
     workspaceSlug: v.optional(v.string()),
@@ -736,10 +754,16 @@ export default defineSchema({
   apiClients: defineTable({
     workspaceId: v.id("workspaces"),
     displayName: v.string(),
+    defaultRsvpListKey: v.optional(v.string()),
     keyPrefix: v.string(), // first characters of the plaintext key, for display/identification only
     keyHash: v.string(), // SHA-256 hex of the full plaintext key
     scopes: v.array(
-      v.union(v.literal("events:read"), v.literal("rsvps:read"), v.literal("rsvps:write")),
+      v.union(
+        v.literal("events:read"),
+        v.literal("events:write"),
+        v.literal("rsvps:read"),
+        v.literal("rsvps:write"),
+      ),
     ),
     createdByClerkUserId: v.string(),
     createdAt: v.number(),

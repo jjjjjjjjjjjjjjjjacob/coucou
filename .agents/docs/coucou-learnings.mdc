@@ -1,0 +1,83 @@
+# Coucou app learnings (apps/coucou)
+
+## Adding a host-dashboard page — the surface-stub rule (added 2026-07-18)
+
+- URL surfaces under `app/workspaces/[workspaceSlug]/` are wired by **per-page re-export
+  stubs**, not rewrites: real page implementations live in `host/*`, and every page needs a
+  one-line mirror stub in `dashboard/*`:
+  `export { default } from "../../host/<page>/page";`
+- `buildWorkspaceOperationPath` (lib/workspace-config.ts) collapses the `host` surface onto
+  `/dashboard/...` URLs, and `next.config.ts` 307-redirects `/host/*` → `/dashboard/*`.
+  **A new `host/<page>` without its `dashboard/<page>` stub is a guaranteed 404** — the
+  redirect sends every request to the missing dashboard route. (This bit the Developers
+  page on 2026-07-17.)
+- Mirror-image exception: `dashboard/settings` is a real page with no `host/settings`.
+- Sidebar nav items in components/app-sidebar.tsx declare `/host/...` URLs;
+  `resolveWorkspaceNavigationUrl` turns them into workspace-scoped `/dashboard/...` paths.
+
+## Long-form content pages
+
+- No markdown/MDX pipeline exists (no react-markdown, no @tailwindcss/typography — dojo's
+  `prose` classes are likely inert). Hand-author long-form pages in TSX using
+  `PageHeader` (components/page-header.tsx) + `PageCard` (components/ui/page-card.tsx)
+  with the CSS-variable palette (`var(--text-primary)`, `var(--surface-1)`,
+  `var(--border-subtle)`). Example: `host/developers/docs/page.tsx` (partner API docs).
+
+## Guests directory & shared audience filtering (added 2026-07-20)
+
+- **Person-level identity**: every rsvp has a `clerkUserId`; phone-only guests get a
+  deterministic synthetic id `guest:<phoneHash>` (`convex/lib/guestIdentity.ts`), and
+  `claimGuestRsvpsForCurrentUser` rewrites those on signup. When keying anything per-person
+  (e.g. `workspaceGuestProfiles`), match by `guestPhoneHash` first, `clerkUserId` second, and
+  write both on upsert so rows survive account claiming.
+- **Shared audience-segment logic** lives in `convex/lib/recipientFiltering.ts` (extracted
+  verbatim from `textBlasts.ts`). The SMS-consent hard gate (`!rsvp.listKey ||
+  rsvp.smsConsent !== true`) intentionally stays in `textBlasts.getFilteredRsvpsForTargeting`
+  — the guest directory shows non-consented people; blasts must never include them.
+- **`requireWorkspaceAdmin` == host in practice**: `roleHasCapability` maps both "admin" and
+  "host" capabilities to write access (org:admin OR org:host). Don't assume admin gating is
+  stricter than host gating without changing `workspaceAuth.ts`.
+- **Client/server filter-state pattern**: `apps/coucou/lib/text-blast-filters.ts` is the
+  single source of truth for audience filter state; `GuestDirectoryFilterState` composes the
+  blast filter states + directory-only facets. `components/guests/guest-directory-filters.tsx`
+  has `variant="full"` (directory page) and `variant="compact"` (text-blast Who step — only
+  filters the blast backend understands: events/segment/history).
+- **Seeding TextBlastDialog**: pass `initialTargeting` ({eventIds, selectedRsvpIds,
+  targetLists}) — applied only for new blasts, ignored when `blastId` is set. Situations:
+  launching a pre-targeted blast from any selection UI.
+- **convex-test module maps**: each backend test file declares its own `convexModules` import
+  map; a new convex module must be added there (`"../convex/guestDirectory.ts": () => import(...)`)
+  or api.* calls 404. Reuse the rsvpAggregate `registerComponent` boilerplate from
+  `text-blasts.test.ts`.
+- **Biome**: run `bunx biome check --write <files>` from the workspace that owns the files —
+  paths silently no-op from a sibling workspace directory.
+
+## Guests directory round 2 — detail panel, column layout hook (added 2026-07-20)
+
+- **Reusable column layout**: `lib/hooks/use-dashboard-table-column-layout.ts` owns
+  columnOrder/visibility/sizing + HTML5 header drag + dashboardPreferences persistence
+  (order+visibility only; widths in-memory). Situations: any dashboard table needing
+  drag-reorder/resize — pair with `getRsvpTableColumnSizing`/filler-width helpers from
+  `lib/rsvp-table-layout.ts` and copy the resize-handle propagation guards from
+  `components/guests/guest-directory-table.tsx` (or rsvp-table). GuestManager still uses its
+  inline copy — migrating it to the hook is an open follow-up.
+- **Preference migration**: `mergeDashboardTablePreferenceState` drops unknown saved ids and
+  appends new available ids at the END; a saved `hiddenColumnIds` (even `[]`) beats new
+  defaults. Adding columns to an existing table = old users see them appended and default-
+  hidden columns stay visible for them. Don't fight this; document it.
+- **Person profile lookups from a userReference**: `guestDirectory.getGuestProfileByUserReference`
+  resolves the phone hash server-side (detail queries only return raw/obfuscated phones —
+  clients can never hash), and returns the resolved personKey to echo into `upsertGuestProfile`.
+  `upsertGuestProfileRecord` also derives the hash from a clerkUserId-only key (healing).
+- **"Attended" vs "Events"**: attendance = `redemptions.by_event_user` with `redeemedAt &&
+  !disabledAt` (door check-in); `rsvps.attendanceStatus` is guest intent. Count distinct
+  eventIds — merged guest+claimed identities can hold two rsvps for one event.
+- **Detail-as-panel pattern**: `components/users/user-detail-content.tsx` (variant
+  "page"|"panel") + a `guest=<detailReference>` query param on the Guests page; wide
+  viewports (`useIsViewportAtLeast(1024)`, lib/hooks) open the `hidden lg:block` sticky rail
+  via router.push (browser back closes), narrow viewports navigate to the standalone route.
+  `~` in `rsvp~<id>` round-trips fine through URLSearchParams; only path segments need
+  encodeURIComponent.
+- **Dual-flavor menus**: `components/guests/guest-row-actions.tsx` builds plain action
+  descriptors rendered by both DropdownMenuContent and ContextMenuContent — use this when the
+  same actions need a button menu and a right-click menu.

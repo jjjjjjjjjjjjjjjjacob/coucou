@@ -3,23 +3,26 @@
 import { useAuth, useOrganizationList, useUser } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import { AdminEmptyState, AdminHeader, AdminSection } from "@coucou/ui/admin";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
-import { ArrowRight, Loader2, Plus, Save } from "lucide-react";
+import { useConvexAuth, useQuery } from "convex/react";
+import { ArrowRight, Loader2, Plus, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { type KeyboardEvent, type MouseEvent, useMemo, useState } from "react";
 import { CoucouLogoMark } from "@/components/coucou-logo";
 import { DashboardShell } from "@/components/dashboard-shell";
+import { TenantRequestDialog } from "@/components/tenant-request-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { type DashboardWorkspaceEntry, WorkspaceListRow } from "@/components/workspace-list-row";
 import {
   activateOrganizationBeforeNavigation,
   MAISON_OBSCUR_TOAST_OPTIONS,
 } from "@/lib/organization-navigation";
-import { getToastErrorMessage, runMutationWithToast } from "@/lib/toast-mutation";
 import { buildWorkspaceOperationHref, getCoucouOrganizationSlug } from "@/lib/workspace-config";
 import { hasWorkspaceWriteAccess } from "@/lib/workspace-roles";
 
@@ -30,40 +33,81 @@ interface DashboardMembership {
   role: string;
 }
 
-interface DashboardTenantWorkspace {
-  slug: string;
-  name: string;
-  primaryDomain?: string | null;
-  clerkOrganizationId?: string | null;
-  clerkOrganizationSlug?: string | null;
-  organizationId: string;
-  organizationSlug?: string | null;
-  membershipRole: string;
-  isWorkspaceConfigured?: boolean;
-}
+function CoucouAdminCard({
+  onOpenAdmin,
+  isActivating,
+}: {
+  onOpenAdmin: () => void;
+  isActivating: boolean;
+}) {
+  const handleRowClick = (clickEvent: MouseEvent<HTMLDivElement>) => {
+    if (
+      clickEvent.target instanceof Element &&
+      clickEvent.target.closest("button, a, input, select, textarea, [role='menuitem']")
+    ) {
+      return;
+    }
+    onOpenAdmin();
+  };
 
-function formatRole(role: string): string {
-  return role.replace(/^org:/, "").replace(/-/g, " ");
-}
+  const handleRowKeyDown = (keyboardEvent: KeyboardEvent<HTMLDivElement>) => {
+    if (keyboardEvent.target !== keyboardEvent.currentTarget) return;
+    if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+      keyboardEvent.preventDefault();
+      onOpenAdmin();
+    }
+  };
 
-function optionalString(value: string): string | undefined {
-  const trimmedValue = value.trim();
-  return trimmedValue ? trimmedValue : undefined;
-}
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          role="link"
+          tabIndex={0}
+          aria-label="Open Coucou admin"
+          onClick={handleRowClick}
+          onKeyDown={handleRowKeyDown}
+          className="group flex cursor-pointer items-center gap-4 rounded-lg border bg-card p-4 text-card-foreground shadow-sm transition-colors hover:bg-[var(--tt-highlight)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-primary)]/30"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <CoucouLogoMark size={16} />
+              <span className="text-sm font-medium text-[var(--text-primary)]">Coucou Admin</span>
+            </div>
+            <div className="text-xs text-[var(--text-secondary)]">
+              Super-admin views for tenant review, billing, delivery, and platform operations.
+            </div>
+          </div>
 
-function readPrimaryDomainFromMutationResult(mutationResult: unknown): string | null | undefined {
-  if (typeof mutationResult !== "object" || mutationResult === null) {
-    return undefined;
-  }
-
-  const resultRecord = mutationResult as { primaryDomain?: unknown };
-  if (typeof resultRecord.primaryDomain === "string") {
-    return resultRecord.primaryDomain;
-  }
-  if (resultRecord.primaryDomain === null) {
-    return null;
-  }
-  return undefined;
+          <div className="flex items-center gap-4">
+            <div className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-[var(--border-subtle)] bg-transparent"
+                onClick={onOpenAdmin}
+                disabled={isActivating}
+              >
+                {isActivating ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ArrowRight className="size-4" />
+                )}
+                Open admin
+              </Button>
+            </div>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-56 border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)] shadow-[var(--shadow-card)]">
+        <ContextMenuItem onSelect={onOpenAdmin}>
+          <ShieldCheck className="h-4 w-4" />
+          Open admin
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
 }
 
 export function DashboardClient() {
@@ -75,22 +119,8 @@ export function DashboardClient() {
   const { userMemberships, setActive } = useOrganizationList({
     userMemberships: { infinite: true },
   });
-  const submitApplication = useMutation(api.tenantApplications.submitApplication);
-  const setTenantWorkspacePrimaryDomain = useMutation(
-    api.workspaces.setTenantWorkspacePrimaryDomain,
-  );
   const [activatingTarget, setActivatingTarget] = useState<string | null>(null);
-  const [savingDomainTarget, setSavingDomainTarget] = useState<string | null>(null);
-  const [domainDraftsByWorkspaceSlug, setDomainDraftsByWorkspaceSlug] = useState<
-    Record<string, string>
-  >({});
-  const [tenantName, setTenantName] = useState("");
-  const [tenantCity, setTenantCity] = useState("");
-  const [operatorName, setOperatorName] = useState("");
-  const [operatorEmail, setOperatorEmail] = useState("");
-  const [requestDetails, setRequestDetails] = useState("");
-  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
-  const [requestStatusMessage, setRequestStatusMessage] = useState<string | null>(null);
+  const [isTenantRequestOpen, setIsTenantRequestOpen] = useState(false);
 
   const clerkMemberships = userMemberships?.data;
   const profileMemberships = useMemo(
@@ -100,18 +130,6 @@ export function DashboardClient() {
   const coucouOrganizationSlug = getCoucouOrganizationSlug();
   const primaryEmailAddress = user?.primaryEmailAddress?.emailAddress ?? "";
   const defaultOperatorName = user?.fullName?.trim() || primaryEmailAddress || "Coucou user";
-
-  useEffect(() => {
-    if (!operatorName && defaultOperatorName) {
-      setOperatorName(defaultOperatorName);
-    }
-  }, [defaultOperatorName, operatorName]);
-
-  useEffect(() => {
-    if (!operatorEmail && primaryEmailAddress) {
-      setOperatorEmail(primaryEmailAddress);
-    }
-  }, [operatorEmail, primaryEmailAddress]);
 
   const dashboardMemberships = useMemo<DashboardMembership[]>(() => {
     const membershipByOrganizationId = new Map<string, DashboardMembership>();
@@ -142,26 +160,12 @@ export function DashboardClient() {
       : { memberships: dashboardMemberships },
   );
 
-  const tenantWorkspaces = useMemo<DashboardTenantWorkspace[]>(
+  const tenantWorkspaces = useMemo<DashboardWorkspaceEntry[]>(
     () => dashboardAccess?.tenantWorkspaces ?? [],
     [dashboardAccess?.tenantWorkspaces],
   );
   const hasCoucouOrganizationAccess =
     Boolean(coucouMembership) || Boolean(dashboardAccess?.hasCoucouOrganizationAccess);
-
-  useEffect(() => {
-    setDomainDraftsByWorkspaceSlug((currentDrafts) => {
-      const nextDrafts = { ...currentDrafts };
-      let hasChanges = false;
-      for (const workspace of tenantWorkspaces) {
-        if (!(workspace.slug in nextDrafts)) {
-          nextDrafts[workspace.slug] = workspace.primaryDomain ?? "";
-          hasChanges = true;
-        }
-      }
-      return hasChanges ? nextDrafts : currentDrafts;
-    });
-  }, [tenantWorkspaces]);
 
   async function openOrganizationPath(
     organizationId: string | undefined,
@@ -183,96 +187,6 @@ export function DashboardClient() {
       });
     } catch {
       setActivatingTarget(null);
-    }
-  }
-
-  async function handleTenantRequestSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmedTenantName = tenantName.trim();
-    const trimmedOperatorName = operatorName.trim() || defaultOperatorName;
-
-    if (!trimmedTenantName) {
-      setRequestStatusMessage("Tenant name is required.");
-      return;
-    }
-
-    setIsSubmittingRequest(true);
-    setRequestStatusMessage(null);
-    try {
-      await runMutationWithToast(
-        () =>
-          submitApplication({
-            name: trimmedTenantName,
-            city: optionalString(tenantCity),
-            operator: trimmedOperatorName,
-            operatorEmail: optionalString(operatorEmail),
-            body: optionalString(requestDetails),
-          }),
-        {
-          loading: "Submitting tenant request...",
-          success: "Tenant request submitted",
-        },
-      );
-      setTenantName("");
-      setTenantCity("");
-      setRequestDetails("");
-      setRequestStatusMessage("Request submitted for Coucou review.");
-    } catch (error) {
-      const errorMessage = getToastErrorMessage(error);
-      setRequestStatusMessage(errorMessage);
-    } finally {
-      setIsSubmittingRequest(false);
-    }
-  }
-
-  async function handleTenantDomainSubmit(
-    event: FormEvent<HTMLFormElement>,
-    workspace: DashboardTenantWorkspace,
-  ) {
-    event.preventDefault();
-
-    const clerkOrganizationId = workspace.organizationId ?? workspace.clerkOrganizationId;
-    if (!clerkOrganizationId) {
-      toast.error("Workspace organization is not configured.");
-      return;
-    }
-
-    const primaryDomain = optionalString(domainDraftsByWorkspaceSlug[workspace.slug] ?? "");
-    if (!primaryDomain) {
-      toast.error("Primary URL is required.");
-      return;
-    }
-
-    const targetKey = `${workspace.slug}:domain`;
-    setSavingDomainTarget(targetKey);
-    try {
-      const mutationResult = await runMutationWithToast(
-        () =>
-          setTenantWorkspacePrimaryDomain({
-            slug: workspace.slug,
-            clerkOrganizationId,
-            primaryDomain,
-          }),
-        {
-          loading: "Saving tenant URL...",
-          success: "Tenant URL updated",
-        },
-      );
-      if (setActive) {
-        void setActive({ organization: clerkOrganizationId }).catch(() => undefined);
-      }
-      const savedPrimaryDomain = readPrimaryDomainFromMutationResult(mutationResult);
-      if (savedPrimaryDomain !== undefined) {
-        setDomainDraftsByWorkspaceSlug((currentDrafts) => ({
-          ...currentDrafts,
-          [workspace.slug]: savedPrimaryDomain ?? "",
-        }));
-      }
-      router.refresh();
-    } catch {
-      // Error toast is handled by runMutationWithToast.
-    } finally {
-      setSavingDomainTarget(null);
     }
   }
 
@@ -317,31 +231,20 @@ export function DashboardClient() {
       <AdminHeader
         eyebrow="Dashboard"
         title="Your organizations."
-        status={<span>{tenantWorkspaces.length} tenant workspaces</span>}
+        status={
+          <Button type="button" size="sm" onClick={() => setIsTenantRequestOpen(true)}>
+            <Plus className="size-4" />
+            New tenant
+          </Button>
+        }
       />
 
       {hasCoucouOrganizationAccess ? (
         <AdminSection title="Coucou" meta="platform access">
-          <div
-            className="flex flex-wrap items-center justify-between gap-4 py-5 text-[13px]"
-            style={{ borderBottom: "1px solid var(--tt-rule)" }}
-          >
-            <div className="space-y-1">
-              <div className="flex items-center gap-2" style={{ color: "var(--tt-fg)" }}>
-                <CoucouLogoMark size={20} />
-                <span>Coucou Admin</span>
-              </div>
-              <div
-                className="max-w-2xl text-[12px] leading-relaxed"
-                style={{ color: "var(--tt-fg-dim)" }}
-              >
-                Super-admin views for tenant review, billing, delivery, and platform operations.
-              </div>
-            </div>
-            <Button
-              type="button"
-              className="h-8 rounded-none px-3 text-[12px]"
-              onClick={() =>
+          <div className="pt-4">
+            <CoucouAdminCard
+              isActivating={activatingTarget === "coucou-admin"}
+              onOpenAdmin={() =>
                 openOrganizationPath(
                   coucouMembership?.organizationId,
                   "/admin",
@@ -349,141 +252,26 @@ export function DashboardClient() {
                   "Switching workspace to Coucou...",
                 )
               }
-              disabled={activatingTarget === "coucou-admin"}
-            >
-              {activatingTarget === "coucou-admin" ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <ArrowRight className="size-4" />
-              )}
-              Open admin
-            </Button>
+            />
           </div>
         </AdminSection>
       ) : null}
 
       <AdminSection title="Tenant workspaces" meta={`${tenantWorkspaces.length} available`}>
         {tenantWorkspaces.length > 0 ? (
-          <div role="table">
-            <div
-              role="row"
-              className="hidden grid-cols-[minmax(180px,1.4fr)_120px_minmax(220px,1.5fr)_150px] gap-4 py-4 text-[11px] uppercase tracking-[0.06em] md:grid"
-              style={{
-                borderBottom: "1px solid var(--tt-rule)",
-                color: "var(--tt-fg-mute)",
-              }}
-            >
-              <div role="columnheader">Workspace</div>
-              <div role="columnheader">Role</div>
-              <div role="columnheader">Primary URL</div>
-              <div role="columnheader" className="text-right">
-                Action
-              </div>
-            </div>
-            {tenantWorkspaces.map((workspace) => {
-              const dashboardAbsoluteHref = buildWorkspaceOperationHref(
-                workspace.slug,
-                "dashboard",
-                hasWorkspaceWriteAccess(workspace.membershipRole) ? "" : "rsvps",
-              );
-              const domainTargetKey = `${workspace.slug}:domain`;
-              const canEditWorkspaceDomain = hasWorkspaceWriteAccess(workspace.membershipRole);
-              const workspaceStatus = workspace.primaryDomain
-                ? workspace.primaryDomain
-                : !workspace.isWorkspaceConfigured
-                  ? "Clerk organization connected. Coucou workspace setup is pending."
-                  : "No primary URL set.";
-
-              return (
-                <div
-                  key={workspace.slug}
-                  role="row"
-                  className="grid gap-4 py-4 text-[13px] md:grid-cols-[minmax(180px,1.4fr)_120px_minmax(220px,1.5fr)_150px]"
-                  style={{
-                    borderBottom: "1px solid var(--tt-rule)",
-                    color: "var(--tt-fg)",
-                  }}
-                >
-                  <div role="cell" className="space-y-1">
-                    <div>{workspace.name}</div>
-                    <div
-                      className="text-[12px] leading-relaxed"
-                      style={{ color: "var(--tt-fg-dim)" }}
-                    >
-                      {workspaceStatus}
-                    </div>
-                    <div
-                      className="text-[12px] leading-relaxed md:hidden"
-                      style={{ color: "var(--tt-fg-dim)" }}
-                    >
-                      Role: {formatRole(workspace.membershipRole)}
-                    </div>
-                  </div>
-                  <div
-                    role="cell"
-                    className="hidden md:block"
-                    style={{ color: "var(--tt-fg-dim)" }}
-                  >
-                    {formatRole(workspace.membershipRole)}
-                  </div>
-                  <div role="cell">
-                    {canEditWorkspaceDomain ? (
-                      <form
-                        className="space-y-2"
-                        onSubmit={(event) => handleTenantDomainSubmit(event, workspace)}
-                      >
-                        <Label
-                          htmlFor={`primary-domain-${workspace.slug}`}
-                          className="text-[11px] uppercase tracking-[0.06em] md:sr-only"
-                          style={{ color: "var(--tt-fg-mute)" }}
-                        >
-                          Primary URL
-                        </Label>
-                        <div className="flex gap-2">
-                          <Input
-                            id={`primary-domain-${workspace.slug}`}
-                            value={domainDraftsByWorkspaceSlug[workspace.slug] ?? ""}
-                            onChange={(event) =>
-                              setDomainDraftsByWorkspaceSlug((currentDrafts) => ({
-                                ...currentDrafts,
-                                [workspace.slug]: event.target.value,
-                              }))
-                            }
-                            placeholder="dojopomodoro.club"
-                            inputMode="url"
-                            required
-                            className="h-8 rounded-none border-0 bg-transparent px-0 text-[13px] focus-visible:ring-0"
-                            style={{
-                              borderBottom: "1px solid var(--tt-rule)",
-                              color: "var(--tt-fg)",
-                            }}
-                          />
-                          <Button
-                            type="submit"
-                            size="icon"
-                            className="size-8 rounded-none"
-                            aria-label={`Save URL for ${workspace.name}`}
-                            disabled={savingDomainTarget === domainTargetKey}
-                          >
-                            <Save className="size-4" />
-                          </Button>
-                        </div>
-                      </form>
-                    ) : (
-                      <span style={{ color: "var(--tt-fg-dim)" }}>{workspaceStatus}</span>
-                    )}
-                  </div>
-                  <div role="cell" className="flex md:justify-end">
-                    <Button asChild size="sm" className="h-8 rounded-none px-3 text-[12px]">
-                      <a href={dashboardAbsoluteHref}>
-                        <ArrowRight className="size-4" />
-                        Open dashboard
-                      </a>
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="flex flex-col gap-3 pt-4">
+            {tenantWorkspaces.map((workspace) => (
+              <WorkspaceListRow
+                key={workspace.slug}
+                workspace={workspace}
+                dashboardHref={buildWorkspaceOperationHref(
+                  workspace.slug,
+                  "dashboard",
+                  hasWorkspaceWriteAccess(workspace.membershipRole) ? "" : "rsvps",
+                )}
+                canWrite={hasWorkspaceWriteAccess(workspace.membershipRole)}
+              />
+            ))}
           </div>
         ) : (
           <AdminEmptyState
@@ -493,98 +281,12 @@ export function DashboardClient() {
         )}
       </AdminSection>
 
-      <AdminSection title="Request a new tenant" meta="Coucou review">
-        <form className="grid gap-5 py-6 md:grid-cols-2" onSubmit={handleTenantRequestSubmit}>
-          <div className="space-y-2">
-            <Label htmlFor="tenant-name">Tenant name</Label>
-            <Input
-              id="tenant-name"
-              value={tenantName}
-              onChange={(event) => setTenantName(event.target.value)}
-              placeholder="Dojo Pomodoro"
-              required
-              className="rounded-none border-0 bg-transparent px-0 text-[13px] focus-visible:ring-0"
-              style={{
-                borderBottom: "1px solid var(--tt-rule)",
-                color: "var(--tt-fg)",
-              }}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tenant-city">City</Label>
-            <Input
-              id="tenant-city"
-              value={tenantCity}
-              onChange={(event) => setTenantCity(event.target.value)}
-              placeholder="New York"
-              className="rounded-none border-0 bg-transparent px-0 text-[13px] focus-visible:ring-0"
-              style={{
-                borderBottom: "1px solid var(--tt-rule)",
-                color: "var(--tt-fg)",
-              }}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="operator-name">Operator</Label>
-            <Input
-              id="operator-name"
-              value={operatorName}
-              onChange={(event) => setOperatorName(event.target.value)}
-              required
-              className="rounded-none border-0 bg-transparent px-0 text-[13px] focus-visible:ring-0"
-              style={{
-                borderBottom: "1px solid var(--tt-rule)",
-                color: "var(--tt-fg)",
-              }}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="operator-email">Operator email</Label>
-            <Input
-              id="operator-email"
-              type="email"
-              value={operatorEmail}
-              onChange={(event) => setOperatorEmail(event.target.value)}
-              placeholder="operator@example.com"
-              className="rounded-none border-0 bg-transparent px-0 text-[13px] focus-visible:ring-0"
-              style={{
-                borderBottom: "1px solid var(--tt-rule)",
-                color: "var(--tt-fg)",
-              }}
-            />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="request-details">Notes</Label>
-            <Textarea
-              id="request-details"
-              value={requestDetails}
-              onChange={(event) => setRequestDetails(event.target.value)}
-              placeholder="Audience, launch timing, or setup details."
-              className="min-h-24 rounded-none border-0 bg-transparent px-0 text-[13px] focus-visible:ring-0"
-              style={{
-                borderBottom: "1px solid var(--tt-rule)",
-                color: "var(--tt-fg)",
-              }}
-            />
-          </div>
-          {requestStatusMessage ? (
-            <p className="text-[13px] md:col-span-2" style={{ color: "var(--tt-fg-dim)" }}>
-              {requestStatusMessage}
-            </p>
-          ) : null}
-          <div className="md:col-span-2">
-            <Button
-              type="submit"
-              className="h-9 rounded-none px-4 text-[12px]"
-              disabled={isSubmittingRequest}
-              aria-busy={isSubmittingRequest}
-            >
-              <Plus className="size-4" />
-              Submit request
-            </Button>
-          </div>
-        </form>
-      </AdminSection>
+      <TenantRequestDialog
+        open={isTenantRequestOpen}
+        onOpenChange={setIsTenantRequestOpen}
+        defaultOperatorName={defaultOperatorName}
+        defaultOperatorEmail={primaryEmailAddress}
+      />
     </DashboardShell>
   );
 }

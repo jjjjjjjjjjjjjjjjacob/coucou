@@ -1,13 +1,41 @@
 "use client";
 
 import { api } from "@convex/_generated/api";
-import { NavGroup, NavLink } from "@coucou/ui/admin";
 import { useQuery } from "convex/react";
+import {
+  Building2,
+  CreditCard,
+  Flag,
+  Gauge,
+  Inbox,
+  Radio,
+  ScrollText,
+  Smartphone,
+  Users,
+} from "lucide-react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ComponentType } from "react";
+import { LinearSidebarFooter } from "@/components/linear-sidebar-footer";
+import { SidebarTenantSwitcher } from "@/components/sidebar-tenant-switcher";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from "@/components/ui/sidebar";
 
 interface AdminSidebarItem {
   href: string;
   label: string;
+  icon: ComponentType<{ className?: string }>;
   countKey?: "pending" | "flags";
 }
 
@@ -18,27 +46,27 @@ interface AdminSidebarGroup {
 
 const SIDEBAR_GROUPS: AdminSidebarGroup[] = [
   {
-    label: "Oversight",
+    label: "oversight",
     items: [
-      { href: "/admin", label: "Tenancies" },
-      { href: "/admin/pending", label: "Pending", countKey: "pending" },
-      { href: "/admin/flags", label: "Flags", countKey: "flags" },
-      { href: "/admin/billing", label: "Billing" },
+      { href: "/admin", label: "Tenancies", icon: Building2 },
+      { href: "/admin/pending", label: "Pending", icon: Inbox, countKey: "pending" },
+      { href: "/admin/flags", label: "Flags", icon: Flag, countKey: "flags" },
+      { href: "/admin/billing", label: "Billing", icon: CreditCard },
     ],
   },
   {
-    label: "System",
+    label: "system",
     items: [
-      { href: "/admin/delivery", label: "Delivery" },
-      { href: "/admin/senders", label: "Senders" },
-      { href: "/admin/limits", label: "Limits" },
+      { href: "/admin/delivery", label: "Delivery", icon: Radio },
+      { href: "/admin/senders", label: "Senders", icon: Smartphone },
+      { href: "/admin/limits", label: "Limits", icon: Gauge },
     ],
   },
   {
-    label: "Internal",
+    label: "internal",
     items: [
-      { href: "/admin/staff", label: "Staff" },
-      { href: "/admin/audit", label: "Audit" },
+      { href: "/admin/staff", label: "Staff", icon: Users },
+      { href: "/admin/audit", label: "Audit", icon: ScrollText },
     ],
   },
 ];
@@ -60,24 +88,46 @@ export function AdminSidebar() {
   };
 
   return (
-    <>
-      {SIDEBAR_GROUPS.map((group) => (
-        <NavGroup key={group.label} label={group.label}>
-          {group.items.map((item) => {
-            const count = item.countKey ? counts[item.countKey] : undefined;
-            return (
-              <NavLink
-                key={item.href}
-                href={item.href}
-                active={isActive(pathname, item.href)}
-                count={count && count > 0 ? count : undefined}
-              >
-                {item.label}
-              </NavLink>
-            );
-          })}
-        </NavGroup>
-      ))}
-    </>
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="md:pt-3">
+        <SidebarTenantSwitcher />
+      </SidebarHeader>
+
+      <SidebarContent>
+        {SIDEBAR_GROUPS.map((group) => (
+          <SidebarGroup key={group.label} className="py-2">
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => {
+                  const count = item.countKey ? counts[item.countKey] : undefined;
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive(pathname, item.href)}
+                        tooltip={item.label}
+                      >
+                        <Link href={item.href}>
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                      {count !== undefined && count > 0 ? (
+                        <SidebarMenuBadge>{count}</SidebarMenuBadge>
+                      ) : null}
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+
+      <LinearSidebarFooter />
+
+      <SidebarRail />
+    </Sidebar>
   );
 }

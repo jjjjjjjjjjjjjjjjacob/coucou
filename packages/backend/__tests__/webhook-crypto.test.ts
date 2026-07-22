@@ -28,7 +28,11 @@ describe("webhook payload encryption", () => {
 
   it("uses a fresh IV per envelope", async () => {
     const { encryptionSecretBase64 } = generateWebhookEndpointSecrets();
-    const firstEnvelope = await buildWebhookEnvelope(SAMPLE_PAYLOAD_JSON, encryptionSecretBase64, 1);
+    const firstEnvelope = await buildWebhookEnvelope(
+      SAMPLE_PAYLOAD_JSON,
+      encryptionSecretBase64,
+      1,
+    );
     const secondEnvelope = await buildWebhookEnvelope(
       SAMPLE_PAYLOAD_JSON,
       encryptionSecretBase64,
@@ -48,7 +52,9 @@ describe("webhook payload encryption", () => {
       ciphertext: firstCharacter + envelope.ciphertext.slice(1),
     };
 
-    await expect(decryptWebhookEnvelope(tamperedEnvelope, encryptionSecretBase64)).rejects.toThrow();
+    await expect(
+      decryptWebhookEnvelope(tamperedEnvelope, encryptionSecretBase64),
+    ).rejects.toThrow();
   });
 
   it("fails to decrypt with the wrong secret", async () => {

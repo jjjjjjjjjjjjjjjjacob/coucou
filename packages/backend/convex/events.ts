@@ -90,6 +90,7 @@ const EVENT_SHORT_ID_MAX_ATTEMPTS = 20;
 const eventUnsetFieldValidator = v.union(
   v.literal("secondaryTitle"),
   v.literal("productionCompany"),
+  v.literal("eventEndDate"),
   v.literal("flyerStorageId"),
   v.literal("guestPortalImageStorageId"),
   v.literal("guestPortalLinkLabel"),
@@ -232,6 +233,7 @@ export const insertWithCreds = mutation({
     guestPortalLinkLabel: v.optional(v.string()),
     guestPortalLinkUrl: v.optional(v.string()),
     eventDate: v.number(),
+    eventEndDate: v.optional(v.number()),
     eventTimezone: v.optional(v.string()),
     status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()),
@@ -298,6 +300,7 @@ export const insertWithCreds = mutation({
       guestPortalLinkLabel: args.guestPortalLinkLabel,
       guestPortalLinkUrl: args.guestPortalLinkUrl,
       eventDate: args.eventDate,
+      eventEndDate: args.eventEndDate,
       eventTimezone: args.eventTimezone,
       status: args.status ?? "inactive",
       lifecycle: "published",
@@ -448,6 +451,100 @@ export const createDraft = mutation({
   },
 });
 
+export const duplicateToDraft = mutation({
+  args: {
+    eventId: v.id("events"),
+    workspaceSlug: v.optional(v.string()),
+    siteKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const resolvedWorkspaceScope = await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const sourceEvent = await ensureEventInSiteScope(ctx, args.eventId, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const sourceCredentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", sourceEvent._id))
+      .collect();
+
+    const now = Date.now();
+    const duplicateEventName = `${sourceEvent.name} (Copy)`;
+    const duplicateEventId = await ctx.db.insert("events", {
+      workspaceSlug: sourceEvent.workspaceSlug ?? resolvedWorkspaceScope.workspaceSlug,
+      siteKey: sourceEvent.siteKey ?? resolvedWorkspaceScope.siteKey ?? undefined,
+      shortId: await generateUniqueEventShortId(ctx),
+      name: duplicateEventName,
+      secondaryTitle: sourceEvent.secondaryTitle,
+      description: sourceEvent.description,
+      acts: sourceEvent.acts,
+      hosts: sourceEvent.hosts,
+      productionCompany: sourceEvent.productionCompany,
+      location: sourceEvent.location,
+      flyerUrl: sourceEvent.flyerUrl,
+      flyerStorageId: sourceEvent.flyerStorageId,
+      customIconStorageId: sourceEvent.customIconStorageId,
+      guestPortalImageStorageId: sourceEvent.guestPortalImageStorageId,
+      guestPortalLinkLabel: sourceEvent.guestPortalLinkLabel,
+      guestPortalLinkUrl: sourceEvent.guestPortalLinkUrl,
+      eventDate: sourceEvent.eventDate,
+      eventEndDate: sourceEvent.eventEndDate,
+      eventTimezone: sourceEvent.eventTimezone,
+      // Copied passwords may still belong to an active source event.
+      // The host can reactivate the copy after reviewing its lists.
+      status: "inactive",
+      lifecycle: "draft",
+      defersQrDelivery: sourceEvent.defersQrDelivery,
+      sendQrOnApproval: sourceEvent.sendQrOnApproval,
+      attendanceQuestionEnabled: sourceEvent.attendanceQuestionEnabled,
+      referralSharingEnabled: sourceEvent.referralSharingEnabled,
+      maxAttendees: sourceEvent.maxAttendees,
+      customFields: sourceEvent.customFields,
+      primaryFieldConfig: sourceEvent.primaryFieldConfig,
+      themeBackgroundColor: sourceEvent.themeBackgroundColor,
+      themeTextColor: sourceEvent.themeTextColor,
+      approvalMessage: sourceEvent.approvalMessage,
+      rsvpConfirmationMessageEnabled: sourceEvent.rsvpConfirmationMessageEnabled,
+      rsvpConfirmationMessage: sourceEvent.rsvpConfirmationMessage,
+      qrCodeColor: sourceEvent.qrCodeColor,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    for (const sourceCredential of sourceCredentials) {
+      await ctx.db.insert("listCredentials", {
+        eventId: duplicateEventId,
+        listKey: sourceCredential.listKey,
+        password: sourceCredential.password,
+        passwordNormalized: sourceCredential.passwordNormalized,
+        passwordHash: sourceCredential.passwordHash,
+        passwordSalt: sourceCredential.passwordSalt,
+        passwordIterations: sourceCredential.passwordIterations,
+        passwordFingerprint: sourceCredential.passwordFingerprint,
+        encryptedPassword: sourceCredential.encryptedPassword,
+        generateQR: sourceCredential.generateQR,
+        defersQrDelivery: sourceCredential.defersQrDelivery,
+        sendQrOnApproval: sourceCredential.sendQrOnApproval,
+        approvalMessage: sourceCredential.approvalMessage,
+        createdAt: now,
+      });
+    }
+
+    await writeAuditEntry(ctx, {
+      action: "event.duplicate",
+      targetKind: "event",
+      targetId: duplicateEventId,
+      summary: duplicateEventName,
+      metadata: { sourceEventId: sourceEvent._id },
+    });
+
+    return { eventId: duplicateEventId };
+  },
+});
+
 const PUBLISH_REQUIRED_FIELDS = [
   "name",
   "location",
@@ -563,6 +660,7 @@ export const update = mutation({
     flyerUrl: v.optional(v.string()),
     flyerStorageId: v.optional(v.id("_storage")),
     eventDate: v.optional(v.number()),
+    eventEndDate: v.optional(v.number()),
     eventTimezone: v.optional(v.string()),
     guestPortalImageStorageId: v.optional(v.id("_storage")),
     guestPortalLinkLabel: v.optional(v.string()),
@@ -660,6 +758,7 @@ export const update = mutation({
       "guestPortalLinkLabel",
       "guestPortalLinkUrl",
       "eventDate",
+      "eventEndDate",
       "eventTimezone",
       "maxAttendees",
       "status",

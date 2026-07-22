@@ -249,6 +249,10 @@ describe("webhook pipeline", () => {
     );
     expect(payload.eventType).toBe("rsvp.approved");
     expect(payload.data.changes.previousApprovalStatus).toBe("pending");
+    expect(payload.data.origin.type).toBe("app");
+    expect(payload.data.ticket.status).toBe("issued");
+    expect(payload.data.ticket.redemptionCode).toBeTruthy();
+    expect(payload.data.ticket.qrEnabled).toBe(false);
   });
 
   it("delivers event.updated and event.unpublished for event changes", async () => {

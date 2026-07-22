@@ -1,3 +1,4 @@
+import { type ColumnDef, type RowData } from "@tanstack/react-table";
 import { cn } from "@/lib/utils";
 
 interface RsvpSelectColumnSizing {
@@ -190,6 +191,13 @@ export function getRsvpContextActionTargets<TargetRow extends { id: string }>({
 
   const selectedRows = rows.filter((row) => selectedRowIds.has(row.id));
   return selectedRows.length > 1 ? selectedRows : [contextRow];
+}
+
+export function hasStringAccessorKey<TData extends RowData>(
+  columnDefinition: ColumnDef<TData>,
+): columnDefinition is ColumnDef<TData> & { accessorKey: string } {
+  const candidateAccessorKey = (columnDefinition as { accessorKey?: unknown }).accessorKey;
+  return typeof candidateAccessorKey === "string";
 }
 
 export function getRsvpSelectionRangeIds(

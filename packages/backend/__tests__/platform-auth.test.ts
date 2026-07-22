@@ -102,7 +102,7 @@ describe("requireCoucouPlatformMember", () => {
   });
 
   it("rejects users without an active Coucou organization", async () => {
-    const identity = createIdentity({ org_slug: "tenant-house" });
+    const identity = createIdentity({ org_slug: "tenant-partner" });
 
     await expect(requireCoucouPlatformMember(createAuthContext(identity))).rejects.toThrow(
       "Forbidden",
@@ -112,7 +112,7 @@ describe("requireCoucouPlatformMember", () => {
   it("allows synced Coucou members without active Coucou organization", async () => {
     const identity = createIdentity({
       org_id: "org_tenant",
-      org_slug: "tenant-house",
+      org_slug: "tenant-partner",
     });
 
     await expect(
@@ -123,7 +123,7 @@ describe("requireCoucouPlatformMember", () => {
   it("allows synced Coucou members from an action context", async () => {
     const identity = createIdentity({
       org_id: "org_tenant",
-      org_slug: "tenant-house",
+      org_slug: "tenant-partner",
     });
 
     await expect(
@@ -134,7 +134,7 @@ describe("requireCoucouPlatformMember", () => {
   it("rejects action callers without synced Coucou membership", async () => {
     const identity = createIdentity({
       org_id: "org_tenant",
-      org_slug: "tenant-house",
+      org_slug: "tenant-partner",
     });
 
     await expect(

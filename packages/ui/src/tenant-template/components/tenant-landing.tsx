@@ -64,7 +64,7 @@ export interface TenantLandingRecentEvent {
 export interface TenantLandingProps {
   event: TenantLandingEvent;
   /**
-   * Optional copy for the "house" section. Falls back to a preset-default.
+   * Optional copy for the "partner" section. Falls back to a preset-default.
    */
   aboutCopy?: string | null;
   /**
@@ -100,6 +100,8 @@ const DEFAULT_ABOUT_COPY: Record<string, string> = {
   maison:
     "Maison Obscure is a small, recurring evening for a particular crowd. If you have found this page, someone we trust has sent you.",
   chlorine: "Club Chlorine is a recurring pool-hours series. RSVP access opens by event.",
+  danza:
+    "Danza Organica is a recurring night for dancing. If you have this page, someone we know has sent you.",
 };
 
 const DEFAULT_HERO_EYEBROW: Record<string, string> = {
@@ -107,13 +109,15 @@ const DEFAULT_HERO_EYEBROW: Record<string, string> = {
   atrium: "Tonight",
   maison: "The next night",
   chlorine: "Club Chlorine",
+  danza: "THE NEXT DANZA",
 };
 
-const DEFAULT_HOUSE_EYEBROW: Record<string, string> = {
-  dojo: "THE HOUSE",
-  atrium: "The house",
-  maison: "The house",
+const DEFAULT_PARTNER_EYEBROW: Record<string, string> = {
+  dojo: "THE PARTNER",
+  atrium: "The partner",
+  maison: "The partner",
   chlorine: "The pool",
+  danza: "THE PARTNER",
 };
 
 const DEFAULT_RECENT_EYEBROW: Record<string, string> = {
@@ -121,6 +125,7 @@ const DEFAULT_RECENT_EYEBROW: Record<string, string> = {
   atrium: "Recent",
   maison: "Recent",
   chlorine: "Recent",
+  danza: "RECENT",
 };
 
 export function TenantLanding({
@@ -135,9 +140,9 @@ export function TenantLanding({
   const isMobile = useMobile();
 
   const heroEyebrow = event.eyebrow ?? DEFAULT_HERO_EYEBROW[presetKey];
-  const houseEyebrow = DEFAULT_HOUSE_EYEBROW[presetKey];
+  const partnerEyebrow = DEFAULT_PARTNER_EYEBROW[presetKey];
   const recentEyebrow = DEFAULT_RECENT_EYEBROW[presetKey];
-  const houseCopy = aboutCopy ?? DEFAULT_ABOUT_COPY[presetKey];
+  const partnerCopy = aboutCopy ?? DEFAULT_ABOUT_COPY[presetKey];
   const showRecent = (recentEvents?.length ?? 0) > 0;
   const showLineup = (event.lineup?.length ?? 0) > 0;
 
@@ -260,7 +265,7 @@ export function TenantLanding({
         </div>
       </section>
 
-      {houseCopy ? (
+      {partnerCopy ? (
         <section
           className="border-t"
           style={{
@@ -268,7 +273,7 @@ export function TenantLanding({
             borderTopColor: "var(--tt-rule)",
           }}
         >
-          <Eyebrow>{houseEyebrow}</Eyebrow>
+          <Eyebrow>{partnerEyebrow}</Eyebrow>
           <p
             className="m-0 max-w-[540px]"
             style={{
@@ -277,7 +282,7 @@ export function TenantLanding({
               color: "var(--tt-fg)",
             }}
           >
-            {houseCopy}
+            {partnerCopy}
           </p>
         </section>
       ) : null}

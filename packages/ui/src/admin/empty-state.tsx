@@ -16,10 +16,7 @@ export function AdminEmptyState({ title, description, action }: AdminEmptyStateP
       className="flex flex-col items-center gap-3 py-16 text-center"
       style={{ color: "var(--tt-fg-dim)" }}
     >
-      <div
-        className="text-[14px]"
-        style={{ color: "var(--tt-fg)", fontFamily: "var(--tt-display)" }}
-      >
+      <div className="text-[14px] font-medium" style={{ color: "var(--tt-fg)" }}>
         {title}
       </div>
       {description ? (

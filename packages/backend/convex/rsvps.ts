@@ -5,7 +5,7 @@ import { api, components } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
-import { generateRsvpHandoffToken } from "./lib/codeGenerators";
+import { generateRedemptionCode, generateRsvpHandoffToken } from "./lib/codeGenerators";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
 import { hashOpaqueValue, normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
@@ -2251,6 +2251,7 @@ async function filterRsvpsByPrimaryFields(
 // Type definitions for enriched RSVP data
 type EnrichedRsvp = {
   id: Id<"rsvps">;
+  userId?: Id<"users">;
   clerkUserId: string;
   name: string;
   firstName: string;
@@ -2378,6 +2379,7 @@ async function enrichSelectedHostRsvps(
 
     return {
       id: rsvpRecord._id,
+      userId: user?._id,
       clerkUserId: rsvpRecord.clerkUserId,
       name:
         [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
@@ -3411,15 +3413,11 @@ async function applyApprovalStatusTransition(
     nextApprovalStatus,
     decidedBy,
     now,
-    siteKey,
-    workspaceSlug,
   }: {
     rsvp: Doc<"rsvps">;
     nextApprovalStatus: ApprovalStatus;
     decidedBy: string;
     now: number;
-    siteKey?: string;
-    workspaceSlug?: string;
   },
 ) {
   const currentApprovalStatus = resolveApprovalStatus(rsvp);
@@ -3445,20 +3443,50 @@ async function applyApprovalStatusTransition(
       updatedAt: now,
     });
   } else if (nextApprovalStatus === "approved") {
+    let redemption = existingRedemption;
+    let nextTicketStatus: "issued" | "redeemed" = "issued";
+    if (!redemption) {
+      let code = "";
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const candidateCode = generateRedemptionCode();
+        const duplicate = await ctx.db
+          .query("redemptions")
+          .withIndex("by_code", (queryBuilder) => queryBuilder.eq("code", candidateCode))
+          .unique();
+        if (!duplicate) {
+          code = candidateCode;
+          break;
+        }
+      }
+      if (!code) {
+        throw new Error("Could not generate unique redemption code");
+      }
+      const redemptionId = await ctx.db.insert("redemptions", {
+        eventId: rsvp.eventId,
+        clerkUserId: rsvp.clerkUserId,
+        listKey: rsvp.listKey,
+        code,
+        createdAt: now,
+        unredeemHistory: [],
+      });
+      redemption = await ctx.db.get(redemptionId);
+    } else {
+      nextTicketStatus = redemption.redeemedAt ? "redeemed" : "issued";
+      if (redemption.disabledAt || redemption.listKey !== rsvp.listKey) {
+        await ctx.db.patch(redemption._id, {
+          disabledAt: undefined,
+          listKey: rsvp.listKey,
+        });
+        redemption = await ctx.db.get(redemption._id);
+      }
+    }
+
     await patchRsvpAndSyncAggregate(ctx, rsvp._id, {
       status: "approved",
       approvalStatus: "approved",
+      ticketStatus: nextTicketStatus,
       updatedAt: now,
     });
-
-    await ctx.runMutation(api.redemptions.updateTicketStatus, {
-      rsvpId: rsvp._id,
-      status: "issued",
-      siteKey,
-      workspaceSlug,
-    });
-
-    const redemption = await getRedemptionForRsvp(ctx, rsvp);
     if (redemption && rsvp.shareContact && rsvp.listKey) {
       await ctx.scheduler.runAfter(0, api.notifications.sendApprovalSms, {
         eventId: rsvp.eventId,
@@ -3535,8 +3563,6 @@ export const updateRsvpComplete = mutation({
         nextApprovalStatus: args.approvalStatus,
         decidedBy: identity.subject,
         now,
-        siteKey: args.siteKey,
-        workspaceSlug: args.workspaceSlug,
       });
     }
 
@@ -3932,8 +3958,6 @@ export const bulkUpdateApproval = mutation({
           nextApprovalStatus: update.approvalStatus,
           decidedBy: identity.subject,
           now,
-          siteKey: args.siteKey,
-          workspaceSlug: args.workspaceSlug,
         });
 
         results.success++;
@@ -4119,5 +4143,55 @@ export const bulkDeleteRsvps = mutation({
     }
 
     return results;
+  },
+});
+
+export const listByClerkUser = query({
+  args: {
+    clerkUserId: v.string(),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Host-level (not admin-only) so Guests directory rows can open details.
+    const workspaceScope = await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+
+    const userRsvps = await ctx.db
+      .query("rsvps")
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", args.clerkUserId))
+      .collect();
+
+    const workspaceEvents = await ctx.db
+      .query("events")
+      .withIndex("by_workspaceSlug", (queryBuilder) =>
+        queryBuilder.eq("workspaceSlug", workspaceScope.workspaceSlug),
+      )
+      .collect();
+
+    const eventMap = new Map(workspaceEvents.map((event) => [event._id, event]));
+    const workspaceEventIds = new Set(workspaceEvents.map((event) => event._id));
+
+    return userRsvps
+      .filter((rsvp) => workspaceEventIds.has(rsvp.eventId))
+      .map((rsvp) => {
+        const event = eventMap.get(rsvp.eventId);
+        return {
+          id: rsvp._id,
+          eventId: rsvp.eventId,
+          eventName: event?.name ?? "Unknown Event",
+          eventDate: event?.eventDate ?? 0,
+          listKey: rsvp.listKey,
+          approvalStatus: rsvp.approvalStatus ?? "pending",
+          attendanceStatus: rsvp.attendanceStatus ?? "yes",
+          ticketStatus: rsvp.ticketStatus ?? "not-issued",
+          attendees: rsvp.attendees ?? 1,
+          createdAt: rsvp.createdAt,
+          updatedAt: rsvp.updatedAt,
+        };
+      })
+      .sort((firstEntry, secondEntry) => secondEntry.createdAt - firstEntry.createdAt);
   },
 });

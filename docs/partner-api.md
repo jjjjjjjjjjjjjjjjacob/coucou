@@ -4,7 +4,7 @@ REST API + encrypted webhooks for integrating third-party apps ("consumers") wit
 read event data, mirror RSVPs as they happen, and write RSVPs on behalf of users that exist
 in both systems.
 
-- API version: `2026-07-17` (sent as `apiVersion` in webhook payloads; source of truth is
+- API version: `2026-07-22` (sent as `apiVersion` in webhook payloads; source of truth is
   `@coucou/sdk/api-v1` → `API_VERSION`)
 - Identity matching is **phone-only** (normalized E.164). Email is not part of v1.
 - All management (API keys, webhook endpoints) lives in the coucou host dashboard under
@@ -32,7 +32,7 @@ Authorization: Bearer coucou_sk_...
 - Keys are created per workspace on the Developers page, shown **once**, and stored
   hashed (SHA-256). Treat them like passwords; never ship them to a browser (the API
   sends no CORS headers, deliberately).
-- Keys carry scopes: `events:read`, `rsvps:read`, `rsvps:write`.
+- Keys carry scopes: `events:read`, `events:write`, `rsvps:read`, `rsvps:write`.
 - All data access is scoped to the key's workspace. Objects in other workspaces read as
   404 — existence is not leaked.
 
@@ -41,7 +41,7 @@ Authorization: Bearer coucou_sk_...
 Every error is JSON:
 
 ```json
-{ "error": { "code": "invalid_request", "message": "listKey is required" } }
+{ "error": { "code": "invalid_request", "message": "That list password is not valid for this event", "field": "listPassword" } }
 ```
 
 Codes: `unauthorized` (401), `forbidden` (403 — key lacks the scope), `not_found` (404),
@@ -71,7 +71,10 @@ Query params: `status` (`published` default | `all`), `limit` (1–100, default 
 `eventRouteId` is the event's `shortId` (preferred) or document id. Adds:
 
 ```json
-{ "lists": [ { "listKey": "vip", "isPasswordProtected": true } ],
+{ "lists": [ { "listKey": "vip", "isPasswordProtected": true, "generatesQrCode": true } ],
+  "rsvpForm": { "attendanceQuestionEnabled": false, "maxAttendees": 2,
+    "acceptsListPassword": true, "customFields": [], "socialPlatforms": [],
+    "invitedBy": null },
   "attendanceCounts": { "approved": 12, "pending": 3, "denied": 1, "total": 16 } }
 ```
 
@@ -91,26 +94,54 @@ match by phone hash). 404 if none.
 
 ## Write endpoints
 
-Consumers can create RSVPs and change attendance. **Approval/denial and ticket state are
-host-only** and cannot be influenced through the API — an `approvalStatus` field in a
-request body is ignored.
+Consumers can create RSVPs, change attendance, and update event details. **Approval/denial,
+ticket state, and publish state are host-only** and cannot be influenced through the API —
+fields like `approvalStatus` or `lifecycle` in a request body are ignored.
+
+### `PATCH /api/v1/events/{eventRouteId}` — scope `events:write`
+
+Updates an event's public details. All fields optional — send only what changes:
+
+```json
+{ "name": "Warehouse Party — Extended", "secondaryTitle": null, "description": null,
+  "location": "456 New Venue Ave", "eventDate": 1753100000000, "eventEndDate": 1753120000000,
+  "eventTimezone": "America/New_York", "maxAttendees": 4, "flyerUrl": "https://..." }
+```
+
+- Nullable fields (`secondaryTitle`, `description`, `eventEndDate`, `eventTimezone`,
+  `flyerUrl`) accept `null` to clear; omitted fields are untouched.
+- Validation: `name`/`location` non-empty, `eventDate`/`eventEndDate` positive ms-epoch
+  integers with end after start, `maxAttendees` ≥ 1, `flyerUrl` https-only.
+- Lifecycle/publish state, guest lists, theming, and form config are not writable.
+- Returns `{ "changed": boolean, "event": { ... } }`. Actual changes emit `event.updated`
+  to subscribed webhook endpoints (changed field names in `data.changes.changedFields`);
+  no-op requests emit nothing, so consumers mirroring `event.updated` can't echo their own
+  writes.
 
 ### `POST /api/v1/events/{eventRouteId}/rsvps` — scope `rsvps:write`
 
 ```json
-{ "phone": "+15551234567", "name": "Jane Doe", "listKey": "ga",
-  "attendees": 2, "attendanceStatus": "yes", "note": "optional" }
+{ "phone": "+15551234567", "name": "Jane Doe", "listPassword": "optional",
+  "attendees": 2, "attendanceStatus": "yes", "note": "optional",
+  "customFieldValues": { "company": "The Market" },
+  "socialProfiles": [{ "platformKey": "instagram", "handle": "janedoe" }],
+  "invitedByName": "Alex" }
 ```
 
 - Identity precedence: a coucou user with this phone → the RSVP attaches to their
   account; otherwise a guest RSVP keyed by phone hash is created.
-- List passwords are bypassed by design (the host installed your key), but `listKey`
-  must exist on the event.
+- List resolution is deterministic: a valid `listPassword`, then legacy explicit
+  `listKey`, then the API client's configured default, then the legacy event fallback.
+  Invalid passwords are field-addressable errors and never fall back. A configured
+  default missing from an event is a configuration conflict.
 - `attendees` is capped by the event's per-RSVP maximum.
 - **Idempotent**: 201 on create; re-POST for the same phone+event updates the writable
   fields (`attendanceStatus`, `attendees`, `name`, `note`) and returns 200. A no-change
   re-POST emits no webhook, so mirroring loops can't echo.
 - New RSVPs start as `approvalStatus: "pending"` — approval stays in the host dashboard.
+- Required custom fields, social profiles, invited-by data, attendee limits, and list
+  retries use the same validation and persistence rules as coucou's native RSVP form.
+  A denied RSVP may retry only on a different resolved list.
 
 ### `PATCH /api/v1/rsvps/{rsvpId}` — scope `rsvps:write`
 
@@ -124,6 +155,9 @@ attendance counts stay consistent); there is no hard delete via the API.
 ## Webhooks
 
 Register HTTPS endpoints per workspace on the Developers page, choosing event types:
+
+Integrations that mirror RSVP state must subscribe to both `rsvp.approved` and
+`rsvp.denied`; creation/update deliveries are not substitutes for approval decisions.
 
 | Type | Fires when |
 | --- | --- |
@@ -155,14 +189,14 @@ X-Coucou-Signature: t=1752700000,v1=<hex HMAC-SHA256(signingSecret, "<t>.<rawBod
 Body (the envelope — payload is encrypted inside):
 
 ```json
-{ "apiVersion": "2026-07-17", "encryption": "aes-256-gcm", "keyGeneration": 1,
+{ "apiVersion": "2026-07-22", "encryption": "aes-256-gcm", "keyGeneration": 1,
   "iv": "<base64url, 12 bytes>", "ciphertext": "<base64url, ciphertext || 16-byte GCM tag>" }
 ```
 
 Decrypted payload (RSVP events; `event.*` events omit `rsvp`/`identity`/`origin`):
 
 ```json
-{ "apiVersion": "2026-07-17", "eventType": "rsvp.approved", "deliveryId": "...",
+{ "apiVersion": "2026-07-22", "eventType": "rsvp.approved", "deliveryId": "...",
   "occurredAt": 1752700000000, "workspaceSlug": "club-chlorine",
   "data": {
     "event": { "id": "...", "shortId": "abc123", "name": "...", "eventDate": 1753000000000,
@@ -172,6 +206,8 @@ Decrypted payload (RSVP events; `event.*` events omit `rsvp`/`identity`/`origin`
               "attendanceStatus": "yes", "attendees": 2, "createdAt": 0, "updatedAt": 0 },
     "identity": { "phone": "+15551234567", "phoneHash": "<sha256 hex of E.164>",
                   "name": "Jane Doe", "isGuest": false },
+    "ticket": { "status": "issued", "qrEnabled": true,
+                 "redemptionCode": "abc123", "redeemUrl": "https://…/redeem/abc123" },
     "origin": { "type": "app" },
     "changes": { "previousApprovalStatus": "pending", "previousAttendanceStatus": null }
   } }

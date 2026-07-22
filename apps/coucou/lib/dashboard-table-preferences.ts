@@ -1,4 +1,6 @@
 export const HOST_RSVPS_TABLE_KEY = "host.rsvps";
+export const HOST_GUEST_DIRECTORY_TABLE_KEY = "host.guestDirectory";
+export const HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY = "workspace";
 
 const HOST_RSVPS_DEFAULT_HIDDEN_COLUMN_IDS = new Set([
   "attendees",
@@ -245,6 +247,37 @@ export function serializeDashboardTablePreferenceState(
   hiddenColumnIds: string[],
 ): string {
   return JSON.stringify({ columnOrder, hiddenColumnIds });
+}
+
+/**
+ * Moves a dragged column id before/after a target column id, returning the
+ * original array when the move is impossible or a no-op.
+ */
+export function moveDashboardTableColumnId(
+  columnOrder: string[],
+  draggedColumnId: string,
+  targetColumnId: string,
+  position: "before" | "after",
+): string[] {
+  if (
+    draggedColumnId === targetColumnId ||
+    !columnOrder.includes(draggedColumnId) ||
+    !columnOrder.includes(targetColumnId)
+  ) {
+    return columnOrder;
+  }
+
+  const updatedColumnOrder = columnOrder.filter((columnId) => columnId !== draggedColumnId);
+  const targetIndex = updatedColumnOrder.indexOf(targetColumnId);
+  if (targetIndex === -1) {
+    return columnOrder;
+  }
+  const insertionIndex = position === "after" ? targetIndex + 1 : targetIndex;
+  updatedColumnOrder.splice(insertionIndex, 0, draggedColumnId);
+
+  return areDashboardTableColumnIdsEqual(updatedColumnOrder, columnOrder)
+    ? columnOrder
+    : updatedColumnOrder;
 }
 
 export function shouldHydrateDashboardTablePreferenceState({

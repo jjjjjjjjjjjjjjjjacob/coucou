@@ -12,9 +12,10 @@ import {
 import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldDescription, FieldLabel, FieldSwitchRow } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 export type InvitedByConfigDraft = {
   enabled: boolean;
@@ -174,85 +175,100 @@ export function PrimaryFieldConfigEditor({
             return (
               <div
                 key={`${platform.platformKey}-${index}`}
-                className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_1fr_auto]"
+                className="space-y-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4"
               >
-                <div className="flex flex-col gap-1">
-                  <Input
-                    value={platform.platformKey}
-                    onChange={(event) =>
-                      updateSocialPlatform(index, {
-                        platformKey: event.target.value,
-                      })
-                    }
-                    disabled={disabled || isPreset}
-                    placeholder="instagram"
-                    aria-label="Platform key"
-                  />
-                  {isPreset ? (
-                    <p className="text-[11px] text-muted-foreground">
-                      Preset key — locked so this platform stays consistent across events.
-                    </p>
-                  ) : (
-                    <p className="text-[11px] text-muted-foreground">
-                      Custom key. Use lowercase letters, numbers, or dashes.
-                    </p>
-                  )}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="grid flex-1 gap-3 sm:grid-cols-2">
+                    <Field>
+                      <FieldLabel htmlFor={`social-platform-key-${index}`}>Platform key</FieldLabel>
+                      <Input
+                        id={`social-platform-key-${index}`}
+                        value={platform.platformKey}
+                        onChange={(event) =>
+                          updateSocialPlatform(index, {
+                            platformKey: event.target.value,
+                          })
+                        }
+                        disabled={disabled || isPreset}
+                        placeholder="instagram"
+                      />
+                      <FieldDescription className="text-xs">
+                        {isPreset
+                          ? "Preset key — locked so this platform stays consistent across events."
+                          : "Custom key. Use lowercase letters, numbers, or dashes."}
+                      </FieldDescription>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor={`social-label-${index}`}>Display label</FieldLabel>
+                      <Input
+                        id={`social-label-${index}`}
+                        value={platform.label}
+                        onChange={(event) =>
+                          updateSocialPlatform(index, { label: event.target.value })
+                        }
+                        disabled={disabled}
+                        placeholder="Instagram"
+                      />
+                    </Field>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeSocialPlatform(index)}
+                    disabled={disabled}
+                    aria-label={`Remove ${platform.label || platform.platformKey}`}
+                    className="relative h-8 w-8 shrink-0 text-[var(--text-secondary)] after:absolute after:-inset-1.5 after:content-[''] hover:text-destructive"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
                 </div>
-                <Input
-                  value={platform.label}
-                  onChange={(event) => updateSocialPlatform(index, { label: event.target.value })}
-                  disabled={disabled}
-                  placeholder="Instagram"
-                  aria-label="Display label"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => removeSocialPlatform(index)}
-                  disabled={disabled}
-                  aria-label={`Remove ${platform.label || platform.platformKey}`}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-                <Input
-                  value={platform.placeholder ?? ""}
-                  onChange={(event) =>
-                    updateSocialPlatform(index, {
-                      placeholder: event.target.value,
-                    })
-                  }
-                  disabled={disabled}
-                  placeholder="@handle"
-                  className="sm:col-span-1"
-                  aria-label="Placeholder"
-                />
-                <Input
-                  value={platform.profileUrlPrefix ?? ""}
-                  onChange={(event) =>
-                    updateSocialPlatform(index, {
-                      profileUrlPrefix: event.target.value,
-                    })
-                  }
-                  disabled={disabled}
-                  placeholder="https://instagram.com/"
-                  className="sm:col-span-2"
-                  aria-label="Profile URL prefix"
-                />
-                <div className="flex items-center gap-2 sm:col-span-3">
-                  <Checkbox
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field>
+                    <FieldLabel htmlFor={`social-placeholder-${index}`}>Placeholder</FieldLabel>
+                    <Input
+                      id={`social-placeholder-${index}`}
+                      value={platform.placeholder ?? ""}
+                      onChange={(event) =>
+                        updateSocialPlatform(index, {
+                          placeholder: event.target.value,
+                        })
+                      }
+                      disabled={disabled}
+                      placeholder="@handle"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`social-url-prefix-${index}`}>
+                      Profile URL prefix
+                    </FieldLabel>
+                    <Input
+                      id={`social-url-prefix-${index}`}
+                      value={platform.profileUrlPrefix ?? ""}
+                      onChange={(event) =>
+                        updateSocialPlatform(index, {
+                          profileUrlPrefix: event.target.value,
+                        })
+                      }
+                      disabled={disabled}
+                      placeholder="https://instagram.com/"
+                    />
+                  </Field>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
                     id={`social-required-${index}`}
                     checked={platform.required === true}
                     onCheckedChange={(checked) =>
                       updateSocialPlatform(index, {
-                        required: Boolean(checked),
+                        required: checked,
                       })
                     }
                     disabled={disabled}
                   />
                   <Label
                     htmlFor={`social-required-${index}`}
-                    className="text-sm font-normal text-muted-foreground"
+                    className="text-sm font-normal text-[var(--text-secondary)]"
                   >
                     Required
                   </Label>
@@ -261,49 +277,68 @@ export function PrimaryFieldConfigEditor({
             );
           })}
           {value.socialPlatforms.length === 0 && (
-            <p className="text-sm text-muted-foreground">No social fields configured.</p>
+            <p className="rounded-lg border border-dashed border-[var(--border-subtle)] p-4 text-center text-sm text-[var(--text-secondary)]">
+              No social fields configured.
+            </p>
           )}
         </div>
       </div>
 
-      <div className="space-y-3 rounded-md border p-3">
-        <div className="flex items-center gap-2">
-          <Checkbox
+      <div className="space-y-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="invited-by-enabled">Ask for invited by</Label>
+            <p className="text-pretty text-sm text-[var(--text-secondary)]">
+              Guests say who invited them during RSVP.
+            </p>
+          </div>
+          <Switch
             id="invited-by-enabled"
             checked={value.invitedBy.enabled}
-            onCheckedChange={(checked) => updateInvitedByEnabled(Boolean(checked))}
+            onCheckedChange={(checked) => updateInvitedByEnabled(checked)}
             disabled={disabled}
           />
-          <Label htmlFor="invited-by-enabled">Ask for invited by</Label>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Input
-            value={value.invitedBy.label}
-            onChange={(event) => updateInvitedBy({ label: event.target.value })}
-            disabled={disabled || !value.invitedBy.enabled}
-            placeholder="Invited by"
-          />
-          <Input
-            value={value.invitedBy.placeholder}
-            onChange={(event) => updateInvitedBy({ placeholder: event.target.value })}
-            disabled={disabled || !value.invitedBy.enabled}
-            placeholder="Who invited you?"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="invited-by-required"
-            checked={value.invitedBy.required}
-            onCheckedChange={(checked) => updateInvitedBy({ required: Boolean(checked) })}
-            disabled={disabled || !value.invitedBy.enabled}
-          />
-          <Label
-            htmlFor="invited-by-required"
-            className="text-sm font-normal text-muted-foreground"
-          >
-            Required
-          </Label>
-        </div>
+        {value.invitedBy.enabled ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="invited-by-label">Question label</FieldLabel>
+                <Input
+                  id="invited-by-label"
+                  value={value.invitedBy.label}
+                  onChange={(event) => updateInvitedBy({ label: event.target.value })}
+                  disabled={disabled}
+                  placeholder="Invited by"
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="invited-by-placeholder">Placeholder</FieldLabel>
+                <Input
+                  id="invited-by-placeholder"
+                  value={value.invitedBy.placeholder}
+                  onChange={(event) => updateInvitedBy({ placeholder: event.target.value })}
+                  disabled={disabled}
+                  placeholder="Who invited you?"
+                />
+              </Field>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="invited-by-required"
+                checked={value.invitedBy.required}
+                onCheckedChange={(checked) => updateInvitedBy({ required: checked })}
+                disabled={disabled}
+              />
+              <Label
+                htmlFor="invited-by-required"
+                className="text-sm font-normal text-[var(--text-secondary)]"
+              >
+                Required
+              </Label>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );
@@ -344,20 +379,13 @@ export function PrimaryFieldConfigOverrideEditor({
 
   return (
     <div className="space-y-4">
-      <label className="flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-sm">
-        <Checkbox
-          checked={useDefaults}
-          onCheckedChange={(checked) => handleToggle(Boolean(checked))}
-          disabled={disabled}
-        />
-        <div className="space-y-0.5">
-          <span className="font-medium">Use workspace defaults</span>
-          <p className="text-xs text-muted-foreground">
-            Currently inheriting the workspace&apos;s social fields and invited-by settings. Edit
-            anything below to customize for this event.
-          </p>
-        </div>
-      </label>
+      <FieldSwitchRow
+        title="Use workspace defaults"
+        description="Currently inheriting the workspace's social fields and invited-by settings. Edit anything below to customize for this event."
+        checked={useDefaults}
+        onCheckedChange={handleToggle}
+        disabled={disabled}
+      />
       <PrimaryFieldConfigEditor value={value} onChange={handleEditorChange} disabled={disabled} />
     </div>
   );

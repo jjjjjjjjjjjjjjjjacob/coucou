@@ -1,0 +1,55 @@
+# Tenant app learnings (apps/dojo, apps/club-chlorine, apps/danza-organica)
+
+## Adding a new tenant satellite app (learned building danza-organica, 2026-07-22)
+
+Situations: scaffolding a new branded tenant site, renaming/rebranding a tenant, debugging
+why a new siteKey 404s or renders unthemed.
+
+- **A tenant = coordinated edits in 4 places + an app scaffold.** (1) `packages/sdk/src/site-config.ts`
+  (`SiteKey` union + `siteConfigurations` + `siteAuthConfigurations` — both exhaustive
+  Records, compile enforces them), (2) `packages/sdk/src/theming/presets.ts` (`PresetKey`,
+  `PRESET_KEYS`, `isPresetKey`, `PRESET_DEFINITIONS`), (3) local dev origins in TWO maps:
+  `packages/sdk/src/shared/event-routes.ts` `localSiteOrigins` (exhaustive — breaks compile
+  if missed) and `packages/sdk/src/auth-domains.ts` `localClientSiteOrigins` (`Partial` —
+  silently skipped if missed, sign-in redirects break in dev), (4) coucou's two hard-coded
+  siteKey allow-lists: `apps/coucou/proxy.ts` `matchClientAuthPath()` and
+  `apps/coucou/app/clients/[siteKey]/sign-in/page.tsx` `isClientSiteKey()`.
+- **New presets do NOT need the Convex `workspaces.preset` union.** Tenant theming resolves
+  client-side from `siteConfiguration.preset` via `TenantTemplateProvider`; the DB union
+  (`schema.ts` ~line 46) only feeds the optional `setPreset` admin mutation — "chlorine"
+  isn't in it either. Backend registration is just `seedDefaultWorkspaces` in
+  `packages/backend/convex/workspaces.ts` (workspace + workspaceSite rows; `siteKey` is a
+  plain `v.string()`).
+- **`DEFAULT_*` copy maps in `packages/ui/src/tenant-template/components/` fail silently.**
+  `rsvp-gate/pending/denied/accepted.tsx` and `tenant-landing.tsx` key default copy by
+  presetKey via `Record<string, string>` — an unknown key renders `undefined` headings with
+  no error. After adding a preset, grep that dir for `\[presetKey\]` and add entries.
+- **Scaffold = copy apps/club-chlorine wholesale, then case-aware rename.** A perl sweep over
+  `Club Chlorine`/`club-chlorine`/`clubChlorine`/`ClubChlorine`/`CLUB_CHLORINE`/domains/port
+  handles ~90%; the judgment files are `app/app-chrome.tsx` (chlorine's shell hard-codes its
+  preset + wordmark — replace with `TenantTemplateProvider` + `TenantMasthead` + centered
+  column), `app/globals.css` (shadcn tokens must mirror the preset), `app/layout.tsx`
+  (fonts), `lib/event-theme.ts` (preset fallback), and the event row.
+- **`ChlorineEventRow` is 95% token-driven** (`--tt-*`) except the lineup column font
+  (hard-coded Bowlby One) and brick radius. `apps/danza-organica/components/danza-event-row.tsx`
+  is the generic clone (uses `var(--tt-display)` + `--tt-button-radius`); reuse it as the
+  template for future tenants — promoting it to `packages/ui` as `TenantEventRow` is an open
+  follow-up. It aliases `ChlorineLandingEvent` so page logic ports with an import swap.
+- **Tests that break on rename:** `__tests__/rsvp-page.test.tsx` mocks the event row inside
+  the `@coucou/ui/tenant-template` module mock — if the row moves to an app-local component,
+  the mock must move to a `mock.module("@/components/<row>", ...)`. `app-chrome.test.ts`
+  tests exported helpers of the chrome; rewrite it for whatever helpers the new chrome exports.
+- **Pre-existing baseline failures** (same in club-chlorine, not regressions): `bunx tsc -p
+  tsconfig.json` fails on `__tests__` importing nonexistent `app/door`/`app/host` pages (build
+  uses `tsconfig.build.json` which excludes tests — typecheck with that); `bun test` has 5
+  fails + 3 errors (header-client hamburger test, convex `useConvexAuth` ESM import).
+- **Dev ports:** dojo 5678, club-chlorine 5679, coucou 5680, danza-organica 5677 — set in each
+  app's `package.json` dev script AND the two SDK origin maps.
+- **danzaorganica.coucou.events is a subdomain of the primary Clerk domain** (other tenants
+  are apex-domain satellites). Clerk may not need/accept satellite registration for it —
+  `.coucou.events` session cookies already cover it. If Clerk rejects it at provisioning
+  time, env-gate `isSatellite` off in production for this app; the
+  `/clients/danza-organica/sign-in` bounce works either way.
+- Placeholder brand rasters (filled-circle mark) can be generated with the pure-stdlib
+  script pattern in the danza build (PNG via zlib, ICO wrapping a PNG entry) when no image
+  tooling is available; real assets should replace `public/` before launch.

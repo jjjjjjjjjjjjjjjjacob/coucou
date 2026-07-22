@@ -8,7 +8,7 @@ import { TenantShell } from "./tenant-shell";
 
 export interface RsvpAcceptedProps {
   /**
-   * The tier label to reveal — "VIP", "Comp · house guest", etc.
+   * The tier label to reveal — "VIP", "Comp · partner guest", etc.
    */
   tier: string;
   /**
@@ -39,6 +39,7 @@ const DEFAULT_HEADING: Record<string, string> = {
   atrium: "You're on the list.",
   maison: "You're on the list.",
   chlorine: "You're on the list.",
+  danza: "You're on the list.",
   coucou: "You're on the list.",
 };
 
@@ -47,6 +48,7 @@ const DEFAULT_EYEBROW: Record<string, string> = {
   atrium: "Welcome",
   maison: "Welcome",
   chlorine: "WELCOME",
+  danza: "WELCOME",
   coucou: "Welcome",
 };
 

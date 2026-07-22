@@ -24,13 +24,73 @@ import {
   Legend,
   Pie,
   PieChart,
+  type PieLabelRenderProps,
   ResponsiveContainer,
   XAxis,
   YAxis,
 } from "recharts";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { PageCard } from "@/components/ui/page-card";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
+
+interface StatusChartDatum extends Record<string, string | number> {
+  name: string;
+  value: number;
+  color: string;
+}
+
+function renderPieLabel({ name, percent, x, y, textAnchor }: PieLabelRenderProps) {
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="var(--text-primary)"
+      textAnchor={textAnchor}
+      dominantBaseline="central"
+      className="text-xs font-medium"
+    >
+      {`${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`}
+    </text>
+  );
+}
+
+function StatusPieChart({ data, description }: { data: StatusChartDatum[]; description: string }) {
+  return (
+    <div role="img" aria-label={description} className="min-h-[16rem]">
+      <ResponsiveContainer width="100%" height={300}>
+        <PieChart accessibilityLayer>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            labelLine={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
+            label={renderPieLabel}
+            outerRadius={80}
+            dataKey="value"
+          >
+            {data.map((entry) => (
+              <Cell key={entry.name} fill={entry.color} />
+            ))}
+          </Pie>
+          <ChartTooltip
+            contentStyle={{
+              backgroundColor: "var(--surface-2)",
+              borderColor: "var(--border-strong)",
+              borderRadius: "var(--radius)",
+              color: "var(--text-primary)",
+            }}
+            itemStyle={{ color: "var(--text-primary)" }}
+            labelStyle={{ color: "var(--text-primary)" }}
+          />
+          <Legend
+            formatter={(value) => <span style={{ color: "var(--text-primary)" }}>{value}</span>}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 export default function AnalyticsPage() {
   const { isSignedIn } = useAuth();
@@ -61,310 +121,177 @@ export default function AnalyticsPage() {
     enabled: !!isSignedIn && !!workspaceScope,
   });
   const smsTrends = smsTrendsQuery.data;
+
   if (!dashboardStats) {
     return <AnalyticsSkeleton />;
   }
 
-  // Prepare pie chart data for approval status
   const approvalStatusData = [
-    {
-      name: "Approved",
-      value: dashboardStats.approvedRsvps,
-      color: "hsl(var(--chart-2))",
-    },
-    {
-      name: "Pending",
-      value: dashboardStats.pendingRsvps,
-      color: "hsl(var(--primary))",
-    },
-    {
-      name: "Denied",
-      value: dashboardStats.deniedRsvps,
-      color: "hsl(var(--chart-3))",
-    },
+    { name: "Approved", value: dashboardStats.approvedRsvps, color: "var(--chart-2)" },
+    { name: "Pending", value: dashboardStats.pendingRsvps, color: "var(--chart-4)" },
+    { name: "Denied", value: dashboardStats.deniedRsvps, color: "var(--chart-5)" },
   ];
 
-  // Prepare pie chart data for ticket status
   const ticketStatusData = [
-    {
-      name: "Redeemed",
-      value: dashboardStats.redeemedTickets,
-      color: "hsl(var(--chart-2))",
-    },
-    {
-      name: "Issued",
-      value: dashboardStats.issuedTickets,
-      color: "hsl(var(--primary))",
-    },
+    { name: "Redeemed", value: dashboardStats.redeemedTickets, color: "var(--chart-2)" },
+    { name: "Issued", value: dashboardStats.issuedTickets, color: "var(--chart-1)" },
     {
       name: "Not Issued",
       value:
         dashboardStats.totalRsvps - dashboardStats.redeemedTickets - dashboardStats.issuedTickets,
-      color: "hsl(var(--chart-3))",
+      color: "var(--chart-4)",
     },
   ].filter((item) => item.value > 0);
 
-  const chartConfig = {
-    rsvps: {
-      label: "RSVPs",
-      color: "hsl(var(--primary))",
-    },
-  };
-
+  const chartConfig = { rsvps: { label: "RSVPs", color: "var(--chart-1)" } };
   const eventChartConfig = {
-    totalRsvps: {
-      label: "Total RSVPs",
-      color: "hsl(var(--primary))",
-    },
-    approvedRsvps: {
-      label: "Approved",
-      color: "hsl(var(--chart-2))",
-    },
-    redeemedTickets: {
-      label: "Redeemed",
-      color: "hsl(var(--chart-3))",
-    },
+    totalRsvps: { label: "Total RSVPs", color: "var(--chart-1)" },
+    approvedRsvps: { label: "Approved", color: "var(--chart-2)" },
+    redeemedTickets: { label: "Redeemed", color: "var(--chart-4)" },
   };
-
   const smsChartConfig = {
-    sent: {
-      label: "Sent",
-      color: "hsl(var(--chart-2))",
-    },
-    failed: {
-      label: "Failed",
-      color: "hsl(var(--chart-3))",
-    },
-    total: {
-      label: "Total",
-      color: "hsl(var(--primary))",
-    },
+    sent: { label: "Sent", color: "var(--chart-2)" },
+    failed: { label: "Failed", color: "var(--chart-5)" },
+    total: { label: "Total", color: "var(--chart-1)" },
   };
 
-  // Prepare SMS status distribution data
   const smsStatusData = smsStats
     ? [
-        {
-          name: "Sent",
-          value: smsStats.sentSms,
-          color: "hsl(var(--chart-2))",
-        },
-        {
-          name: "Failed",
-          value: smsStats.failedSms,
-          color: "hsl(var(--chart-3))",
-        },
-        {
-          name: "Pending",
-          value: smsStats.pendingSms,
-          color: "hsl(var(--primary))",
-        },
+        { name: "Sent", value: smsStats.sentSms, color: "var(--chart-2)" },
+        { name: "Failed", value: smsStats.failedSms, color: "var(--chart-5)" },
+        { name: "Pending", value: smsStats.pendingSms, color: "var(--chart-4)" },
       ].filter((item) => item.value > 0)
     : [];
 
   return (
-    <div className="flex-1 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Analytics</h2>
-          <p className="text-muted-foreground">
-            Detailed insights into your events and guest engagement
-          </p>
-        </div>
-      </div>
+    <div className="flex-1 space-y-6">
+      <DashboardTitleBar
+        title="Analytics"
+        subtitle="Detailed insights into your events and guest engagement"
+        breadcrumb={[{ label: "Workspace" }]}
+      />
 
-      {/* Key Metrics Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Conversion Rate</CardTitle>
-            <UserCheck className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardStats.totalRsvps > 0
-                ? Math.round((dashboardStats.approvedRsvps / dashboardStats.totalRsvps) * 100)
-                : 0}
-              %
-            </div>
-            <p className="text-xs text-muted-foreground">RSVPs to approvals</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg RSVPs/Event</CardTitle>
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardStats.totalEvents > 0
-                ? Math.round(dashboardStats.totalRsvps / dashboardStats.totalEvents)
-                : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Average guest interest</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Show-up Rate</CardTitle>
-            <TicketCheck className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardStats.issuedTickets + dashboardStats.redeemedTickets > 0
-                ? Math.round(
-                    (dashboardStats.redeemedTickets /
-                      (dashboardStats.issuedTickets + dashboardStats.redeemedTickets)) *
-                      100,
-                  )
-                : 0}
-              %
-            </div>
-            <p className="text-xs text-muted-foreground">Tickets redeemed</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Recent Activity</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{dashboardStats.recentRsvps}</div>
-            <p className="text-xs text-muted-foreground">RSVPs this month</p>
-          </CardContent>
-        </Card>
+        <PageCard
+          title="Conversion Rate"
+          description="RSVPs to approvals"
+          action={<UserCheck className="h-4 w-4 text-[var(--text-secondary)]" />}
+        >
+          <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+            {dashboardStats.totalRsvps > 0
+              ? Math.round((dashboardStats.approvedRsvps / dashboardStats.totalRsvps) * 100)
+              : 0}
+            %
+          </div>
+        </PageCard>
+        <PageCard
+          title="Avg RSVPs/Event"
+          description="Average guest interest"
+          action={<CalendarDays className="h-4 w-4 text-[var(--text-secondary)]" />}
+        >
+          <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+            {dashboardStats.totalEvents > 0
+              ? Math.round(dashboardStats.totalRsvps / dashboardStats.totalEvents)
+              : 0}
+          </div>
+        </PageCard>
+        <PageCard
+          title="Show-up Rate"
+          description="Tickets redeemed"
+          action={<TicketCheck className="h-4 w-4 text-[var(--text-secondary)]" />}
+        >
+          <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+            {dashboardStats.issuedTickets + dashboardStats.redeemedTickets > 0
+              ? Math.round(
+                  (dashboardStats.redeemedTickets /
+                    (dashboardStats.issuedTickets + dashboardStats.redeemedTickets)) *
+                    100,
+                )
+              : 0}
+            %
+          </div>
+        </PageCard>
+        <PageCard
+          title="Recent Activity"
+          description="RSVPs this month"
+          action={<Clock className="h-4 w-4 text-[var(--text-secondary)]" />}
+        >
+          <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+            {dashboardStats.recentRsvps}
+          </div>
+        </PageCard>
       </div>
 
-      {/* SMS Metrics Grid */}
-      {smsStats && (
+      {smsStats ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">SMS Success Rate</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{smsStats.successRate}%</div>
-              <p className="text-xs text-muted-foreground">Messages successfully sent</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total SMS Sent</CardTitle>
-              <MessageSquare className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{smsStats.totalSms}</div>
-              <p className="text-xs text-muted-foreground">All time messages sent</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Failed SMS</CardTitle>
-              <XCircle className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{smsStats.failedSms}</div>
-              <p className="text-xs text-muted-foreground">Messages that failed to send</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Recent SMS</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{smsStats.recentSms}</div>
-              <p className="text-xs text-muted-foreground">Messages this month</p>
-            </CardContent>
-          </Card>
+          <PageCard
+            title="SMS Success Rate"
+            description="Messages successfully sent"
+            action={<CheckCircle2 className="h-4 w-4 text-[var(--text-secondary)]" />}
+          >
+            <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {smsStats.successRate}%
+            </div>
+          </PageCard>
+          <PageCard
+            title="Total SMS Sent"
+            description="All time messages sent"
+            action={<MessageSquare className="h-4 w-4 text-[var(--text-secondary)]" />}
+          >
+            <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {smsStats.totalSms}
+            </div>
+          </PageCard>
+          <PageCard
+            title="Failed SMS"
+            description="Messages that failed to send"
+            action={<XCircle className="h-4 w-4 text-[var(--text-secondary)]" />}
+          >
+            <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {smsStats.failedSms}
+            </div>
+          </PageCard>
+          <PageCard
+            title="Recent SMS"
+            description="Messages this month"
+            action={<TrendingUp className="h-4 w-4 text-[var(--text-secondary)]" />}
+          >
+            <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {smsStats.recentSms}
+            </div>
+          </PageCard>
         </div>
-      )}
+      ) : null}
 
-      {/* Charts Section */}
       <div className="grid gap-4 md:grid-cols-2">
-        {/* RSVP Status Distribution */}
-        <Card>
-          <CardHeader>
-            <CardTitle>RSVP Status Distribution</CardTitle>
-            <CardDescription>Breakdown of approval status across all events</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={approvalStatusData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  dataKey="value"
-                >
-                  {approvalStatusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <ChartTooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <PageCard
+          title="RSVP Status Distribution"
+          description="Breakdown of approval status across all events"
+        >
+          <StatusPieChart
+            data={approvalStatusData}
+            description="RSVP status distribution showing approved, pending, and denied responses"
+          />
+        </PageCard>
 
-        {/* Ticket Status Distribution */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Ticket Status Distribution</CardTitle>
-            <CardDescription>Current status of all issued tickets</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={ticketStatusData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  dataKey="value"
-                >
-                  {ticketStatusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <ChartTooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <PageCard
+          title="Ticket Status Distribution"
+          description="Current status of all issued tickets"
+        >
+          <StatusPieChart
+            data={ticketStatusData}
+            description="Ticket status distribution showing redeemed, issued, and not issued tickets"
+          />
+        </PageCard>
       </div>
 
-      {/* RSVP Trends */}
-      <Card>
-        <CardHeader>
-          <CardTitle>RSVP Trends Over Time</CardTitle>
-          <CardDescription>Daily RSVP submissions over the last 30 days</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <PageCard
+        title="RSVP Trends Over Time"
+        description="Daily RSVP submissions over the last 30 days"
+      >
+        <div className="min-h-[16rem]">
           <ChartContainer config={chartConfig}>
-            <AreaChart
-              accessibilityLayer
-              data={rsvpTrends || []}
-              margin={{
-                left: 12,
-                right: 12,
-              }}
-            >
+            <AreaChart accessibilityLayer data={rsvpTrends || []} margin={{ left: 12, right: 12 }}>
               <CartesianGrid vertical={false} />
               <XAxis
                 dataKey="formattedDate"
@@ -385,24 +312,19 @@ export default function AnalyticsPage() {
               />
             </AreaChart>
           </ChartContainer>
-        </CardContent>
-      </Card>
+        </div>
+      </PageCard>
 
-      {/* Event Performance Comparison */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Event Performance Comparison</CardTitle>
-          <CardDescription>Compare RSVP metrics across your recent events</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <PageCard
+        title="Event Performance Comparison"
+        description="Compare RSVP metrics across your recent events"
+      >
+        <div className="min-h-[20rem]">
           <ChartContainer config={eventChartConfig}>
             <BarChart
               accessibilityLayer
               data={eventPerformance || []}
-              margin={{
-                left: 12,
-                right: 12,
-              }}
+              margin={{ left: 12, right: 12 }}
             >
               <CartesianGrid vertical={false} />
               <XAxis
@@ -436,146 +358,89 @@ export default function AnalyticsPage() {
               />
             </BarChart>
           </ChartContainer>
-        </CardContent>
-      </Card>
+        </div>
+      </PageCard>
 
-      {/* SMS Charts Section */}
-      {smsStats && (
-        <>
-          <div className="grid gap-4 md:grid-cols-2">
-            {/* SMS Status Distribution */}
-            <Card>
-              <CardHeader>
-                <CardTitle>SMS Status Distribution</CardTitle>
-                <CardDescription>
-                  Breakdown of SMS delivery status across all messages
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={smsStatusData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      dataKey="value"
-                    >
-                      {smsStatusData.map((entry, index) => (
-                        <Cell key={`sms-cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <ChartTooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+      {smsStats ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <PageCard
+            title="SMS Status Distribution"
+            description="Breakdown of SMS delivery status across all messages"
+          >
+            <StatusPieChart
+              data={smsStatusData}
+              description="SMS delivery status distribution showing sent, failed, and pending messages"
+            />
+          </PageCard>
 
-            {/* SMS Trends */}
-            <Card>
-              <CardHeader>
-                <CardTitle>SMS Trends Over Time</CardTitle>
-                <CardDescription>Daily SMS sent/failed over the last 30 days</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer config={smsChartConfig}>
-                  <AreaChart
-                    accessibilityLayer
-                    data={smsTrends || []}
-                    margin={{
-                      left: 12,
-                      right: 12,
-                    }}
-                  >
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      dataKey="formattedDate"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis domain={[0, "dataMax"]} tickLine={false} axisLine={false} />
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                    <Area
-                      dataKey="sent"
-                      type="natural"
-                      fill="var(--color-sent)"
-                      fillOpacity={0.4}
-                      stroke="var(--color-sent)"
-                      stackId="a"
-                    />
-                    <Area
-                      dataKey="failed"
-                      type="natural"
-                      fill="var(--color-failed)"
-                      fillOpacity={0.4}
-                      stroke="var(--color-failed)"
-                      stackId="a"
-                    />
-                  </AreaChart>
-                </ChartContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </>
-      )}
+          <PageCard
+            title="SMS Trends Over Time"
+            description="Daily SMS sent/failed over the last 30 days"
+          >
+            <div className="min-h-[16rem]">
+              <ChartContainer config={smsChartConfig}>
+                <AreaChart
+                  accessibilityLayer
+                  data={smsTrends || []}
+                  margin={{ left: 12, right: 12 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="formattedDate"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis domain={[0, "dataMax"]} tickLine={false} axisLine={false} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <Area
+                    dataKey="sent"
+                    type="natural"
+                    fill="var(--color-sent)"
+                    fillOpacity={0.4}
+                    stroke="var(--color-sent)"
+                    stackId="a"
+                  />
+                  <Area
+                    dataKey="failed"
+                    type="natural"
+                    fill="var(--color-failed)"
+                    fillOpacity={0.4}
+                    stroke="var(--color-failed)"
+                    stackId="a"
+                  />
+                </AreaChart>
+              </ChartContainer>
+            </div>
+          </PageCard>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function AnalyticsSkeleton() {
   return (
-    <div className="flex-1 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="h-8 w-32 bg-muted rounded animate-pulse" />
-          <div className="h-4 w-48 bg-muted rounded animate-pulse mt-2" />
-        </div>
-      </div>
+    <div className="flex-1 space-y-6">
+      <div className="h-8 w-32 animate-pulse rounded bg-[var(--surface-3)]" />
+      <div className="h-4 w-48 animate-pulse rounded bg-[var(--surface-3)]" />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {[...Array(4)].map((_, i) => (
-          <Card key={i}>
-            <CardHeader>
-              <div className="h-4 w-24 bg-muted rounded animate-pulse" />
-            </CardHeader>
-            <CardContent>
-              <div className="h-8 w-16 bg-muted rounded animate-pulse" />
-              <div className="h-3 w-32 bg-muted rounded animate-pulse mt-2" />
-            </CardContent>
-          </Card>
+        {[...Array(4)].map((_, index) => (
+          <div key={index} className="h-28 animate-pulse rounded-lg bg-[var(--surface-3)]" />
         ))}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {[...Array(2)].map((_, i) => (
-          <Card key={i}>
-            <CardHeader>
-              <div className="h-6 w-32 bg-muted rounded animate-pulse" />
-              <div className="h-4 w-48 bg-muted rounded animate-pulse" />
-            </CardHeader>
-            <CardContent>
-              <div className="h-64 bg-muted rounded animate-pulse" />
-            </CardContent>
-          </Card>
+        {[...Array(2)].map((_, index) => (
+          <div key={index} className="h-80 animate-pulse rounded-lg bg-[var(--surface-3)]" />
         ))}
       </div>
 
       <div className="grid gap-4">
-        {[...Array(2)].map((_, i) => (
-          <Card key={i}>
-            <CardHeader>
-              <div className="h-6 w-32 bg-muted rounded animate-pulse" />
-              <div className="h-4 w-48 bg-muted rounded animate-pulse" />
-            </CardHeader>
-            <CardContent>
-              <div className="h-64 bg-muted rounded animate-pulse" />
-            </CardContent>
-          </Card>
+        {[...Array(2)].map((_, index) => (
+          <div key={index} className="h-80 animate-pulse rounded-lg bg-[var(--surface-3)]" />
         ))}
       </div>
     </div>

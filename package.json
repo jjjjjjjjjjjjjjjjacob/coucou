@@ -11,7 +11,7 @@
     "build": "turbo run build",
     "build:deploy": "turbo run deploy",
     "lint": "biome lint .",
-    "lint:eslint": "turbo run lint:eslint --filter=@coucou/club-chlorine --filter=@coucou/dojo --filter=@coucou/site",
+    "lint:eslint": "turbo run lint:eslint --filter=@coucou/club-chlorine --filter=@coucou/danza-organica --filter=@coucou/dojo --filter=@coucou/site",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "check": "biome check .",

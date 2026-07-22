@@ -86,9 +86,7 @@ async function requireMatchingTenantOrganization(
   const wasCreatedByCurrentUser = organization.createdBy === createdByClerkUserId;
 
   if (hasCoucouTenantMetadata || !hasMatchingName || !wasCreatedByCurrentUser) {
-    throw new Error(
-      `Clerk organization slug "${slug}" is already in use by another organization`,
-    );
+    throw new Error(`Clerk organization slug "${slug}" is already in use by another organization`);
   }
 
   try {
@@ -169,12 +167,7 @@ async function findPendingTenantAdminInvitation(
 
 export async function getOrCreateTenantAdminInvitation(
   clerkOrganizations: ClerkOrganizationsApi,
-  {
-    organizationId,
-    workspaceSlug,
-    tenantAdminEmail,
-    inviterClerkUserId,
-  }: TenantInvitationInput,
+  { organizationId, workspaceSlug, tenantAdminEmail, inviterClerkUserId }: TenantInvitationInput,
 ): Promise<OrganizationInvitation> {
   const existingInvitation = await findPendingTenantAdminInvitation(
     clerkOrganizations,

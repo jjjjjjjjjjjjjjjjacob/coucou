@@ -122,6 +122,112 @@ describe("Events Functions", () => {
     ).rejects.toThrow("Cannot publish: missing required fields");
   });
 
+  it("duplicates event configuration and list credentials into a new draft", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await seedWorkspace(testBackend);
+    const sourceEventId = await testBackend.run(async (databaseContext) => {
+      const now = Date.now();
+      const eventId = await databaseContext.db.insert("events", {
+        workspaceSlug: WORKSPACE_SLUG,
+        siteKey: SITE_KEY,
+        shortId: "source-event",
+        name: "Summer Night",
+        secondaryTitle: "Live on the roof",
+        description: "An evening event.",
+        acts: [{ name: "The Headliner", descriptorBadges: ["Live"] }],
+        hosts: ["Coucou"],
+        productionCompany: "Coucou Productions",
+        location: "Main Room",
+        guestPortalLinkLabel: "Venue guide",
+        guestPortalLinkUrl: "https://example.com/guide",
+        eventDate: now + 86_400_000,
+        eventEndDate: now + 90_000_000,
+        eventTimezone: "America/New_York",
+        isFeatured: true,
+        status: "active",
+        lifecycle: "published",
+        publishedAt: now,
+        sendQrOnApproval: true,
+        attendanceQuestionEnabled: true,
+        referralSharingEnabled: true,
+        maxAttendees: 4,
+        customFields: [
+          {
+            key: "instagram",
+            label: "Instagram",
+            required: true,
+            copyEnabled: true,
+          },
+        ],
+        themeBackgroundColor: "#101820",
+        themeTextColor: "#FEE715",
+        rsvpConfirmationMessageEnabled: true,
+        rsvpConfirmationMessage: "We received your RSVP.",
+        qrCodeColor: "#123456",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "press",
+        password: "blue-door",
+        passwordNormalized: "blue-door",
+        generateQR: true,
+        sendQrOnApproval: false,
+        approvalMessage: "Press approved.",
+        createdAt: now,
+      });
+      return eventId;
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+
+    const duplicateResult = await hostBackend.mutation(api.events.duplicateToDraft, {
+      eventId: sourceEventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    const duplicateEvent = await hostBackend.query(api.events.get, {
+      eventId: duplicateResult.eventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    const duplicateCredentials = await getListCredentialsForEvent(
+      testBackend,
+      duplicateResult.eventId,
+    );
+
+    expect(duplicateResult.eventId).not.toBe(sourceEventId);
+    expect(duplicateEvent?.shortId).not.toBe("source-event");
+    expect(duplicateEvent?.name).toBe("Summer Night (Copy)");
+    expect(duplicateEvent?.secondaryTitle).toBe("Live on the roof");
+    expect(duplicateEvent?.description).toBe("An evening event.");
+    expect(duplicateEvent?.acts).toEqual([{ name: "The Headliner", descriptorBadges: ["Live"] }]);
+    expect(duplicateEvent?.location).toBe("Main Room");
+    expect(duplicateEvent?.eventTimezone).toBe("America/New_York");
+    expect(duplicateEvent?.status).toBe("inactive");
+    expect(duplicateEvent?.lifecycle).toBe("draft");
+    expect(duplicateEvent?.publishedAt).toBeUndefined();
+    expect(duplicateEvent?.isFeatured).toBeUndefined();
+    expect(duplicateEvent?.themeBackgroundColor).toBe("#101820");
+    expect(duplicateEvent?.themeTextColor).toBe("#FEE715");
+    expect(duplicateEvent?.customFields).toEqual([
+      {
+        key: "instagram",
+        label: "Instagram",
+        required: true,
+        copyEnabled: true,
+      },
+    ]);
+    expect(duplicateCredentials).toHaveLength(1);
+    expect(duplicateCredentials[0]?.eventId).toBe(duplicateResult.eventId);
+    expect(duplicateCredentials[0]?.listKey).toBe("press");
+    expect(duplicateCredentials[0]?.password).toBe("blue-door");
+    expect(duplicateCredentials[0]?.passwordNormalized).toBe("blue-door");
+    expect(duplicateCredentials[0]?.generateQR).toBe(true);
+    expect(duplicateCredentials[0]?.sendQrOnApproval).toBe(false);
+    expect(duplicateCredentials[0]?.approvalMessage).toBe("Press approved.");
+  });
+
   it("should validate event record structure", () => {
     const mockEvent = {
       _id: "event_123",

@@ -104,7 +104,6 @@ function buildAuthorizedRequest(plaintextKey: string): RequestInit {
   return { headers: { Authorization: `Bearer ${plaintextKey}` } };
 }
 
-
 describe("GET /api/v1/events", () => {
   it("returns 401 without an API key", async () => {
     const testBackend = setupTestBackend();
@@ -125,10 +124,10 @@ describe("GET /api/v1/events", () => {
     expect(unknownKeyResponse.status).toBe(401);
 
     const wrongScopeKey = await issueApiKey(testBackend, ["rsvps:read"]);
-    const wrongScopeResponse = await testBackend.fetch(
-      "/api/v1/events",
-      { method: "GET", ...buildAuthorizedRequest(wrongScopeKey) },
-    );
+    const wrongScopeResponse = await testBackend.fetch("/api/v1/events", {
+      method: "GET",
+      ...buildAuthorizedRequest(wrongScopeKey),
+    });
     expect(wrongScopeResponse.status).toBe(403);
   });
 
@@ -146,10 +145,10 @@ describe("GET /api/v1/events", () => {
     });
 
     const plaintextKey = await issueApiKey(testBackend, ["events:read"]);
-    const response = await testBackend.fetch(
-      "/api/v1/events",
-      { method: "GET", ...buildAuthorizedRequest(plaintextKey) },
-    );
+    const response = await testBackend.fetch("/api/v1/events", {
+      method: "GET",
+      ...buildAuthorizedRequest(plaintextKey),
+    });
     expect(response.status).toBe(200);
     const body = await response.json();
     const shortIds = body.data.map((event: { shortId: string }) => event.shortId);
@@ -164,10 +163,10 @@ describe("GET /api/v1/events", () => {
     await seedEvent(testBackend, { shortId: "evt-draft", lifecycle: "draft" });
 
     const plaintextKey = await issueApiKey(testBackend, ["events:read"]);
-    const response = await testBackend.fetch(
-      "/api/v1/events?status=all",
-      { method: "GET", ...buildAuthorizedRequest(plaintextKey) },
-    );
+    const response = await testBackend.fetch("/api/v1/events?status=all", {
+      method: "GET",
+      ...buildAuthorizedRequest(plaintextKey),
+    });
     const body = await response.json();
     expect(body.data.map((event: { shortId: string }) => event.shortId)).toContain("evt-draft");
   });
@@ -215,17 +214,17 @@ describe("GET /api/v1/events/{eventRouteId}", () => {
     });
 
     const plaintextKey = await issueApiKey(testBackend, ["events:read"]);
-    const response = await testBackend.fetch(
-      "/api/v1/events/evt-detail",
-      { method: "GET", ...buildAuthorizedRequest(plaintextKey) },
-    );
+    const response = await testBackend.fetch("/api/v1/events/evt-detail", {
+      method: "GET",
+      ...buildAuthorizedRequest(plaintextKey),
+    });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.name).toBe("Partner API Event");
     expect(body.lists).toEqual(
       expect.arrayContaining([
-        { listKey: "vip", isPasswordProtected: true },
-        { listKey: "ga", isPasswordProtected: false },
+        { listKey: "vip", isPasswordProtected: true, generatesQrCode: false },
+        { listKey: "ga", isPasswordProtected: false, generatesQrCode: false },
       ]),
     );
     expect(body.attendanceCounts.approved).toBe(1);
@@ -243,10 +242,10 @@ describe("GET /api/v1/events/{eventRouteId}", () => {
     });
 
     const plaintextKey = await issueApiKey(testBackend, ["events:read"]);
-    const response = await testBackend.fetch(
-      "/api/v1/events/evt-foreign",
-      { method: "GET", ...buildAuthorizedRequest(plaintextKey) },
-    );
+    const response = await testBackend.fetch("/api/v1/events/evt-foreign", {
+      method: "GET",
+      ...buildAuthorizedRequest(plaintextKey),
+    });
     expect(response.status).toBe(404);
   });
 });
@@ -278,6 +277,20 @@ describe("GET /api/v1/events/{eventRouteId}/rsvps/lookup", () => {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+      await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "ga",
+        generateQR: true,
+        createdAt: Date.now(),
+      });
+      await databaseContext.db.insert("redemptions", {
+        eventId,
+        clerkUserId: "user_phone",
+        listKey: "ga",
+        code: "ticket-code-123",
+        createdAt: Date.now(),
+        unredeemHistory: [],
+      });
     });
 
     const plaintextKey = await issueApiKey(testBackend, ["rsvps:read"]);
@@ -291,6 +304,12 @@ describe("GET /api/v1/events/{eventRouteId}/rsvps/lookup", () => {
     expect(body.attendanceStatus).toBe("yes");
     expect(body.name).toBe("Jane Doe");
     expect(body.isGuest).toBe(false);
+    expect(body.ticket).toMatchObject({
+      status: "issued",
+      qrEnabled: true,
+      redemptionCode: "ticket-code-123",
+    });
+    expect(body.ticket.redeemUrl).toContain("/redeem/ticket-code-123");
   });
 
   it("finds a guest RSVP by phone hash and 404s when nothing matches", async () => {

@@ -11,6 +11,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { SectionCard } from "@/components/ui/section-card";
 import {
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
@@ -33,8 +34,11 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
   onFlyerChange,
 }: EventLookSectionProps<FormValues>) {
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-4">
-      <h3 className="font-medium text-sm text-muted-foreground">LOOK</h3>
+    <SectionCard
+      title="Branding"
+      description="Theme colors, event icon, flyer, and guest QR appearance."
+      contentClassName="space-y-4"
+    >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <FormField
           control={form.control}
@@ -118,9 +122,9 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
           </FormItem>
         )}
       />
-      <details className="rounded-md border bg-muted/20 p-3">
-        <summary className="text-xs font-medium text-muted-foreground cursor-pointer select-none">
-          Advanced — legacy QR color
+      <details className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3.5">
+        <summary className="cursor-pointer select-none text-sm font-medium text-[var(--text-primary)]">
+          Advanced QR appearance
         </summary>
         <div className="pt-3">
           <FormField
@@ -134,16 +138,14 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
                     QR Code Color <span className="text-sm text-muted-foreground">(optional)</span>
                   </FormLabel>
                   <FormDescription>
-                    Guest QR codes now use the event theme colors above. This legacy field is kept
-                    for compatibility.
+                    Sets the foreground color used by generated guest QR codes where supported.
                   </FormDescription>
                   <FormControl>
                     <Input
                       type="color"
                       value={(typeof value === "string" ? value : undefined) ?? "#000000"}
                       onChange={(event) => onChange(event.target.value)}
-                      disabled
-                      className="h-10 w-full p-1 disabled:cursor-not-allowed"
+                      className="h-10 w-full cursor-pointer p-1"
                     />
                   </FormControl>
                   <FormMessage />
@@ -153,6 +155,6 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
           />
         </div>
       </details>
-    </div>
+    </SectionCard>
   );
 }

@@ -315,23 +315,23 @@ describe("event confirmation texts", () => {
       target: { value: "Pool Night" },
     });
     await clickContinue();
-    await screen.findByText("Where, when, how many.");
+    await screen.findByRole("heading", { name: "Schedule & capacity" });
     fireEvent.change(screen.getByPlaceholderText(/Bushwick/), {
       target: { value: "Pool Deck" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Set event date" }));
     await clickContinue();
-    await screen.findByText("Pick the colors.");
+    await screen.findByRole("heading", { name: "Branding" });
 
     expect(screen.getAllByDisplayValue("#101820").length).toBeGreaterThan(0);
     expect(screen.getAllByDisplayValue("#FEE715").length).toBeGreaterThan(0);
 
     await clickContinue();
-    await screen.findByText("Drop the flyer.");
+    await screen.findByRole("heading", { name: "Flyer" });
     await clickContinue();
-    await screen.findByText("Status & ticket details.");
+    await screen.findByRole("heading", { name: "Guest page" });
     await clickContinue();
-    await screen.findByText("How they get in.");
+    await screen.findByRole("heading", { name: "Lists & access" });
 
     expect(screen.getByDisplayValue("pool")).toBeInTheDocument();
     expect(screen.getByDisplayValue("cabana")).toBeInTheDocument();
@@ -360,13 +360,13 @@ describe("event confirmation texts", () => {
       target: { value: "Pool Night" },
     });
     await clickContinue();
-    await screen.findByText("Where, when, how many.");
+    await screen.findByRole("heading", { name: "Schedule & capacity" });
     fireEvent.change(screen.getByPlaceholderText(/Bushwick/), {
       target: { value: "Pool Deck" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Set event date" }));
     await clickContinue();
-    await screen.findByText("Pick the colors.");
+    await screen.findByRole("heading", { name: "Branding" });
 
     expect(screen.getAllByDisplayValue("#FFFFFF").length).toBeGreaterThan(0);
     expect(screen.getAllByDisplayValue("#1E3CFF").length).toBeGreaterThan(0);
@@ -379,7 +379,7 @@ describe("event confirmation texts", () => {
 
     render(<EventCreateWizard />);
 
-    expect(screen.getByRole("button", { name: "save & finish later" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save & finish later" })).toBeDisabled();
   });
 
   it("hydrates an existing draft before saving so stored event and list values win", async () => {
@@ -415,11 +415,11 @@ describe("event confirmation texts", () => {
     await screen.findByDisplayValue("Stored Draft");
     await waitFor(() => {
       const saveDraftButton = screen.getByRole("button", {
-        name: "save & finish later",
+        name: "Save & finish later",
       }) as HTMLButtonElement;
       expect(saveDraftButton.disabled).toBe(false);
     });
-    fireEvent.click(screen.getByRole("button", { name: "save & finish later" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save & finish later" }));
 
     await waitFor(() => {
       const updateCall = actionCalls.find((actionCall) => actionCall.actionName === "update");
@@ -475,13 +475,13 @@ describe("event confirmation texts", () => {
     await screen.findByDisplayValue("Stored Draft");
     await waitFor(() => {
       const saveDraftButton = screen.getByRole("button", {
-        name: "save & finish later",
+        name: "Save & finish later",
       }) as HTMLButtonElement;
       expect(saveDraftButton.disabled).toBe(false);
     });
-    fireEvent.click(screen.getByText("Review"));
-    await screen.findByText("Last look.");
-    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    fireEvent.click(screen.getByRole("button", { name: /Review & publish/ }));
+    await screen.findByRole("heading", { name: "Review & publish" });
+    fireEvent.click(screen.getByRole("button", { name: "Publish event" }));
 
     await waitFor(() => {
       const publishCall = actionCalls.find(
@@ -516,23 +516,23 @@ describe("event confirmation texts", () => {
       target: { value: "Spring Gala" },
     });
     await clickContinue();
-    await screen.findByText("Where, when, how many.");
+    await screen.findByRole("heading", { name: "Schedule & capacity" });
 
     fireEvent.change(screen.getByPlaceholderText(/Bushwick/), {
       target: { value: "Main Room" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Set event date" }));
     await clickContinue();
-    await screen.findByText("Pick the colors.");
+    await screen.findByRole("heading", { name: "Branding" });
 
     await clickContinue();
-    await screen.findByText("Drop the flyer.");
+    await screen.findByRole("heading", { name: "Flyer" });
     await clickContinue();
-    await screen.findByText("Status & ticket details.");
+    await screen.findByRole("heading", { name: "Guest page" });
     await clickContinue();
-    await screen.findByText("How they get in.");
+    await screen.findByRole("heading", { name: "Lists & access" });
     await clickContinue();
-    await screen.findByText("Write the texts.");
+    await screen.findByRole("heading", { name: "Messages" });
 
     expect(screen.getByLabelText("Send initial confirmation text")).toBeChecked();
     fireEvent.change(screen.getByLabelText("Confirmation copy"), {
@@ -566,9 +566,9 @@ describe("event confirmation texts", () => {
     ).toBeInTheDocument();
 
     await clickContinue();
-    await screen.findByText("What you want to know.");
+    await screen.findByRole("heading", { name: "RSVP setup" });
     await clickContinue();
-    await screen.findByText("Last look.");
+    await screen.findByRole("heading", { name: "Review & publish" });
 
     fireEvent.click(screen.getByRole("button", { name: /Publish/ }));
 
@@ -624,7 +624,7 @@ describe("event confirmation texts", () => {
 
     render(<EditEventDialog event={event} open onOpenChange={() => {}} showTrigger={false} />);
 
-    expect(screen.getByRole("button", { name: "Confirmation Texts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Messages" })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(
@@ -664,13 +664,21 @@ describe("event confirmation texts", () => {
       updatedAt: Date.now(),
     } as unknown as Event;
 
-    render(<EditEventDialog event={event} open onOpenChange={() => {}} showTrigger={false} />);
+    render(
+      <EditEventDialog
+        event={event}
+        open
+        initialTab="confirmations"
+        onOpenChange={() => {}}
+        showTrigger={false}
+      />,
+    );
 
     await waitFor(() => {
       expect(screen.getByLabelText("Send initial confirmation text")).toBeChecked();
     });
     fireEvent.click(screen.getByLabelText("Send initial confirmation text"));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Messages" }));
 
     await waitFor(() => {
       const updateCall = actionCalls.find((actionCall) => actionCall.actionName === "update");

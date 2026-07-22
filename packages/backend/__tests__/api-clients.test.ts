@@ -51,6 +51,7 @@ describe("apiClients.create", () => {
       workspaceSlug: WORKSPACE_SLUG,
       displayName: "Partner integration",
       scopes: ["events:read", "rsvps:write"],
+      defaultRsvpListKey: " ga ",
     });
 
     expect(created.plaintextKey.startsWith("coucou_sk_")).toBe(true);
@@ -60,6 +61,7 @@ describe("apiClients.create", () => {
       return await databaseContext.db.get(created.apiClientId);
     });
     expect(storedApiClient?.keyHash).toBe(await hashApiClientKey(created.plaintextKey));
+    expect(storedApiClient?.defaultRsvpListKey).toBe("ga");
     expect(JSON.stringify(storedApiClient)).not.toContain(created.plaintextKey);
   });
 
@@ -133,5 +135,36 @@ describe("apiClients.listForWorkspace", () => {
     expect(listedApiClients).toHaveLength(1);
     expect(listedApiClients[0].displayName).toBe("Partner integration");
     expect(JSON.stringify(listedApiClients)).not.toContain("keyHash");
+  });
+
+  it("edits and clears the default RSVP list for an active key", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    const created = await hostBackend.mutation(api.apiClients.create, {
+      workspaceSlug: WORKSPACE_SLUG,
+      displayName: "Partner integration",
+      scopes: ["rsvps:write"],
+      defaultRsvpListKey: "ga",
+    });
+
+    await hostBackend.mutation(api.apiClients.updateDefaultRsvpListKey, {
+      workspaceSlug: WORKSPACE_SLUG,
+      apiClientId: created.apiClientId,
+      defaultRsvpListKey: " vip ",
+    });
+    let listedApiClients = await hostBackend.query(api.apiClients.listForWorkspace, {
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    expect(listedApiClients[0].defaultRsvpListKey).toBe("vip");
+
+    await hostBackend.mutation(api.apiClients.updateDefaultRsvpListKey, {
+      workspaceSlug: WORKSPACE_SLUG,
+      apiClientId: created.apiClientId,
+    });
+    listedApiClients = await hostBackend.query(api.apiClients.listForWorkspace, {
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    expect(listedApiClients[0].defaultRsvpListKey).toBeNull();
   });
 });

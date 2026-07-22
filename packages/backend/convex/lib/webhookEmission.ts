@@ -5,6 +5,7 @@ import type { MutationCtx } from "../_generated/server";
 import { isGuestClerkUserId } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
 import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./rsvpStatus";
+import { buildRsvpTicketSnapshot } from "./rsvpTicketSnapshot";
 
 interface RsvpChange {
   operation: "insert" | "update" | "delete";
@@ -255,16 +256,13 @@ export async function enqueueRsvpWebhookDeliveries(
     return;
   }
 
-  const endpointMatch = await findActiveEndpointsForEventType(
-    ctx,
-    event.workspaceSlug,
-    eventType,
-  );
+  const endpointMatch = await findActiveEndpointsForEventType(ctx, event.workspaceSlug, eventType);
   if (!endpointMatch || endpointMatch.endpoints.length === 0) {
     return;
   }
 
   const identity = await resolveRsvpIdentity(ctx, rsvp);
+  const ticket = await buildRsvpTicketSnapshot(ctx, event, rsvp);
   const previousRsvp = change.operation === "update" ? change.oldDoc : null;
 
   const payloadWithoutDeliveryId = {
@@ -284,7 +282,17 @@ export async function enqueueRsvpWebhookDeliveries(
         updatedAt: rsvp.updatedAt,
       },
       identity,
-      origin: { type: rsvp.apiClientId ? "api" : "app" },
+      ...(ticket ? { ticket } : {}),
+      // Approval decisions are host actions even when the RSVP was originally
+      // created through an API client.
+      origin: {
+        type:
+          eventType === "rsvp.approved" || eventType === "rsvp.denied"
+            ? "app"
+            : rsvp.apiClientId
+              ? "api"
+              : "app",
+      },
       ...(previousRsvp
         ? {
             changes: {

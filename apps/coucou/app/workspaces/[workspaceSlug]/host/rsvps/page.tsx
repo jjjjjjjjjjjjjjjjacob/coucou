@@ -6,10 +6,8 @@ import { useMutation } from "@tanstack/react-query";
 import {
   type CellContext,
   type ColumnDef,
-  flexRender,
   getCoreRowModel,
   type HeaderContext,
-  type RowData,
   type SortingState,
   useReactTable,
   type VisibilityState,
@@ -24,19 +22,16 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  GripVertical,
   Link,
   MoreHorizontal,
   QrCode,
   Share,
   Trash2,
-  X,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
-import EditEventDialog from "@/app/workspaces/[workspaceSlug]/host/events/edit-event-dialog";
 import {
   APPROVAL_STATUS_OPTIONS,
   type ApprovalStatusOption,
@@ -55,9 +50,12 @@ import {
   RsvpListKeyControl,
   RsvpTicketStatusControl,
   TICKET_STATUS_OPTIONS,
-  type TicketDisplayStatus,
   type TicketStatusOption,
 } from "@/components/rsvps/rsvp-controls";
+import { RsvpExportDialog } from "@/components/rsvps/rsvp-export-dialog";
+import { RsvpPagination } from "@/components/rsvps/rsvp-pagination";
+import { type RsvpPendingChanges, RsvpTable } from "@/components/rsvps/rsvp-table";
+import { RsvpToolbar } from "@/components/rsvps/rsvp-toolbar";
 import { ShareEventPopover } from "@/components/share-event-popover";
 import {
   AlertDialog,
@@ -87,7 +85,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -98,18 +95,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectOption } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useWorkspaceAccess } from "@/components/workspace-access-gate";
 import {
@@ -133,13 +119,11 @@ import { buildRsvpReviewFeedSearchParams } from "@/lib/rsvp-review-feed";
 import {
   getRsvpContextActionTargets,
   getRsvpSelectionRangeIds,
-  getRsvpTableBodyCellClassName,
   getRsvpTableColumnSizing,
   getRsvpTableDisplayWidth,
   getRsvpTableFillerColumnWidth,
+  hasStringAccessorKey,
   RSVP_SELECT_COLUMN_SIZING,
-  RSVP_TABLE_RESIZE_HANDLE_TEST_ID,
-  shouldRenderRsvpTableResizeHandle,
 } from "@/lib/rsvp-table-layout";
 import type { Event, HostRsvp, ListCredential } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
@@ -154,14 +138,6 @@ type PaginatedHostRsvpResult = {
 type ApprovalFilterOption = "all" | ApprovalStatusOption;
 type ExportableApprovalStatusOption = "pending" | "approved" | "denied";
 
-const hasStringAccessorKey = <TData extends RowData>(
-  columnDefinition: ColumnDef<TData>,
-): columnDefinition is ColumnDef<TData> & { accessorKey: string } => {
-  const candidateAccessorKey = (columnDefinition as { accessorKey?: unknown }).accessorKey;
-  return typeof candidateAccessorKey === "string";
-};
-
-const EXPORT_STATUS_OPTIONS: ExportableApprovalStatusOption[] = ["pending", "approved", "denied"];
 const DEFAULT_EXPORT_STATUS_OPTIONS: ExportableApprovalStatusOption[] = ["approved"];
 
 function stopRsvpTableInteractiveEventPropagation(event: React.SyntheticEvent): void {
@@ -193,7 +169,7 @@ interface RsvpTableContextValue {
 
 const RsvpTableContext = React.createContext<RsvpTableContextValue | null>(null);
 
-function useRsvpTableContext(): RsvpTableContextValue {
+export function useRsvpTableContext(): RsvpTableContextValue {
   const contextValue = React.useContext(RsvpTableContext);
   if (!contextValue) {
     throw new Error("useRsvpTableContext must be used within an RsvpTableContext.Provider");
@@ -317,26 +293,27 @@ function RsvpSelectHeaderCell(_context: HeaderContext<HostRsvp, unknown>) {
     : "Select all RSVPs on this page";
 
   return (
-    <Checkbox
-      checked={allSelected || someSelected ? true : false}
-      onCheckedChange={toggleSelectAllCurrent}
-      aria-label={selectAllCheckboxLabel}
-      title={selectAllCheckboxLabel}
-      className="ml-2"
-      data-rsvp-table-interactive="true"
-      onClick={stopRsvpTableInteractiveEventPropagation}
-      onPointerDown={stopRsvpTableInteractiveEventPropagation}
-      ref={(checkboxRootElement: HTMLButtonElement | null) => {
-        if (checkboxRootElement) {
-          const innerInputElement = checkboxRootElement.querySelector(
-            'input[type="checkbox"]',
-          ) as HTMLInputElement | null;
-          if (innerInputElement) {
-            innerInputElement.indeterminate = someSelected;
+    <div className="flex h-full w-full items-center pl-2">
+      <Checkbox
+        checked={allSelected || someSelected ? true : false}
+        onCheckedChange={toggleSelectAllCurrent}
+        aria-label={selectAllCheckboxLabel}
+        title={selectAllCheckboxLabel}
+        data-rsvp-table-interactive="true"
+        onClick={stopRsvpTableInteractiveEventPropagation}
+        onPointerDown={stopRsvpTableInteractiveEventPropagation}
+        ref={(checkboxRootElement: HTMLButtonElement | null) => {
+          if (checkboxRootElement) {
+            const innerInputElement = checkboxRootElement.querySelector(
+              'input[type="checkbox"]',
+            ) as HTMLInputElement | null;
+            if (innerInputElement) {
+              innerInputElement.indeterminate = someSelected;
+            }
           }
-        }
-      }}
-    />
+        }}
+      />
+    </div>
   );
 }
 
@@ -376,13 +353,25 @@ function RsvpSelectCell({ row }: CellContext<HostRsvp, unknown>) {
   );
 }
 
-export default function RsvpsPage() {
+interface GuestManagerProps {
+  initialEventId?: string;
+  embedded?: boolean;
+  lockEvent?: boolean;
+}
+
+export function GuestManager({
+  initialEventId,
+  embedded = false,
+  lockEvent = false,
+}: GuestManagerProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceScope = useWorkspaceScope();
   const workspaceAccess = useWorkspaceAccess();
   const isReadOnly = workspaceAccess?.canWrite === false;
   const rsvpsPath = useWorkspaceOperationPath("host", "rsvps");
+  const eventsPath = useWorkspaceOperationPath("host", "events");
+  const usersPath = useWorkspaceOperationPath("host", "users");
   const rsvpReviewFeedPath = useWorkspaceOperationPath("host", "rsvps/review");
   const workspace = useQuery(
     api.workspaces.getWorkspaceBySlug,
@@ -402,13 +391,17 @@ export default function RsvpsPage() {
         ),
     [events],
   );
-  const initialId = searchParams.get("eventId") ?? eventsSorted[0]?._id;
+  const initialId = initialEventId ?? searchParams.get("eventId") ?? eventsSorted[0]?._id;
   const [eventId, setEventId] = React.useState<string | undefined>(initialId);
   React.useEffect(() => {
+    if (initialEventId && eventId !== initialEventId) {
+      setEventId(initialEventId);
+      return;
+    }
     if (!eventId && eventsSorted[0]?._id) {
       setEventId(eventsSorted[0]._id);
     }
-  }, [eventId, eventsSorted]);
+  }, [eventId, eventsSorted, initialEventId]);
 
   /*
   React.useEffect(() => {
@@ -524,7 +517,6 @@ export default function RsvpsPage() {
       ? { eventId: currentEvent._id, ...workspaceScope.queryArgs }
       : "skip",
   );
-  const [showEditEventDialog, setShowEditEventDialog] = React.useState(false);
   const [showDeleteEventDialog, setShowDeleteEventDialog] = React.useState(false);
   const [isSendingQrBatch, setIsSendingQrBatch] = React.useState(false);
 
@@ -814,17 +806,9 @@ export default function RsvpsPage() {
   });
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "guest", desc: false }]);
   const [columnSizing, setColumnSizing] = React.useState<Record<string, number>>({});
-  const [pendingChanges, setPendingChanges] = React.useState<
-    Record<
-      string,
-      {
-        originalApprovalStatus: ApprovalStatusOption;
-        originalTicketStatus: TicketDisplayStatus;
-        currentApprovalStatus: ApprovalStatusOption;
-        currentTicketStatus: TicketDisplayStatus;
-      }
-    >
-  >({});
+  const [pendingChanges, setPendingChanges] = React.useState<Record<string, RsvpPendingChanges>>(
+    {},
+  );
   const [showQR, setShowQR] = React.useState(false);
   const [qr, setQr] = React.useState<{
     code: string;
@@ -1397,7 +1381,23 @@ export default function RsvpsPage() {
         cell: ({ row }) => {
           const rsvp = row.original;
           const guestName = getHostRsvpGuestDisplayValue(rsvp);
-          return <span className="block max-w-full truncate">{guestName}</span>;
+          if (!rsvp.userId) {
+            return <span className="block max-w-full truncate">{guestName}</span>;
+          }
+          return (
+            <button
+              type="button"
+              data-rsvp-table-interactive="true"
+              className="block max-w-full truncate text-left font-medium underline decoration-[var(--border-strong)] underline-offset-4 transition-colors hover:text-[var(--text-primary)]"
+              title={`Open ${guestName}'s user profile`}
+              onClick={(event) => {
+                stopRsvpTableInteractiveEventPropagation(event);
+                router.push(`${usersPath}/${rsvp.userId}`);
+              }}
+            >
+              {guestName}
+            </button>
+          );
         },
       },
       {
@@ -1664,15 +1664,22 @@ export default function RsvpsPage() {
     isReadOnly,
     listKeyColumnContentValues,
     rsvps,
+    router,
     socialProfileColumns,
     ticketViewedAtColumnContentValues,
+    usersPath,
   ]);
 
   // Filtering is now handled by the backend
 
   // Get unique values for filter dropdowns - use all available options, not just filtered results
-  const uniqueListKeys = React.useMemo(() => {
-    return listCredentials?.map((cred) => cred.listKey).sort() || [];
+  const uniqueListKeys = React.useMemo<string[]>(() => {
+    return (
+      listCredentials
+        ?.map((cred) => cred.listKey)
+        .filter((key): key is string => key !== null)
+        .sort() || []
+    );
   }, [listCredentials]);
 
   const uniqueApprovalStatuses = React.useMemo<ApprovalStatusOption[]>(() => {
@@ -2497,7 +2504,6 @@ export default function RsvpsPage() {
     columnId: string;
     position: "before" | "after";
   } | null>(null);
-  const isDraggingColumn = draggedColumnIdentifier !== null;
   const dragPreviewElementRef = React.useRef<HTMLDivElement | null>(null);
   const dragPreviewFollowPointerRef = React.useRef(false);
 
@@ -3060,6 +3066,13 @@ export default function RsvpsPage() {
 
     return (
       <ContextMenuContent className="w-56">
+        <ContextMenuItem
+          onSelect={() => router.push(`${usersPath}/${encodeURIComponent(`rsvp~${rsvp.id}`)}`)}
+        >
+          <ExternalLink className="h-4 w-4" />
+          Open User Profile
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuSub>
           <ContextMenuSubTrigger disabled={availableListKeys.length <= 1 || isUpdatingList}>
             Change List{selectionBatchLabel}
@@ -3307,8 +3320,16 @@ export default function RsvpsPage() {
       <div className="min-w-0 flex-1 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-2 sm:gap-1">
-            <h2 className="text-3xl font-bold tracking-tight">RSVPs</h2>
-            <p className="text-muted-foreground">Manage guest responses and ticket status</p>
+            <h2
+              className={
+                embedded
+                  ? "text-xl font-semibold tracking-tight"
+                  : "text-3xl font-bold tracking-tight"
+              }
+            >
+              {embedded ? "Guest manager" : "Guests"}
+            </h2>
+            <p className="text-muted-foreground">Manage guest responses, tickets, and attendance</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <div className="relative inline-block">
@@ -3348,12 +3369,14 @@ export default function RsvpsPage() {
                   <DropdownMenuItem
                     onSelect={(menuEvent) => {
                       menuEvent.preventDefault();
-                      setShowEditEventDialog(true);
+                      if (currentEvent) {
+                        router.push(`${eventsPath}/${currentEvent._id}`);
+                      }
                     }}
                     disabled={!currentEvent || isReadOnly}
                   >
                     <Edit className="h-4 w-4 mr-2" />
-                    Edit Event
+                    Configure Event
                   </DropdownMenuItem>
                   {showSendPendingQrCodesAction && (
                     <DropdownMenuItem
@@ -3446,442 +3469,67 @@ export default function RsvpsPage() {
             </div>
           </div>
         </div>
-        <Dialog open={exportOptionsOpen} onOpenChange={setExportOptionsOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Export CSV</DialogTitle>
-              <DialogDescription>
-                Choose lists, statuses, and columns before exporting.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              <fieldset>
-                <legend className="mb-2 block text-sm font-medium">Select Lists</legend>
-                <div className="space-y-2">
-                  {(listCredentials || []).map((listCredential) => (
-                    <div key={listCredential.listKey} className="flex items-center">
-                      <Checkbox
-                        id={`list-${listCredential.listKey}`}
-                        checked={selectedListsForExport.includes(listCredential.listKey)}
-                        onCheckedChange={(checkedState) => {
-                          setSelectedListsForExport((previousSelectedListKeys) => {
-                            if (checkedState === true) {
-                              if (previousSelectedListKeys.includes(listCredential.listKey)) {
-                                return previousSelectedListKeys;
-                              }
-                              return [...previousSelectedListKeys, listCredential.listKey];
-                            }
-                            return previousSelectedListKeys.filter(
-                              (selectedListKey) => selectedListKey !== listCredential.listKey,
-                            );
-                          });
-                        }}
-                      />
-                      <label
-                        htmlFor={`list-${listCredential.listKey}`}
-                        className="ml-2 cursor-pointer text-sm"
-                      >
-                        {listCredential.listKey.toUpperCase()}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset>
-                <legend className="mb-2 block text-sm font-medium">Select Statuses</legend>
-                <div className="space-y-2">
-                  {EXPORT_STATUS_OPTIONS.map((statusOption) => (
-                    <div key={statusOption} className="flex items-center">
-                      <Checkbox
-                        id={`status-${statusOption}`}
-                        checked={selectedStatusesForExport.includes(statusOption)}
-                        onCheckedChange={(checkedState) => {
-                          setSelectedStatusesForExport((previousStatuses) => {
-                            if (checkedState === true) {
-                              if (previousStatuses.includes(statusOption)) {
-                                return previousStatuses;
-                              }
-                              const nextStatuses = [...previousStatuses, statusOption];
-                              return EXPORT_STATUS_OPTIONS.filter((option) =>
-                                nextStatuses.includes(option),
-                              );
-                            }
-                            return previousStatuses.filter((option) => option !== statusOption);
-                          });
-                        }}
-                      />
-                      <label
-                        htmlFor={`status-${statusOption}`}
-                        className="ml-2 cursor-pointer text-sm"
-                      >
-                        {getApprovalStatusLabel(statusOption)}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset>
-                <legend className="mb-2 block text-sm font-medium">Select Columns</legend>
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    <Checkbox
-                      id="col-phone"
-                      checked={includePhone}
-                      onCheckedChange={(checkedState) => setIncludePhone(checkedState === true)}
-                    />
-                    <label htmlFor="col-phone" className="ml-2 cursor-pointer text-sm">
-                      Phone
-                    </label>
-                  </div>
-                  {currentEventInvitedByPrimaryFieldConfig?.enabled === true && (
-                    <div className="flex items-center">
-                      <Checkbox
-                        id="col-invited-by"
-                        checked={includeInvitedBy}
-                        onCheckedChange={(checkedState) =>
-                          setIncludeInvitedBy(checkedState === true)
-                        }
-                      />
-                      <label htmlFor="col-invited-by" className="ml-2 cursor-pointer text-sm">
-                        {currentEventInvitedByPrimaryFieldConfig.label ?? "Invited By"}
-                      </label>
-                    </div>
-                  )}
-                  {currentEventSocialPlatforms.map((socialPlatform) => (
-                    <div key={socialPlatform.platformKey} className="flex items-center">
-                      <Checkbox
-                        id={`col-social-${socialPlatform.platformKey}`}
-                        checked={selectedSocialPlatformKeysForExport.includes(
-                          socialPlatform.platformKey,
-                        )}
-                        onCheckedChange={(checkedState) => {
-                          setSelectedSocialPlatformKeysForExport(
-                            (previousSelectedSocialPlatformKeys) => {
-                              if (checkedState === true) {
-                                if (
-                                  previousSelectedSocialPlatformKeys.includes(
-                                    socialPlatform.platformKey,
-                                  )
-                                ) {
-                                  return previousSelectedSocialPlatformKeys;
-                                }
-                                return [
-                                  ...previousSelectedSocialPlatformKeys,
-                                  socialPlatform.platformKey,
-                                ];
-                              }
-                              return previousSelectedSocialPlatformKeys.filter(
-                                (selectedSocialPlatformKey) =>
-                                  selectedSocialPlatformKey !== socialPlatform.platformKey,
-                              );
-                            },
-                          );
-                        }}
-                      />
-                      <label
-                        htmlFor={`col-social-${socialPlatform.platformKey}`}
-                        className="ml-2 cursor-pointer text-sm"
-                      >
-                        {socialPlatform.label}
-                      </label>
-                    </div>
-                  ))}
-                  <div className="flex items-center">
-                    <Checkbox
-                      id="col-attendees"
-                      checked={includeAttendees}
-                      onCheckedChange={(checkedState) => setIncludeAttendees(checkedState === true)}
-                    />
-                    <label htmlFor="col-attendees" className="ml-2 cursor-pointer text-sm">
-                      Attendees
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <Checkbox
-                      id="col-note"
-                      checked={includeNote}
-                      onCheckedChange={(checkedState) => setIncludeNote(checkedState === true)}
-                    />
-                    <label htmlFor="col-note" className="ml-2 cursor-pointer text-sm">
-                      Note
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <Checkbox
-                      id="col-custom"
-                      checked={includeCustomFields}
-                      onCheckedChange={(checkedState) =>
-                        setIncludeCustomFields(checkedState === true)
-                      }
-                    />
-                    <label htmlFor="col-custom" className="ml-2 cursor-pointer text-sm">
-                      Custom Fields
-                    </label>
-                  </div>
-                </div>
-              </fieldset>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setExportOptionsOpen(false)}
-                disabled={isExportingCsv}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={async () => {
-                  const exported = await handleExportCsv();
-                  if (exported) {
-                    setExportOptionsOpen(false);
-                  }
-                }}
-                disabled={
-                  isLoading ||
-                  isExportingCsv ||
-                  selectedListsForExport.length === 0 ||
-                  selectedStatusesForExport.length === 0
-                }
-              >
-                {isExportingCsv ? (
-                  <Spinner className="h-4 w-4 mr-2" />
-                ) : (
-                  <Download className="h-4 w-4 mr-2" />
-                )}
-                {isExportingCsv ? "Exporting..." : "Export"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        {/* Event Selector */}
-        <div className="flex gap-2 items-center flex-wrap">
-          <span className="text-sm text-foreground/70">Event:</span>
-          <Select value={eventId} onValueChange={setEventId} className="max-w-sm">
-            {eventsSorted.map((event) => {
-              const inlineTitle = formatEventTitleInline(event);
-              return (
-                <SelectOption key={event._id} value={event._id}>
-                  {new Date(event.eventDate).toLocaleDateString()} • {inlineTitle}
-                </SelectOption>
-              );
-            })}
-          </Select>
-        </div>
-
-        {/* Filters */}
-        <div className="flex gap-2 items-center flex-wrap">
-          <Input
-            className="h-8 max-w-xs text-sm"
-            placeholder="Search guest, social, invited by"
-            value={guestSearch}
-            onChange={(e) => setGuestSearch(e.target.value)}
-          />
-          <span className="mx-2 h-6 w-px bg-foreground/20" />
-          <Select
-            value={approvalFilter}
-            onValueChange={(value) => setApprovalFilter(value as ApprovalFilterOption)}
-            className="w-32"
-          >
-            <SelectOption value="all">All Approval</SelectOption>
-            {uniqueApprovalStatuses.map((status) => (
-              <SelectOption key={status} value={status}>
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </SelectOption>
-            ))}
-          </Select>
-          <Select value={listFilter} onValueChange={setListFilter} className="w-32">
-            <SelectOption value="all">All Lists</SelectOption>
-            {uniqueListKeys.map((listKey) => (
-              <SelectOption key={listKey} value={listKey}>
-                {listKey.toUpperCase()}
-              </SelectOption>
-            ))}
-          </Select>
-          <Select value={redemptionFilter} onValueChange={setRedemptionFilter} className="w-36">
-            <SelectOption value="all">All Tickets</SelectOption>
-            <SelectOption value="issued">Issued</SelectOption>
-            <SelectOption value="redeemed">Redeemed</SelectOption>
-            <SelectOption value="disabled">Disabled</SelectOption>
-            <SelectOption value="not-issued">None</SelectOption>
-          </Select>
-          {shouldShowSocialPlatformFilter && (
-            <Select
-              value={socialPlatformFilter}
-              onValueChange={setSocialPlatformFilter}
-              className="w-36"
-            >
-              <SelectOption value="all">All Socials</SelectOption>
-              {currentEventSocialPlatforms.map((platform) => (
-                <SelectOption key={platform.platformKey} value={platform.platformKey}>
-                  {platform.label}
-                </SelectOption>
-              ))}
-            </Select>
-          )}
-          <span className="mx-2 h-6 w-px bg-foreground/20" />
-          <Select value={sortBy} onValueChange={setSortBy} className="w-36">
-            <SelectOption value="createdAt">Created Date</SelectOption>
-            <SelectOption value="updatedAt">Updated Date</SelectOption>
-            <SelectOption value="name">Guest Name</SelectOption>
-            <SelectOption value="firstName">First Name</SelectOption>
-            <SelectOption value="lastName">Last Name</SelectOption>
-            <SelectOption value="approvalStatus">Approval Status</SelectOption>
-            <SelectOption value="attendanceStatus">Attendance Status</SelectOption>
-            <SelectOption value="ticketStatus">Ticket Status</SelectOption>
-            <SelectOption value="ticketViewedAt">Ticket Viewed</SelectOption>
-            <SelectOption value="listKey">List</SelectOption>
-            <SelectOption value="attendees">Attendees</SelectOption>
-            {currentEvent?.primaryFieldConfig?.invitedBy?.enabled === true && (
-              <SelectOption value="invitedByName">Invited By</SelectOption>
-            )}
-            <SelectOption value="referredByName">Referred By</SelectOption>
-            {currentEvent?.primaryFieldConfig?.socialPlatforms?.map((platform) => (
-              <SelectOption
-                key={`sort-${platform.platformKey}`}
-                value={`social:${platform.platformKey}`}
-              >
-                {platform.label}
-              </SelectOption>
-            ))}
-          </Select>
-          <Select
-            value={sortOrder}
-            onValueChange={(value) => setSortOrder(value as "asc" | "desc")}
-            className="w-28"
-          >
-            <SelectOption value="desc">Descending</SelectOption>
-            <SelectOption value="asc">Ascending</SelectOption>
-          </Select>
-          <span className="mx-2 h-6 w-px bg-foreground/20" />
-          <Popover open={columnVisibilityOpen} onOpenChange={setColumnVisibilityOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8">
-                <Columns className="h-4 w-4 mr-2" />
-                Columns
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80" align="end">
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium text-sm mb-2">Show Columns</h4>
-                </div>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {getAllAvailableColumnIds()
-                    .filter(
-                      (columnId) =>
-                        columnId !== "select" && (!isReadOnly || columnId !== "actions"),
-                    )
-                    .map((columnId) => {
-                      const displayName = getColumnDisplayName(columnId);
-                      const isVisible = visibleColumns.has(columnId);
-                      return (
-                        <div key={columnId} className="flex items-center">
-                          <Checkbox
-                            id={`column-${columnId}`}
-                            checked={isVisible}
-                            onCheckedChange={(checked) => {
-                              handleColumnVisibilityChange({
-                                ...columnVisibility,
-                                [columnId]: checked === true,
-                              });
-                            }}
-                          />
-                          <label
-                            htmlFor={`column-${columnId}`}
-                            className="ml-2 text-sm cursor-pointer"
-                          >
-                            {displayName}
-                          </label>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-          {hasActiveFilters && (
-            <Button size="sm" variant="outline" onClick={clearAllFilters} className="text-xs">
-              Clear All
-            </Button>
-          )}
-        </div>
-
-        {/* Active Filters Display */}
-        {hasActiveFilters && (
-          <div className="flex gap-2 items-center flex-wrap">
-            <span className="text-sm text-foreground/70">Active filters:</span>
-            {guestSearch.trim() !== "" && (
-              <Badge variant="secondary" className="gap-1">
-                Search: &ldquo;{guestSearch}&rdquo;
-                <button
-                  onClick={() => setGuestSearch("")}
-                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </Badge>
-            )}
-            {approvalFilter !== "all" && (
-              <Badge variant="secondary" className="gap-1">
-                Approval: {approvalFilter.charAt(0).toUpperCase() + approvalFilter.slice(1)}
-                <button
-                  onClick={() => setApprovalFilter("all")}
-                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </Badge>
-            )}
-            {listFilter !== "all" && (
-              <Badge variant="secondary" className="gap-1">
-                List: {listFilter.toUpperCase()}
-                <button
-                  onClick={() => setListFilter("all")}
-                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </Badge>
-            )}
-            {redemptionFilter !== "all" && (
-              <Badge variant="secondary" className="gap-1">
-                Ticket:{" "}
-                {redemptionFilter === "not-issued"
-                  ? "None"
-                  : redemptionFilter.charAt(0).toUpperCase() + redemptionFilter.slice(1)}
-                <button
-                  onClick={() => setRedemptionFilter("all")}
-                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </Badge>
-            )}
-            {shouldShowSocialPlatformFilter && socialPlatformFilter !== "all" && (
-              <Badge variant="secondary" className="gap-1">
-                Social:{" "}
-                {currentEventSocialPlatforms.find(
-                  (platform) => platform.platformKey === socialPlatformFilter,
-                )?.label ?? socialPlatformFilter}
-                <button
-                  onClick={() => setSocialPlatformFilter("all")}
-                  className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </Badge>
-            )}
-            <span className="text-xs text-foreground/60">
-              (Showing {rsvps.length} RSVPs on this page)
-            </span>
-          </div>
-        )}
+        <RsvpExportDialog
+          isOpen={exportOptionsOpen}
+          onOpenChange={setExportOptionsOpen}
+          listCredentials={listCredentials}
+          selectedListsForExport={selectedListsForExport}
+          setSelectedListsForExport={setSelectedListsForExport}
+          selectedStatusesForExport={selectedStatusesForExport}
+          setSelectedStatusesForExport={setSelectedStatusesForExport}
+          selectedSocialPlatformKeysForExport={selectedSocialPlatformKeysForExport}
+          setSelectedSocialPlatformKeysForExport={setSelectedSocialPlatformKeysForExport}
+          includeInvitedBy={includeInvitedBy}
+          setIncludeInvitedBy={setIncludeInvitedBy}
+          includeAttendees={includeAttendees}
+          setIncludeAttendees={setIncludeAttendees}
+          includeNote={includeNote}
+          setIncludeNote={setIncludeNote}
+          includeCustomFields={includeCustomFields}
+          setIncludeCustomFields={setIncludeCustomFields}
+          includePhone={includePhone}
+          setIncludePhone={setIncludePhone}
+          currentEventInvitedByPrimaryFieldConfig={currentEventInvitedByPrimaryFieldConfig}
+          currentEventSocialPlatforms={currentEventSocialPlatforms}
+          isExportingCsv={isExportingCsv}
+          isLoading={isLoading}
+          onExport={handleExportCsv}
+        />
+        <RsvpToolbar
+          eventsSorted={eventsSorted}
+          eventId={eventId}
+          setEventId={setEventId}
+          guestSearch={guestSearch}
+          setGuestSearch={setGuestSearch}
+          approvalFilter={approvalFilter}
+          setApprovalFilter={setApprovalFilter}
+          listFilter={listFilter}
+          setListFilter={setListFilter}
+          redemptionFilter={redemptionFilter}
+          setRedemptionFilter={setRedemptionFilter}
+          socialPlatformFilter={socialPlatformFilter}
+          setSocialPlatformFilter={setSocialPlatformFilter}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          sortOrder={sortOrder}
+          setSortOrder={setSortOrder}
+          uniqueApprovalStatuses={uniqueApprovalStatuses}
+          uniqueListKeys={uniqueListKeys}
+          shouldShowSocialPlatformFilter={shouldShowSocialPlatformFilter}
+          currentEventSocialPlatforms={currentEventSocialPlatforms}
+          currentEvent={currentEvent}
+          columnVisibilityOpen={columnVisibilityOpen}
+          setColumnVisibilityOpen={setColumnVisibilityOpen}
+          visibleColumns={visibleColumns}
+          columnVisibility={columnVisibility}
+          handleColumnVisibilityChange={handleColumnVisibilityChange}
+          getAllAvailableColumnIds={getAllAvailableColumnIds}
+          getColumnDisplayName={getColumnDisplayName}
+          hasActiveFilters={hasActiveFilters}
+          clearAllFilters={clearAllFilters}
+          rsvpCount={rsvps.length}
+          showEventSelector={!lockEvent}
+        />
 
         {/* Bulk Actions Bar — hidden during a "select" paint drag (to avoid a jumpy bar as rows
           are added). During a "deselect" paint drag the bar stays mounted even if the count
@@ -4018,322 +3666,45 @@ export default function RsvpsPage() {
             </div>
           )}
 
-        {isLoading ? (
-          <TableSkeleton rows={10} columns={8} />
-        ) : (
-          <div ref={setTableContainerElement} className="w-full max-w-full min-w-0 overflow-x-auto">
-            <table className="text-sm" style={{ tableLayout: "fixed", width: tableDisplayWidth }}>
-              <colgroup>
-                {table.getVisibleLeafColumns().map((column) => (
-                  <col
-                    key={column.id}
-                    style={{
-                      width: column.getSize(),
-                      minWidth: column.columnDef.minSize,
-                      maxWidth: column.columnDef.maxSize,
-                    }}
-                  />
-                ))}
-                {shouldRenderTableFillerColumn && (
-                  <col
-                    style={{
-                      width: tableFillerColumnWidth,
-                    }}
-                  />
-                )}
-              </colgroup>
-              <thead>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <tr key={headerGroup.id} className="text-left text-foreground/70">
-                    {headerGroup.headers.map((header) => {
-                      const columnIdentifier =
-                        header.column.id ??
-                        (hasStringAccessorKey(header.column.columnDef)
-                          ? header.column.columnDef.accessorKey
-                          : header.id);
-                      const sortingHandler = header.column.getCanSort()
-                        ? header.column.getToggleSortingHandler()
-                        : undefined;
-                      const isDragSourceEnabled = columnIdentifier !== "select";
-                      const columnMeta = header.column.columnDef.meta as
-                        | { label?: string }
-                        | undefined;
-                      const columnDisplayLabel =
-                        typeof header.column.columnDef.header === "string" &&
-                        header.column.columnDef.header.trim().length > 0
-                          ? header.column.columnDef.header
-                          : columnMeta?.label && columnMeta.label.trim().length > 0
-                            ? columnMeta.label
-                            : formatColumnIdentifier(columnIdentifier);
-                      const canResizeColumn = header.column.getCanResize();
-                      const shouldShowResizeHandle = shouldRenderRsvpTableResizeHandle({
-                        columnIdentifier,
-                        canResize: canResizeColumn,
-                      });
-                      const isColumnResizing = header.column.getIsResizing();
-                      const resizeHandler = header.getResizeHandler();
+        <RsvpTable
+          table={table}
+          isLoading={isLoading}
+          setTableContainerElement={setTableContainerElement}
+          tableDisplayWidth={tableDisplayWidth}
+          tableFillerColumnWidth={tableFillerColumnWidth}
+          shouldRenderTableFillerColumn={shouldRenderTableFillerColumn}
+          draggedColumnIdentifier={draggedColumnIdentifier}
+          dragHoverDetails={dragHoverDetails}
+          handleColumnDragStart={handleColumnDragStart}
+          handleColumnDragOver={handleColumnDragOver}
+          handleColumnDrop={handleColumnDrop}
+          handleColumnDragEnd={handleColumnDragEnd}
+          formatColumnIdentifier={formatColumnIdentifier}
+          getColumnDisplayName={getColumnDisplayName}
+          pendingChanges={pendingChanges}
+          renderRowContextMenuContent={renderRowContextMenuContent}
+        />
 
-                      return (
-                        <th
-                          key={header.id}
-                          className={cn(
-                            "group relative select-none overflow-hidden border-b border-r border-foreground/10 py-1 pl-2 pr-4 last:border-r-0",
-                            isDraggingColumn ? "cursor-grabbing" : "cursor-pointer",
-                            dragHoverDetails?.columnId === columnIdentifier &&
-                              dragHoverDetails.position === "before" &&
-                              "border-l-2 border-l-foreground/40",
-                            dragHoverDetails?.columnId === columnIdentifier &&
-                              dragHoverDetails.position === "after" &&
-                              "border-r-2 border-r-foreground/40",
-                            draggedColumnIdentifier === columnIdentifier && "opacity-60",
-                          )}
-                          style={{
-                            width: header.getSize(),
-                            minWidth: header.column.columnDef.minSize,
-                            maxWidth: header.column.columnDef.maxSize,
-                          }}
-                          title={columnDisplayLabel}
-                          onDragOver={(event) => {
-                            event.preventDefault();
-                            handleColumnDragOver(event, columnIdentifier);
-                          }}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            handleColumnDrop(event, columnIdentifier);
-                          }}
-                          onClick={(event) => {
-                            if (isDraggingColumn) {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              return;
-                            }
-
-                            if (sortingHandler) {
-                              sortingHandler(event);
-                            }
-                          }}
-                        >
-                          <div
-                            className="flex min-w-0 items-center gap-1"
-                            draggable={isDragSourceEnabled}
-                            onDragStart={
-                              isDragSourceEnabled
-                                ? (event) => {
-                                    // Get the header element since we're dragging from a div
-                                    const headerElement = event.currentTarget.closest(
-                                      "th",
-                                    ) as HTMLTableHeaderCellElement | null;
-                                    if (!headerElement) return;
-
-                                    // Create a synthetic event with the header element as currentTarget
-                                    const syntheticEvent = {
-                                      ...event,
-                                      currentTarget: headerElement,
-                                    } as React.DragEvent<HTMLTableHeaderCellElement>;
-                                    handleColumnDragStart(
-                                      syntheticEvent,
-                                      columnIdentifier,
-                                      columnDisplayLabel,
-                                    );
-                                  }
-                                : undefined
-                            }
-                            onDragEnd={handleColumnDragEnd}
-                          >
-                            {isDragSourceEnabled && (
-                              <GripVertical
-                                aria-hidden="true"
-                                className={cn(
-                                  "h-3 w-3 flex-shrink-0 text-muted-foreground transition-opacity",
-                                  "opacity-0 group-hover:opacity-100",
-                                )}
-                              />
-                            )}
-                            <div className="flex min-w-0 items-center gap-1 whitespace-nowrap">
-                              <span className="min-w-0 truncate">
-                                {flexRender(header.column.columnDef.header, header.getContext())}
-                              </span>
-                              {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ??
-                                null}
-                            </div>
-                          </div>
-                          {shouldShowResizeHandle && (
-                            <div
-                              role="separator"
-                              aria-label={`Resize ${columnDisplayLabel} column`}
-                              aria-orientation="vertical"
-                              data-testid={RSVP_TABLE_RESIZE_HANDLE_TEST_ID}
-                              draggable={false}
-                              className={cn(
-                                "absolute top-0 right-0 z-10 h-full w-3 translate-x-1/2 cursor-col-resize touch-none select-none",
-                                "after:absolute after:inset-y-1 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-foreground/20 after:transition-colors",
-                                "hover:after:bg-foreground/50",
-                                isColumnResizing && "after:bg-foreground/70",
-                              )}
-                              onMouseDown={(resizeStartEvent) => {
-                                resizeStartEvent.preventDefault();
-                                resizeStartEvent.stopPropagation();
-                                resizeHandler(resizeStartEvent);
-                              }}
-                              onTouchStart={(resizeStartEvent) => {
-                                resizeStartEvent.preventDefault();
-                                resizeStartEvent.stopPropagation();
-                                resizeHandler(resizeStartEvent);
-                              }}
-                              onClick={(resizeClickEvent) => {
-                                resizeClickEvent.preventDefault();
-                                resizeClickEvent.stopPropagation();
-                              }}
-                              onDoubleClick={(resizeDoubleClickEvent) => {
-                                resizeDoubleClickEvent.preventDefault();
-                                resizeDoubleClickEvent.stopPropagation();
-                                header.column.resetSize();
-                              }}
-                              onDragStart={(resizeDragStartEvent) => {
-                                resizeDragStartEvent.preventDefault();
-                                resizeDragStartEvent.stopPropagation();
-                              }}
-                            />
-                          )}
-                        </th>
-                      );
-                    })}
-                    {shouldRenderTableFillerColumn && (
-                      <th
-                        aria-hidden="true"
-                        className="border-b border-foreground/10 p-0"
-                        style={{ width: tableFillerColumnWidth }}
-                      />
-                    )}
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {table.getRowModel().rows.map((row) => {
-                  const rsvp = row.original;
-                  const changes = pendingChanges[rsvp.id];
-                  const hasChanges =
-                    changes &&
-                    (changes.currentApprovalStatus !== changes.originalApprovalStatus ||
-                      changes.currentTicketStatus !== changes.originalTicketStatus);
-
-                  const isSelected = selectedRows.has(rsvp.id);
-
-                  return (
-                    <ContextMenu key={row.id}>
-                      <ContextMenuTrigger asChild>
-                        <tr
-                          className={cn(
-                            "border-t border-foreground/10 transition-colors hover:bg-muted/50",
-                            hasChanges && "bg-yellow-50 border-yellow-200",
-                            isSelected &&
-                              "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800",
-                          )}
-                        >
-                          {row.getVisibleCells().map((cell) => {
-                            const columnIdentifier = cell.column.id;
-                            return (
-                              <td
-                                key={cell.id}
-                                className={getRsvpTableBodyCellClassName({
-                                  columnIdentifier,
-                                  isReadOnly,
-                                })}
-                                style={{
-                                  width: cell.column.getSize(),
-                                  minWidth: cell.column.columnDef.minSize,
-                                  maxWidth: cell.column.columnDef.maxSize,
-                                }}
-                              >
-                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                              </td>
-                            );
-                          })}
-                          {shouldRenderTableFillerColumn && (
-                            <td
-                              aria-hidden="true"
-                              className="p-0"
-                              style={{ width: tableFillerColumnWidth }}
-                            />
-                          )}
-                        </tr>
-                      </ContextMenuTrigger>
-                      {renderRowContextMenuContent(rsvp)}
-                    </ContextMenu>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {!isLoading && rsvpsPaginated && (
-          <div className="flex items-center justify-between gap-3 pt-4 border-t">
-            <div className="flex items-center gap-4">
-              <div className="text-sm text-foreground/70">
-                {!rsvps || rsvps.length === 0 ? (
-                  <span>No RSVPs found{hasActiveFilters && " (filtered)"}</span>
-                ) : (
-                  <span>
-                    Showing {startItem}-{endItem} of {totalCount || "?"} RSVPs
-                    {hasActiveFilters && " (filtered)"}
-                  </span>
-                )}
-              </div>
-              <Select
-                value={String(pageSize)}
-                onValueChange={(value) => {
-                  const params = new URLSearchParams(searchParams.toString());
-                  params.set("pageSize", value);
-                  router.replace(`${rsvpsPath}?${params.toString()}`, {
-                    scroll: false,
-                  });
-                  setCursor(null);
-                  setCursorHistory([]);
-                }}
-              >
-                {[10, 20, 50, 100].map((number) => (
-                  <SelectOption key={number} value={String(number)}>
-                    {number} per page
-                  </SelectOption>
-                ))}
-              </Select>
-            </div>
-            <div className="flex items-center gap-4">
-              <Pagination className="justify-end">
-                <PaginationContent className="gap-1 sm:gap-2">
-                  <PaginationItem>
-                    <PaginationPrevious
-                      onClick={goToPreviousPage}
-                      className={cn(
-                        "h-8 w-8 sm:h-9 sm:w-auto sm:px-3",
-                        cursor === null && cursorHistory.length === 0
-                          ? "pointer-events-none opacity-50"
-                          : "cursor-pointer",
-                      )}
-                    />
-                  </PaginationItem>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Page {currentPage}</span>
-                  </div>
-
-                  <PaginationItem>
-                    <PaginationNext
-                      onClick={goToNextPage}
-                      className={cn(
-                        "h-8 w-8 sm:h-9 sm:w-auto sm:px-3",
-                        rsvpsPaginated?.isDone || !rsvpsPaginated?.nextCursor
-                          ? "pointer-events-none opacity-50"
-                          : "cursor-pointer",
-                      )}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            </div>
-          </div>
-        )}
+        <RsvpPagination
+          isLoading={isLoading}
+          rsvpsPaginated={rsvpsPaginated}
+          rsvps={rsvps}
+          startItem={startItem}
+          endItem={endItem}
+          totalCount={totalCount}
+          hasActiveFilters={hasActiveFilters}
+          pageSize={pageSize}
+          searchParams={searchParams}
+          router={router}
+          rsvpsPath={rsvpsPath}
+          cursor={cursor}
+          cursorHistory={cursorHistory}
+          setCursor={setCursor}
+          setCursorHistory={setCursorHistory}
+          goToPreviousPage={goToPreviousPage}
+          goToNextPage={goToNextPage}
+          currentPage={currentPage}
+        />
 
         <AlertDialog
           open={pendingDeletionCount > 0}
@@ -4441,15 +3812,6 @@ export default function RsvpsPage() {
           </DialogContent>
         </Dialog>
 
-        {currentEvent && !isReadOnly && (
-          <EditEventDialog
-            event={currentEvent}
-            open={showEditEventDialog}
-            onOpenChange={setShowEditEventDialog}
-            showTrigger={false}
-          />
-        )}
-
         <AlertDialog open={showDeleteEventDialog} onOpenChange={setShowDeleteEventDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -4476,4 +3838,8 @@ export default function RsvpsPage() {
       </div>
     </RsvpTableContext.Provider>
   );
+}
+
+export default function RsvpsPage() {
+  return <GuestManager />;
 }

@@ -1,11 +1,26 @@
 "use client";
 
-import { SignOutButton, useAuth, useOrganizationList } from "@clerk/nextjs";
+import { useAuth, useClerk, useOrganizationList } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
-import { NavGroup, NavLink } from "@coucou/ui/admin";
 import { useConvexAuth, useQuery } from "convex/react";
+import { Building2, Home, LogOut, Mail, Settings, ShieldCheck, User } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
+import { LinearSidebarFooter } from "@/components/linear-sidebar-footer";
+import { SidebarTenantSwitcher } from "@/components/sidebar-tenant-switcher";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from "@/components/ui/sidebar";
 import {
   activateOrganizationBeforeNavigation,
   MAISON_OBSCUR_TOAST_OPTIONS,
@@ -21,74 +36,6 @@ interface AccessibleWorkspaceEntry {
   slug: string;
   name: string;
   membershipRole: string;
-}
-
-interface AdminSidebarButtonProps {
-  children: React.ReactNode;
-  active?: boolean;
-  disabled?: boolean;
-  count?: React.ReactNode;
-  onClick: () => void;
-}
-
-interface AdminSidebarLinkProps {
-  children: React.ReactNode;
-  active?: boolean;
-  href: string;
-}
-
-function getAdminNavigationItemStyle(active?: boolean): React.CSSProperties {
-  return {
-    color: active ? "var(--tt-fg)" : "var(--tt-fg-dim)",
-    borderLeft: active ? "1px solid var(--tt-fg)" : "1px solid transparent",
-  };
-}
-
-function AdminSidebarButton({
-  children,
-  active,
-  disabled,
-  count,
-  onClick,
-}: AdminSidebarButtonProps) {
-  return (
-    <button
-      type="button"
-      className="flex w-full items-center justify-between px-6 py-2 text-left text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-      style={getAdminNavigationItemStyle(active)}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      <span>{children}</span>
-      {count !== undefined && count !== null ? (
-        <span style={{ color: "var(--tt-fg-mute)" }}>{count}</span>
-      ) : null}
-    </button>
-  );
-}
-
-function AdminSidebarLink({ children, active, href }: AdminSidebarLinkProps) {
-  return (
-    <a
-      href={href}
-      className="flex w-full items-center justify-between px-6 py-2 text-left text-[13px] transition-colors"
-      style={getAdminNavigationItemStyle(active)}
-    >
-      <span>{children}</span>
-    </a>
-  );
-}
-
-function AdminSidebarAnchor({ children, href }: { children: React.ReactNode; href: string }) {
-  return (
-    <a
-      href={href}
-      className="flex items-center justify-between px-6 py-2 text-[13px] transition-colors"
-      style={getAdminNavigationItemStyle(false)}
-    >
-      <span>{children}</span>
-    </a>
-  );
 }
 
 function useDashboardNavigationAccess(): {
@@ -130,6 +77,7 @@ export function DashboardSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { setActive } = useOrganizationList();
+  const { signOut } = useClerk();
   const { accessibleWorkspaces, hasCoucouAdminAccess, coucouOrganizationId } =
     useDashboardNavigationAccess();
 
@@ -155,65 +103,141 @@ export function DashboardSidebar() {
   );
 
   return (
-    <>
-      <NavGroup label="Dashboard">
-        <NavLink href="/dashboard" active={pathname === "/dashboard"}>
-          Home
-        </NavLink>
-        <AdminSidebarAnchor href="mailto:hello@coucou.events">Inquire</AdminSidebarAnchor>
-      </NavGroup>
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="md:pt-3">
+        <SidebarTenantSwitcher />
+      </SidebarHeader>
 
-      {accessibleWorkspaces.length > 0 ? (
-        <NavGroup label="Organization access">
-          {accessibleWorkspaces.map((workspace) => {
-            const path = buildRoleAwareDashboardPath(workspace.slug, workspace.membershipRole);
-            const href = buildWorkspaceOperationHref(
-              workspace.slug,
-              "dashboard",
-              hasWorkspaceWriteAccess(workspace.membershipRole) ? "" : "rsvps",
-            );
-            return (
-              <AdminSidebarLink
-                key={`${workspace.slug}-dashboard`}
-                href={href}
-                active={pathname?.startsWith(path)}
-              >
-                {workspace.name}
-              </AdminSidebarLink>
-            );
-          })}
-        </NavGroup>
-      ) : null}
+      <SidebarContent>
+        <SidebarGroup className="py-2">
+          <SidebarGroupLabel>dashboard</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === "/dashboard"} tooltip="Home">
+                  <Link href="/dashboard">
+                    <Home className="h-4 w-4" />
+                    <span>Home</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Inquire">
+                  <a href="mailto:hello@coucou.events">
+                    <Mail className="h-4 w-4" />
+                    <span>Inquire</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
-      {hasCoucouAdminAccess ? (
-        <NavGroup label="Coucou">
-          <AdminSidebarButton
-            active={pathname?.startsWith("/admin")}
-            onClick={() =>
-              void navigateToOrganizationPath(
-                coucouOrganizationId,
-                "/admin",
-                "Switching workspace to Coucou...",
-                true,
-              ).catch(() => undefined)
-            }
-          >
-            Admin
-          </AdminSidebarButton>
-        </NavGroup>
-      ) : null}
+        {accessibleWorkspaces.length > 0 ? (
+          <SidebarGroup className="py-2">
+            <SidebarGroupLabel>organizations</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {accessibleWorkspaces.map((workspace) => {
+                  const path = buildRoleAwareDashboardPath(
+                    workspace.slug,
+                    workspace.membershipRole,
+                  );
+                  const href = buildWorkspaceOperationHref(
+                    workspace.slug,
+                    "dashboard",
+                    hasWorkspaceWriteAccess(workspace.membershipRole) ? "" : "rsvps",
+                  );
+                  return (
+                    <SidebarMenuItem key={`${workspace.slug}-dashboard`}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={Boolean(pathname?.startsWith(path))}
+                        tooltip={workspace.name}
+                      >
+                        <a href={href}>
+                          <Building2 className="h-4 w-4" />
+                          <span>{workspace.name}</span>
+                        </a>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
 
-      <NavGroup label="Account">
-        <NavLink href="/profile" active={pathname === "/profile"}>
-          Profile
-        </NavLink>
-        <NavLink href="/account" active={pathname === "/account"}>
-          Account settings
-        </NavLink>
-        <SignOutButton>
-          <AdminSidebarButton onClick={() => undefined}>Sign out</AdminSidebarButton>
-        </SignOutButton>
-      </NavGroup>
-    </>
+        {hasCoucouAdminAccess ? (
+          <SidebarGroup className="py-2">
+            <SidebarGroupLabel>coucou</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    type="button"
+                    tooltip="Admin"
+                    isActive={Boolean(pathname?.startsWith("/admin"))}
+                    onClick={() =>
+                      void navigateToOrganizationPath(
+                        coucouOrganizationId,
+                        "/admin",
+                        "Switching workspace to Coucou...",
+                        true,
+                      ).catch(() => undefined)
+                    }
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    <span>Admin</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
+
+        <SidebarGroup className="py-2">
+          <SidebarGroupLabel>account</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === "/profile"} tooltip="Profile">
+                  <Link href="/profile">
+                    <User className="h-4 w-4" />
+                    <span>Profile</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/account"}
+                  tooltip="Account settings"
+                >
+                  <Link href="/account">
+                    <Settings className="h-4 w-4" />
+                    <span>Account settings</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  type="button"
+                  tooltip="Sign out"
+                  onClick={() => void signOut({ redirectUrl: "/" })}
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Sign out</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <LinearSidebarFooter />
+
+      <SidebarRail />
+    </Sidebar>
   );
 }

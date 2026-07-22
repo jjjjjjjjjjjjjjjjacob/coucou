@@ -12,7 +12,7 @@ import {
   type WorkspaceOperationSurface,
 } from "./workspace-config";
 
-interface WorkspaceScope {
+export interface WorkspaceScope {
   workspaceSlug: string;
   siteKey: string;
   brandName: string;

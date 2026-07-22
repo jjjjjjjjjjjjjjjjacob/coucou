@@ -1,24 +1,12 @@
 "use client";
 
-import { resolvePreset } from "@coucou/sdk";
-import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-} from "@/components/ui/breadcrumb";
-import { Separator } from "@/components/ui/separator";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { CommandPalette } from "@/components/command-palette";
+import { CoucouLinearShell, useMaisonLinearBodyClass } from "@/components/coucou-linear-shell";
 import { Spinner } from "@/components/ui/spinner";
 import { WorkspaceAccessGate, type WorkspaceAccessState } from "@/components/workspace-access-gate";
-
-const MAISON_STYLE_VARS = resolvePreset({
-  siteConfigurationPreset: "maison",
-}).styleVars;
 
 const WRITE_ONLY_DASHBOARD_SEGMENTS = new Set([
   "events",
@@ -28,16 +16,6 @@ const WRITE_ONLY_DASHBOARD_SEGMENTS = new Set([
   "users",
   "analytics",
 ]);
-
-function useMaisonBodyClass() {
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.body.classList.add("maison-app-surface");
-    return () => {
-      document.body.classList.remove("maison-app-surface");
-    };
-  }, []);
-}
 
 function getDashboardSegment(pathname: string | null, workspaceSlug: string): string {
   const dashboardPrefix = `/workspaces/${workspaceSlug}/dashboard`;
@@ -95,40 +73,14 @@ function WorkspaceDashboardChrome({
   }
 
   return (
-    <TenantTemplateProvider
-      siteConfigurationPreset="maison"
-      className="maison-app-surface min-h-dvh"
-    >
-      <SidebarProvider className="maison-app-surface" style={MAISON_STYLE_VARS}>
-        <AppSidebar canWrite={workspaceAccessState.canWrite} />
-        <SidebarInset className="bg-background">
-          <div className="flex flex-1 flex-col p-4">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="-ml-1" />
-              <Separator orientation="vertical" className="mr-2 h-4" />
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem className="hidden md:block">
-                    <BreadcrumbLink
-                      href={`/workspaces/${workspaceAccessState.workspaceSlug}/dashboard`}
-                    >
-                      {workspaceAccessState.workspaceBrandName} Dashboard
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
-            </div>
-            <div className="mt-4 flex flex-1 flex-col gap-4">
-              {writeOnlyRoute ? (
-                <AccessRequiredState workspaceAccessState={workspaceAccessState} />
-              ) : (
-                children
-              )}
-            </div>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    </TenantTemplateProvider>
+    <CoucouLinearShell sidebar={<AppSidebar canWrite={workspaceAccessState.canWrite} />}>
+      {writeOnlyRoute ? (
+        <AccessRequiredState workspaceAccessState={workspaceAccessState} />
+      ) : (
+        children
+      )}
+      <CommandPalette />
+    </CoucouLinearShell>
   );
 }
 
@@ -138,7 +90,7 @@ interface WorkspaceDashboardShellProps {
 }
 
 export function WorkspaceDashboardShell({ workspaceSlug, children }: WorkspaceDashboardShellProps) {
-  useMaisonBodyClass();
+  useMaisonLinearBodyClass();
 
   return (
     <WorkspaceAccessGate workspaceSlug={workspaceSlug} accessKind="read">

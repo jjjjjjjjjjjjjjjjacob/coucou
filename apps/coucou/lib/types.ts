@@ -58,6 +58,67 @@ export interface OrganizationUsersPagination {
   sortDirection: OrganizationUserSortDirection;
 }
 
+export interface OrganizationUserDetail {
+  _id?: Id<"users">;
+  clerkUserId?: string;
+  firstName?: string;
+  lastName?: string;
+  imageUrl?: string;
+  phone?: string;
+  referralCode?: string;
+  createdAt: number;
+  updatedAt: number;
+  role: string;
+  hasOrganizationMembership: boolean;
+}
+
+export interface UserRsvpHistoryEntry {
+  id: Id<"rsvps">;
+  eventId: Id<"events">;
+  eventName: string;
+  eventDate: number;
+  listKey: string;
+  approvalStatus: "pending" | "approved" | "denied";
+  attendanceStatus: "yes" | "no" | "maybe";
+  ticketStatus: "not-issued" | "issued" | "disabled" | "redeemed";
+  attendees: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface UserSmsThreadHistoryEntry extends SmsConversationThread {
+  eventName: string;
+  eventDate: number;
+}
+
+export interface EventGuestRsvp {
+  id: Id<"rsvps">;
+  clerkUserId: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  listKey: string;
+  note?: string;
+  status: string;
+  approvalStatus: "pending" | "approved" | "denied";
+  attendanceStatus: "yes" | "no" | "maybe";
+  ticketViewedAt?: number;
+  attendees?: number;
+  contact?: { email?: string; phone?: string };
+  socialProfiles: Array<{ platformKey: string; handle: string; normalizedHandle: string }>;
+  invitedByName?: string;
+  invitedByNormalizedName?: string;
+  invitedBySocialPlatformKey?: string;
+  invitedBySocialHandle?: string;
+  referralCode?: string;
+  referrerUserId?: Id<"users">;
+  referrerClerkUserId?: string;
+  referredByName?: string;
+  redemptionStatus: "none" | "issued" | "redeemed" | "disabled";
+  redemptionCode?: string;
+  createdAt: number;
+}
+
 export interface OrganizationUsersResponse {
   users: OrganizationUserListItem[];
   pagination: OrganizationUsersPagination;
@@ -345,6 +406,7 @@ export interface RecentActivityEntry {
 
 export interface HostRsvp {
   id: Id<"rsvps">;
+  userId?: Id<"users">;
   clerkUserId: string;
   name: string;
   firstName: string;
@@ -476,6 +538,9 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   description?: string;
   eventDate: string;
   eventTime: string;
+  eventEndDate?: string;
+  eventEndTime?: string;
+  endsLate?: boolean;
   eventTimezone: string;
   maxAttendees?: number;
   status?: EventStatus;
@@ -601,4 +666,81 @@ export interface RSVPDashboardRow {
   attendees: number;
   note: string;
   customFieldValues: Record<string, string>;
+}
+
+// Guest directory (workspace-wide, person-level)
+export interface GuestDirectoryPersonEventEntry {
+  eventId: Id<"events">;
+  eventName: string;
+  eventDate: number;
+  rsvpId: Id<"rsvps">;
+  listKey?: string;
+  approvalStatus: "pending" | "approved" | "denied";
+  attendanceStatus?: string;
+  rsvpCreatedAt: number;
+}
+
+export interface GuestDirectoryPerson {
+  personKey: string;
+  clerkUserIds: string[];
+  primaryClerkUserId: string | null;
+  detailReference: string | null;
+  name: string;
+  firstName?: string;
+  lastName?: string;
+  imageUrl?: string;
+  phoneObfuscated?: string;
+  hasPhone: boolean;
+  events: GuestDirectoryPersonEventEntry[];
+  eventCount: number;
+  eventsAttendedCount: number;
+  firstRsvpAt: number;
+  latestRsvpAt: number;
+  rsvpedToLatestEvent: boolean;
+  smsConsent: boolean;
+  hasOptedOut: boolean;
+  receivedTextCount: number | null;
+  tags: string[];
+  notes?: string;
+  defaultListKey?: string;
+  role: string | null;
+  hasOrganizationMembership: boolean;
+}
+
+export interface GuestDirectoryPagination {
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface GuestDirectoryResponse {
+  people: GuestDirectoryPerson[];
+  pagination: GuestDirectoryPagination;
+  latestEvent: { eventId: Id<"events">; eventName: string; eventDate: number } | null;
+  workspaceEventCount: number;
+}
+
+export interface GuestDirectoryFacets {
+  tags: string[];
+  defaultListKeys: string[];
+  workspaceListKeys: string[];
+  events: Array<{ eventId: Id<"events">; eventName: string; eventDate: number }>;
+  customFieldOptions: Array<{ key: string; label: string }>;
+}
+
+export interface GuestDirectoryPersonKey {
+  clerkUserId?: string;
+  guestPhoneHash?: string;
+}
+
+export interface GuestProfileLookupResult {
+  personKey: GuestDirectoryPersonKey;
+  profile: {
+    tags: string[];
+    notes?: string;
+    defaultListKey?: string;
+  } | null;
 }

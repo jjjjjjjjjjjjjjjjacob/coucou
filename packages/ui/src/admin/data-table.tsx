@@ -29,7 +29,7 @@ export function AdminTable({ columns, children }: AdminTableProps) {
     <div role="table">
       <div
         role="row"
-        className="flex pt-4 pb-4 text-[11px] uppercase tracking-[0.06em]"
+        className="flex pt-3 pb-3 text-[11px] font-medium uppercase tracking-[0.08em]"
         style={{
           borderBottom: "1px solid var(--tt-rule)",
           color: "var(--tt-fg-mute)",
@@ -67,7 +67,7 @@ export function AdminTableRow({ cells }: AdminTableRowProps) {
   return (
     <div
       role="row"
-      className="flex items-center py-4 text-[13px]"
+      className="-mx-2 flex items-center rounded-md px-2 py-3 text-[13px] transition-colors hover:bg-[var(--tt-highlight)]"
       style={{
         borderBottom: "1px solid var(--tt-rule)",
         color: "var(--tt-fg)",

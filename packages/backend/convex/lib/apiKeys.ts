@@ -3,7 +3,12 @@ import { hashOpaqueValue } from "./phoneHash";
 export const API_CLIENT_KEY_PREFIX = "coucou_sk_";
 export const API_CLIENT_KEY_DISPLAY_PREFIX_LENGTH = 14;
 
-export const API_CLIENT_SCOPES = ["events:read", "rsvps:read", "rsvps:write"] as const;
+export const API_CLIENT_SCOPES = [
+  "events:read",
+  "events:write",
+  "rsvps:read",
+  "rsvps:write",
+] as const;
 
 export type ApiClientScope = (typeof API_CLIENT_SCOPES)[number];
 

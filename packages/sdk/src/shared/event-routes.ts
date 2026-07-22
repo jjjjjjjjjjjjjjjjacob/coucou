@@ -24,6 +24,7 @@ export interface BuildPublicEventUrlOptions extends ResolvePublicSiteOriginOptio
 const localSiteOrigins: Record<SiteKey, string> = {
   dojo: "http://localhost:5678",
   "club-chlorine": "http://localhost:5679",
+  "danza-organica": "http://localhost:5677",
   coucou: "http://localhost:5680",
 };
 

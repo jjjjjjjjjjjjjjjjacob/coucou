@@ -1,14 +1,8 @@
 "use client";
 import type { Path } from "react-hook-form";
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { SectionCard } from "@/components/ui/section-card";
 import { Textarea } from "@/components/ui/textarea";
 import type { BaseEventFormValues, UseFormReturn } from "@/lib/types";
 
@@ -20,8 +14,11 @@ export function EventDetailsSection<FormValues extends BaseEventFormValues>({
   form,
 }: EventDetailsSectionProps<FormValues>) {
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-4">
-      <h3 className="font-medium text-sm text-muted-foreground">EVENT DETAILS</h3>
+    <SectionCard
+      title="Overview"
+      description="Names, guest-facing description, location, and organizers."
+      contentClassName="space-y-4"
+    >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <FormField
           control={form.control}
@@ -120,55 +117,6 @@ export function EventDetailsSection<FormValues extends BaseEventFormValues>({
           );
         }}
       />
-      <FormField
-        control={form.control}
-        name={"hosts" as Path<FormValues>}
-        render={({ field }) => {
-          const { value, onChange, ref, ...rest } = field;
-          return (
-            <FormItem>
-              <FormLabel>Host Names (optional, comma-separated)</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="Host Name 1, Host Name 2"
-                  value={(value as string | undefined) ?? ""}
-                  onChange={onChange}
-                  ref={ref}
-                  {...rest}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          );
-        }}
-      />
-      <FormField
-        control={form.control}
-        name={"productionCompany" as Path<FormValues>}
-        render={({ field }) => {
-          const { value, onChange, ref, ...rest } = field;
-          return (
-            <FormItem>
-              <FormLabel>
-                Production Company <span className="text-sm text-muted-foreground">(optional)</span>
-              </FormLabel>
-              <FormDescription>
-                Overrides host names in consent messaging and SMS notifications.
-              </FormDescription>
-              <FormControl>
-                <Input
-                  placeholder="Production Company Name"
-                  value={(value as string | undefined) ?? ""}
-                  onChange={onChange}
-                  ref={ref}
-                  {...rest}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          );
-        }}
-      />
-    </div>
+    </SectionCard>
   );
 }

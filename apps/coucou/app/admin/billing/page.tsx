@@ -3,10 +3,19 @@
 import { api } from "@convex/_generated/api";
 import { AdminEmptyState, AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
 import { useQuery } from "convex/react";
+import { Building2, Copy, CreditCard } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
 import { PlanEditDialog } from "@/components/admin/plan-edit-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
+import { copyTextWithToast } from "@/lib/clipboard";
+import { buildWorkspaceOperationPath } from "@/lib/workspace-config";
 
 interface WorkspaceRow {
   _id: string;
@@ -32,6 +41,7 @@ function formatDateOrDash(timestamp?: number): string {
 }
 
 export default function AdminBillingPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorStack, setCursorStack] = useState<string[]>([]);
@@ -163,6 +173,32 @@ export default function AdminBillingPage() {
               description="Once a workspace exists you can attach a tier and price for it here."
             />
           }
+          renderRowContextMenu={(row) => (
+            <ContextMenuContent className="w-56 border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)] shadow-[var(--shadow-card)]">
+              <ContextMenuItem onSelect={() => setSelected(row)}>
+                <CreditCard className="h-4 w-4" />
+                Edit plan
+              </ContextMenuItem>
+              <ContextMenuSeparator className="bg-[var(--border-subtle)]" />
+              <ContextMenuItem
+                onSelect={() => router.push(buildWorkspaceOperationPath(row.slug, "host"))}
+              >
+                <Building2 className="h-4 w-4" />
+                Open {row.name}
+              </ContextMenuItem>
+              {row.primaryDomain ? (
+                <ContextMenuItem
+                  onSelect={(selectEvent) => {
+                    selectEvent.preventDefault();
+                    void copyTextWithToast(row.primaryDomain ?? "", "Domain copied");
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy domain
+                </ContextMenuItem>
+              ) : null}
+            </ContextMenuContent>
+          )}
         />
       </AdminSection>
 

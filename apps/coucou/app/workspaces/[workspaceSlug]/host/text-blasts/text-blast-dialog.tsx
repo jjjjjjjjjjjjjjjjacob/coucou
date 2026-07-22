@@ -3,23 +3,16 @@
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useAction, useMutation, useQuery } from "convex/react";
-import {
-  ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  MessageSquare,
-  Plus,
-  Save,
-  Search,
-  Send,
-  Trash2,
-  Users,
-} from "lucide-react";
+import { Eye, MessageSquare, Plus, Save, Send, Trash2, Users } from "lucide-react";
 import posthog from "posthog-js";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { GuestDirectoryFilters } from "@/components/guests/guest-directory-filters";
 import { MessageTemplateVariableButtons } from "@/components/message-template-variable-buttons";
+import {
+  type TextBlastRecipientRow,
+  TextBlastRecipientTable,
+} from "@/components/text-blasts/text-blast-recipient-table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,24 +38,21 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { formatEventTitleInline } from "@/lib/event-display";
 import type {
-  RecipientApprovalStatus,
+  GuestDirectoryFilterState,
   RecipientFilterState,
   RecipientHistoryFilterState,
 } from "@/lib/text-blast-filters";
 import {
-  DEFAULT_STATUS_FILTER,
+  createDefaultGuestDirectoryFilterState,
   decodeRecipientFilter,
   describeRecipientFilter,
   encodeRecipientFilter,
   isRecipientFilterConfigured,
-  RECIPIENT_FILTER_LABELS,
-  RECIPIENT_STATUS_LABELS,
   recipientHistoryFilterIsConfigured,
 } from "@/lib/text-blast-filters";
 import {
@@ -77,11 +67,22 @@ import {
 import type { Event, TextBlast, TextBlastReplyAction } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
+export interface TextBlastInitialTargeting {
+  eventIds: Id<"events">[];
+  selectedRsvpIds: Id<"rsvps">[];
+  targetLists: string[];
+}
+
 interface TextBlastDialogProps {
   isOpen: boolean;
   onClose: () => void;
   blastId?: Id<"textBlasts"> | null;
   mode?: "full" | "replyActions";
+  /**
+   * Seeds the "Who" step when creating a new blast (ignored in edit mode),
+   * e.g. from the Guests directory bulk action.
+   */
+  initialTargeting?: TextBlastInitialTargeting;
 }
 
 interface FormData {
@@ -113,32 +114,9 @@ interface ReplyActionTargetOption {
   lists: Array<{ listKey: string; password?: string }>;
 }
 
-interface RecipientSelectionRow {
-  rsvpId: Id<"rsvps">;
-  name: string;
-  listKey: string;
-  eventId: Id<"events">;
-  eventName: string;
-  approvalStatus: RecipientApprovalStatus;
-  attendanceStatus: "yes" | "no" | "maybe";
-  ticketStatus: "not-issued" | "issued" | "disabled" | "redeemed";
-  smsConsent: boolean;
-  createdAt: number;
-}
-
 const SMS_CHAR_LIMIT = 160;
 const SMS_CONCAT_LIMIT = 320;
-const RECIPIENT_TABLE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 type MessageTemplateVariableName = (typeof MESSAGE_TEMPLATE_VARIABLES)[number];
-type RecipientTableSortOption =
-  | "name"
-  | "eventName"
-  | "listKey"
-  | "approvalStatus"
-  | "attendanceStatus"
-  | "ticketStatus"
-  | "createdAt";
-type RecipientTableSortOrder = "asc" | "desc";
 type SendBlastResult =
   | {
       success: true;
@@ -169,61 +147,12 @@ function normalizeReplyCodeForValidation(replyCode: string): string {
   return replyCode.trim().toLowerCase();
 }
 
-function getAttendanceStatusLabel(attendanceStatus: RecipientSelectionRow["attendanceStatus"]) {
-  switch (attendanceStatus) {
-    case "yes":
-      return "Yes";
-    case "no":
-      return "No";
-    case "maybe":
-      return "Maybe";
-    default:
-      return "Maybe";
-  }
-}
-
-function getTicketStatusLabel(ticketStatus: RecipientSelectionRow["ticketStatus"]) {
-  switch (ticketStatus) {
-    case "issued":
-      return "Issued";
-    case "redeemed":
-      return "Redeemed";
-    case "disabled":
-      return "Disabled";
-    case "not-issued":
-    default:
-      return "None";
-  }
-}
-
-function getRecipientTableSortValue(
-  recipient: RecipientSelectionRow,
-  sortBy: RecipientTableSortOption,
-): number | string {
-  switch (sortBy) {
-    case "eventName":
-      return recipient.eventName;
-    case "listKey":
-      return recipient.listKey;
-    case "approvalStatus":
-      return recipient.approvalStatus;
-    case "attendanceStatus":
-      return recipient.attendanceStatus;
-    case "ticketStatus":
-      return recipient.ticketStatus;
-    case "createdAt":
-      return recipient.createdAt;
-    case "name":
-    default:
-      return recipient.name;
-  }
-}
-
 export default function TextBlastDialog({
   isOpen,
   onClose,
   blastId,
   mode = "full",
+  initialTargeting,
 }: TextBlastDialogProps) {
   const workspaceScope = useWorkspaceScope();
   const isReplyActionsOnlyMode = mode === "replyActions";
@@ -267,18 +196,6 @@ export default function TextBlastDialog({
   });
   const [previewMode, setPreviewMode] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [recipientSearchQuery, setRecipientSearchQuery] = useState("");
-  const [recipientTableListFilter, setRecipientTableListFilter] = useState("all");
-  const [recipientTableApprovalFilter, setRecipientTableApprovalFilter] = useState<
-    "all" | RecipientApprovalStatus
-  >("all");
-  const [recipientTableSortBy, setRecipientTableSortBy] =
-    useState<RecipientTableSortOption>("name");
-  const [recipientTableSortOrder, setRecipientTableSortOrder] =
-    useState<RecipientTableSortOrder>("asc");
-  const [recipientTablePageSize, setRecipientTablePageSize] = useState<number>(20);
-  const [recipientTablePage, setRecipientTablePage] = useState(1);
-  const [isEventPopoverOpen, setIsEventPopoverOpen] = useState(false);
 
   const isEditMode = !!blastId;
   const selectedEvents = useMemo(() => {
@@ -346,7 +263,7 @@ export default function TextBlastDialog({
           ...(workspaceScope?.queryArgs ?? {}),
         }
       : "skip",
-  ) as RecipientSelectionRow[] | undefined;
+  ) as TextBlastRecipientRow[] | undefined;
 
   const recipientCountFromBackend = useQuery(
     api.textBlasts.countRecipientsForTargeting,
@@ -417,106 +334,6 @@ export default function TextBlastDialog({
     return availableListsWithCounts.map((list) => list.listKey);
   }, [availableListsWithCounts]);
 
-  const selectedRsvpIdsSet = useMemo(
-    () => new Set(formData.selectedRsvpIds),
-    [formData.selectedRsvpIds],
-  );
-  const recipientTableFilteredRows = useMemo(() => {
-    const normalizedSearchQuery = recipientSearchQuery.trim().toLowerCase();
-    const filteredRows = (recipientsForSelection ?? []).filter((recipient) => {
-      if (
-        normalizedSearchQuery &&
-        ![
-          recipient.name,
-          recipient.eventName,
-          recipient.listKey,
-          recipient.approvalStatus,
-          recipient.attendanceStatus,
-          recipient.ticketStatus,
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedSearchQuery)
-      ) {
-        return false;
-      }
-
-      if (recipientTableListFilter !== "all" && recipient.listKey !== recipientTableListFilter) {
-        return false;
-      }
-
-      if (
-        recipientTableApprovalFilter !== "all" &&
-        recipient.approvalStatus !== recipientTableApprovalFilter
-      ) {
-        return false;
-      }
-
-      return true;
-    });
-
-    return filteredRows.sort((firstRecipient, secondRecipient) => {
-      const firstValue = getRecipientTableSortValue(firstRecipient, recipientTableSortBy);
-      const secondValue = getRecipientTableSortValue(secondRecipient, recipientTableSortBy);
-      const directionMultiplier = recipientTableSortOrder === "asc" ? 1 : -1;
-      const comparison =
-        typeof firstValue === "number" && typeof secondValue === "number"
-          ? firstValue - secondValue
-          : String(firstValue).localeCompare(String(secondValue));
-
-      if (comparison === 0) {
-        return firstRecipient.name.localeCompare(secondRecipient.name);
-      }
-
-      return directionMultiplier * comparison;
-    });
-  }, [
-    recipientsForSelection,
-    recipientSearchQuery,
-    recipientTableApprovalFilter,
-    recipientTableListFilter,
-    recipientTableSortBy,
-    recipientTableSortOrder,
-  ]);
-  const recipientTableTotalPages = Math.max(
-    1,
-    Math.ceil(recipientTableFilteredRows.length / recipientTablePageSize),
-  );
-  const boundedRecipientTablePage = Math.min(recipientTablePage, recipientTableTotalPages);
-  const recipientTablePageRows = useMemo(() => {
-    const startIndex = (boundedRecipientTablePage - 1) * recipientTablePageSize;
-    return recipientTableFilteredRows.slice(startIndex, startIndex + recipientTablePageSize);
-  }, [boundedRecipientTablePage, recipientTableFilteredRows, recipientTablePageSize]);
-  const recipientTablePageSelectedCount = recipientTablePageRows.filter((recipient) =>
-    selectedRsvpIdsSet.has(recipient.rsvpId),
-  ).length;
-  const recipientTableAllPageRowsSelected =
-    recipientTablePageRows.length > 0 &&
-    recipientTablePageSelectedCount === recipientTablePageRows.length;
-  const recipientTableSomePageRowsSelected =
-    recipientTablePageSelectedCount > 0 &&
-    recipientTablePageSelectedCount < recipientTablePageRows.length;
-  const allMatchingRecipientsSelected =
-    recipientTableFilteredRows.length > 0 &&
-    recipientTableFilteredRows.every((recipient) => selectedRsvpIdsSet.has(recipient.rsvpId));
-
-  useEffect(() => {
-    setRecipientTablePage(1);
-  }, [
-    recipientSearchQuery,
-    recipientTableApprovalFilter,
-    recipientTableListFilter,
-    recipientTablePageSize,
-    recipientTableSortBy,
-    recipientTableSortOrder,
-  ]);
-
-  useEffect(() => {
-    if (recipientTablePage > recipientTableTotalPages) {
-      setRecipientTablePage(recipientTableTotalPages);
-    }
-  }, [recipientTablePage, recipientTableTotalPages]);
-
   useEffect(() => {
     const currentFilter = formData.recipientFilter;
     if (currentFilter.type !== "custom_field_missing") {
@@ -575,28 +392,21 @@ export default function TextBlastDialog({
         setCurrentStep(1);
       } else {
         setFormData({
-          eventIds: [],
+          eventIds: initialTargeting?.eventIds ?? [],
           name: "",
           message: "",
-          targetLists: [],
+          targetLists: initialTargeting?.targetLists ?? [],
           recipientFilter: { type: "all" },
           recipientHistoryFilter: { type: "none", textBlastIds: [] },
           includeQrCodes: false,
-          selectedRsvpIds: [],
+          selectedRsvpIds: initialTargeting?.selectedRsvpIds ?? [],
           replyActions: [],
         });
         setCurrentStep(1);
       }
       setPreviewMode(false);
-      setRecipientSearchQuery("");
-      setRecipientTableListFilter("all");
-      setRecipientTableApprovalFilter("all");
-      setRecipientTableSortBy("name");
-      setRecipientTableSortOrder("asc");
-      setRecipientTablePage(1);
-      setIsEventPopoverOpen(false);
     }
-  }, [isOpen, existingBlast]);
+  }, [isOpen, existingBlast, initialTargeting]);
 
   // Calculate character count and message type
   const messageLength = formData.message.length;
@@ -642,28 +452,73 @@ export default function TextBlastDialog({
 
   const previewMessage = applyMessageTemplateVariables(formData.message, sampleData);
 
-  const handleEventToggle = (eventId: Id<"events">, checked: boolean) => {
+  const whoStepFilterValue = useMemo<GuestDirectoryFilterState>(
+    () => ({
+      ...createDefaultGuestDirectoryFilterState(),
+      eventIds: formData.eventIds,
+      recipientFilter: formData.recipientFilter,
+      recipientHistoryFilter: formData.recipientHistoryFilter,
+    }),
+    [formData.eventIds, formData.recipientFilter, formData.recipientHistoryFilter],
+  );
+
+  const handleWhoStepFilterChange = (nextFilterState: GuestDirectoryFilterState) => {
     setFormData((prev) => {
-      // Reset filter to "all" when event changes if it's event-specific (custom_field_missing)
-      const newRecipientFilter =
-        prev.recipientFilter.type === "custom_field_missing"
-          ? { type: "all" as const }
-          : prev.recipientFilter;
-      const nextEventIds = checked
-        ? [...prev.eventIds, eventId]
-        : prev.eventIds.filter((selectedEventId) => selectedEventId !== eventId);
+      const nextEventIds = nextFilterState.eventIds as Id<"events">[];
+      const eventIdsChanged =
+        nextEventIds.length !== prev.eventIds.length ||
+        nextEventIds.some((eventId, eventIndex) => eventId !== prev.eventIds[eventIndex]);
       const nextIsMultiEvent = nextEventIds.length > 1;
+      // Reset the event-specific segment when the event selection changes.
+      const nextRecipientFilter =
+        eventIdsChanged && nextFilterState.recipientFilter.type === "custom_field_missing"
+          ? { type: "all" as const }
+          : nextFilterState.recipientFilter;
 
       return {
         ...prev,
         eventIds: nextEventIds,
-        targetLists: [], // Reset target lists when event changes
+        targetLists: eventIdsChanged ? [] : prev.targetLists,
+        includeQrCodes: eventIdsChanged && nextIsMultiEvent ? false : prev.includeQrCodes,
+        recipientFilter: nextRecipientFilter,
+        recipientHistoryFilter: nextFilterState.recipientHistoryFilter,
         selectedRsvpIds: [],
-        recipientFilter: newRecipientFilter,
-        includeQrCodes: nextIsMultiEvent ? false : prev.includeQrCodes,
       };
     });
   };
+
+  const whoStepEventOptions = useMemo(
+    () =>
+      eventsSorted.map((event) => ({
+        eventId: event._id as string,
+        eventName: formatEventTitleInline(event),
+        eventDate: event.eventDate ?? 0,
+      })),
+    [eventsSorted],
+  );
+
+  const whoStepBlastOptions = useMemo(
+    () =>
+      (historyBlastOptions ?? [])
+        .filter(
+          (historyBlast) =>
+            historyBlast._id !== blastId &&
+            historyBlast.deliveryTrackingEnabled === true &&
+            (historyBlast.status === "sent" || historyBlast.sentCount > 0),
+        )
+        .map((historyBlast) => ({
+          id: historyBlast._id as string,
+          name: historyBlast.name,
+          deliveryTrackingEnabled: true,
+          status: "sent",
+        })),
+    [historyBlastOptions, blastId],
+  );
+
+  const whoStepCustomFieldOptions = useMemo(
+    () => customFields.map((customField) => ({ key: customField.key, label: customField.label })),
+    [customFields],
+  );
 
   const handleTargetListChange = (listKey: string, checked: boolean) => {
     setFormData((prev) => ({
@@ -675,45 +530,8 @@ export default function TextBlastDialog({
     }));
   };
 
-  const toggleRecipientSelection = (rsvpId: Id<"rsvps">) => {
-    setFormData((prev) => {
-      const isSelected = prev.selectedRsvpIds.includes(rsvpId);
-      return {
-        ...prev,
-        selectedRsvpIds: isSelected
-          ? prev.selectedRsvpIds.filter((selectedRsvpId) => selectedRsvpId !== rsvpId)
-          : [...prev.selectedRsvpIds, rsvpId],
-      };
-    });
-  };
-
-  const toggleRecipientPageSelection = (checked: boolean) => {
-    setFormData((prev) => {
-      const pageRsvpIds = recipientTablePageRows.map((recipient) => recipient.rsvpId);
-      const nextSelectedRsvpIds = new Set(prev.selectedRsvpIds);
-      for (const rsvpId of pageRsvpIds) {
-        if (checked) {
-          nextSelectedRsvpIds.add(rsvpId);
-        } else {
-          nextSelectedRsvpIds.delete(rsvpId);
-        }
-      }
-      return { ...prev, selectedRsvpIds: Array.from(nextSelectedRsvpIds) };
-    });
-  };
-
-  const selectAllMatchingRecipients = () => {
-    setFormData((prev) => {
-      const nextSelectedRsvpIds = new Set(prev.selectedRsvpIds);
-      for (const recipient of recipientTableFilteredRows) {
-        nextSelectedRsvpIds.add(recipient.rsvpId);
-      }
-      return { ...prev, selectedRsvpIds: Array.from(nextSelectedRsvpIds) };
-    });
-  };
-
-  const clearRecipientSelection = () => {
-    setFormData((prev) => ({ ...prev, selectedRsvpIds: [] }));
+  const handleSelectedRsvpIdsChange = (selectedRsvpIds: Id<"rsvps">[]) => {
+    setFormData((previousFormData) => ({ ...previousFormData, selectedRsvpIds }));
   };
 
   const getReplyActionListOptions = (targetEventId: Id<"events"> | "") => {
@@ -801,111 +619,6 @@ export default function TextBlastDialog({
         };
       }),
     }));
-  };
-
-  const handleRecipientFilterTypeChange = (value: RecipientFilterState["type"]) => {
-    setFormData((prev) => {
-      switch (value) {
-        case "all":
-          return { ...prev, recipientFilter: { type: "all" }, selectedRsvpIds: [] };
-        case "approved_no_approval_sms":
-          return {
-            ...prev,
-            recipientFilter: { type: "approved_no_approval_sms" },
-            selectedRsvpIds: [],
-          };
-        case "approved_with_approval_sms":
-          return {
-            ...prev,
-            recipientFilter: { type: "approved_with_approval_sms" },
-            selectedRsvpIds: [],
-          };
-        case "status": {
-          const nextStatus =
-            prev.recipientFilter.type === "status"
-              ? prev.recipientFilter.status
-              : DEFAULT_STATUS_FILTER;
-          return {
-            ...prev,
-            recipientFilter: { type: "status", status: nextStatus },
-            selectedRsvpIds: [],
-          };
-        }
-        case "custom_field_missing": {
-          const nextFieldKey = customFields.length > 0 ? customFields[0].key : "";
-          return {
-            ...prev,
-            recipientFilter: {
-              type: "custom_field_missing",
-              fieldKey: nextFieldKey,
-            },
-            selectedRsvpIds: [],
-          };
-        }
-        case "rsvp_before": {
-          const nextValue =
-            prev.recipientFilter.type === "rsvp_before" ? prev.recipientFilter.isoDateTime : "";
-          return {
-            ...prev,
-            recipientFilter: { type: "rsvp_before", isoDateTime: nextValue },
-            selectedRsvpIds: [],
-          };
-        }
-        case "previous_approved_not_rsvped": {
-          const nextExcludedEventId =
-            prev.recipientFilter.type === "previous_approved_not_rsvped"
-              ? prev.recipientFilter.excludedEventId
-              : "";
-          return {
-            ...prev,
-            recipientFilter: {
-              type: "previous_approved_not_rsvped",
-              excludedEventId: nextExcludedEventId,
-            },
-            selectedRsvpIds: [],
-          };
-        }
-        default:
-          return prev;
-      }
-    });
-  };
-
-  const handleRecipientHistoryFilterTypeChange = (value: RecipientHistoryFilterState["type"]) => {
-    setFormData((prev) => ({
-      ...prev,
-      recipientHistoryFilter:
-        value === "none"
-          ? { type: "none", textBlastIds: [] }
-          : {
-              type: value,
-              textBlastIds:
-                prev.recipientHistoryFilter.type === "none"
-                  ? []
-                  : prev.recipientHistoryFilter.textBlastIds,
-            },
-      selectedRsvpIds: [],
-    }));
-  };
-
-  const handleRecipientHistoryBlastToggle = (textBlastId: Id<"textBlasts">, checked: boolean) => {
-    setFormData((prev) => {
-      if (prev.recipientHistoryFilter.type === "none") {
-        return prev;
-      }
-      return {
-        ...prev,
-        recipientHistoryFilter: {
-          ...prev.recipientHistoryFilter,
-          textBlastIds: checked
-            ? [...prev.recipientHistoryFilter.textBlastIds, textBlastId]
-            : prev.recipientHistoryFilter.textBlastIds.filter(
-                (selectedBlastId) => selectedBlastId !== textBlastId,
-              ),
-        },
-        selectedRsvpIds: [],
-      };
-    });
   };
 
   const handleSaveDraft = async () => {
@@ -1288,79 +1001,23 @@ export default function TextBlastDialog({
       case 1:
         return (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Source Events</Label>
-              <Popover open={isEventPopoverOpen} onOpenChange={setIsEventPopoverOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between" type="button">
-                    <span className="truncate">
-                      {selectedEvents.length === 0
-                        ? "Select events"
-                        : selectedEvents.length === 1
-                          ? formatEventTitleInline(selectedEvents[0])
-                          : `${selectedEvents.length} events selected`}
-                    </span>
-                    <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-                  <div className="max-h-72 overflow-y-auto p-2">
-                    {eventsSorted.map((event) => {
-                      const isSelected = formData.eventIds.includes(event._id);
-                      const inlineTitle = formatEventTitleInline(event);
-                      return (
-                        <div
-                          key={event._id}
-                          role="button"
-                          tabIndex={0}
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-accent"
-                          onClick={() => handleEventToggle(event._id, !isSelected)}
-                          onKeyDown={(keyboardEvent) => {
-                            if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
-                              keyboardEvent.preventDefault();
-                              handleEventToggle(event._id, !isSelected);
-                            }
-                          }}
-                        >
-                          <Checkbox checked={isSelected} />
-                          <span className="min-w-0 flex-1 truncate text-sm">{inlineTitle}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <div className="text-xs text-muted-foreground">
-                Choose the event RSVP lists that should feed this blast audience.
+            <section className="space-y-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4">
+              <div>
+                <Label>Audience filters</Label>
+                <p className="text-xs text-muted-foreground">
+                  Choose the events and RSVP segments that feed this blast audience.
+                </p>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Audience Segment</Label>
-              <Select
-                value={formData.recipientFilter.type}
-                onValueChange={(value) =>
-                  handleRecipientFilterTypeChange(value as RecipientFilterState["type"])
-                }
-              >
-                <SelectOption value="all">{RECIPIENT_FILTER_LABELS.all}</SelectOption>
-                <SelectOption value="approved_no_approval_sms">
-                  {RECIPIENT_FILTER_LABELS.approved_no_approval_sms}
-                </SelectOption>
-                <SelectOption value="approved_with_approval_sms">
-                  {RECIPIENT_FILTER_LABELS.approved_with_approval_sms}
-                </SelectOption>
-                <SelectOption value="status">{RECIPIENT_FILTER_LABELS.status}</SelectOption>
-                <SelectOption value="custom_field_missing" disabled={customFields.length === 0}>
-                  {RECIPIENT_FILTER_LABELS.custom_field_missing}
-                </SelectOption>
-                <SelectOption value="rsvp_before">
-                  {RECIPIENT_FILTER_LABELS.rsvp_before}
-                </SelectOption>
-                <SelectOption value="previous_approved_not_rsvped">
-                  {RECIPIENT_FILTER_LABELS.previous_approved_not_rsvped}
-                </SelectOption>
-              </Select>
+              <GuestDirectoryFilters
+                variant="compact"
+                value={whoStepFilterValue}
+                onChange={handleWhoStepFilterChange}
+                eventOptions={whoStepEventOptions}
+                blastOptions={whoStepBlastOptions}
+                tagOptions={[]}
+                defaultListKeyOptions={[]}
+                customFieldOptions={whoStepCustomFieldOptions}
+              />
               <div className="text-xs text-muted-foreground">
                 {describeRecipientFilter(formData.recipientFilter, {
                   resolveCustomFieldLabel: (key) =>
@@ -1372,183 +1029,20 @@ export default function TextBlastDialog({
                   Complete the filter details to apply this segment.
                 </div>
               )}
-            </div>
-
-            {formData.recipientFilter.type === "status" && (
-              <div className="space-y-2">
-                <Label>RSVP Status</Label>
-                <Select
-                  value={formData.recipientFilter.status}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      recipientFilter: {
-                        type: "status",
-                        status: value as RecipientApprovalStatus,
-                      },
-                      selectedRsvpIds: [],
-                    }))
-                  }
-                >
-                  {Object.entries(RECIPIENT_STATUS_LABELS).map(([status, label]) => (
-                    <SelectOption key={status} value={status}>
-                      {label}
-                    </SelectOption>
-                  ))}
-                </Select>
-              </div>
-            )}
-
-            {formData.recipientFilter.type === "custom_field_missing" && (
-              <div className="space-y-2">
-                <Label>Custom Field</Label>
-                {customFields.length > 0 ? (
-                  <Select
-                    value={formData.recipientFilter.fieldKey}
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        recipientFilter: {
-                          type: "custom_field_missing",
-                          fieldKey: value,
-                        },
-                        selectedRsvpIds: [],
-                      }))
-                    }
-                  >
-                    {customFields.map((field) => (
-                      <SelectOption key={field.key} value={field.key}>
-                        {field.label}
-                      </SelectOption>
-                    ))}
-                  </Select>
-                ) : (
-                  <div className="text-xs text-muted-foreground">
-                    This event does not have custom fields configured. Add custom fields in the
-                    event settings first.
-                  </div>
-                )}
-              </div>
-            )}
-
-            {formData.recipientFilter.type === "rsvp_before" && (
-              <div className="space-y-2">
-                <Label htmlFor="rsvpBefore">RSVP Created Before</Label>
-                <Input
-                  id="rsvpBefore"
-                  type="datetime-local"
-                  value={formData.recipientFilter.isoDateTime}
-                  onChange={(event) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      recipientFilter: {
-                        type: "rsvp_before",
-                        isoDateTime: event.target.value,
-                      },
-                      selectedRsvpIds: [],
-                    }))
-                  }
-                />
-                <div className="text-xs text-muted-foreground">
-                  Only guests who submitted their RSVP before this timestamp will receive the
-                  message.
-                </div>
-              </div>
-            )}
-
-            {formData.recipientFilter.type === "previous_approved_not_rsvped" && (
-              <div className="space-y-2">
-                <Label>Exclude Event</Label>
-                <Select
-                  value={formData.recipientFilter.excludedEventId}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      recipientFilter: {
-                        type: "previous_approved_not_rsvped",
-                        excludedEventId: value,
-                      },
-                      selectedRsvpIds: [],
-                    }))
-                  }
-                >
-                  <SelectOption value="">Select event to exclude</SelectOption>
-                  {eventsSorted.map((event) => (
-                    <SelectOption key={event._id} value={event._id}>
-                      {formatEventTitleInline(event)}
-                    </SelectOption>
-                  ))}
-                </Select>
-                <div className="text-xs text-muted-foreground">
-                  Anyone who has already RSVP&apos;d to this event is removed from the source-event
-                  audience.
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Recipient History</Label>
-              <Select
-                value={formData.recipientHistoryFilter.type}
-                onValueChange={(value) =>
-                  handleRecipientHistoryFilterTypeChange(
-                    value as RecipientHistoryFilterState["type"],
-                  )
-                }
-              >
-                <SelectOption value="none">No history filter</SelectOption>
-                <SelectOption value="received_any">Has received any of</SelectOption>
-                <SelectOption value="not_received_any">Has not received any of</SelectOption>
-              </Select>
-              {formData.recipientHistoryFilter.type !== "none" && (
-                <div className="grid gap-2 rounded-md border p-2">
-                  {(historyBlastOptions ?? []).map((historyBlast) => {
-                    const isCurrentBlast = historyBlast._id === blastId;
-                    const isTracked = historyBlast.deliveryTrackingEnabled === true;
-                    const isSentOrPartiallySent =
-                      historyBlast.status === "sent" || historyBlast.sentCount > 0;
-                    const isDisabled = isCurrentBlast || !isTracked || !isSentOrPartiallySent;
-                    const isSelected = selectedHistoryBlastIds.includes(historyBlast._id);
-                    return (
-                      <div key={historyBlast._id} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`history-${historyBlast._id}`}
-                          checked={isSelected}
-                          disabled={isDisabled}
-                          onCheckedChange={(checked) =>
-                            handleRecipientHistoryBlastToggle(historyBlast._id, checked === true)
-                          }
-                        />
-                        <Label
-                          htmlFor={`history-${historyBlast._id}`}
-                          className={`min-w-0 flex-1 cursor-pointer text-sm ${
-                            isDisabled ? "text-muted-foreground" : ""
-                          }`}
-                        >
-                          <span className="block truncate">{historyBlast.name}</span>
-                        </Label>
-                        {!isTracked && (
-                          <Badge variant="outline" className="shrink-0 text-xs">
-                            Untracked
-                          </Badge>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {(historyBlastOptions ?? []).length === 0 && (
-                    <div className="text-sm text-muted-foreground">No text blasts yet.</div>
-                  )}
-                </div>
-              )}
               {!historyFilterIsConfigured && (
                 <div className="text-xs text-destructive">
                   Select at least one tracked text blast.
                 </div>
               )}
-            </div>
+            </section>
 
-            <div className="space-y-2">
-              <Label>Lists</Label>
+            <section className="space-y-2">
+              <div>
+                <Label>Lists</Label>
+                <p className="text-xs text-muted-foreground">
+                  Select one or more event lists to include in the audience.
+                </p>
+              </div>
               {availableLists.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
                   {primaryEventId
@@ -1556,42 +1050,39 @@ export default function TextBlastDialog({
                     : "Select an event to see available recipient lists."}
                 </div>
               ) : (
-                <div className="grid gap-3">
-                  {availableLists.map((listKey) => {
-                    const listData = availableListsWithCounts?.find((l) => l.listKey === listKey);
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {availableLists.map((listKey, listIndex) => {
+                    const listData = availableListsWithCounts?.find(
+                      (availableList) => availableList.listKey === listKey,
+                    );
                     const count = listData?.recipientCount ?? 0;
                     const totalRsvps = listData?.totalRsvps ?? 0;
+                    const checkboxIdentifier = `text-blast-list-${listIndex}`;
                     return (
-                      <div key={listKey} className="flex items-center space-x-2">
+                      <Label
+                        key={listKey}
+                        htmlFor={checkboxIdentifier}
+                        className="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] px-3 py-2.5 transition-colors hover:bg-[var(--surface-3)]"
+                      >
                         <Checkbox
-                          id={listKey}
+                          id={checkboxIdentifier}
                           checked={formData.targetLists.includes(listKey)}
-                          onCheckedChange={(checked) =>
-                            handleTargetListChange(listKey, checked as boolean)
+                          onCheckedChange={(checkedState) =>
+                            handleTargetListChange(listKey, checkedState === true)
                           }
                         />
-                        <Label htmlFor={listKey} className="flex-1">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium capitalize">{listKey}</span>
-                            <Badge variant="outline">
-                              <Users className="h-3 w-3 mr-1" />
-                              {recipientFilterIsConfigured ? (
-                                <>
-                                  {count} {count === 1 ? "recipient" : "recipients"}
-                                  {totalRsvps > 0 && count === 0 && (
-                                    <span className="ml-1 text-xs text-muted-foreground">
-                                      ({totalRsvps} RSVP
-                                      {totalRsvps !== 1 ? "s" : ""} without SMS consent/phone)
-                                    </span>
-                                  )}
-                                </>
-                              ) : (
-                                "Recipients pending"
-                              )}
-                            </Badge>
-                          </div>
-                        </Label>
-                      </div>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium capitalize">{listKey}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {recipientFilterIsConfigured
+                              ? `${count} ${count === 1 ? "recipient" : "recipients"}`
+                              : "Recipients pending"}
+                            {totalRsvps > 0 && count === 0
+                              ? ` · ${totalRsvps} without SMS consent or phone`
+                              : ""}
+                          </span>
+                        </span>
+                      </Label>
                     );
                   })}
                 </div>
@@ -1601,7 +1092,7 @@ export default function TextBlastDialog({
                   Please select at least one recipient list.
                 </div>
               )}
-            </div>
+            </section>
 
             {formData.targetLists.length > 0 && (
               <Card>
@@ -1617,261 +1108,36 @@ export default function TextBlastDialog({
               </Card>
             )}
 
-            <div className="space-y-2">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <Label>Recipients</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Select rows to lock this blast to exact people. With no selected rows, the
-                    dynamic audience above is used.
-                  </p>
-                </div>
-                {formData.selectedRsvpIds.length > 0 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={clearRecipientSelection}
-                  >
-                    Clear selection
-                  </Button>
-                )}
+            <section className="space-y-2">
+              <div>
+                <Label>Guests</Label>
+                <p className="text-xs text-muted-foreground">
+                  Select rows to lock this blast to exact guests. Leave every row unselected to use
+                  the dynamic audience above.
+                </p>
               </div>
               {formData.targetLists.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  Select recipient lists above to enable recipient selection
+                <div className="rounded-lg border border-dashed border-[var(--border-subtle)] px-4 py-8 text-center text-sm text-muted-foreground">
+                  Select recipient lists above to browse guests.
                 </div>
               ) : !recipientFilterIsConfigured ? (
-                <div className="text-sm text-muted-foreground">
-                  Complete the filter details above to select specific recipients.
+                <div className="rounded-lg border border-dashed border-[var(--border-subtle)] px-4 py-8 text-center text-sm text-muted-foreground">
+                  Complete the audience filter details above to browse guests.
                 </div>
               ) : !historyFilterIsConfigured ? (
-                <div className="text-sm text-muted-foreground">
-                  Complete the history filter above to select specific recipients.
-                </div>
-              ) : recipientsForSelection && recipientsForSelection.length > 0 ? (
-                <div className="rounded-md border border-border/70">
-                  <div className="grid gap-2 border-b p-3 lg:grid-cols-[1fr_140px_150px_150px_120px]">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search recipients..."
-                        value={recipientSearchQuery}
-                        onChange={(event) => setRecipientSearchQuery(event.target.value)}
-                        className="pl-8"
-                      />
-                    </div>
-                    <Select
-                      value={recipientTableListFilter}
-                      onValueChange={setRecipientTableListFilter}
-                    >
-                      <SelectOption value="all">All Lists</SelectOption>
-                      {availableLists.map((listKey) => (
-                        <SelectOption key={listKey} value={listKey}>
-                          {listKey.toUpperCase()}
-                        </SelectOption>
-                      ))}
-                    </Select>
-                    <Select
-                      value={recipientTableApprovalFilter}
-                      onValueChange={(value) =>
-                        setRecipientTableApprovalFilter(value as "all" | RecipientApprovalStatus)
-                      }
-                    >
-                      <SelectOption value="all">All Approval</SelectOption>
-                      {Object.entries(RECIPIENT_STATUS_LABELS).map(([status, label]) => (
-                        <SelectOption key={status} value={status}>
-                          {label}
-                        </SelectOption>
-                      ))}
-                    </Select>
-                    <Select
-                      value={recipientTableSortBy}
-                      onValueChange={(value) =>
-                        setRecipientTableSortBy(value as RecipientTableSortOption)
-                      }
-                    >
-                      <SelectOption value="name">Sort by Guest</SelectOption>
-                      <SelectOption value="eventName">Sort by Event</SelectOption>
-                      <SelectOption value="listKey">Sort by List</SelectOption>
-                      <SelectOption value="approvalStatus">Sort by Approval</SelectOption>
-                      <SelectOption value="attendanceStatus">Sort by Attendance</SelectOption>
-                      <SelectOption value="ticketStatus">Sort by Ticket</SelectOption>
-                      <SelectOption value="createdAt">Sort by Created</SelectOption>
-                    </Select>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        setRecipientTableSortOrder((previousSortOrder) =>
-                          previousSortOrder === "asc" ? "desc" : "asc",
-                        )
-                      }
-                    >
-                      <ArrowUpDown className="h-4 w-4 mr-2" />
-                      {recipientTableSortOrder === "asc" ? "Asc" : "Desc"}
-                    </Button>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-                    <div className="text-sm text-muted-foreground">
-                      {formData.selectedRsvpIds.length} selected /{" "}
-                      {recipientTableFilteredRows.length} matching / {recipientCount} sendable
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={selectAllMatchingRecipients}
-                        disabled={
-                          recipientTableFilteredRows.length === 0 || allMatchingRecipientsSelected
-                        }
-                      >
-                        Select all matching
-                      </Button>
-                      <Select
-                        value={String(recipientTablePageSize)}
-                        onValueChange={(value) => setRecipientTablePageSize(Number(value))}
-                      >
-                        {RECIPIENT_TABLE_PAGE_SIZE_OPTIONS.map((pageSizeOption) => (
-                          <SelectOption key={pageSizeOption} value={String(pageSizeOption)}>
-                            {pageSizeOption} per page
-                          </SelectOption>
-                        ))}
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="max-h-96 overflow-auto">
-                    <table className="w-full min-w-[760px] text-sm">
-                      <thead className="sticky top-0 bg-background text-left text-muted-foreground">
-                        <tr className="border-b">
-                          <th className="w-10 px-3 py-2">
-                            <Checkbox
-                              aria-label="Select current page"
-                              checked={
-                                recipientTableAllPageRowsSelected
-                                  ? true
-                                  : recipientTableSomePageRowsSelected
-                                    ? "indeterminate"
-                                    : false
-                              }
-                              onCheckedChange={(checked) =>
-                                toggleRecipientPageSelection(checked === true)
-                              }
-                            />
-                          </th>
-                          <th className="px-3 py-2">Guest</th>
-                          <th className="px-3 py-2">Event</th>
-                          <th className="px-3 py-2">List</th>
-                          <th className="px-3 py-2">Approval</th>
-                          <th className="px-3 py-2">Attendance</th>
-                          <th className="px-3 py-2">Ticket</th>
-                          <th className="px-3 py-2">SMS</th>
-                          <th className="px-3 py-2">Created</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recipientTablePageRows.length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
-                              No recipients match the current table filters.
-                            </td>
-                          </tr>
-                        ) : (
-                          recipientTablePageRows.map((recipient) => {
-                            const isSelected = selectedRsvpIdsSet.has(recipient.rsvpId);
-                            return (
-                              <tr
-                                key={recipient.rsvpId}
-                                className="border-b last:border-b-0 hover:bg-muted/50"
-                              >
-                                <td className="px-3 py-2">
-                                  <Checkbox
-                                    aria-label={`Select ${recipient.name}`}
-                                    checked={isSelected}
-                                    onCheckedChange={() =>
-                                      toggleRecipientSelection(recipient.rsvpId)
-                                    }
-                                  />
-                                </td>
-                                <td className="max-w-40 px-3 py-2">
-                                  <button
-                                    type="button"
-                                    className="block max-w-full truncate text-left font-medium"
-                                    onClick={() => toggleRecipientSelection(recipient.rsvpId)}
-                                  >
-                                    {recipient.name}
-                                  </button>
-                                </td>
-                                <td className="max-w-44 px-3 py-2">
-                                  <span className="block truncate">{recipient.eventName}</span>
-                                </td>
-                                <td className="px-3 py-2">
-                                  <Badge variant="outline">{recipient.listKey.toUpperCase()}</Badge>
-                                </td>
-                                <td className="px-3 py-2 capitalize">{recipient.approvalStatus}</td>
-                                <td className="px-3 py-2">
-                                  {getAttendanceStatusLabel(recipient.attendanceStatus)}
-                                </td>
-                                <td className="px-3 py-2">
-                                  {getTicketStatusLabel(recipient.ticketStatus)}
-                                </td>
-                                <td className="px-3 py-2">
-                                  <Badge variant={recipient.smsConsent ? "success" : "secondary"}>
-                                    {recipient.smsConsent ? "Yes" : "No"}
-                                  </Badge>
-                                </td>
-                                <td className="px-3 py-2 text-xs text-muted-foreground">
-                                  {new Date(recipient.createdAt).toLocaleDateString()}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-3 px-3 py-2">
-                    <div className="text-sm text-muted-foreground">
-                      Page {boundedRecipientTablePage} of {recipientTableTotalPages}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={boundedRecipientTablePage <= 1}
-                        onClick={() =>
-                          setRecipientTablePage((previousPage) => Math.max(1, previousPage - 1))
-                        }
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={boundedRecipientTablePage >= recipientTableTotalPages}
-                        onClick={() =>
-                          setRecipientTablePage((previousPage) =>
-                            Math.min(recipientTableTotalPages, previousPage + 1),
-                          )
-                        }
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
+                <div className="rounded-lg border border-dashed border-[var(--border-subtle)] px-4 py-8 text-center text-sm text-muted-foreground">
+                  Complete the text history filter above to browse guests.
                 </div>
               ) : (
-                <div className="text-sm text-muted-foreground">
-                  No recipients available for the selected lists
-                </div>
+                <TextBlastRecipientTable
+                  recipients={recipientsForSelection}
+                  selectedRsvpIds={formData.selectedRsvpIds}
+                  sendableRecipientCount={recipientCount}
+                  listOptions={availableLists}
+                  onSelectedRsvpIdsChange={handleSelectedRsvpIdsChange}
+                />
               )}
-            </div>
+            </section>
           </div>
         );
 
@@ -2069,8 +1335,8 @@ export default function TextBlastDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[94vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-7xl">
+        <DialogHeader className="px-6 pt-6">
           <DialogTitle>
             {isReplyActionsOnlyMode
               ? "Manage Reply Actions"
@@ -2087,7 +1353,7 @@ export default function TextBlastDialog({
 
         {/* Step Indicators */}
         {!isReplyActionsOnlyMode && (
-          <div className="flex items-center justify-center gap-3 py-4">
+          <div className="flex items-center justify-center gap-3 px-6 py-4">
             {stepLabels.map((stepLabel, stepIndex) => {
               const step = stepIndex + 1;
               return (
@@ -2117,11 +1383,11 @@ export default function TextBlastDialog({
         <Separator />
 
         {/* Step Content */}
-        <div className="py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           {isReplyActionsOnlyMode ? renderReplyActionsEditor() : renderStepContent()}
         </div>
 
-        <DialogFooter className="flex justify-between">
+        <DialogFooter className="border-t border-[var(--border-subtle)] px-6 py-4 sm:justify-between">
           {isReplyActionsOnlyMode ? (
             <>
               <Button variant="outline" onClick={onClose}>

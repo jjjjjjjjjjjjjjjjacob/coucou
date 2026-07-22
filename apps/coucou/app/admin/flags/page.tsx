@@ -4,11 +4,19 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
 import { useMutation, useQuery } from "convex/react";
+import { Building2, Check, CheckCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 import { Select, SelectOption } from "@/components/ui/select";
+import { buildWorkspaceOperationPath } from "@/lib/workspace-config";
 
 interface FlagRow {
   _id: Id<"attentionFlags">;
@@ -34,6 +42,7 @@ function formatRelative(timestamp: number): string {
 }
 
 export default function AdminFlagsPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"open" | "ack" | "resolved" | "all">("open");
   const [cursor, setCursor] = useState<string | null>(null);
@@ -48,6 +57,66 @@ export default function AdminFlagsPage() {
 
   const ackMutation = useMutation(api.attentionFlags.ackFlag);
   const resolveMutation = useMutation(api.attentionFlags.resolveFlag);
+
+  const handleAck = async (row: FlagRow) => {
+    try {
+      await ackMutation({ id: row._id });
+      toast.success("Flag acknowledged");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed");
+    }
+  };
+
+  const handleResolve = async (row: FlagRow) => {
+    try {
+      await resolveMutation({ id: row._id });
+      toast.success("Flag resolved");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed");
+    }
+  };
+
+  const renderFlagContextMenu = (row: FlagRow) => (
+    <ContextMenuContent className="w-56 border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)] shadow-[var(--shadow-card)]">
+      {row.status === "open" ? (
+        <ContextMenuItem
+          onSelect={(selectEvent) => {
+            selectEvent.preventDefault();
+            void handleAck(row);
+          }}
+        >
+          <Check className="h-4 w-4" />
+          Acknowledge
+        </ContextMenuItem>
+      ) : null}
+
+      {row.status !== "resolved" ? (
+        <ContextMenuItem
+          onSelect={(selectEvent) => {
+            selectEvent.preventDefault();
+            void handleResolve(row);
+          }}
+        >
+          <CheckCircle className="h-4 w-4" />
+          Resolve
+        </ContextMenuItem>
+      ) : null}
+
+      {row.workspace ? (
+        <>
+          <ContextMenuSeparator className="bg-[var(--border-subtle)]" />
+          <ContextMenuItem
+            onSelect={() =>
+              row.workspace && router.push(buildWorkspaceOperationPath(row.workspace.slug, "host"))
+            }
+          >
+            <Building2 className="h-4 w-4" />
+            Open {row.workspace.name}
+          </ContextMenuItem>
+        </>
+      ) : null}
+    </ContextMenuContent>
+  );
 
   const columns: AdminDataTableColumn<FlagRow>[] = [
     {
@@ -112,14 +181,9 @@ export default function AdminFlagsPage() {
                 size="sm"
                 className="h-7 px-2 text-[12px]"
                 style={{ color: "var(--tt-fg-dim)" }}
-                onClick={async (event) => {
+                onClick={(event) => {
                   event.stopPropagation();
-                  try {
-                    await ackMutation({ id: row._id });
-                    toast.success("Flag acknowledged");
-                  } catch (error) {
-                    toast.error(error instanceof Error ? error.message : "Failed");
-                  }
+                  void handleAck(row);
                 }}
               >
                 ack
@@ -130,14 +194,9 @@ export default function AdminFlagsPage() {
               size="sm"
               className="h-7 px-2 text-[12px]"
               style={{ color: "var(--tt-fg)" }}
-              onClick={async (event) => {
+              onClick={(event) => {
                 event.stopPropagation();
-                try {
-                  await resolveMutation({ id: row._id });
-                  toast.success("Flag resolved");
-                } catch (error) {
-                  toast.error(error instanceof Error ? error.message : "Failed");
-                }
+                void handleResolve(row);
               }}
             >
               resolve
@@ -182,12 +241,7 @@ export default function AdminFlagsPage() {
                 setCursor(null);
                 setCursorStack([]);
               }}
-              className="h-8 border-0 bg-transparent text-[13px]"
-              style={{
-                borderBottom: "1px solid var(--tt-rule)",
-                borderRadius: 0,
-                color: "var(--tt-fg)",
-              }}
+              className="h-8 text-[13px]"
             >
               <SelectOption value="open">Open</SelectOption>
               <SelectOption value="ack">Acknowledged</SelectOption>
@@ -207,6 +261,7 @@ export default function AdminFlagsPage() {
           emptyMessage={
             statusFilter === "open" ? "No flags right now." : "No flags match this filter."
           }
+          renderRowContextMenu={renderFlagContextMenu}
         />
       </AdminSection>
     </>

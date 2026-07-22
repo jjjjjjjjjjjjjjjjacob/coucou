@@ -16,10 +16,7 @@ import { internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { cascadeListKeyUpdate, shouldBatchCascade } from "./lib/cascadeHelpers";
 import { resolveStoredUserDisplayName } from "./lib/rsvpUserName";
-import {
-  enqueueEventWebhookDeliveries,
-  enqueueRsvpWebhookDeliveries,
-} from "./lib/webhookEmission";
+import { enqueueEventWebhookDeliveries, enqueueRsvpWebhookDeliveries } from "./lib/webhookEmission";
 
 // Initialize triggers with our data model types
 export const triggers = new Triggers<DataModel>();

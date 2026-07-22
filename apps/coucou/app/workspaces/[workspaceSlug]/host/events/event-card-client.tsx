@@ -2,26 +2,27 @@
 import { api } from "@convex/_generated/api";
 import { resolveEventEndTimestamp } from "@convex/lib/eventTiming";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { CheckCircle, Edit, EyeOff, MoreHorizontal, QrCode, Share, Trash2 } from "lucide-react";
+import {
+  CheckCircle,
+  Edit,
+  ExternalLink,
+  EyeOff,
+  MoreHorizontal,
+  QrCode,
+  Share,
+  Trash2,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
-import { useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useState } from "react";
 import { toast } from "sonner";
+import { EventContextMenu } from "@/components/event-context-menu";
+import { EventDeleteDialog } from "@/components/event-delete-dialog";
 import { ShareEventPopover } from "@/components/share-event-popover";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useDuplicateEventToDraft } from "@/hooks/use-duplicate-event-to-draft";
 import { formatEventTitleInline } from "@/lib/event-display";
 import {
   getEventLifecycleActionLabel,
@@ -38,7 +40,6 @@ import { buildPublicEventUrl } from "@/lib/event-public-url";
 import type { Event } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { formatEventDateTime } from "@/lib/utils";
-import EditEventDialog from "./edit-event-dialog";
 
 export default function EventCardClient({
   event,
@@ -49,7 +50,7 @@ export default function EventCardClient({
 }) {
   const router = useRouter();
   const workspaceScope = useWorkspaceScope();
-  const rsvpsPath = useWorkspaceOperationPath("host", `rsvps?eventId=${event._id}`);
+  const eventDetailPath = useWorkspaceOperationPath("host", `events/${event._id}`);
   const editDraftPath = useWorkspaceOperationPath("host", `new?draftId=${event._id}`);
   const workspace = useQuery(
     api.workspaces.getWorkspaceBySlug,
@@ -64,8 +65,12 @@ export default function EventCardClient({
     api.qrDelivery.countPendingDeferredRecipients,
     workspaceScope ? { eventId: event._id, ...workspaceScope.queryArgs } : "skip",
   );
-  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [sendingQrBatch, setSendingQrBatch] = useState(false);
+  const { duplicateEventToDraft, isDuplicating } = useDuplicateEventToDraft({
+    eventId: event._id,
+    workspaceScope,
+  });
 
   const inlineTitle = formatEventTitleInline(event);
   const lifecycle = event.lifecycle ?? "published";
@@ -119,6 +124,47 @@ export default function EventCardClient({
     }
   };
 
+  const handleSetFeatured = async () => {
+    if (!workspaceScope) return;
+    try {
+      await setFeaturedEvent({
+        eventId: event._id,
+        ...workspaceScope.queryArgs,
+      });
+      toast.success(`"${inlineTitle}" is now the featured event`);
+      router.refresh();
+    } catch (error: unknown) {
+      toast.error("Failed to set featured event: " + (error as Error).message);
+    }
+  };
+
+  const openEventDetails = () => {
+    posthog.capture("event_details_viewed", {
+      event_id: event._id,
+      event_name: inlineTitle,
+      workspace_slug: workspaceScope?.workspaceSlug,
+    });
+    router.push(eventDetailPath);
+  };
+
+  const handleCardClick = (clickEvent: MouseEvent<HTMLDivElement>) => {
+    if (
+      clickEvent.target instanceof Element &&
+      clickEvent.target.closest("button, a, input, select, textarea, [role='menuitem']")
+    ) {
+      return;
+    }
+    openEventDetails();
+  };
+
+  const handleCardKeyDown = (keyboardEvent: KeyboardEvent<HTMLDivElement>) => {
+    if (keyboardEvent.target !== keyboardEvent.currentTarget) return;
+    if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+      keyboardEvent.preventDefault();
+      openEventDetails();
+    }
+  };
+
   const handleViewClick = () => {
     if (isDraft) {
       router.push(editDraftPath);
@@ -166,200 +212,214 @@ export default function EventCardClient({
     }
   };
 
+  const handleDeleteEvent = async () => {
+    if (!workspaceScope) return;
+    await removeEvent({
+      eventId: event._id,
+      ...workspaceScope.queryArgs,
+    });
+    posthog.capture("event_deleted", {
+      event_id: event._id,
+      event_name: inlineTitle,
+      workspace_slug: workspaceScope.workspaceSlug,
+    });
+    setShowDeleteDialog(false);
+    router.refresh();
+  };
+
   const showSendQrCodesButton = !isDraft && (pendingDeferredCount ?? 0) > 0;
 
   return (
-    <Card className="flex h-full flex-col overflow-hidden rounded-md">
-      <CardHeader className="pb-0">
-        {fileUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={fileUrl} alt="Flyer" className="mb-3 h-28 w-full rounded-sm object-cover" />
-        ) : (
-          <div className="mb-3 h-28 rounded-sm bg-foreground/5" />
-        )}
-      </CardHeader>
-      <div className="flex flex-col flex-grow justify-between">
-        <CardContent className="pb-0">
-          <div className="mb-1 flex min-w-0 items-center gap-2">
-            <div className="min-w-0 flex-1 truncate font-medium" title={inlineTitle}>
-              {inlineTitle}
-            </div>
-            {event.isFeatured && (
-              <Badge variant="secondary" className="text-xs">
-                Featured
-              </Badge>
-            )}
-            <Badge variant={badgeVariant} className="text-xs capitalize">
-              {badgeLabel}
-            </Badge>
-          </div>
-          <div className="mb-3 text-xs text-foreground/70">
-            {formatEventDateTime(event.eventDate, event.eventTimezone)} • {event.location}
-          </div>
-        </CardContent>
-        <CardFooter className="pt-0">
-          <div className="mt-3 flex w-full items-center justify-between gap-2">
-            <div className="flex min-w-0 gap-2">
-              <Button variant="outline" size="sm" onClick={handleViewClick}>
-                {isDraft ? "Continue editing" : "View"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  posthog.capture("event_rsvps_viewed", {
-                    event_id: event._id,
-                    event_name: inlineTitle,
-                    workspace_slug: workspaceScope?.workspaceSlug,
-                  });
-                  router.push(rsvpsPath);
-                }}
-              >
-                RSVPs
-              </Button>
-            </div>
-
-            <div className="flex shrink-0 gap-1">
-              {canShareEvent ? (
-                <ShareEventPopover
-                  eventId={event._id}
-                  eventUrl={publicEventUrl}
-                  siteKey={workspaceScope?.siteKey}
-                  workspaceSlug={workspaceScope?.workspaceSlug}
-                >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="aspect-square rounded-full"
-                    aria-label="Share event"
-                  >
-                    <Share className="h-4 w-4" />
-                  </Button>
-                </ShareEventPopover>
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <Card
+            role="link"
+            tabIndex={0}
+            aria-label={`Open ${inlineTitle} details`}
+            className="flex h-full cursor-pointer flex-col overflow-hidden rounded-md transition-colors hover:border-[var(--text-tertiary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-primary)]/30"
+            onClick={handleCardClick}
+            onKeyDown={handleCardKeyDown}
+          >
+            <CardHeader className="pb-0">
+              {fileUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={fileUrl}
+                  alt="Flyer"
+                  className="mb-3 h-28 w-full rounded-sm object-cover"
+                />
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="aspect-square rounded-full"
-                  aria-label="Share event"
-                  disabled
-                >
-                  <Share className="h-4 w-4" />
-                </Button>
+                <div className="mb-3 h-28 rounded-sm bg-foreground/5" />
               )}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" aria-label="Open event actions">
-                    <MoreHorizontal className="h-6 w-6" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  {showSendQrCodesButton && (
-                    <>
-                      <DropdownMenuItem
-                        disabled={sendingQrBatch}
-                        onSelect={(menuEvent) => {
-                          menuEvent.preventDefault();
-                          void sendPendingQrCodes();
-                        }}
-                      >
-                        <QrCode className="mr-2 h-4 w-4" />
-                        {sendingQrBatch
-                          ? "Sending QR codes..."
-                          : `Send QR codes (${pendingDeferredCount})`}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                    </>
+            </CardHeader>
+            <div className="flex flex-col flex-grow justify-between">
+              <CardContent className="pb-0">
+                <div className="mb-1 flex min-w-0 items-center gap-2">
+                  <div className="min-w-0 flex-1 truncate font-medium" title={inlineTitle}>
+                    {inlineTitle}
+                  </div>
+                  {event.isFeatured && (
+                    <Badge variant="secondary" className="text-xs">
+                      Featured
+                    </Badge>
                   )}
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      void togglePublish();
-                    }}
-                  >
-                    {isDraft ? (
-                      <CheckCircle className="mr-2 h-4 w-4" />
+                  <Badge variant={badgeVariant} className="text-xs capitalize">
+                    {badgeLabel}
+                  </Badge>
+                </div>
+                <div className="mb-3 text-xs text-foreground/70">
+                  {formatEventDateTime(event.eventDate, event.eventTimezone)} • {event.location}
+                </div>
+              </CardContent>
+              <CardFooter className="pt-0">
+                <div className="mt-3 flex w-full items-center justify-between gap-2">
+                  <div className="flex min-w-0 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={openEventDetails}
+                      className="min-h-10"
+                    >
+                      Details
+                    </Button>
+                  </div>
+
+                  <div className="flex shrink-0 gap-1">
+                    {canShareEvent ? (
+                      <ShareEventPopover
+                        eventId={event._id}
+                        eventUrl={publicEventUrl}
+                        siteKey={workspaceScope?.siteKey}
+                        workspaceSlug={workspaceScope?.workspaceSlug}
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="size-10 rounded-full"
+                          aria-label="Share event"
+                        >
+                          <Share className="h-4 w-4" />
+                        </Button>
+                      </ShareEventPopover>
                     ) : (
-                      <EyeOff className="mr-2 h-4 w-4" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="size-10 rounded-full"
+                        aria-label="Share event"
+                        disabled
+                      >
+                        <Share className="h-4 w-4" />
+                      </Button>
                     )}
-                    {lifecycleActionLabel}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={async (e) => {
-                      e.preventDefault();
-                      if (!workspaceScope) {
-                        return;
-                      }
-                      try {
-                        await setFeaturedEvent({
-                          eventId: event._id,
-                          ...workspaceScope.queryArgs,
-                        });
-                        toast.success(`"${inlineTitle}" is now the featured event`);
-                        router.refresh();
-                      } catch (error) {
-                        toast.error("Failed to set featured event: " + (error as Error).message);
-                      }
-                    }}
-                  >
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Set as Featured
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowEditDialog(true)}>
-                    <Edit className="mr-2 h-4 w-4" />
-                    Edit
-                  </DropdownMenuItem>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete this event?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will permanently remove the event and its list credentials.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={async () => {
-                            if (!workspaceScope) {
-                              return;
-                            }
-                            await removeEvent({
-                              eventId: event._id,
-                              ...workspaceScope.queryArgs,
-                            });
-                            posthog.capture("event_deleted", {
-                              event_id: event._id,
-                              event_name: inlineTitle,
-                              workspace_slug: workspaceScope.workspaceSlug,
-                            });
-                            router.refresh();
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="size-10"
+                          aria-label="Open event actions"
+                        >
+                          <MoreHorizontal className="h-6 w-6" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem
+                          onSelect={(menuEvent) => {
+                            menuEvent.preventDefault();
+                            handleViewClick();
                           }}
                         >
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          {isDraft ? "Continue editing" : "View public page"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {showSendQrCodesButton && (
+                          <>
+                            <DropdownMenuItem
+                              disabled={sendingQrBatch}
+                              onSelect={(menuEvent) => {
+                                menuEvent.preventDefault();
+                                void sendPendingQrCodes();
+                              }}
+                            >
+                              <QrCode className="mr-2 h-4 w-4" />
+                              {sendingQrBatch
+                                ? "Sending QR codes..."
+                                : `Send QR codes (${pendingDeferredCount})`}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                          </>
+                        )}
+                        <DropdownMenuItem
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            void togglePublish();
+                          }}
+                        >
+                          {isDraft ? (
+                            <CheckCircle className="mr-2 h-4 w-4" />
+                          ) : (
+                            <EyeOff className="mr-2 h-4 w-4" />
+                          )}
+                          {lifecycleActionLabel}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={event.isFeatured}
+                          onSelect={(menuEvent) => {
+                            menuEvent.preventDefault();
+                            void handleSetFeatured();
+                          }}
+                        >
+                          <CheckCircle className="mr-2 h-4 w-4" />
+                          Set as Featured
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={openEventDetails}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          Configure
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={(menuEvent) => {
+                            menuEvent.preventDefault();
+                            setShowDeleteDialog(true);
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
                           Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              </CardFooter>
             </div>
-          </div>
-        </CardFooter>
-      </div>
+          </Card>
+        </ContextMenuTrigger>
+        <EventContextMenu
+          event={event}
+          isDraft={isDraft}
+          publicEventUrl={publicEventUrl}
+          lifecycleActionLabel={lifecycleActionLabel}
+          onOpenDetails={openEventDetails}
+          onView={handleViewClick}
+          onDuplicateToDraft={duplicateEventToDraft}
+          onTogglePublish={togglePublish}
+          onSetFeatured={handleSetFeatured}
+          onDelete={() => setShowDeleteDialog(true)}
+          onSendQrCodes={showSendQrCodesButton ? sendPendingQrCodes : undefined}
+          sendingQrCodes={sendingQrBatch}
+          pendingQrCount={showSendQrCodesButton ? (pendingDeferredCount ?? 0) : 0}
+          isDuplicating={isDuplicating}
+        />
+      </ContextMenu>
 
-      <EditEventDialog
-        event={event}
-        open={showEditDialog}
-        onOpenChange={setShowEditDialog}
-        showTrigger={false}
+      <EventDeleteDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        onDelete={handleDeleteEvent}
       />
-    </Card>
+    </>
   );
 }

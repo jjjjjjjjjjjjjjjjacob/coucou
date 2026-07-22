@@ -1,33 +1,31 @@
 "use client";
 
-import { WEBHOOK_EVENT_TYPES } from "@coucou/sdk/api-v1";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { WEBHOOK_EVENT_TYPES } from "@coucou/sdk/api-v1";
 import { useMutation, useQuery } from "convex/react";
 import {
   AlertCircle,
+  BookOpen,
   Check,
   Copy,
   Eye,
   EyeOff,
   KeyRound,
+  MoreHorizontal,
+  Pencil,
   Plus,
   RefreshCw,
   Send,
   Trash2,
   Webhook,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -37,12 +35,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageCard } from "@/components/ui/page-card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { buildWorkspaceOperationPath } from "@/lib/workspace-config";
 
 const API_KEY_SCOPES = [
   { scope: "events:read" as const, label: "Read events" },
+  { scope: "events:write" as const, label: "Write events" },
   { scope: "rsvps:read" as const, label: "Read RSVPs" },
   { scope: "rsvps:write" as const, label: "Write RSVPs" },
 ];
@@ -92,27 +101,18 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 function ApiBaseUrlCard() {
   const apiBaseUrl = resolveApiBaseUrl();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">API base URL</CardTitle>
-        <CardDescription>
-          Point partner integrations at this origin. Requests authenticate with an API key in the
-          Authorization header: <code className="text-xs">Authorization: Bearer coucou_sk_…</code>
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {apiBaseUrl ? (
-          <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 font-mono text-sm">
-            <span className="truncate">{apiBaseUrl}</span>
-            <CopyButton value={apiBaseUrl} label="API base URL" />
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            NEXT_PUBLIC_CONVEX_URL is not configured in this environment.
-          </p>
-        )}
-      </CardContent>
-    </Card>
+    <PageCard title="API base URL" description="Point partner integrations at this origin.">
+      {apiBaseUrl ? (
+        <div className="flex items-center gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-2 font-mono text-sm text-[var(--text-primary)]">
+          <span className="truncate">{apiBaseUrl}</span>
+          <CopyButton value={apiBaseUrl} label="API base URL" />
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--text-secondary)]">
+          NEXT_PUBLIC_CONVEX_URL is not configured in this environment.
+        </p>
+      )}
+    </PageCard>
   );
 }
 
@@ -120,12 +120,17 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
   const apiClients = useQuery(api.apiClients.listForWorkspace, { workspaceSlug });
   const createApiClient = useMutation(api.apiClients.create);
   const revokeApiClient = useMutation(api.apiClients.revoke);
+  const updateDefaultRsvpListKey = useMutation(api.apiClients.updateDefaultRsvpListKey);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyScopes, setNewKeyScopes] = useState<ApiClientScope[]>(["events:read"]);
+  const [newKeyDefaultRsvpListKey, setNewKeyDefaultRsvpListKey] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [createdPlaintextKey, setCreatedPlaintextKey] = useState<string | null>(null);
+  const [editingApiClientId, setEditingApiClientId] = useState<Id<"apiClients"> | null>(null);
+  const [editingDefaultRsvpListKey, setEditingDefaultRsvpListKey] = useState("");
+  const [isSavingDefaultList, setIsSavingDefaultList] = useState(false);
 
   const handleCreate = async () => {
     if (!newKeyName.trim()) {
@@ -142,15 +147,35 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
         workspaceSlug,
         displayName: newKeyName.trim(),
         scopes: newKeyScopes,
+        defaultRsvpListKey: newKeyDefaultRsvpListKey.trim() || undefined,
       });
       setCreatedPlaintextKey(created.plaintextKey);
       setIsCreateDialogOpen(false);
       setNewKeyName("");
       setNewKeyScopes(["events:read"]);
+      setNewKeyDefaultRsvpListKey("");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create the API key");
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleSaveDefaultList = async () => {
+    if (!editingApiClientId) return;
+    setIsSavingDefaultList(true);
+    try {
+      await updateDefaultRsvpListKey({
+        workspaceSlug,
+        apiClientId: editingApiClientId,
+        defaultRsvpListKey: editingDefaultRsvpListKey.trim() || undefined,
+      });
+      setEditingApiClientId(null);
+      toast.success("Default RSVP list updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update the default list");
+    } finally {
+      setIsSavingDefaultList(false);
     }
   };
 
@@ -166,68 +191,91 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
   };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between space-y-0">
-        <div className="space-y-1.5">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <KeyRound className="h-4 w-4" /> API keys
-          </CardTitle>
-          <CardDescription>
-            Server-side credentials for the partner API. Keys are shown once at creation and never
-            again — store them in your integration&apos;s secret manager, never in a browser.
-          </CardDescription>
-        </div>
+    <PageCard
+      title={
+        <span className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4" /> API keys
+        </span>
+      }
+      description="Server-side credentials for the partner API. Keys are shown once at creation and never again."
+      action={
         <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
           <Plus className="mr-1 h-4 w-4" /> Create key
         </Button>
-      </CardHeader>
-      <CardContent className="space-y-2">
+      }
+    >
+      <div className="space-y-2">
         {apiClients === undefined ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-[var(--text-secondary)]">Loading…</p>
         ) : apiClients.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No API keys yet.</p>
+          <p className="text-sm text-[var(--text-secondary)]">No API keys yet.</p>
         ) : (
           apiClients.map((apiClient) => (
             <div
               key={apiClient.apiClientId}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-2"
             >
               <div className="min-w-0 space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">{apiClient.displayName}</span>
-                  <code className="text-xs text-muted-foreground">{apiClient.keyPrefix}…</code>
-                  {apiClient.revokedAt !== null && <Badge variant="destructive">Revoked</Badge>}
+                  <span className="text-sm font-medium text-[var(--text-primary)]">
+                    {apiClient.displayName}
+                  </span>
+                  <code className="text-xs text-[var(--text-secondary)]">
+                    {apiClient.keyPrefix}…
+                  </code>
+                  {apiClient.revokedAt !== null && (
+                    <StatusBadge variant="disabled" label="Revoked" />
+                  )}
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                   {apiClient.scopes.map((scope) => (
-                    <Badge key={scope} variant="outline" className="text-[10px]">
+                    <Badge
+                      key={scope}
+                      variant="outline"
+                      className="border-[var(--border-subtle)] text-[10px] text-[var(--text-primary)]"
+                    >
                       {scope}
                     </Badge>
                   ))}
                   <span>· Created {formatTimestamp(apiClient.createdAt)}</span>
                   <span>· Last used {formatTimestamp(apiClient.lastUsedAt)}</span>
+                  <span>
+                    · Default RSVP list {apiClient.defaultRsvpListKey ?? "event fallback"}
+                  </span>
                 </div>
               </div>
               {apiClient.revokedAt === null && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => handleRevoke(apiClient.apiClientId, apiClient.displayName)}
-                >
-                  Revoke
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setEditingApiClientId(apiClient.apiClientId);
+                      setEditingDefaultRsvpListKey(apiClient.defaultRsvpListKey ?? "");
+                    }}
+                  >
+                    <Pencil className="mr-1 h-3.5 w-3.5" /> Default list
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => handleRevoke(apiClient.apiClientId, apiClient.displayName)}
+                  >
+                    Revoke
+                  </Button>
+                </div>
               )}
             </div>
           ))
         )}
-      </CardContent>
+      </div>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent>
+        <DialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
           <DialogHeader>
             <DialogTitle>Create API key</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-[var(--text-secondary)]">
               Name the key after the integration that will use it and grant only the scopes it
               needs.
             </DialogDescription>
@@ -240,12 +288,16 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
                 placeholder="e.g. Club app backend"
                 value={newKeyName}
                 onChange={(event) => setNewKeyName(event.target.value)}
+                className="border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]"
               />
             </div>
             <div className="space-y-2">
               <Label>Scopes</Label>
               {API_KEY_SCOPES.map(({ scope, label }) => (
-                <label key={scope} className="flex items-center gap-2 text-sm">
+                <label
+                  key={scope}
+                  className="flex items-center gap-2 text-sm text-[var(--text-primary)]"
+                >
                   <Checkbox
                     checked={newKeyScopes.includes(scope)}
                     onCheckedChange={(checked) =>
@@ -256,17 +308,69 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
                       )
                     }
                   />
-                  {label} <code className="text-xs text-muted-foreground">{scope}</code>
+                  {label} <code className="text-xs text-[var(--text-secondary)]">{scope}</code>
                 </label>
               ))}
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="api-key-default-rsvp-list">Default RSVP list (optional)</Label>
+              <Input
+                id="api-key-default-rsvp-list"
+                placeholder="e.g. ga"
+                value={newKeyDefaultRsvpListKey}
+                onChange={(event) => setNewKeyDefaultRsvpListKey(event.target.value)}
+                className="border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]"
+              />
+              <p className="text-xs text-[var(--text-secondary)]">
+                Used when this client submits an RSVP without a password or explicit list key.
+              </p>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsCreateDialogOpen(false)}
+              className="border-[var(--border-subtle)]"
+            >
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={isCreating}>
               {isCreating ? "Creating…" : "Create key"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editingApiClientId !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingApiClientId(null);
+        }}
+      >
+        <DialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
+          <DialogHeader>
+            <DialogTitle>Edit default RSVP list</DialogTitle>
+            <DialogDescription className="text-[var(--text-secondary)]">
+              The configured list must exist on every event this integration submits to. Leave it
+              empty to retain the legacy event fallback.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="edit-api-key-default-rsvp-list">List key</Label>
+            <Input
+              id="edit-api-key-default-rsvp-list"
+              placeholder="e.g. ga"
+              value={editingDefaultRsvpListKey}
+              onChange={(event) => setEditingDefaultRsvpListKey(event.target.value)}
+              className="border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingApiClientId(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveDefaultList} disabled={isSavingDefaultList}>
+              {isSavingDefaultList ? "Saving…" : "Save default"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -278,16 +382,16 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
           if (!open) setCreatedPlaintextKey(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
           <DialogHeader>
             <DialogTitle>Copy your API key now</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-[var(--text-secondary)]">
               This is the only time the full key is shown. If you lose it, revoke it and create a
               new one.
             </DialogDescription>
           </DialogHeader>
           {createdPlaintextKey && (
-            <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 font-mono text-sm">
+            <div className="flex items-center gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-2 font-mono text-sm text-[var(--text-primary)]">
               <span className="truncate">{createdPlaintextKey}</span>
               <CopyButton value={createdPlaintextKey} label="API key" />
             </div>
@@ -299,7 +403,7 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </PageCard>
   );
 }
 
@@ -311,18 +415,20 @@ interface RevealedEndpointSecrets {
 
 function EndpointSecretsBlock({ secrets }: { secrets: RevealedEndpointSecrets }) {
   return (
-    <div className="space-y-1.5 rounded-md border bg-muted/40 p-3 text-xs">
+    <div className="space-y-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3 text-xs">
       <div className="flex items-center gap-2">
-        <span className="w-36 shrink-0 text-muted-foreground">Encryption secret</span>
-        <code className="truncate">{secrets.encryptionSecretBase64}</code>
+        <span className="w-36 shrink-0 text-[var(--text-secondary)]">Encryption secret</span>
+        <code className="truncate text-[var(--text-primary)]">
+          {secrets.encryptionSecretBase64}
+        </code>
         <CopyButton value={secrets.encryptionSecretBase64} label="Encryption secret" />
       </div>
       <div className="flex items-center gap-2">
-        <span className="w-36 shrink-0 text-muted-foreground">Signing secret</span>
-        <code className="truncate">{secrets.signingSecretBase64}</code>
+        <span className="w-36 shrink-0 text-[var(--text-secondary)]">Signing secret</span>
+        <code className="truncate text-[var(--text-primary)]">{secrets.signingSecretBase64}</code>
         <CopyButton value={secrets.signingSecretBase64} label="Signing secret" />
       </div>
-      <p className="text-muted-foreground">
+      <p className="text-[var(--text-secondary)]">
         Secret generation {secrets.secretGeneration}. Payloads are AES-256-GCM encrypted with the
         encryption secret; request signatures use the signing secret.
       </p>
@@ -354,10 +460,10 @@ function EndpointDeliveries({
   };
 
   if (deliveries === undefined) {
-    return <p className="text-xs text-muted-foreground">Loading deliveries…</p>;
+    return <p className="text-xs text-[var(--text-secondary)]">Loading deliveries…</p>;
   }
   if (deliveries.deliveries.length === 0) {
-    return <p className="text-xs text-muted-foreground">No deliveries yet.</p>;
+    return <p className="text-xs text-[var(--text-secondary)]">No deliveries yet.</p>;
   }
 
   return (
@@ -365,28 +471,28 @@ function EndpointDeliveries({
       {deliveries.deliveries.map((delivery) => (
         <div
           key={delivery.deliveryId}
-          className="flex flex-wrap items-center gap-2 rounded border px-2 py-1.5 text-xs"
+          className="flex flex-wrap items-center gap-2 rounded border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 py-1.5 text-xs"
         >
-          <code>{delivery.eventType}</code>
-          <Badge
+          <code className="text-[var(--text-primary)]">{delivery.eventType}</code>
+          <StatusBadge
             variant={
               delivery.status === "success"
-                ? "default"
+                ? "approved"
                 : delivery.status === "pending"
-                  ? "secondary"
-                  : "destructive"
+                  ? "pending"
+                  : "denied"
             }
-            className="text-[10px]"
-          >
-            {delivery.status}
-          </Badge>
-          <span className="text-muted-foreground">
+            label={delivery.status}
+          />
+          <span className="text-[var(--text-secondary)]">
             {formatTimestamp(delivery.occurredAt)} · {delivery.attemptCount} attempt
             {delivery.attemptCount === 1 ? "" : "s"}
             {delivery.lastResponseStatus !== null && ` · HTTP ${delivery.lastResponseStatus}`}
           </span>
           {delivery.lastErrorMessage && (
-            <span className="truncate text-destructive">{delivery.lastErrorMessage}</span>
+            <span className="truncate text-[var(--status-denied)]">
+              {delivery.lastErrorMessage}
+            </span>
           )}
           {delivery.status !== "pending" && delivery.status !== "success" && (
             <Button
@@ -413,6 +519,9 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
   const sendTestDelivery = useMutation(api.webhookEndpoints.sendTestDelivery);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [editingEndpointId, setEditingEndpointId] = useState<Id<"webhookEndpoints"> | null>(null);
+  const [editingEndpointUrl, setEditingEndpointUrl] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
   const [newEndpointUrl, setNewEndpointUrl] = useState("");
   const [newEndpointDescription, setNewEndpointDescription] = useState("");
   const [newEndpointEventTypes, setNewEndpointEventTypes] = useState<string[]>([
@@ -426,9 +535,7 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
     Record<string, RevealedEndpointSecrets>
   >({});
 
-  const [expandedEndpointId, setExpandedEndpointId] = useState<Id<"webhookEndpoints"> | null>(
-    null,
-  );
+  const [expandedEndpointId, setExpandedEndpointId] = useState<Id<"webhookEndpoints"> | null>(null);
 
   const [revealingEndpointId, setRevealingEndpointId] = useState<Id<"webhookEndpoints"> | null>(
     null,
@@ -504,6 +611,52 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
     }
   };
 
+  const openUrlEditDialog = (endpointId: Id<"webhookEndpoints">, currentUrl: string) => {
+    setEditingEndpointId(endpointId);
+    setEditingEndpointUrl(currentUrl);
+  };
+
+  const handleToggleActive = async (
+    endpointId: Id<"webhookEndpoints">,
+    isCurrentlyActive: boolean,
+  ) => {
+    try {
+      await updateEndpoint({
+        workspaceSlug,
+        endpointId,
+        isActive: !isCurrentlyActive,
+      });
+      toast.success(isCurrentlyActive ? "Endpoint disabled" : "Endpoint enabled");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update endpoint");
+    }
+  };
+
+  const handleUpdateEndpoint = async () => {
+    if (!editingEndpointId) return;
+    try {
+      const parsedUrl = new URL(editingEndpointUrl.trim());
+      if (parsedUrl.protocol !== "https:") throw new Error("Webhook URLs must use https://");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Enter a valid https:// URL");
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      await updateEndpoint({
+        workspaceSlug,
+        endpointId: editingEndpointId,
+        url: editingEndpointUrl.trim(),
+      });
+      setEditingEndpointId(null);
+      toast.success("Webhook endpoint updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update the endpoint");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const handleRemove = async (endpointId: Id<"webhookEndpoints">, url: string) => {
     if (!window.confirm(`Delete the endpoint for ${url}? Its delivery history is kept.`)) return;
     try {
@@ -524,35 +677,35 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
   };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between space-y-0">
-        <div className="space-y-1.5">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Webhook className="h-4 w-4" /> Webhook endpoints
-          </CardTitle>
-          <CardDescription>
-            Receive encrypted, signed notifications when RSVPs or events change. Payloads are
-            AES-256-GCM encrypted; verify the signature and decrypt with the endpoint&apos;s
-            secrets.
-          </CardDescription>
-        </div>
+    <PageCard
+      title={
+        <span className="flex items-center gap-2">
+          <Webhook className="h-4 w-4" /> Webhook endpoints
+        </span>
+      }
+      description="Receive encrypted, signed notifications when RSVPs or events change."
+      action={
         <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
           <Plus className="mr-1 h-4 w-4" /> Add endpoint
         </Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      }
+    >
+      <div className="space-y-3">
         {endpoints === undefined ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-[var(--text-secondary)]">Loading…</p>
         ) : endpoints.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No webhook endpoints yet.</p>
+          <p className="text-sm text-[var(--text-secondary)]">No webhook endpoints yet.</p>
         ) : (
           endpoints.map((endpoint) => {
             const revealedSecrets = revealedSecretsByEndpointId[endpoint.endpointId];
             const isExpanded = expandedEndpointId === endpoint.endpointId;
             return (
-              <div key={endpoint.endpointId} className="space-y-2 rounded-md border p-3">
+              <div
+                key={endpoint.endpointId}
+                className="space-y-2 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3"
+              >
                 {endpoint.disabledReason === "auto_failure" && (
-                  <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  <div className="flex items-center gap-2 rounded-md border border-[var(--status-denied)]/40 bg-[var(--status-denied-bg)] px-3 py-2 text-xs text-[var(--status-denied)]">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                     Disabled automatically after repeated delivery failures. Fix the consumer and
                     re-enable.
@@ -560,18 +713,38 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <code className="truncate text-sm">{endpoint.url}</code>
-                      <Badge variant={endpoint.isActive ? "default" : "secondary"}>
-                        {endpoint.isActive ? "Active" : "Disabled"}
-                      </Badge>
+                    <div className="flex items-center gap-1">
+                      <code
+                        className="cursor-text truncate text-sm text-[var(--text-primary)] underline-offset-4 decoration-dotted hover:underline"
+                        title="Double-click to edit URL"
+                        onDoubleClick={() => openUrlEditDialog(endpoint.endpointId, endpoint.url)}
+                      >
+                        {endpoint.url}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0 text-[var(--text-secondary)]"
+                        aria-label="Edit webhook URL"
+                        onClick={() => openUrlEditDialog(endpoint.endpointId, endpoint.url)}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <StatusBadge
+                        variant={endpoint.isActive ? "approved" : "disabled"}
+                        label={endpoint.isActive ? "Active" : "Disabled"}
+                      />
                     </div>
                     {endpoint.description && (
-                      <p className="text-xs text-muted-foreground">{endpoint.description}</p>
+                      <p className="text-xs text-[var(--text-secondary)]">{endpoint.description}</p>
                     )}
                     <div className="flex flex-wrap gap-1">
                       {endpoint.subscribedEventTypes.map((eventType) => (
-                        <Badge key={eventType} variant="outline" className="text-[10px]">
+                        <Badge
+                          key={eventType}
+                          variant="outline"
+                          className="border-[var(--border-subtle)] text-[10px] text-[var(--text-primary)]"
+                        >
                           {eventType}
                         </Badge>
                       ))}
@@ -581,7 +754,7 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs"
+                      className="h-7 px-2 text-xs text-[var(--text-secondary)]"
                       onClick={() => {
                         if (revealedSecrets) {
                           setRevealedSecretsByEndpointId((currentSecrets) => {
@@ -609,60 +782,56 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs"
+                      className="h-7 px-2 text-xs text-[var(--text-secondary)]"
                       onClick={() => handleRotate(endpoint.endpointId)}
                     >
                       <RefreshCw className="mr-1 h-3 w-3" /> Rotate
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      disabled={!endpoint.isActive}
-                      onClick={() => handleSendTest(endpoint.endpointId)}
-                    >
-                      <Send className="mr-1 h-3 w-3" /> Send test
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      onClick={() =>
-                        updateEndpoint({
-                          workspaceSlug,
-                          endpointId: endpoint.endpointId,
-                          isActive: !endpoint.isActive,
-                        })
-                          .then(() =>
-                            toast.success(endpoint.isActive ? "Endpoint disabled" : "Endpoint enabled"),
-                          )
-                          .catch((error) =>
-                            toast.error(
-                              error instanceof Error ? error.message : "Could not update endpoint",
-                            ),
-                          )
-                      }
-                    >
-                      {endpoint.isActive ? "Disable" : "Enable"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                      onClick={() => handleRemove(endpoint.endpointId, endpoint.url)}
-                    >
-                      <Trash2 className="mr-1 h-3 w-3" /> Delete
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-[var(--text-secondary)]"
+                          aria-label="Endpoint actions"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="border-[var(--border-subtle)] bg-[var(--surface-2)]"
+                      >
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            handleToggleActive(endpoint.endpointId, endpoint.isActive)
+                          }
+                        >
+                          {endpoint.isActive ? "Disable" : "Enable"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={!endpoint.isActive}
+                          onSelect={() => handleSendTest(endpoint.endpointId)}
+                        >
+                          <Send className="mr-2 h-3.5 w-3.5" /> Send test
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={() => handleRemove(endpoint.endpointId, endpoint.url)}
+                        >
+                          <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
                 {revealedSecrets && <EndpointSecretsBlock secrets={revealedSecrets} />}
                 <Button
                   variant="link"
                   size="sm"
-                  className="h-6 px-0 text-xs"
-                  onClick={() =>
-                    setExpandedEndpointId(isExpanded ? null : endpoint.endpointId)
-                  }
+                  className="h-6 px-0 text-xs text-[var(--text-secondary)]"
+                  onClick={() => setExpandedEndpointId(isExpanded ? null : endpoint.endpointId)}
                 >
                   {isExpanded ? "Hide recent deliveries" : "Show recent deliveries"}
                 </Button>
@@ -676,13 +845,13 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
             );
           })
         )}
-      </CardContent>
+      </div>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent>
+        <DialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
           <DialogHeader>
             <DialogTitle>Add webhook endpoint</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-[var(--text-secondary)]">
               Coucou will POST encrypted event notifications to this HTTPS URL.
             </DialogDescription>
           </DialogHeader>
@@ -694,6 +863,7 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
                 placeholder="https://example.com/webhooks/coucou"
                 value={newEndpointUrl}
                 onChange={(event) => setNewEndpointUrl(event.target.value)}
+                className="border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]"
               />
             </div>
             <div className="space-y-2">
@@ -703,13 +873,17 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
                 placeholder="e.g. Club app production"
                 value={newEndpointDescription}
                 onChange={(event) => setNewEndpointDescription(event.target.value)}
+                className="border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]"
               />
             </div>
             <div className="space-y-2">
               <Label>Subscribed events</Label>
               <div className="grid grid-cols-2 gap-1.5">
                 {WEBHOOK_EVENT_TYPES.map((eventType) => (
-                  <label key={eventType} className="flex items-center gap-2 text-sm">
+                  <label
+                    key={eventType}
+                    className="flex items-center gap-2 text-sm text-[var(--text-primary)]"
+                  >
                     <Checkbox
                       checked={newEndpointEventTypes.includes(eventType)}
                       onCheckedChange={(checked) =>
@@ -729,7 +903,11 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsCreateDialogOpen(false)}
+              className="border-[var(--border-subtle)]"
+            >
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={isCreating}>
@@ -738,7 +916,46 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+
+      <Dialog
+        open={editingEndpointId !== null}
+        onOpenChange={(open) => {
+          if (!open && !isUpdating) setEditingEndpointId(null);
+        }}
+      >
+        <DialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
+          <DialogHeader>
+            <DialogTitle>Edit webhook endpoint</DialogTitle>
+            <DialogDescription className="text-[var(--text-secondary)]">
+              Update the HTTPS destination. Existing signing and encryption secrets remain
+              unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="edit-endpoint-url">HTTPS URL</Label>
+            <Input
+              id="edit-endpoint-url"
+              placeholder="https://example.com/webhooks/coucou"
+              value={editingEndpointUrl}
+              onChange={(event) => setEditingEndpointUrl(event.target.value)}
+              className="border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditingEndpointId(null)}
+              disabled={isUpdating}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateEndpoint} disabled={isUpdating}>
+              {isUpdating ? "Saving…" : "Save URL"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </PageCard>
   );
 }
 
@@ -746,17 +963,29 @@ export default function DevelopersPage() {
   const workspaceScope = useWorkspaceScope();
 
   if (!workspaceScope) {
-    return <p className="text-sm text-muted-foreground">Loading workspace…</p>;
+    return <p className="text-sm text-[var(--text-secondary)]">Loading workspace…</p>;
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">Developers</h1>
-        <p className="text-sm text-muted-foreground">
-          API keys and webhooks for integrating {workspaceScope.brandName} with other apps.
-        </p>
-      </div>
+    <div className="space-y-5">
+      <DashboardTitleBar
+        title="Developers"
+        subtitle={`API keys and webhooks for integrating ${workspaceScope.brandName} with other apps.`}
+        action={
+          <Button variant="outline" size="sm" asChild>
+            <Link
+              href={buildWorkspaceOperationPath(
+                workspaceScope.workspaceSlug,
+                "host",
+                "developers/docs",
+              )}
+            >
+              <BookOpen className="mr-1 h-4 w-4" /> API documentation
+            </Link>
+          </Button>
+        }
+        breadcrumb={[{ label: "Workspace" }]}
+      />
       <ApiBaseUrlCard />
       <ApiKeysCard workspaceSlug={workspaceScope.workspaceSlug} />
       <WebhookEndpointsCard workspaceSlug={workspaceScope.workspaceSlug} />

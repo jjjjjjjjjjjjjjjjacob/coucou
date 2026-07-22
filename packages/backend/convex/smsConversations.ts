@@ -673,3 +673,58 @@ export const startThreadFromRsvp = action({
     };
   },
 });
+
+export const listThreadsByPhone = query({
+  args: {
+    phone: v.string(),
+    ...scopeArgs,
+  },
+  handler: async (ctx, args) => {
+    // Host-level (not admin-only) so Guests directory rows can open details.
+    const workspaceScope = await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+
+    const { phoneHash } = await normalizeAndHashPhoneNumber(args.phone);
+
+    const threads = await ctx.db
+      .query("smsConversationThreads")
+      .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
+      .collect();
+
+    const workspaceEvents = await ctx.db
+      .query("events")
+      .withIndex("by_workspaceSlug", (queryBuilder) =>
+        queryBuilder.eq("workspaceSlug", workspaceScope.workspaceSlug),
+      )
+      .collect();
+
+    const eventMap = new Map(workspaceEvents.map((event) => [event._id, event]));
+    const workspaceEventIds = new Set(workspaceEvents.map((event) => event._id));
+
+    const enrichedThreads = await Promise.all(
+      threads
+        .filter((thread) => workspaceEventIds.has(thread.eventId))
+        .map(async (thread) => {
+          const participants = await summarizeThreadParticipants(ctx, thread);
+          const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
+          const event = eventMap.get(thread.eventId);
+          return {
+            ...thread,
+            eventName: event?.name ?? "Unknown Event",
+            eventDate: event?.eventDate ?? 0,
+            participantName: participants.displayName,
+            canSend: sendReadiness.state === "ready",
+            sendDisabledReason: sendReadiness.state === "ready" ? undefined : sendReadiness.reason,
+          };
+        }),
+    );
+
+    return enrichedThreads.sort(
+      (firstThread, secondThread) =>
+        (secondThread.lastMessageAt ?? secondThread.updatedAt) -
+        (firstThread.lastMessageAt ?? firstThread.updatedAt),
+    );
+  },
+});

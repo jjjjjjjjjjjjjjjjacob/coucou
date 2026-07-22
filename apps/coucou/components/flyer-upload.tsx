@@ -70,7 +70,7 @@ export function StorageImageUpload({
   return (
     <div className="space-y-2">
       <div
-        className={`rounded border-2 border-dashed p-4 text-sm text-center cursor-pointer ${dragOver ? "bg-foreground/5" : ""}`}
+        className={`cursor-pointer rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--surface-2)] p-6 text-center text-sm transition-colors hover:border-[var(--border-strong)] ${dragOver ? "border-[var(--border-strong)] bg-foreground/5" : ""}`}
         onDragOver={(event) => {
           event.preventDefault();
           setDragOver(true);
@@ -98,7 +98,7 @@ export function StorageImageUpload({
               <img
                 src={preview.url}
                 alt={previewAlt}
-                className="h-20 w-20 object-cover rounded border"
+                className="h-20 w-20 rounded object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
                 onError={(event) => {
                   console.error("Failed to load preview image:", preview.url);
                   event.currentTarget.style.display = "none";

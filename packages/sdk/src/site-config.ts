@@ -1,6 +1,6 @@
 import type { PresetKey } from "./theming/presets";
 
-export type SiteKey = "dojo" | "club-chlorine" | "coucou";
+export type SiteKey = "dojo" | "club-chlorine" | "danza-organica" | "coucou";
 
 export type AuthMethod = "phone" | "email";
 
@@ -82,6 +82,30 @@ export const siteConfigurations: Record<SiteKey, SiteConfiguration> = {
       verificationDescription: "Enter the code we just texted you.",
     },
   },
+  "danza-organica": {
+    siteKey: "danza-organica",
+    workspaceSlug: "danza-organica",
+    brandName: "Danza Organica",
+    shortName: "Danza",
+    domain: "https://danzaorganica.coucou.events",
+    description: "Guest list and event access for Danza Organica gatherings",
+    accentMark: "DO",
+    homeTitle: "Danza Organica",
+    homeDescription: "Upcoming nights. Choose a date and RSVP — guest list codes optional.",
+    appKind: "client",
+    preset: "danza",
+    auth: {
+      siteKey: "danza-organica",
+      brandName: "Danza Organica",
+      accentMark: "DO",
+      heading: "What's your phone number?",
+      description: "We'll text you a code so we can send RSVP updates, tickets, and event info.",
+      allowedMethods: ["phone"],
+      defaultMethod: "phone",
+      signInRedirectPath: "/",
+      verificationDescription: "Enter the code we just texted you.",
+    },
+  },
   coucou: {
     siteKey: "coucou",
     workspaceSlug: "coucou",
@@ -111,5 +135,6 @@ export const siteConfigurations: Record<SiteKey, SiteConfiguration> = {
 export const siteAuthConfigurations: Record<SiteKey, SiteAuthConfiguration> = {
   dojo: siteConfigurations.dojo.auth,
   "club-chlorine": siteConfigurations["club-chlorine"].auth,
+  "danza-organica": siteConfigurations["danza-organica"].auth,
   coucou: siteConfigurations.coucou.auth,
 };

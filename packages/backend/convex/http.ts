@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import { api, internal } from "./_generated/api";
 import { type ActionCtx, httpAction } from "./_generated/server";
+import * as apiV1 from "./apiV1";
 import {
   type ClerkOrganizationWorkspacePayload,
   extractClerkOrganizationMembershipPayload,
@@ -8,7 +9,6 @@ import {
   extractClerkUserWebhookProfile,
   parseClerkWebhookEvent,
 } from "./lib/clerkWebhookPayloads";
-import * as apiV1 from "./apiV1";
 import { getCoucouOrganizationSlug } from "./lib/platformAuth";
 import { handleDeliveryStatus, handleIncomingSms, handleOptOut } from "./webhooks";
 
@@ -150,6 +150,11 @@ http.route({
   pathPrefix: "/api/v1/events/",
   method: "POST",
   handler: apiV1.handleEventSubresourcePost,
+});
+http.route({
+  pathPrefix: "/api/v1/events/",
+  method: "PATCH",
+  handler: apiV1.handleEventPatch,
 });
 http.route({ pathPrefix: "/api/v1/rsvps/", method: "PATCH", handler: apiV1.handleRsvpPatch });
 http.route({ pathPrefix: "/api/v1/rsvps/", method: "DELETE", handler: apiV1.handleRsvpDelete });

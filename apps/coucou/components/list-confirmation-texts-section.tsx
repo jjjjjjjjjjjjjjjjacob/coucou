@@ -1,11 +1,12 @@
 import { MessageTemplateVariableButtons } from "@/components/message-template-variable-buttons";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Field, FieldDescription, FieldSwitchRow, FieldTitle } from "@/components/ui/field";
+import { SectionCard } from "@/components/ui/section-card";
 import { Textarea } from "@/components/ui/textarea";
 import {
   applyMessageTemplateVariables,
   type MessageTemplateVariables,
 } from "@/lib/text-blast-message";
-import { cn } from "@/lib/utils";
 
 export interface ListConfirmationTextRow {
   listKey: string;
@@ -44,14 +45,11 @@ export function ListConfirmationTextsSection<ListRow extends ListConfirmationTex
     .filter(({ list }) => list.listKey.trim().length > 0);
 
   return (
-    <div className={cn("space-y-4 rounded-lg border bg-card p-4", className)}>
-      <div className="space-y-1">
-        <h3 className="font-medium text-sm text-muted-foreground">CONFIRMATION TEXTS</h3>
-        <p className="text-sm text-muted-foreground">
-          Customize the approval SMS guests receive after being approved from each list.
-        </p>
-      </div>
-
+    <SectionCard
+      title="Approval messages by list"
+      description="Customize the approval SMS guests receive after being approved from each list."
+      className={className}
+    >
       {namedLists.length > 0 ? (
         <div className="space-y-3">
           {namedLists.map(({ list, listIndex }) => {
@@ -63,84 +61,72 @@ export function ListConfirmationTextsSection<ListRow extends ListConfirmationTex
             return (
               <div
                 key={`${trimmedListKey}-${listIndex}`}
-                className="space-y-2 rounded border bg-muted/20 p-4"
+                className="space-y-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <label
-                    htmlFor={`list-confirmation-text-${listIndex}`}
-                    className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground"
-                  >
-                    {trimmedListKey}
-                  </label>
-                  <span className="text-xs text-muted-foreground">Approval SMS</span>
+                  <FieldTitle>
+                    <label htmlFor={`list-confirmation-text-${listIndex}`}>{trimmedListKey}</label>
+                  </FieldTitle>
+                  <Badge variant="outline" className="text-xs text-[var(--text-secondary)]">
+                    Approval SMS
+                  </Badge>
                 </div>
-                <Textarea
-                  id={`list-confirmation-text-${listIndex}`}
-                  rows={3}
-                  placeholder={`${defaultApprovalMessage} Use {{firstName}}, {{eventName}}, {{eventDate}}, {{eventLocation}}, or {{qrCodeUrl}}.`}
-                  value={list.approvalMessage}
-                  onChange={(event) => onApprovalMessageChange(listIndex, event.target.value)}
-                />
-                <MessageTemplateVariableButtons
-                  message={list.approvalMessage}
-                  onMessageChange={(approvalMessage) =>
-                    onApprovalMessageChange(listIndex, approvalMessage)
-                  }
-                />
+                <Field>
+                  <Textarea
+                    id={`list-confirmation-text-${listIndex}`}
+                    rows={3}
+                    placeholder={`${defaultApprovalMessage} Use {{firstName}}, {{eventName}}, {{eventDate}}, {{eventLocation}}, or {{qrCodeUrl}}.`}
+                    value={list.approvalMessage}
+                    onChange={(event) => onApprovalMessageChange(listIndex, event.target.value)}
+                  />
+                  <MessageTemplateVariableButtons
+                    message={list.approvalMessage}
+                    onMessageChange={(approvalMessage) =>
+                      onApprovalMessageChange(listIndex, approvalMessage)
+                    }
+                  />
+                  <FieldDescription className="text-xs">
+                    Leave blank to use the default approval message for this event.
+                  </FieldDescription>
+                </Field>
                 {qrAttachmentControlsEnabled ? (
-                  <div className="rounded-md border border-border/70 bg-background p-3">
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        id={`list-confirmation-qr-attachment-${listIndex}`}
-                        checked={qrAttachmentEnabled}
-                        onCheckedChange={(checked) =>
-                          onQrAttachmentChange?.(listIndex, checked === true)
-                        }
-                        className="mt-0.5"
-                      />
-                      <div className="space-y-1">
-                        <label
-                          htmlFor={`list-confirmation-qr-attachment-${listIndex}`}
-                          className="block cursor-pointer text-sm font-medium"
-                        >
-                          Attach generated QR code
-                        </label>
-                        <p className="text-xs text-muted-foreground">
-                          Sends a generated QR image with this approval SMS for guests on this list.
-                          Use {"{{qrCodeUrl}}"} if you also want the ticket link in the text.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                  <FieldSwitchRow
+                    compact
+                    title="Attach generated QR code"
+                    description={
+                      <>
+                        Sends a generated QR image with this approval SMS for guests on this list.
+                        Use {"{{qrCodeUrl}}"} if you also want the ticket link in the text.
+                      </>
+                    }
+                    checked={qrAttachmentEnabled}
+                    onCheckedChange={(checked) => onQrAttachmentChange?.(listIndex, checked)}
+                    switchId={`list-confirmation-qr-attachment-${listIndex}`}
+                  />
                 ) : null}
-                <div className="space-y-1 rounded-md border border-border/70 bg-background p-3">
-                  <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                    Preview
-                  </div>
-                  <div className="whitespace-pre-wrap text-sm">
+                <div className="space-y-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-3)]/40 p-3">
+                  <div className="text-xs font-medium text-[var(--text-tertiary)]">Preview</div>
+                  <div className="whitespace-pre-wrap text-sm text-[var(--text-primary)]">
                     {applyMessageTemplateVariables(
                       list.approvalMessage.trim() ? list.approvalMessage : defaultApprovalMessage,
                       previewVariables,
                     )}
                   </div>
                   {qrAttachmentControlsEnabled && qrAttachmentEnabled ? (
-                    <div className="mt-2 border-t border-border/70 pt-2 text-xs text-muted-foreground">
+                    <div className="mt-2 border-t border-[var(--border-subtle)] pt-2 text-xs text-[var(--text-secondary)]">
                       Generated QR image will be attached with this approval SMS.
                     </div>
                   ) : null}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Leave blank to use the default approval message for this event.
-                </p>
               </div>
             );
           })}
         </div>
       ) : (
-        <div className="rounded border border-dashed border-border/70 p-4 text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-[var(--border-subtle)] p-4 text-sm text-[var(--text-secondary)]">
           Name at least one list before writing confirmation texts.
         </div>
       )}
-    </div>
+    </SectionCard>
   );
 }

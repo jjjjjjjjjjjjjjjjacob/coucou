@@ -133,8 +133,116 @@
   color: var(--text-primary) !important;
 }
 
+.maison-linear {
+  --radius: 0.5rem;
+
+  /* Semantic dashboard surface tokens */
+  --surface-1: var(--tt-bg);
+  --surface-2: var(--tt-bg-2);
+  --surface-3: var(--tt-highlight);
+  --surface-3-strong: var(--tt-highlight-strong);
+  --text-primary: var(--tt-fg);
+  --text-secondary: var(--tt-fg-dim);
+  --text-tertiary: var(--tt-fg-mute);
+  --border-subtle: var(--tt-rule);
+  --border-strong: var(--tt-rule-strong);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.15);
+
+  /* Status palette (low saturation, works in both themes) */
+  --status-approved: oklch(0.56 0.09 145);
+  --status-approved-bg: oklch(0.56 0.09 145 / 0.12);
+  --status-pending: oklch(0.65 0.08 85);
+  --status-pending-bg: oklch(0.65 0.08 85 / 0.12);
+  --status-denied: oklch(0.55 0.12 25);
+  --status-denied-bg: oklch(0.55 0.12 25 / 0.12);
+  --status-issued: oklch(0.6 0.07 250);
+  --status-issued-bg: oklch(0.6 0.07 250 / 0.12);
+  --status-redeemed: oklch(0.55 0.1 145);
+  --status-redeemed-bg: oklch(0.55 0.1 145 / 0.12);
+  --status-draft: oklch(0.55 0.04 250);
+  --status-draft-bg: oklch(0.55 0.04 250 / 0.12);
+  --status-published: oklch(0.55 0.09 155);
+  --status-published-bg: oklch(0.55 0.09 155 / 0.12);
+  --status-past: oklch(0.5 0.04 260);
+  --status-past-bg: oklch(0.5 0.04 260 / 0.12);
+  --status-default: var(--tt-fg-dim);
+  --status-default-bg: var(--tt-highlight);
+
+  --tt-bg: #0a0a0a;
+  --tt-bg-2: #111111;
+  --tt-bg-3: #1c1c1c;
+  --tt-fg: #f0f0f0;
+  --tt-fg-dim: #8a8a8a;
+  --tt-fg-mute: #5c5c5c;
+  --tt-highlight: rgba(255, 255, 255, 0.06);
+  --tt-highlight-strong: rgba(255, 255, 255, 0.1);
+  --tt-rule: rgba(255, 255, 255, 0.08);
+  --tt-rule-strong: rgba(255, 255, 255, 0.12);
+  --tt-text: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --tt-accent: #5e6ad2;
+
+  --background: var(--tt-bg);
+  --foreground: var(--tt-fg);
+  --card: var(--tt-bg-2);
+  --card-foreground: var(--tt-fg);
+  --popover: var(--tt-bg-2);
+  --popover-foreground: var(--tt-fg);
+  --primary: var(--tt-fg);
+  --primary-foreground: var(--tt-bg);
+  --secondary: var(--tt-highlight);
+  --secondary-foreground: var(--tt-fg);
+  --muted: var(--tt-highlight);
+  --muted-foreground: var(--tt-fg-dim);
+  --accent: var(--tt-highlight);
+  --accent-foreground: var(--tt-fg);
+  --border: var(--tt-rule-strong);
+  --input: var(--tt-rule);
+  --ring: var(--tt-fg-dim);
+
+  --sidebar: var(--tt-bg);
+  --sidebar-foreground: var(--tt-fg);
+  --sidebar-primary: var(--tt-fg);
+  --sidebar-primary-foreground: var(--tt-bg);
+  --sidebar-accent: var(--tt-bg-2);
+  --sidebar-accent-foreground: var(--tt-fg);
+  --sidebar-border: transparent;
+  --sidebar-ring: var(--tt-fg-dim);
+}
+
 .maison-app-surface {
-  --radius: 0.25rem;
+  --radius: 0.5rem;
+
+  /* Semantic dashboard surface tokens */
+  --surface-1: var(--tt-bg);
+  --surface-2: var(--tt-bg-2);
+  --surface-3: var(--tt-highlight);
+  --surface-3-strong: var(--tt-highlight-strong);
+  --text-primary: var(--tt-fg);
+  --text-secondary: var(--tt-fg-dim);
+  --text-tertiary: var(--tt-fg-mute);
+  --border-subtle: var(--tt-rule);
+  --border-strong: var(--tt-rule-strong);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.08);
+
+  /* Status palette (low saturation, works in both themes) */
+  --status-approved: oklch(0.56 0.09 145);
+  --status-approved-bg: oklch(0.56 0.09 145 / 0.12);
+  --status-pending: oklch(0.65 0.08 85);
+  --status-pending-bg: oklch(0.65 0.08 85 / 0.12);
+  --status-denied: oklch(0.55 0.12 25);
+  --status-denied-bg: oklch(0.55 0.12 25 / 0.12);
+  --status-issued: oklch(0.6 0.07 250);
+  --status-issued-bg: oklch(0.6 0.07 250 / 0.12);
+  --status-redeemed: oklch(0.55 0.1 145);
+  --status-redeemed-bg: oklch(0.55 0.1 145 / 0.12);
+  --status-draft: oklch(0.55 0.04 250);
+  --status-draft-bg: oklch(0.55 0.04 250 / 0.12);
+  --status-published: oklch(0.55 0.09 155);
+  --status-published-bg: oklch(0.55 0.09 155 / 0.12);
+  --status-past: oklch(0.5 0.04 260);
+  --status-past-bg: oklch(0.5 0.04 260 / 0.12);
+  --status-default: var(--tt-fg-dim);
+  --status-default-bg: var(--tt-highlight);
 
   --tt-bg: #0a0a0a;
   --tt-bg-2: #0f0f0f;
@@ -176,57 +284,94 @@
 }
 
 .maison-app-surface input::placeholder,
-.maison-app-surface textarea::placeholder {
+.maison-linear input::placeholder,
+.maison-app-surface textarea::placeholder,
+.maison-linear textarea::placeholder {
   color: var(--tt-fg-mute);
 }
 
 html.maison-dashboard-light {
-  background-color: #f8f7f2 !important;
+  background-color: #f8f7f2;
 }
 
 html.maison-dashboard-light body.maison-app-surface,
-html.maison-dashboard-light .maison-app-surface {
-  --tt-bg: #f8f7f2 !important;
-  --tt-bg-2: #ffffff !important;
-  --tt-fg: #171412 !important;
-  --tt-fg-dim: #6f6961 !important;
-  --tt-fg-mute: #9a9288 !important;
-  --tt-highlight: #ece8df !important;
-  --tt-highlight-strong: #ded7c9 !important;
-  --tt-rule: rgba(23, 20, 18, 0.1) !important;
-  --tt-rule-strong: rgba(23, 20, 18, 0.18) !important;
+html.maison-dashboard-light body.maison-linear,
+html.maison-dashboard-light .maison-app-surface,
+html.maison-dashboard-light .maison-linear {
+  --tt-bg: #f8f7f2;
+  --tt-bg-2: #ffffff;
+  --tt-fg: #171412;
+  --tt-fg-dim: #6f6961;
+  --tt-fg-mute: #9a9288;
+  --tt-highlight: #ece8df;
+  --tt-highlight-strong: #ded7c9;
+  --tt-rule: rgba(23, 20, 18, 0.1);
+  --tt-rule-strong: rgba(23, 20, 18, 0.18);
 
-  --background: var(--tt-bg) !important;
-  --foreground: var(--tt-fg) !important;
-  --card: var(--tt-bg-2) !important;
-  --card-foreground: var(--tt-fg) !important;
-  --popover: var(--tt-bg-2) !important;
-  --popover-foreground: var(--tt-fg) !important;
-  --primary: var(--tt-fg) !important;
-  --primary-foreground: var(--tt-bg) !important;
-  --secondary: var(--tt-highlight) !important;
-  --secondary-foreground: var(--tt-fg) !important;
-  --muted: var(--tt-highlight) !important;
-  --muted-foreground: var(--tt-fg-dim) !important;
-  --accent: var(--tt-highlight) !important;
-  --accent-foreground: var(--tt-fg) !important;
-  --border: var(--tt-rule-strong) !important;
-  --input: var(--tt-rule-strong) !important;
-  --ring: var(--tt-fg-dim) !important;
+  --background: var(--tt-bg);
+  --foreground: var(--tt-fg);
+  --card: var(--tt-bg-2);
+  --card-foreground: var(--tt-fg);
+  --popover: var(--tt-bg-2);
+  --popover-foreground: var(--tt-fg);
+  --primary: var(--tt-fg);
+  --primary-foreground: var(--tt-bg);
+  --secondary: var(--tt-highlight);
+  --secondary-foreground: var(--tt-fg);
+  --muted: var(--tt-highlight);
+  --muted-foreground: var(--tt-fg-dim);
+  --accent: var(--tt-highlight);
+  --accent-foreground: var(--tt-fg);
+  --border: var(--tt-rule-strong);
+  --input: var(--tt-rule-strong);
+  --ring: var(--tt-fg-dim);
 
-  --sidebar: var(--tt-bg) !important;
-  --sidebar-foreground: var(--tt-fg) !important;
-  --sidebar-primary: var(--tt-fg) !important;
-  --sidebar-primary-foreground: var(--tt-bg) !important;
-  --sidebar-accent: var(--tt-bg-2) !important;
-  --sidebar-accent-foreground: var(--tt-fg) !important;
-  --sidebar-border: transparent !important;
-  --sidebar-ring: var(--tt-fg-dim) !important;
+  --sidebar: var(--tt-bg);
+  --sidebar-foreground: var(--tt-fg);
+  --sidebar-primary: var(--tt-fg);
+  --sidebar-primary-foreground: var(--tt-bg);
+  --sidebar-accent: var(--tt-bg-2);
+  --sidebar-accent-foreground: var(--tt-fg);
+  --sidebar-border: transparent;
+  --sidebar-ring: var(--tt-fg-dim);
+
+  /* Status palette in light mode */
+  --status-approved: oklch(0.45 0.1 145);
+  --status-approved-bg: oklch(0.45 0.1 145 / 0.1);
+  --status-pending: oklch(0.55 0.11 85);
+  --status-pending-bg: oklch(0.55 0.11 85 / 0.1);
+  --status-denied: oklch(0.5 0.14 25);
+  --status-denied-bg: oklch(0.5 0.14 25 / 0.1);
+  --status-issued: oklch(0.55 0.1 250);
+  --status-issued-bg: oklch(0.55 0.1 250 / 0.1);
+  --status-redeemed: oklch(0.45 0.11 145);
+  --status-redeemed-bg: oklch(0.45 0.11 145 / 0.1);
+  --status-draft: oklch(0.45 0.05 250);
+  --status-draft-bg: oklch(0.45 0.05 250 / 0.1);
+  --status-published: oklch(0.45 0.1 155);
+  --status-published-bg: oklch(0.45 0.1 155 / 0.1);
+  --status-past: oklch(0.45 0.05 260);
+  --status-past-bg: oklch(0.45 0.05 260 / 0.1);
+  --status-default: var(--tt-fg-dim);
+  --status-default-bg: var(--tt-highlight);
 }
 
-html.maison-dashboard-light body.maison-app-surface {
-  background-color: var(--tt-bg) !important;
-  color: var(--tt-fg) !important;
+html.maison-dashboard-light body.maison-app-surface,
+html.maison-dashboard-light body.maison-linear {
+  background-color: var(--tt-bg);
+  color: var(--tt-fg);
+}
+
+/* Workspace shells opt out of TenantTemplateProvider's inline html/body
+   background mirroring (applyToBody={false}) so the dashboard light-mode
+   toggle can restyle the viewport. Keep the overscroll backdrop in sync
+   with the active dashboard appearance instead. */
+html:has(> body.maison-linear) {
+  background-color: #0a0a0a;
+}
+
+html.maison-dashboard-light:has(> body.maison-linear) {
+  background-color: #f8f7f2;
 }
 
 .maison-obscur-toast[data-sonner-toast] {
@@ -242,60 +387,88 @@ html.maison-dashboard-light body.maison-app-surface {
 }
 
 [data-slot="sidebar-wrapper"].maison-app-surface,
+[data-slot="sidebar-wrapper"].maison-linear,
 .maison-app-surface [data-slot="sidebar-wrapper"],
+.maison-linear [data-slot="sidebar-wrapper"],
+.maison-linear [data-slot="sidebar-wrapper"],
 .maison-app-surface [data-slot="sidebar-inner"],
+.maison-linear [data-slot="sidebar-inner"],
 .maison-app-surface [data-slot="sidebar-container"],
-.maison-app-surface [data-slot="sidebar-inset"] {
+.maison-linear [data-slot="sidebar-container"],
+.maison-app-surface [data-slot="sidebar-inset"],
+.maison-linear [data-slot="sidebar-inset"] {
   background-color: var(--tt-bg) !important;
   color: var(--tt-fg);
 }
 
 .maison-app-surface [data-slot="sidebar-container"],
-.maison-app-surface [data-slot="sidebar-inner"] {
+.maison-linear [data-slot="sidebar-container"],
+.maison-app-surface [data-slot="sidebar-inner"],
+.maison-linear [data-slot="sidebar-inner"] {
   border-color: transparent;
 }
 
 .maison-app-surface [data-slot="sidebar-menu-button"][data-active="true"],
+.maison-linear [data-slot="sidebar-menu-button"][data-active="true"],
 .maison-app-surface [data-slot="sidebar-menu-button"]:hover,
-.maison-app-surface [data-slot="sidebar-menu-button"][data-state="open"] {
+.maison-linear [data-slot="sidebar-menu-button"]:hover,
+.maison-app-surface [data-slot="sidebar-menu-button"][data-state="open"],
+.maison-linear [data-slot="sidebar-menu-button"][data-state="open"] {
   background-color: var(--tt-highlight) !important;
   color: var(--tt-fg);
 }
 
 .maison-app-surface [data-slot="dropdown-menu-item"]:focus,
-.maison-app-surface [data-slot="context-menu-item"]:focus {
+.maison-linear [data-slot="dropdown-menu-item"]:focus,
+.maison-app-surface [data-slot="context-menu-item"]:focus,
+.maison-linear [data-slot="context-menu-item"]:focus {
   background-color: var(--tt-highlight) !important;
   color: var(--tt-fg) !important;
 }
 
 .maison-app-surface [data-slot="button"]:focus-visible,
+.maison-linear [data-slot="button"]:focus-visible,
 .maison-app-surface select:focus-visible,
-.maison-app-surface input:focus-visible {
+.maison-linear select:focus-visible,
+.maison-app-surface input:focus-visible,
+.maison-linear input:focus-visible {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-fg) 18%, transparent) !important;
 }
 
-.maison-app-surface tr[class*="bg-blue-50"] {
+.maison-app-surface tr[class*="bg-blue-50"],
+.maison-linear tr[class*="bg-blue-50"] {
   background-color: color-mix(in srgb, var(--tt-fg) 12%, var(--tt-bg)) !important;
   border-color: var(--tt-rule-strong) !important;
 }
 
-.maison-app-surface tr[class*="bg-yellow-50"] {
+.maison-app-surface tr[class*="bg-yellow-50"],
+.maison-linear tr[class*="bg-yellow-50"] {
   background-color: color-mix(in srgb, #f1c76b 16%, var(--tt-bg)) !important;
   border-color: color-mix(in srgb, #f1c76b 26%, var(--tt-rule-strong)) !important;
 }
 
-.maison-app-surface tr:hover {
+.maison-app-surface tr:hover,
+.maison-linear tr:hover {
   background-color: color-mix(in srgb, var(--tt-fg) 6%, transparent);
 }
 
-.maison-app-surface [data-slot="sidebar-group-label"] {
+.maison-app-surface [data-slot="sidebar-group-label"],
+.maison-linear [data-slot="sidebar-group-label"] {
   color: var(--tt-fg-mute);
 }
 
 .maison-app-surface [data-slot="sidebar-header"] [data-slot="sidebar-menu-button"][data-size="lg"],
-.maison-app-surface [data-slot="sidebar-footer"] [data-slot="sidebar-menu-button"][data-size="lg"] {
+.maison-linear [data-slot="sidebar-header"] [data-slot="sidebar-menu-button"][data-size="lg"],
+.maison-app-surface [data-slot="sidebar-footer"] [data-slot="sidebar-menu-button"][data-size="lg"],
+.maison-linear [data-slot="sidebar-footer"] [data-slot="sidebar-menu-button"][data-size="lg"] {
   height: 3rem !important;
   min-height: 3rem !important;
+}
+
+.maison-linear input,
+.maison-linear select,
+.maison-linear textarea {
+  box-shadow: none;
 }
 
 html:has(.coucou-scroller),

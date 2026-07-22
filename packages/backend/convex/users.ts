@@ -7,7 +7,8 @@ import { writeAuditEntry } from "./audit";
 import { action, internalQuery, mutation, query } from "./functions";
 import { generateReferralCode } from "./lib/codeGenerators";
 import { resolveApprovalStatus } from "./lib/rsvpStatus";
-import { requireWorkspaceAdmin } from "./lib/workspaceAuth";
+import { ensureEventInSiteScope } from "./lib/siteScope";
+import { requireWorkspaceAdmin, requireWorkspaceHost } from "./lib/workspaceAuth";
 
 const REFERRAL_CODE_MAX_ATTEMPTS = 20;
 
@@ -892,5 +893,130 @@ export const getById = query({
       throw new Error("User not found");
     }
     return user;
+  },
+});
+
+export const getOrganizationUserByReference = query({
+  args: {
+    userReference: v.string(),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Host-level (not admin-only) so Guests directory rows can open details.
+    const workspaceScope = await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+
+    const rsvpReferencePrefix = "rsvp~";
+    let user: Doc<"users"> | null = null;
+    let fallbackRsvp: Doc<"rsvps"> | null = null;
+
+    if (args.userReference.startsWith(rsvpReferencePrefix)) {
+      const rsvpId = ctx.db.normalizeId(
+        "rsvps",
+        args.userReference.slice(rsvpReferencePrefix.length),
+      );
+      fallbackRsvp = rsvpId ? await ctx.db.get(rsvpId) : null;
+      if (!fallbackRsvp) {
+        throw new Error("Guest not found");
+      }
+      await ensureEventInSiteScope(ctx, fallbackRsvp.eventId, {
+        siteKey: workspaceScope.siteKey,
+        workspaceSlug: workspaceScope.workspaceSlug,
+      });
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_clerkUserId", (queryBuilder) =>
+          queryBuilder.eq("clerkUserId", fallbackRsvp?.clerkUserId),
+        )
+        .unique();
+    } else {
+      const userId = ctx.db.normalizeId("users", args.userReference);
+      user = userId ? await ctx.db.get(userId) : null;
+    }
+
+    if (!user && !fallbackRsvp) {
+      throw new Error("User not found");
+    }
+
+    const clerkUserId = user?.clerkUserId ?? fallbackRsvp?.clerkUserId;
+    const membership = clerkUserId
+      ? await ctx.db
+          .query("orgMemberships")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+          .filter((queryBuilder) =>
+            queryBuilder.eq(
+              queryBuilder.field("organizationId"),
+              workspaceScope.clerkOrganizationId,
+            ),
+          )
+          .unique()
+      : null;
+    const fallbackNameParts = fallbackRsvp?.userName?.trim().split(/\s+/) ?? [];
+
+    return {
+      _id: user?._id,
+      clerkUserId,
+      firstName: user?.firstName ?? fallbackNameParts[0],
+      lastName: user?.lastName ?? (fallbackNameParts.slice(1).join(" ") || undefined),
+      imageUrl: user?.imageUrl,
+      phone: user?.phone ?? fallbackRsvp?.guestPhoneObfuscated,
+      referralCode: user?.referralCode ?? fallbackRsvp?.referralCode,
+      createdAt: user?.createdAt ?? fallbackRsvp?.createdAt ?? Date.now(),
+      updatedAt:
+        user?.updatedAt ?? fallbackRsvp?.updatedAt ?? fallbackRsvp?.createdAt ?? Date.now(),
+      role: membership?.role ?? "guest",
+      hasOrganizationMembership: !!membership,
+    };
+  },
+});
+
+export const getOrganizationUserById = query({
+  args: {
+    userId: v.id("users"),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Host-level (not admin-only) so Guests directory rows can open details.
+    const workspaceScope = await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+
+    const user = await ctx.db.get(args.userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const clerkUserId = user.clerkUserId;
+    const membership = clerkUserId
+      ? await ctx.db
+          .query("orgMemberships")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+          .filter((queryBuilder) =>
+            queryBuilder.eq(
+              queryBuilder.field("organizationId"),
+              workspaceScope.clerkOrganizationId,
+            ),
+          )
+          .unique()
+      : null;
+
+    return {
+      _id: user._id,
+      clerkUserId: user.clerkUserId,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      imageUrl: user.imageUrl,
+      phone: user.phone,
+      referralCode: user.referralCode,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      role: membership?.role ?? "guest",
+      hasOrganizationMembership: !!membership,
+    };
   },
 });

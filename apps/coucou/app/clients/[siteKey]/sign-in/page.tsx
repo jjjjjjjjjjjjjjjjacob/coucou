@@ -42,7 +42,12 @@ function ensureString(value: string | string[] | undefined): string | undefined 
 }
 
 function isClientSiteKey(value: string): value is SiteKey {
-  if (value !== "dojo" && value !== "club-chlorine" && value !== "coucou") {
+  if (
+    value !== "dojo" &&
+    value !== "club-chlorine" &&
+    value !== "danza-organica" &&
+    value !== "coucou"
+  ) {
     return false;
   }
   return siteConfigurations[value as SiteKey].appKind === "client";

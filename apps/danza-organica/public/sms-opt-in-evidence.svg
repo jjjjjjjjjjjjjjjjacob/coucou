@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title description">
+  <title id="title">Danza Organica RSVP SMS opt-in evidence</title>
+  <description id="description">An unchecked optional SMS consent checkbox with the complete Danza Organica disclosure, Terms, and Privacy Policy links.</description>
+  <rect width="1600" height="900" fill="#f8fdff"/>
+  <rect x="48" y="48" width="1504" height="804" rx="20" fill="#ffffff" stroke="#1b1b1b" stroke-width="3"/>
+  <text x="88" y="112" fill="#1b1b1b" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" letter-spacing="3">DANZA ORGANICA RSVP</text>
+  <text x="88" y="155" fill="#52606d" font-family="Arial, Helvetica, sans-serif" font-size="17">Hosted opt-in evidence · checkbox shown unchecked by default</text>
+
+  <text x="88" y="224" fill="#1b1b1b" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700">FIRST NAME</text>
+  <rect x="88" y="244" width="680" height="62" fill="#ffffff" stroke="#8b9aa8" stroke-width="2"/>
+  <text x="112" y="282" fill="#52606d" font-family="Arial, Helvetica, sans-serif" font-size="20">Guest</text>
+
+  <text x="832" y="224" fill="#1b1b1b" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700">MOBILE NUMBER</text>
+  <rect x="832" y="244" width="680" height="62" fill="#ffffff" stroke="#8b9aa8" stroke-width="2"/>
+  <text x="856" y="282" fill="#52606d" font-family="Arial, Helvetica, sans-serif" font-size="20">(555) 555-0100</text>
+
+  <rect x="88" y="370" width="28" height="28" fill="#ffffff" stroke="#1b1b1b" stroke-width="3"/>
+  <text x="136" y="393" fill="#1b1b1b" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700">I agree to receive recurring SMS messages from Danza Organica.</text>
+
+  <text x="136" y="438" fill="#52606d" font-family="Arial, Helvetica, sans-serif" font-size="18">
+    <tspan x="136" dy="0">Danza Organica may send account notifications, RSVP and guest-list updates, tickets or QR codes, event updates,</tspan>
+    <tspan x="136" dy="30">and replies about events or reservations. Messages are delivered via Coucou. Message frequency varies.</tspan>
+    <tspan x="136" dy="30">Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of</tspan>
+    <tspan x="136" dy="30">purchase, RSVP, or admission. Terms and Privacy Policy.</tspan>
+  </text>
+
+  <text x="136" y="590" fill="#1b5cff" font-family="Arial, Helvetica, sans-serif" font-size="18" text-decoration="underline">https://danzaorganica.coucou.events/terms</text>
+  <text x="136" y="624" fill="#1b5cff" font-family="Arial, Helvetica, sans-serif" font-size="18" text-decoration="underline">https://danzaorganica.coucou.events/privacy</text>
+
+  <rect x="1240" y="700" width="272" height="72" rx="6" fill="#1b1b1b"/>
+  <text x="1376" y="744" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">SUBMIT RSVP</text>
+  <text x="88" y="808" fill="#52606d" font-family="Arial, Helvetica, sans-serif" font-size="16">SMS consent is optional. The RSVP can be submitted without selecting the checkbox.</text>
+</svg>

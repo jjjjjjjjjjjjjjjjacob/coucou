@@ -7,11 +7,7 @@ export const DEFAULT_EVENT_DURATION_MS = 24 * 60 * 60 * 1000;
 
 export type EventTimingInput = {
   eventDate?: number | null;
-  /**
-   * @deprecated The end timestamp is always derived as `eventDate + 24h`.
-   * The field is retained on the type for legacy callers but is ignored by
-   * `resolveEventEndTimestamp`; nothing new should pass it through.
-   */
+  /** Explicit close timestamp. Falls back to 24 hours after start for legacy events. */
   eventEndDate?: number | null;
 };
 
@@ -20,6 +16,9 @@ export type EventLifecycleInput = EventTimingInput & {
 };
 
 export function resolveEventEndTimestamp(event: EventTimingInput): number | null {
+  if (typeof event.eventEndDate === "number") {
+    return event.eventEndDate;
+  }
   if (typeof event.eventDate === "number") {
     return event.eventDate + DEFAULT_EVENT_DURATION_MS;
   }

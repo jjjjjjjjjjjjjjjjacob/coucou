@@ -20,21 +20,18 @@ describe("event RSVP availability", () => {
     expect(isEventOpenForRsvp(event, cutoff + 1)).toBe(false);
   });
 
-  it("ignores any legacy explicit end timestamp on the event", () => {
-    const eventWithLegacyEnd = {
+  it("uses an explicit event end timestamp when present", () => {
+    const eventWithExplicitEnd = {
       status: "active",
       eventDate: startDate,
       eventEndDate: legacyEndDate,
     };
-    const cutoff = startDate + RSVP_CLOSE_GRACE_PERIOD_AFTER_START_MS;
+    const fallbackCutoff = startDate + RSVP_CLOSE_GRACE_PERIOD_AFTER_START_MS;
 
-    // Both the new helper and the deprecated helper now return the same
-    // value — the deprecated helper delegates to the new one so existing
-    // callsites pick up the new semantics until they're migrated.
-    expect(resolveEventRsvpCutoffFromStart(eventWithLegacyEnd)).toBe(cutoff);
-    expect(resolveEventRsvpCutoff(eventWithLegacyEnd)).toBe(cutoff);
-    expect(isEventOpenForRsvp(eventWithLegacyEnd, cutoff)).toBe(true);
-    expect(isEventOpenForRsvp(eventWithLegacyEnd, cutoff + 1)).toBe(false);
+    expect(resolveEventRsvpCutoffFromStart(eventWithExplicitEnd)).toBe(fallbackCutoff);
+    expect(resolveEventRsvpCutoff(eventWithExplicitEnd)).toBe(legacyEndDate);
+    expect(isEventOpenForRsvp(eventWithExplicitEnd, legacyEndDate)).toBe(true);
+    expect(isEventOpenForRsvp(eventWithExplicitEnd, legacyEndDate + 1)).toBe(false);
   });
 
   it("does not open inactive or past events", () => {

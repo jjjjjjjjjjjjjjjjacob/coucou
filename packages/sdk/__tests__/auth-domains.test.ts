@@ -13,6 +13,8 @@ describe("auth domain helpers", () => {
     expect(getClientSiteRedirectOrigins()).toContain("https://dojopomodoro.club");
     expect(getClientSiteRedirectOrigins()).toContain("https://clubchlorine.party");
     expect(getClientSiteRedirectOrigins()).toContain("https://clubchlorine.club");
+    expect(getClientSiteRedirectOrigins()).toContain("https://danzaorganica.coucou.events");
+    expect(getClientSiteRedirectOrigins()).toContain("http://localhost:5677");
     expect(getClientSiteRedirectOrigins()).toContain("http://localhost:5678");
     expect(getClientSiteRedirectOrigins()).toContain("http://localhost:5679");
     expect(getClientSiteRedirectOrigins()).not.toContain("https://coucou.events");

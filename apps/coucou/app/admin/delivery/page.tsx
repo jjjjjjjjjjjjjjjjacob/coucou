@@ -3,8 +3,15 @@
 import { api } from "@convex/_generated/api";
 import { AdminEmptyState, AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
 import { useQuery } from "convex/react";
+import { Building2, Copy, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
+import {
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
+import { copyTextWithToast } from "@/lib/clipboard";
 import { buildWorkspaceOperationPath } from "@/lib/workspace-config";
 
 interface DeliveryRow {
@@ -147,6 +154,34 @@ export default function AdminDeliveryPage() {
               description="Once any workspace sends a message, its 30-day delivery summary will show up here."
             />
           }
+          renderRowContextMenu={(row) => (
+            <ContextMenuContent className="w-56 border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)] shadow-[var(--shadow-card)]">
+              <ContextMenuItem asChild>
+                <a href={buildWorkspaceOperationPath(row.slug, "host", "texts")}>
+                  <MessageSquare className="h-4 w-4" />
+                  View texts
+                </a>
+              </ContextMenuItem>
+              <ContextMenuSeparator className="bg-[var(--border-subtle)]" />
+              <ContextMenuItem asChild>
+                <a href={buildWorkspaceOperationPath(row.slug, "host")}>
+                  <Building2 className="h-4 w-4" />
+                  Open {row.name}
+                </a>
+              </ContextMenuItem>
+              {row.primaryDomain ? (
+                <ContextMenuItem
+                  onSelect={(selectEvent) => {
+                    selectEvent.preventDefault();
+                    void copyTextWithToast(row.primaryDomain ?? "", "Domain copied");
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy domain
+                </ContextMenuItem>
+              ) : null}
+            </ContextMenuContent>
+          )}
         />
       </AdminSection>
     </>

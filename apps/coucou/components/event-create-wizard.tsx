@@ -18,6 +18,7 @@ import React from "react";
 import { type Path, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { type CustomFieldDef, CustomFieldsEditor } from "@/components/custom-fields-builder";
+import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { DateTimePicker } from "@/components/date-time-picker";
 import { EventActsEditor } from "@/components/event-acts-editor";
 import { EventIconUpload } from "@/components/event-icon-upload";
@@ -43,6 +44,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { SectionCard } from "@/components/ui/section-card";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
@@ -78,7 +80,6 @@ type WizardField = Path<EventFormData>;
 
 type WizardStep = {
   number: string;
-  eyebrow: string;
   title: string;
   description: string;
   validate: WizardField[];
@@ -98,6 +99,7 @@ type DraftEventPatchPayload = {
   guestPortalLinkLabel?: string;
   guestPortalLinkUrl?: string;
   eventDate?: number;
+  eventEndDate?: number;
   eventTimezone: string;
   maxAttendees?: number;
   themeBackgroundColor?: string;
@@ -163,65 +165,56 @@ const DEFAULT_LIST_KEYS = ["vip", "ga"] as const;
 const STEPS: WizardStep[] = [
   {
     number: "01",
-    eyebrow: "Identity",
-    title: "Name the night.",
-    description: "What guests will see across invites, tickets, and the front door.",
+    title: "Event details",
+    description: "Add the event name, guest-facing description, and lineup.",
     validate: ["name"],
   },
   {
     number: "02",
-    eyebrow: "Time & place",
-    title: "Where, when, how many.",
-    description: "We'll show this on the public landing and use it on the door list.",
+    title: "Schedule & capacity",
+    description: "Set the location, start time, attendee limit, and RSVP status.",
     validate: ["location", "eventDate"],
   },
   {
     number: "03",
-    eyebrow: "Look",
-    title: "Pick the colors.",
-    description: "Two colors carry the whole guest experience — invitation, status, ticket.",
+    title: "Branding",
+    description: "Choose the event colors and optional icon used across the guest experience.",
     validate: ["themeBackgroundColor", "themeTextColor"],
   },
   {
     number: "04",
-    eyebrow: "Flyer",
-    title: "Drop the flyer.",
-    description: "Optional. We'll show it on the landing and the ticket.",
+    title: "Flyer",
+    description: "Upload the optional event flyer shown on the landing page and ticket.",
     validate: [],
   },
   {
     number: "05",
-    eyebrow: "Guest experience",
-    title: "Status & ticket details.",
-    description: "Optional image and a button to give guests something to read while they wait.",
+    title: "Guest page",
+    description: "Configure the approved ticket view, guest image, link, and sharing options.",
     validate: ["guestPortalLinkLabel", "guestPortalLinkUrl"],
   },
   {
     number: "06",
-    eyebrow: "Lists",
-    title: "How they get in.",
-    description: "Each password routes its guest to a list. Add a list per crowd.",
+    title: "Lists & access",
+    description: "Create guest lists, passwords, and QR delivery rules.",
     validate: [],
   },
   {
     number: "07",
-    eyebrow: "Texts",
-    title: "Write the texts.",
-    description: "Set the initial RSVP confirmation and the approval SMS for each list.",
+    title: "Messages",
+    description: "Configure the initial RSVP confirmation and approval message for each list.",
     validate: [],
   },
   {
     number: "08",
-    eyebrow: "RSVP fields",
-    title: "What you want to know.",
-    description: "Optional. Anything you'd like guests to tell you when they RSVP.",
+    title: "RSVP setup",
+    description: "Choose the guest information and custom fields collected during RSVP.",
     validate: [],
   },
   {
     number: "09",
-    eyebrow: "Review",
-    title: "Last look.",
-    description: "Glance over everything, then send it live.",
+    title: "Review & publish",
+    description: "Review the event settings before publishing.",
     validate: [],
   },
 ];
@@ -301,6 +294,25 @@ function areListRowsPristine(currentLists: readonly ListRow[], defaultListKeys: 
   });
 }
 
+function addDaysToDateString(dateString: string, days: number): string {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function createAutomaticEventEndTimestamp(
+  values: Pick<EventFormData, "eventDate" | "eventTimezone" | "endsLate">,
+): number | undefined {
+  if (!values.eventDate) return undefined;
+  const endsLate = values.endsLate ?? true;
+  return createTimestamp(
+    endsLate ? addDaysToDateString(values.eventDate, 1) : values.eventDate,
+    endsLate ? "04:00" : "23:59",
+    values.eventTimezone,
+  );
+}
+
 function createDefaultEventFormValues(defaults: EventWizardDefaults): EventFormData {
   return {
     name: "",
@@ -311,6 +323,7 @@ function createDefaultEventFormValues(defaults: EventWizardDefaults): EventFormD
     location: "",
     eventDate: "",
     eventTime: "19:00",
+    endsLate: true,
     eventTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     flyerStorageId: null,
     customIconStorageId: null,
@@ -338,6 +351,7 @@ export default function EventCreateWizard() {
     workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
   );
   const eventsPath = useWorkspaceOperationPath("host", "events?created=1");
+  const eventListPath = useWorkspaceOperationPath("host", "events");
   const draftsPath = useWorkspaceOperationPath("host", "events?saved=1");
   const create = useAction(api.eventsNode.create);
   const updateEventAction = useAction(api.eventsNode.update);
@@ -535,6 +549,9 @@ export default function EventCreateWizard() {
       guestPortalLinkUrl: draftEvent.guestPortalLinkUrl ?? "",
       eventDate: formatTimestampDate(draftEvent.eventDate),
       eventTime: formatTimestampTime(draftEvent.eventDate) || "19:00",
+      endsLate: draftEvent.eventEndDate
+        ? formatTimestampDate(draftEvent.eventEndDate) !== formatTimestampDate(draftEvent.eventDate)
+        : true,
       eventTimezone: timezone,
       maxAttendees: draftEvent.maxAttendees ?? 1,
       status: draftEvent.status ?? "inactive",
@@ -682,6 +699,7 @@ export default function EventCreateWizard() {
     const startTimestamp = values.eventDate
       ? createTimestamp(values.eventDate, values.eventTime, values.eventTimezone)
       : undefined;
+    const endTimestamp = createAutomaticEventEndTimestamp(values);
 
     const themeBackground =
       normalizeHexColorInput(values.themeBackgroundColor) ??
@@ -735,6 +753,7 @@ export default function EventCreateWizard() {
       rsvpConfirmationMessageEnabled: values.rsvpConfirmationMessageEnabled ?? true,
     };
     if (startTimestamp !== undefined) patch.eventDate = startTimestamp;
+    if (endTimestamp !== undefined) patch.eventEndDate = endTimestamp;
     if (sanitizedRsvpConfirmationMessage) {
       patch.rsvpConfirmationMessage = sanitizedRsvpConfirmationMessage;
     } else if (draftEvent?.rsvpConfirmationMessage) {
@@ -852,6 +871,7 @@ export default function EventCreateWizard() {
     setSubmitting(true);
     try {
       const timestamp = createTimestamp(values.eventDate, values.eventTime, values.eventTimezone);
+      const eventEndTimestamp = createAutomaticEventEndTimestamp(values);
 
       if (draftEventId) {
         const { patch, unsetFields, lists: listsForPatch } = buildDraftPayload();
@@ -909,6 +929,7 @@ export default function EventCreateWizard() {
         guestPortalLinkLabel: trimmedLabel || undefined,
         guestPortalLinkUrl: trimmedUrl || undefined,
         eventDate: timestamp,
+        eventEndDate: eventEndTimestamp,
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
         status: values.status ?? "inactive",
@@ -948,6 +969,113 @@ export default function EventCreateWizard() {
 
   const handleAdvance = isLast ? handleSubmit : next;
   const actionsDisabled = submitting || isDraftHydrating;
+  const stepUsesOwnCards = stepIndex === 6 || stepIndex === 7;
+
+  const stepContent = (
+    <>
+      {stepIndex === 0 && <StepIdentity form={form} acts={acts} onActsChange={setActs} />}
+      {stepIndex === 1 && (
+        <StepWhereWhen
+          form={form}
+          eventDate={form.watch("eventDate")}
+          eventTime={form.watch("eventTime")}
+          eventTimezone={form.watch("eventTimezone")}
+        />
+      )}
+      {stepIndex === 2 && (
+        <StepLook
+          form={form}
+          eventIconStorageId={eventIconStorageId}
+          onEventIconChange={(value) =>
+            form.setValue("customIconStorageId", value, {
+              shouldDirty: true,
+            })
+          }
+        />
+      )}
+      {stepIndex === 3 && (
+        <StepFlyer
+          flyerStorageId={flyerStorageId}
+          onFlyerChange={(value) => form.setValue("flyerStorageId", value, { shouldDirty: true })}
+        />
+      )}
+      {stepIndex === 4 && (
+        <StepGuestExperience
+          form={form}
+          guestPortalImageStorageId={guestPortalImageStorageId}
+          onGuestPortalImageChange={(value) =>
+            form.setValue("guestPortalImageStorageId", value, {
+              shouldDirty: true,
+            })
+          }
+        />
+      )}
+      {stepIndex === 5 && (
+        <StepLists
+          sendQrOnApproval={sendQrOnApproval}
+          onSendQrOnApprovalChange={setSendQrOnApproval}
+          attendanceQuestionEnabled={form.watch("attendanceQuestionEnabled") ?? false}
+          onAttendanceQuestionEnabledChange={(value) =>
+            form.setValue("attendanceQuestionEnabled", value, {
+              shouldDirty: true,
+            })
+          }
+          lists={lists}
+          setLists={setLists}
+        />
+      )}
+      {stepIndex === 6 && (
+        <div className="space-y-4">
+          <RsvpConfirmationTextSection
+            rsvpConfirmationMessageEnabled={rsvpConfirmationMessageEnabled}
+            rsvpConfirmationMessage={rsvpConfirmationMessage}
+            defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}
+            onEnabledChange={(enabled) =>
+              form.setValue("rsvpConfirmationMessageEnabled", enabled, {
+                shouldDirty: true,
+              })
+            }
+            onMessageChange={(message) =>
+              form.setValue("rsvpConfirmationMessage", message, {
+                shouldDirty: true,
+              })
+            }
+            previewVariables={confirmationPreviewVariables}
+          />
+          <ListConfirmationTextsSection
+            lists={lists}
+            defaultApprovalMessage={defaultApprovalMessage}
+            onApprovalMessageChange={setListApprovalMessage}
+            resolveQrAttachmentEnabled={(list) =>
+              list.shouldGenerateQrCode && (list.sendQrOnApprovalOverride ?? sendQrOnApproval)
+            }
+            onQrAttachmentChange={setListQrAttachmentEnabled}
+            previewVariables={confirmationPreviewVariables}
+          />
+        </div>
+      )}
+      {stepIndex === 7 && (
+        <StepCustomFields
+          onChange={setCustomFields}
+          initial={customFields}
+          primaryFieldConfigDraft={primaryFieldConfigDraft}
+          onPrimaryFieldConfigChange={setPrimaryFieldConfigDraft}
+          usePrimaryFieldDefaults={usePrimaryFieldDefaults}
+          onUsePrimaryFieldDefaultsChange={setUsePrimaryFieldDefaults}
+          workspacePrimaryFieldDefaults={workspacePrimaryFieldDefaultsDraft}
+        />
+      )}
+      {stepIndex === 8 && (
+        <StepReview
+          values={form.getValues()}
+          acts={acts}
+          lists={lists}
+          customFields={customFields}
+          onJump={goTo}
+        />
+      )}
+    </>
+  );
 
   return (
     <Form {...form}>
@@ -960,27 +1088,34 @@ export default function EventCreateWizard() {
           }
         }}
         onSubmit={(event) => event.preventDefault()}
-        className="mx-auto flex w-full max-w-3xl flex-col"
+        className="flex min-h-0 w-full flex-1 flex-col"
       >
-        <header className="flex items-center justify-between border-b border-border/60 py-6">
-          <div className="text-sm uppercase tracking-[0.18em] text-foreground">New event</div>
-          <div className="text-sm tabular-nums text-muted-foreground">
-            {step.number}{" "}
-            <span className="text-muted-foreground/50">
-              / {String(STEPS.length).padStart(2, "0")}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-            onClick={saveAsDraft}
-            disabled={actionsDisabled}
-          >
-            save & finish later
-          </button>
-        </header>
+        <DashboardTitleBar
+          title={draftEventId ? "Continue creating event" : "Create event"}
+          subtitle="Set up the event details, guest experience, access, and messages."
+          breadcrumb={[
+            { label: "Workspace" },
+            { label: "Events", href: eventListPath },
+            { label: draftEventId ? "Draft event" : "New event" },
+          ]}
+          actions={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={saveAsDraft}
+              disabled={actionsDisabled}
+              className="border-[var(--border-subtle)] bg-transparent"
+            >
+              Save &amp; finish later
+            </Button>
+          }
+        />
 
-        <nav className="flex items-center gap-3 overflow-x-auto border-b border-border/60 py-5">
+        <nav
+          aria-label="Event creation steps"
+          className="flex w-full items-center gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-1"
+        >
           {STEPS.map((entry, index) => {
             const isCurrent = index === stepIndex;
             const isReached = index <= furthest;
@@ -992,175 +1127,74 @@ export default function EventCreateWizard() {
                 onClick={() => goTo(index)}
                 disabled={!isReached}
                 className={cn(
-                  "group flex shrink-0 items-center gap-2 text-xs tabular-nums transition-colors",
-                  isReached ? "cursor-pointer" : "cursor-default",
+                  "relative flex h-11 shrink-0 items-center gap-1.5 rounded-md border border-transparent px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed",
                   isCurrent
-                    ? "text-foreground"
-                    : isComplete
-                      ? "text-foreground/70 hover:text-foreground"
-                      : "text-muted-foreground/40",
+                    ? "border-[var(--text-primary)] text-[var(--text-primary)]"
+                    : isReached
+                      ? "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      : "text-[var(--text-tertiary)] opacity-45",
                 )}
                 aria-current={isCurrent ? "step" : undefined}
               >
-                <span
-                  className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-full border text-[10px] tabular-nums",
-                    isCurrent
-                      ? "border-foreground bg-foreground text-background"
-                      : isComplete
-                        ? "border-foreground/70 text-foreground/70"
-                        : "border-border text-muted-foreground/60",
-                  )}
-                >
-                  {isComplete ? <Check className="h-3 w-3" /> : entry.number}
+                <span className="flex h-4 w-4 items-center justify-center text-[11px] tabular-nums text-current">
+                  {isComplete ? <Check className="h-3.5 w-3.5" /> : entry.number}
                 </span>
-                <span className="hidden text-xs uppercase tracking-[0.12em] sm:inline">
-                  {entry.eyebrow}
-                </span>
+                {entry.title}
               </button>
             );
           })}
         </nav>
 
-        <section className="flex-1 py-12">
-          <div className="mb-12">
-            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-              {step.number} · {step.eyebrow}
-            </div>
-            <h1 className="mt-3 text-3xl font-light tracking-tight text-foreground sm:text-4xl">
-              {step.title}
-            </h1>
-            <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-              {step.description}
-            </p>
-          </div>
-
-          <div className="space-y-12">
-            {stepIndex === 0 && <StepIdentity form={form} acts={acts} onActsChange={setActs} />}
-            {stepIndex === 1 && (
-              <StepWhereWhen
-                form={form}
-                eventDate={form.watch("eventDate")}
-                eventTime={form.watch("eventTime")}
-                eventTimezone={form.watch("eventTimezone")}
-              />
-            )}
-            {stepIndex === 2 && (
-              <StepLook
-                form={form}
-                eventIconStorageId={eventIconStorageId}
-                onEventIconChange={(value) =>
-                  form.setValue("customIconStorageId", value, {
-                    shouldDirty: true,
-                  })
+        <section className="flex-1 py-5">
+          <div className="max-w-5xl">
+            {stepUsesOwnCards ? (
+              <>
+                <div className="mb-4 flex items-start justify-between gap-4 px-1">
+                  <div className="space-y-1">
+                    <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                      {step.title}
+                    </h2>
+                    <p className="text-sm text-[var(--text-secondary)]">{step.description}</p>
+                  </div>
+                  <span className="shrink-0 text-xs tabular-nums text-[var(--text-tertiary)]">
+                    Step {stepIndex + 1} of {STEPS.length}
+                  </span>
+                </div>
+                {stepContent}
+              </>
+            ) : (
+              <SectionCard
+                title={step.title}
+                description={step.description}
+                action={
+                  <span className="text-xs tabular-nums text-[var(--text-tertiary)]">
+                    Step {stepIndex + 1} of {STEPS.length}
+                  </span>
                 }
-              />
-            )}
-            {stepIndex === 3 && (
-              <StepFlyer
-                flyerStorageId={flyerStorageId}
-                onFlyerChange={(value) =>
-                  form.setValue("flyerStorageId", value, { shouldDirty: true })
-                }
-              />
-            )}
-            {stepIndex === 4 && (
-              <StepGuestExperience
-                form={form}
-                guestPortalImageStorageId={guestPortalImageStorageId}
-                onGuestPortalImageChange={(value) =>
-                  form.setValue("guestPortalImageStorageId", value, {
-                    shouldDirty: true,
-                  })
-                }
-              />
-            )}
-            {stepIndex === 5 && (
-              <StepLists
-                sendQrOnApproval={sendQrOnApproval}
-                onSendQrOnApprovalChange={setSendQrOnApproval}
-                attendanceQuestionEnabled={form.watch("attendanceQuestionEnabled") ?? false}
-                onAttendanceQuestionEnabledChange={(value) =>
-                  form.setValue("attendanceQuestionEnabled", value, {
-                    shouldDirty: true,
-                  })
-                }
-                lists={lists}
-                setLists={setLists}
-              />
-            )}
-            {stepIndex === 6 && (
-              <div className="space-y-6">
-                <RsvpConfirmationTextSection
-                  rsvpConfirmationMessageEnabled={rsvpConfirmationMessageEnabled}
-                  rsvpConfirmationMessage={rsvpConfirmationMessage}
-                  defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}
-                  onEnabledChange={(enabled) =>
-                    form.setValue("rsvpConfirmationMessageEnabled", enabled, {
-                      shouldDirty: true,
-                    })
-                  }
-                  onMessageChange={(message) =>
-                    form.setValue("rsvpConfirmationMessage", message, {
-                      shouldDirty: true,
-                    })
-                  }
-                  previewVariables={confirmationPreviewVariables}
-                  className="border-border/60"
-                />
-                <ListConfirmationTextsSection
-                  lists={lists}
-                  defaultApprovalMessage={defaultApprovalMessage}
-                  onApprovalMessageChange={setListApprovalMessage}
-                  resolveQrAttachmentEnabled={(list) =>
-                    list.shouldGenerateQrCode && (list.sendQrOnApprovalOverride ?? sendQrOnApproval)
-                  }
-                  onQrAttachmentChange={setListQrAttachmentEnabled}
-                  previewVariables={confirmationPreviewVariables}
-                  className="border-border/60"
-                />
-              </div>
-            )}
-            {stepIndex === 7 && (
-              <StepCustomFields
-                onChange={setCustomFields}
-                initial={customFields}
-                primaryFieldConfigDraft={primaryFieldConfigDraft}
-                onPrimaryFieldConfigChange={setPrimaryFieldConfigDraft}
-                usePrimaryFieldDefaults={usePrimaryFieldDefaults}
-                onUsePrimaryFieldDefaultsChange={setUsePrimaryFieldDefaults}
-                workspacePrimaryFieldDefaults={workspacePrimaryFieldDefaultsDraft}
-              />
-            )}
-            {stepIndex === 8 && (
-              <StepReview
-                values={form.getValues()}
-                acts={acts}
-                lists={lists}
-                customFields={customFields}
-                onJump={goTo}
-              />
+              >
+                {stepContent}
+              </SectionCard>
             )}
           </div>
         </section>
 
-        <footer className="flex items-center justify-between border-t border-border/60 py-6">
+        <footer className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-2)]/95 py-4 backdrop-blur">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             disabled={isFirst}
             onClick={back}
-            className="text-muted-foreground hover:text-foreground"
+            className="border-[var(--border-subtle)] bg-transparent"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
-          <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground/70">
-            autosaved locally
+          <span className="text-xs tabular-nums text-[var(--text-tertiary)] sm:hidden">
+            {stepIndex + 1} / {STEPS.length}
           </span>
           <Button type="button" size="sm" onClick={handleAdvance} disabled={actionsDisabled}>
-            {isLast ? (submitting ? "Publishing…" : "Publish") : "Continue"}
+            {isLast ? (submitting ? "Publishing…" : "Publish event") : "Continue"}
             {!isLast && <ArrowRight className="h-4 w-4" />}
           </Button>
         </footer>
@@ -1184,119 +1218,72 @@ function StepIdentity({
   onActsChange: (acts: EventAct[]) => void;
 }) {
   return (
-    <div className="space-y-10">
-      <FormField
-        control={form.control}
-        name="name"
-        rules={{ required: "Name is required" }}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Event name
-            </FormLabel>
-            <FormControl>
-              <Input
-                {...field}
-                placeholder="Pomodoro 14"
-                value={field.value ?? ""}
-                className="h-12 border-0 border-b border-border/80 px-0 text-2xl shadow-none focus-visible:border-foreground focus-visible:ring-0"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="secondaryTitle"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Secondary title{" "}
-              <span className="normal-case text-muted-foreground/70">(optional)</span>
-            </FormLabel>
-            <FormControl>
-              <Input
-                {...field}
-                placeholder="Garden Party · with the Quartet"
-                value={field.value ?? ""}
-                className="h-11 border-0 border-b border-border/60 px-0 text-base shadow-none focus-visible:border-foreground focus-visible:ring-0"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="description"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Description <span className="normal-case text-muted-foreground/70">(optional)</span>
-            </FormLabel>
-            <FormControl>
-              <Textarea
-                {...field}
-                placeholder="A short description guests will see before they RSVP."
-                value={field.value ?? ""}
-                rows={4}
-                className="resize-none"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <EventActsEditor acts={acts} onChange={onActsChange} />
-      <FormField
-        control={form.control}
-        name="hosts"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Hosts{" "}
-              <span className="normal-case text-muted-foreground/70">
-                (optional, comma-separated)
-              </span>
-            </FormLabel>
-            <FormControl>
-              <Input
-                {...field}
-                placeholder="Marcel, Sam"
-                value={field.value ?? ""}
-                className="h-11 border-0 border-b border-border/60 px-0 text-base shadow-none focus-visible:border-foreground focus-visible:ring-0"
-              />
-            </FormControl>
-            <FormDescription>Whoever guests should ask for at the door.</FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="productionCompany"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Production company{" "}
-              <span className="normal-case text-muted-foreground/70">(optional)</span>
-            </FormLabel>
-            <FormControl>
-              <Input
-                {...field}
-                placeholder="House of Pomodoro"
-                value={field.value ?? ""}
-                className="h-11 border-0 border-b border-border/60 px-0 text-base shadow-none focus-visible:border-foreground focus-visible:ring-0"
-              />
-            </FormControl>
-            <FormDescription>
-              Overrides host names in consent and SMS notifications.
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2">
+        <FormField
+          control={form.control}
+          name="name"
+          rules={{ required: "Name is required" }}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Event name</FormLabel>
+              <FormControl>
+                <Input {...field} placeholder="Pomodoro 14" value={field.value ?? ""} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="secondaryTitle"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Secondary title <span className="text-muted-foreground">(optional)</span>
+              </FormLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  placeholder="Garden Party · with the Quartet"
+                  value={field.value ?? ""}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem className="md:col-span-2">
+              <FormLabel>
+                Event description <span className="text-muted-foreground">(optional)</span>
+              </FormLabel>
+              <FormControl>
+                <Textarea
+                  {...field}
+                  placeholder="A short description guests will see before they RSVP."
+                  value={field.value ?? ""}
+                  rows={4}
+                  className="resize-none"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+      <div className="space-y-4 border-t border-[var(--border-subtle)] pt-5">
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Lineup</h3>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Add performers, billing descriptors, social links, and secret guests.
+          </p>
+        </div>
+        <EventActsEditor acts={acts} onChange={onActsChange} />
+      </div>
     </div>
   );
 }
@@ -1314,22 +1301,19 @@ function StepWhereWhen({
   eventTimezone: string | undefined;
 }) {
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       <FormField
         control={form.control}
         name="location"
         rules={{ required: "Location is required" }}
         render={({ field }) => (
           <FormItem>
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Location
-            </FormLabel>
+            <FormLabel>Location</FormLabel>
             <FormControl>
               <Input
                 {...field}
                 placeholder="Bushwick · address sent on confirmation"
                 value={field.value ?? ""}
-                className="h-12 border-0 border-b border-border/80 px-0 text-xl shadow-none focus-visible:border-foreground focus-visible:ring-0"
               />
             </FormControl>
             <FormMessage />
@@ -1342,10 +1326,10 @@ function StepWhereWhen({
         rules={{ required: "Event date is required" }}
         render={({ field }) => (
           <FormItem>
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Date, time & timezone
-            </FormLabel>
-            <FormDescription>RSVPs close 24 hours after this start time.</FormDescription>
+            <FormLabel>Date, time &amp; timezone</FormLabel>
+            <FormDescription>
+              The event closes at midnight, or 4:00 AM when marked late.
+            </FormDescription>
             <FormControl>
               <DateTimePicker
                 date={eventDate}
@@ -1364,12 +1348,35 @@ function StepWhereWhen({
       />
       <FormField
         control={form.control}
+        name="endsLate"
+        render={({ field }) => (
+          <FormItem>
+            <label className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4">
+              <FormControl>
+                <Checkbox
+                  checked={field.value ?? true}
+                  onCheckedChange={(checked) => field.onChange(Boolean(checked))}
+                  className="mt-0.5"
+                />
+              </FormControl>
+              <span className="space-y-1">
+                <span className="block text-sm font-medium">Late event</span>
+                <span className="block text-xs text-muted-foreground">
+                  Keep the event open until 4:00 AM the following day. Otherwise it closes at
+                  midnight.
+                </span>
+              </span>
+            </label>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
         name="maxAttendees"
         render={({ field }) => (
           <FormItem className="max-w-xs">
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              Max attendees per RSVP
-            </FormLabel>
+            <FormLabel>Max attendees per RSVP</FormLabel>
             <FormControl>
               <Select
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -1393,9 +1400,7 @@ function StepWhereWhen({
         name="status"
         render={({ field }) => (
           <FormItem className="max-w-xs">
-            <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              RSVP status
-            </FormLabel>
+            <FormLabel>RSVP status</FormLabel>
             <FormControl>
               <Select
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -1431,16 +1436,14 @@ function StepLook({
   const eventName = form.watch("name") || "Your event";
 
   return (
-    <div className="space-y-10">
-      <div className="grid gap-6 md:grid-cols-2">
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2">
         <FormField
           control={form.control}
           name="themeBackgroundColor"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                Background
-              </FormLabel>
+              <FormLabel>Background</FormLabel>
               <FormControl>
                 <ColorRow
                   value={
@@ -1458,9 +1461,7 @@ function StepLook({
           name="themeTextColor"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                Ink (primary text)
-              </FormLabel>
+              <FormLabel>Text color</FormLabel>
               <FormControl>
                 <ColorRow
                   value={(field.value as string | undefined) ?? EVENT_THEME_DEFAULT_TEXT_COLOR}
@@ -1474,11 +1475,11 @@ function StepLook({
       </div>
 
       <div
-        className="rounded-md border border-border/60 p-8 transition-colors"
+        className="rounded-lg border border-[var(--border-subtle)] p-6 transition-colors"
         style={{ background, color: text }}
       >
-        <div className="text-[10px] uppercase tracking-[0.18em] opacity-60">Live preview</div>
-        <div className="mt-3 text-3xl font-light tracking-tight">{eventName}</div>
+        <div className="text-xs font-medium opacity-60">Live preview</div>
+        <div className="mt-3 text-2xl font-semibold tracking-tight">{eventName}</div>
         <div className="mt-2 text-sm opacity-70">The next night · doors at nine</div>
         <div className="mt-6 inline-flex items-center gap-2 border-b" style={{ borderColor: text }}>
           RSVP →
@@ -1486,10 +1487,10 @@ function StepLook({
       </div>
 
       <div>
-        <div className="mb-3 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-          Event icon <span className="normal-case text-muted-foreground/70">(optional)</span>
+        <div className="mb-1 text-sm font-medium text-[var(--text-primary)]">
+          Event icon <span className="text-muted-foreground">(optional)</span>
         </div>
-        <p className="mb-3 max-w-lg text-sm text-muted-foreground">
+        <p className="mb-3 max-w-lg text-sm text-[var(--text-secondary)]">
           Overrides the favicon and the navigation icon wherever custom theming is applied.
         </p>
         <EventIconUpload value={eventIconStorageId} onChange={onEventIconChange} />
@@ -1500,7 +1501,7 @@ function StepLook({
 
 function ColorRow({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
-    <div className="flex items-center gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+    <div className="flex items-center gap-3 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-2)] px-3 py-2">
       <input
         type="color"
         value={value}
@@ -1552,16 +1553,14 @@ function StepGuestExperience({
   const guestLinkLabel = form.watch("guestPortalLinkLabel");
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       <div>
-        <div className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-          Preview
-        </div>
+        <div className="mb-1 text-sm font-medium text-[var(--text-primary)]">Preview</div>
         <p className="mb-3 max-w-lg text-sm text-muted-foreground">
           Approved-status screen and QR ticket inherit these colors from step 03.
         </p>
         <div
-          className="rounded border border-border/40 p-6"
+          className="rounded-lg border border-[var(--border-subtle)] p-6"
           style={{ backgroundColor: themeBackground, color: themeText }}
         >
           <div className="flex items-start gap-4">
@@ -1586,7 +1585,7 @@ function StepGuestExperience({
               </div>
             </div>
             <div className="flex-1 space-y-2">
-              <div className="text-xs uppercase tracking-[0.12em] opacity-60">Approved</div>
+              <div className="text-xs font-medium opacity-60">Approved</div>
               <div className="text-xl font-semibold leading-tight" style={{ color: themeText }}>
                 {eventName}
               </div>
@@ -1607,9 +1606,8 @@ function StepGuestExperience({
       </div>
 
       <div>
-        <div className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-          Status & ticket image{" "}
-          <span className="normal-case text-muted-foreground/70">(optional)</span>
+        <div className="mb-1 text-sm font-medium text-[var(--text-primary)]">
+          Status &amp; ticket image <span className="text-muted-foreground">(optional)</span>
         </div>
         <p className="mb-3 max-w-lg text-sm text-muted-foreground">
           Shown on the pending status screen and beneath approved tickets.
@@ -1631,9 +1629,8 @@ function StepGuestExperience({
           name="guestPortalLinkLabel"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                Guest link label{" "}
-                <span className="normal-case text-muted-foreground/70">(optional)</span>
+              <FormLabel>
+                Guest link label <span className="text-muted-foreground">(optional)</span>
               </FormLabel>
               <FormControl>
                 <Input {...field} value={field.value ?? ""} placeholder="View event guide" />
@@ -1647,9 +1644,8 @@ function StepGuestExperience({
           name="guestPortalLinkUrl"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                Guest link URL{" "}
-                <span className="normal-case text-muted-foreground/70">(optional)</span>
+              <FormLabel>
+                Guest link URL <span className="text-muted-foreground">(optional)</span>
               </FormLabel>
               <FormControl>
                 <Input
@@ -1673,7 +1669,7 @@ function StepGuestExperience({
         name="referralSharingEnabled"
         render={({ field }) => (
           <FormItem>
-            <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+            <label className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4">
               <FormControl>
                 <Checkbox
                   checked={Boolean(field.value)}
@@ -1761,7 +1757,7 @@ function StepLists({
         Leave password blank for an open list — the first list with no password receives RSVPs that
         skip the password step.
       </p>
-      <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+      <label className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4">
         <Checkbox
           checked={sendQrOnApproval}
           onCheckedChange={(checked) => onSendQrOnApprovalChange(Boolean(checked))}
@@ -1775,7 +1771,7 @@ function StepLists({
           </span>
         </span>
       </label>
-      <label className="flex items-start gap-3 rounded border border-border/60 p-3">
+      <label className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4">
         <Checkbox
           checked={attendanceQuestionEnabled}
           onCheckedChange={(checked) => onAttendanceQuestionEnabledChange(Boolean(checked))}
@@ -1877,13 +1873,11 @@ function StepCustomFields({
   workspacePrimaryFieldDefaults: PrimaryFieldConfigDraft;
 }) {
   return (
-    <div className="space-y-6">
-      <div className="rounded-lg border bg-card p-4 space-y-4">
-        <h3 className="font-medium text-sm text-muted-foreground">PRIMARY FIELDS</h3>
-        <p className="text-sm text-muted-foreground">
-          Social fields and the &ldquo;invited by&rdquo; question for this event. Defaults come from
-          workspace settings; override here if needed.
-        </p>
+    <div className="space-y-4">
+      <SectionCard
+        title="Primary fields"
+        description="Choose the social fields and invited-by question for this event, or use the workspace defaults."
+      >
         <PrimaryFieldConfigOverrideEditor
           value={primaryFieldConfigDraft}
           onChange={onPrimaryFieldConfigChange}
@@ -1891,7 +1885,7 @@ function StepCustomFields({
           onUseDefaultsChange={onUsePrimaryFieldDefaultsChange}
           workspaceDefaults={workspacePrimaryFieldDefaults}
         />
-      </div>
+      </SectionCard>
       <CustomFieldsEditor
         initial={initial}
         onChange={onChange}

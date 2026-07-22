@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DashboardClient } from "../app/dashboard/dashboard-client";
+import { HapticProvider } from "../contexts/haptic-context";
+
+function renderDashboardClient() {
+  return render(
+    <HapticProvider>
+      <DashboardClient />
+    </HapticProvider>,
+  );
+}
 
 interface DashboardTestGlobal {
   __setClerkTestMemberships?: (
@@ -67,7 +76,7 @@ describe("DashboardClient", () => {
       tenantWorkspaces: [],
     });
 
-    const { container } = render(<DashboardClient />);
+    const { container } = renderDashboardClient();
 
     expect(screen.getByText("Your organizations.")).toBeTruthy();
     expect(container.querySelector('[data-preset="maison"]')).toBeTruthy();
@@ -90,7 +99,7 @@ describe("DashboardClient", () => {
       tenantWorkspaces: [],
     });
 
-    render(<DashboardClient />);
+    renderDashboardClient();
 
     fireEvent.click(screen.getByRole("button", { name: /Open admin/ }));
 
@@ -140,7 +149,7 @@ describe("DashboardClient", () => {
       ],
     });
 
-    render(<DashboardClient />);
+    renderDashboardClient();
 
     expect(screen.getAllByText("Dojo Pomodoro").length).toBeGreaterThan(0);
     expect(screen.getByText("dojopomodoro.club")).toBeTruthy();
@@ -185,7 +194,7 @@ describe("DashboardClient", () => {
       ],
     });
 
-    render(<DashboardClient />);
+    renderDashboardClient();
 
     const openDashboardLink = screen.getByRole("link", { name: /Open dashboard/ });
     expect(openDashboardLink).toHaveAttribute(
@@ -227,7 +236,7 @@ describe("DashboardClient", () => {
       ],
     });
 
-    render(<DashboardClient />);
+    renderDashboardClient();
 
     const openDashboardLink = screen.getByRole("link", { name: /Open dashboard/ });
     expect(openDashboardLink).toHaveAttribute(
@@ -269,13 +278,14 @@ describe("DashboardClient", () => {
       ],
     });
 
-    render(<DashboardClient />);
+    renderDashboardClient();
 
     expect(screen.getByRole("link", { name: /Open dashboard/ })).toHaveAttribute(
       "href",
       "http://localhost:3000/workspaces/dojo-pomodoro/dashboard/rsvps",
     );
     expect(screen.queryByLabelText("Primary URL")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit primary URL for Dojo Pomodoro" })).toBeNull();
   });
 
   it("lets tenant admins update the primary URL", async () => {
@@ -306,12 +316,13 @@ describe("DashboardClient", () => {
       ],
     });
 
-    render(<DashboardClient />);
+    renderDashboardClient();
 
+    fireEvent.click(screen.getByRole("button", { name: "Edit primary URL for Dojo Pomodoro" }));
     fireEvent.change(screen.getByLabelText("Primary URL"), {
       target: { value: "events.dojopomodoro.club" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save URL for Dojo Pomodoro" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save URL/ }));
 
     await waitFor(() => {
       expect(getConvexMutationCalls()).toEqual([
@@ -340,8 +351,9 @@ describe("DashboardClient", () => {
       tenantWorkspaces: [],
     });
 
-    render(<DashboardClient />);
+    renderDashboardClient();
 
+    fireEvent.click(screen.getByRole("button", { name: /New tenant/ }));
     fireEvent.change(screen.getByLabelText("Tenant name"), {
       target: { value: "Club Chlorine" },
     });
@@ -367,7 +379,7 @@ describe("DashboardClient", () => {
         },
       ]);
     });
-    expect(screen.getByText("Request submitted for Coucou review.")).toBeTruthy();
+    expect(screen.queryByText("Request submitted for Coucou review.")).toBeNull();
     expect(getToastTestCalls()).toContainEqual({
       kind: "loading",
       message: "Submitting tenant request...",

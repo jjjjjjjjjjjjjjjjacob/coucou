@@ -13,11 +13,20 @@ export interface ApiErrorBody {
   error: {
     code: ApiErrorCode;
     message: string;
+    field?: string;
   };
 }
 
 export type ApiApprovalStatus = "pending" | "approved" | "denied";
 export type ApiAttendanceStatus = "yes" | "no" | "maybe";
+export type ApiTicketStatus = "issued" | "disabled" | "redeemed";
+
+export interface ApiTicket {
+  status: ApiTicketStatus;
+  qrEnabled: boolean;
+  redemptionCode: string;
+  redeemUrl: string | null;
+}
 
 /** Event shape returned by GET /api/v1/events and GET /api/v1/events/{id}. */
 export interface ApiEvent {
@@ -47,7 +56,32 @@ export interface ApiEventList {
 }
 
 export interface ApiEventDetail extends ApiEvent {
-  lists: { listKey: string; isPasswordProtected: boolean }[];
+  lists: { listKey: string; isPasswordProtected: boolean; generatesQrCode: boolean }[];
+  rsvpForm: {
+    attendanceQuestionEnabled: boolean;
+    maxAttendees: number;
+    acceptsListPassword: boolean;
+    customFields: Array<{
+      key: string;
+      label: string;
+      placeholder?: string;
+      required: boolean;
+      trimWhitespace: boolean;
+    }>;
+    socialPlatforms: Array<{
+      platformKey: string;
+      label: string;
+      placeholder?: string;
+      profileUrlPrefix?: string;
+      required: boolean;
+    }>;
+    invitedBy: {
+      enabled: boolean;
+      label?: string;
+      placeholder?: string;
+      required: boolean;
+    } | null;
+  };
   attendanceCounts: {
     approved: number;
     pending: number;
@@ -67,6 +101,20 @@ export interface ApiRsvp {
   isGuest: boolean;
   createdAt: number;
   updatedAt: number;
+  ticket: ApiTicket | null;
+}
+
+export interface ApiRsvpWriteInput {
+  phone: string;
+  name: string;
+  listKey?: string;
+  listPassword?: string;
+  attendees?: number;
+  attendanceStatus?: ApiAttendanceStatus;
+  note?: string;
+  customFieldValues?: Record<string, string>;
+  socialProfiles?: Array<{ platformKey: string; handle: string }>;
+  invitedByName?: string;
 }
 
 /** The plaintext HTTP body of every webhook delivery (payload is inside, encrypted). */
@@ -108,6 +156,8 @@ export interface CoucouWebhookIdentity {
   isGuest: boolean;
 }
 
+export type CoucouWebhookTicketSnapshot = ApiTicket;
+
 /** The decrypted webhook payload. */
 export interface CoucouWebhookPayload {
   apiVersion: string;
@@ -121,6 +171,7 @@ export interface CoucouWebhookPayload {
     event: CoucouWebhookEventSnapshot;
     rsvp?: CoucouWebhookRsvpSnapshot;
     identity?: CoucouWebhookIdentity;
+    ticket?: CoucouWebhookTicketSnapshot;
     /** "api" when the change came through the partner API (skip mirroring your own writes). */
     origin?: { type: "api" | "app" };
     changes?: Record<string, unknown>;

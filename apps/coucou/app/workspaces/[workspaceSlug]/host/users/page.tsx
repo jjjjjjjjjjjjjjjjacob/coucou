@@ -16,10 +16,13 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { Crown, DoorOpen, Filter, Search, Shield, User, Users, X } from "lucide-react";
+import { Crown, DoorOpen, Search, Shield, User, Users, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { DashboardTitleBar } from "@/components/dashboard-title-bar";
+import { PageToolbar } from "@/components/page-toolbar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { PageCard } from "@/components/ui/page-card";
 import { Select, SelectOption } from "@/components/ui/select";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { useDebounce } from "@/lib/hooks/use-debounce";
@@ -52,7 +56,6 @@ export default function UsersPage() {
   const workspaceScope = useWorkspaceScope();
   const usersPath = useWorkspaceOperationPath("host", "users");
 
-  // Read pagination directly from URL params
   const pageIndex = parseInt(searchParams.get("page") || "0");
   const pageSize = parseInt(searchParams.get("pageSize") || "10");
 
@@ -126,6 +129,7 @@ export default function UsersPage() {
         return "Date Joined";
     }
   }, []);
+
   const handleSortingChange: OnChangeFn<SortingState> = React.useCallback(
     (updater) => {
       const baseState = tableSorting;
@@ -142,6 +146,7 @@ export default function UsersPage() {
     },
     [applySortingSelection, tableSorting],
   );
+
   const handleSortDropdownChange = React.useCallback(
     (value: string) => {
       const [option, direction] = value.split(":");
@@ -155,6 +160,7 @@ export default function UsersPage() {
     },
     [applySortingSelection, sortBy, sortDirection],
   );
+
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 250);
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -192,10 +198,8 @@ export default function UsersPage() {
   });
   const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({});
 
-  // Normalize role by stripping org: prefix
   const normalizeRole = React.useCallback((role: string) => role?.replace(/^org:/, "") || role, []);
 
-  // Clear all filters function
   const clearAllFilters = () => {
     setSearchQuery("");
     setRoleFilter("all");
@@ -212,7 +216,6 @@ export default function UsersPage() {
     router.replace(`${usersPath}?${params.toString()}`, { scroll: false });
   }, [debouncedSearch, roleFilter, router, searchParams, usersPath]);
 
-  // Check if any filters are active
   const hasActiveFilters =
     searchQuery.trim() !== "" ||
     roleFilter !== "all" ||
@@ -239,26 +242,6 @@ export default function UsersPage() {
     [normalizeRole],
   );
 
-  const getRoleColor = React.useCallback(
-    (role: string) => {
-      const normalized = normalizeRole(role);
-      switch (normalized) {
-        case "admin":
-          return "text-yellow-700 border-yellow-200 bg-yellow-50";
-        case "host":
-          return "text-blue-700 border-blue-200 bg-blue-50";
-        case "door":
-        case "member":
-          return "text-teal-700 border-teal-200 bg-teal-50";
-        case "guest":
-          return "text-gray-700 border-gray-200 bg-gray-50";
-        default:
-          return "text-gray-700 border-gray-200 bg-gray-50";
-      }
-    },
-    [normalizeRole],
-  );
-
   const getRoleLabel = React.useCallback(
     (role: string) => {
       const normalized = normalizeRole(role);
@@ -279,7 +262,6 @@ export default function UsersPage() {
     [normalizeRole],
   );
 
-  // Pagination change handler that updates URL
   const handlePaginationChange: OnChangeFn<PaginationState> = (updaterOrValue) => {
     const newPagination =
       typeof updaterOrValue === "function"
@@ -292,7 +274,6 @@ export default function UsersPage() {
     router.replace(`${usersPath}?${params.toString()}`, { scroll: false });
   };
 
-  // Define table columns
   const columns = React.useMemo<ColumnDef<OrganizationUserListItem>[]>(() => {
     const handleRoleChange = async (userId: Id<"users">, newRole: string, isGuest = false) => {
       try {
@@ -318,7 +299,6 @@ export default function UsersPage() {
           });
         }
 
-        // Clear pending changes for this user
         setPendingChanges((prev) => {
           const updated = { ...prev };
           delete updated[userId];
@@ -341,6 +321,7 @@ export default function UsersPage() {
         cell: ({ row }) => {
           const user = row.original;
           const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+          const userDetailPath = `${usersPath}/${user._id}`;
           return (
             <div className="flex items-center gap-3">
               <Avatar className="h-8 w-8">
@@ -348,8 +329,13 @@ export default function UsersPage() {
                 <AvatarFallback>{(user.firstName || "U").charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
               <div>
-                <div className="font-medium">{displayName || "Unknown User"}</div>
-                <div className="text-xs text-muted-foreground">
+                <Link
+                  href={userDetailPath}
+                  className="font-medium text-[var(--text-primary)] hover:underline"
+                >
+                  {displayName || "Unknown User"}
+                </Link>
+                <div className="text-xs text-[var(--text-secondary)]">
                   ID: {user.clerkUserId?.slice(-8) || "Unknown"}
                 </div>
               </div>
@@ -364,12 +350,14 @@ export default function UsersPage() {
         cell: ({ row }) => {
           const user = row.original;
           const currentRole = pendingChanges[user._id] || user.role;
-          const _hasChanges = currentRole !== user.role;
           const normalizedCurrentRole = normalizeRole(currentRole);
 
           if (normalizedCurrentRole === "guest") {
             return (
-              <Badge variant="outline" className={cn(getRoleColor(currentRole))}>
+              <Badge
+                variant="secondary"
+                className="bg-[var(--surface-3)] text-[var(--text-primary)]"
+              >
                 <div className="flex items-center gap-1">
                   {getRoleIcon(currentRole)}
                   {getRoleLabel(currentRole)}
@@ -384,7 +372,7 @@ export default function UsersPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className={cn(getRoleColor(normalizedCurrentRole))}
+                  className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)] hover:bg-[var(--surface-3)]"
                 >
                   <div className="flex items-center gap-1">
                     {getRoleIcon(normalizedCurrentRole)}
@@ -392,7 +380,7 @@ export default function UsersPage() {
                   </div>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent>
+              <DropdownMenuContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
                 <DropdownMenuRadioGroup
                   value={currentRole}
                   onValueChange={(value) =>
@@ -402,19 +390,19 @@ export default function UsersPage() {
                     }))
                   }
                 >
-                  <DropdownMenuRadioItem value="host">
+                  <DropdownMenuRadioItem value="host" className="focus:bg-[var(--surface-3)]">
                     <div className="flex items-center gap-2">
                       <Shield className="h-4 w-4" />
                       <span>Host</span>
                     </div>
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="door">
+                  <DropdownMenuRadioItem value="door" className="focus:bg-[var(--surface-3)]">
                     <div className="flex items-center gap-2">
                       <DoorOpen className="h-4 w-4" />
                       <span>Door</span>
                     </div>
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="admin">
+                  <DropdownMenuRadioItem value="admin" className="focus:bg-[var(--surface-3)]">
                     <div className="flex items-center gap-2">
                       <Crown className="h-4 w-4" />
                       <span>Admin</span>
@@ -433,7 +421,7 @@ export default function UsersPage() {
         cell: ({ getValue }) => {
           const timestamp = getValue() as number;
           const date = new Date(timestamp);
-          return <span className="text-muted-foreground">{date.toLocaleDateString()}</span>;
+          return <span className="text-[var(--text-secondary)]">{date.toLocaleDateString()}</span>;
         },
       },
       {
@@ -449,20 +437,33 @@ export default function UsersPage() {
             return (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="text-xs">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs border-[var(--border-subtle)]"
+                  >
                     Actions
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => handleRoleChange(user._id, "host", true)}>
+                <DropdownMenuContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
+                  <DropdownMenuItem
+                    onClick={() => handleRoleChange(user._id, "host", true)}
+                    className="focus:bg-[var(--surface-3)]"
+                  >
                     <Shield className="mr-2 h-4 w-4" />
                     Promote to Host
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRoleChange(user._id, "door", true)}>
+                  <DropdownMenuItem
+                    onClick={() => handleRoleChange(user._id, "door", true)}
+                    className="focus:bg-[var(--surface-3)]"
+                  >
                     <DoorOpen className="mr-2 h-4 w-4" />
                     Promote to Door
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRoleChange(user._id, "admin", true)}>
+                  <DropdownMenuItem
+                    onClick={() => handleRoleChange(user._id, "admin", true)}
+                    className="focus:bg-[var(--surface-3)]"
+                  >
                     <Crown className="mr-2 h-4 w-4" />
                     Promote to Admin
                   </DropdownMenuItem>
@@ -487,18 +488,16 @@ export default function UsersPage() {
       },
     ];
   }, [
-    getRoleColor,
     getRoleIcon,
     getRoleLabel,
     normalizeRole,
     pendingChanges,
     promoteUserToOrganization,
     updateUserRole,
+    usersPath,
     workspaceScope,
   ]);
 
-  // useReactTable returns a mutable instance with non-memoizable callbacks; suppress lint warning.
-  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable<OrganizationUserListItem>({
     data: organizationUsers,
     columns,
@@ -514,117 +513,110 @@ export default function UsersPage() {
   });
 
   return (
-    <div className="flex-1 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Users</h2>
-          <p className="text-muted-foreground">Manage organization member roles and permissions</p>
-        </div>
-      </div>
+    <div className="flex-1 space-y-5">
+      <DashboardTitleBar
+        title="Users"
+        subtitle="Manage organization member roles and permissions"
+        breadcrumb={[{ label: "Workspace" }]}
+      />
 
-      {/* Stats Cards */}
       {!userStats ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {[...Array(5)].map((_, i) => (
-            <Card key={i}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 w-24 bg-muted rounded animate-pulse" />
-                <div className="h-4 w-4 bg-muted rounded animate-pulse" />
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 w-16 bg-muted rounded animate-pulse mb-2" />
-                <div className="h-3 w-32 bg-muted rounded animate-pulse" />
-              </CardContent>
-            </Card>
+          {[...Array(5)].map((_, index) => (
+            <div key={index} className="h-28 animate-pulse rounded-lg bg-[var(--surface-3)]" />
           ))}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{userStats.total}</div>
-              <p className="text-xs text-muted-foreground">All organization members</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Admins</CardTitle>
-              <Crown className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{userStats.admin}</div>
-              <p className="text-xs text-muted-foreground">Full access users</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Hosts</CardTitle>
-              <Shield className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{userStats.host}</div>
-              <p className="text-xs text-muted-foreground">Host access</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Door</CardTitle>
-              <DoorOpen className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{userStats.door}</div>
-              <p className="text-xs text-muted-foreground">Door access</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Organization</CardTitle>
-              <User className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{userStats.organizationMembers}</div>
-              <p className="text-xs text-muted-foreground">Total staff</p>
-            </CardContent>
-          </Card>
+          <PageCard
+            title="Total Users"
+            description="All organization members"
+            action={<Users className="h-4 w-4 text-[var(--text-secondary)]" />}
+          >
+            <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {userStats.total}
+            </div>
+          </PageCard>
+          <PageCard
+            title="Admins"
+            description="Full access users"
+            action={<Crown className="h-4 w-4 text-[var(--text-secondary)]" />}
+          >
+            <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {userStats.admin}
+            </div>
+          </PageCard>
+          <PageCard
+            title="Hosts"
+            description="Host access"
+            action={<Shield className="h-4 w-4 text-[var(--text-secondary)]" />}
+          >
+            <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {userStats.host}
+            </div>
+          </PageCard>
+          <PageCard
+            title="Door"
+            description="Door access"
+            action={<DoorOpen className="h-4 w-4 text-[var(--text-secondary)]" />}
+          >
+            <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {userStats.door}
+            </div>
+          </PageCard>
+          <PageCard
+            title="Organization"
+            description="Total staff"
+            action={<User className="h-4 w-4 text-[var(--text-secondary)]" />}
+          >
+            <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {userStats.organizationMembers}
+            </div>
+          </PageCard>
         </div>
       )}
 
-      {/* Search */}
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+      <PageToolbar
+        mobileFilterContent={
+          <>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-secondary)]">Role</label>
+              <Select value={roleFilter} onValueChange={setRoleFilter}>
+                <SelectOption value="all">All Roles</SelectOption>
+                <SelectOption value="admin">Admin</SelectOption>
+                <SelectOption value="host">Host</SelectOption>
+                <SelectOption value="door">Door</SelectOption>
+                <SelectOption value="guest">Guest</SelectOption>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-secondary)]">Sort</label>
+              <Select value={`${sortBy}:${sortDirection}`} onValueChange={handleSortDropdownChange}>
+                <SelectOption value="createdAt:desc">Date Joined (Newest)</SelectOption>
+                <SelectOption value="createdAt:asc">Date Joined (Oldest)</SelectOption>
+                <SelectOption value="name:asc">Name (A–Z)</SelectOption>
+                <SelectOption value="name:desc">Name (Z–A)</SelectOption>
+                <SelectOption value="role:asc">Role (Admin → Guest)</SelectOption>
+                <SelectOption value="role:desc">Role (Guest → Admin)</SelectOption>
+              </Select>
+            </div>
+          </>
+        }
+      >
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--text-secondary)]" />
           <Input
             placeholder="Search users..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(event) => setSearchQuery(event.target.value)}
             className="pl-8"
           />
         </div>
-        <div className="text-sm text-muted-foreground">
-          {usersData?.pagination ? (
-            <>
-              Showing {usersData.pagination.startIndex}-{usersData.pagination.endIndex} of{" "}
-              {usersData.pagination.totalCount} users
-            </>
-          ) : (
-            <>Showing {organizationUsers.length} users</>
-          )}
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex gap-2 items-center flex-wrap">
-        <Filter className="h-4 w-4 text-muted-foreground" />
-        <Select value={roleFilter} onValueChange={setRoleFilter} className="w-32">
+        <Select
+          value={roleFilter}
+          onValueChange={setRoleFilter}
+          className="hidden w-32 sm:inline-flex"
+        >
           <SelectOption value="all">All Roles</SelectOption>
           <SelectOption value="admin">Admin</SelectOption>
           <SelectOption value="host">Host</SelectOption>
@@ -634,7 +626,7 @@ export default function UsersPage() {
         <Select
           value={`${sortBy}:${sortDirection}`}
           onValueChange={handleSortDropdownChange}
-          className="w-56"
+          className="hidden w-56 sm:inline-flex"
         >
           <SelectOption value="createdAt:desc">Date Joined (Newest)</SelectOption>
           <SelectOption value="createdAt:asc">Date Joined (Oldest)</SelectOption>
@@ -643,52 +635,77 @@ export default function UsersPage() {
           <SelectOption value="role:asc">Role (Admin → Guest)</SelectOption>
           <SelectOption value="role:desc">Role (Guest → Admin)</SelectOption>
         </Select>
-        {hasActiveFilters && (
-          <Button size="sm" variant="outline" onClick={clearAllFilters} className="text-xs">
+        {hasActiveFilters ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={clearAllFilters}
+            className="text-xs border-[var(--border-subtle)]"
+          >
             Clear All
           </Button>
-        )}
-      </div>
+        ) : null}
+        <div className="ml-auto hidden text-sm text-[var(--text-secondary)] sm:block">
+          {usersData?.pagination ? (
+            <>
+              Showing {usersData.pagination.startIndex}-{usersData.pagination.endIndex} of{" "}
+              {usersData.pagination.totalCount} users
+            </>
+          ) : (
+            <>Showing {organizationUsers.length} users</>
+          )}
+        </div>
+      </PageToolbar>
 
-      {/* Active Filters Display */}
-      {hasActiveFilters && (
-        <div className="flex gap-2 items-center flex-wrap">
-          <span className="text-sm text-foreground/70">Active filters:</span>
+      {hasActiveFilters ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-[var(--text-secondary)]">Active filters:</span>
           {searchQuery.trim() !== "" && (
-            <Badge variant="secondary" className="gap-1">
-              Search: &ldquo;{searchQuery}&rdquo;
+            <Badge
+              variant="secondary"
+              className="gap-1 bg-[var(--surface-3)] text-[var(--text-primary)]"
+            >
+              Search: \u201c{searchQuery}\u201d
               <button
                 onClick={() => setSearchQuery("")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
+                className="ml-1 rounded-full p-0.5 hover:bg-[var(--surface-3-strong)]"
+                aria-label="Clear search"
               >
-                <X className="w-3 h-3" />
+                <X className="h-3 w-3" />
               </button>
             </Badge>
           )}
           {roleFilter !== "all" && (
-            <Badge variant="secondary" className="gap-1">
+            <Badge
+              variant="secondary"
+              className="gap-1 bg-[var(--surface-3)] text-[var(--text-primary)]"
+            >
               Role: {roleFilter.charAt(0).toUpperCase() + roleFilter.slice(1)}
               <button
                 onClick={() => setRoleFilter("all")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
+                className="ml-1 rounded-full p-0.5 hover:bg-[var(--surface-3-strong)]"
+                aria-label="Clear role filter"
               >
-                <X className="w-3 h-3" />
+                <X className="h-3 w-3" />
               </button>
             </Badge>
           )}
           {(sortBy !== "createdAt" || sortDirection !== "desc") && (
-            <Badge variant="secondary" className="gap-1">
-              Sort: {resolveSortLabel(sortBy)}
-              {sortDirection === "desc" ? " (desc)" : " (asc)"}
+            <Badge
+              variant="secondary"
+              className="gap-1 bg-[var(--surface-3)] text-[var(--text-primary)]"
+            >
+              Sort: {resolveSortLabel(sortBy)} {sortDirection === "desc" ? "(desc)" : "(asc)"}
               <button
                 onClick={() => applySortingSelection("createdAt", "desc")}
-                className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
+                className="ml-1 rounded-full p-0.5 hover:bg-[var(--surface-3-strong)]"
+                aria-label="Clear sort"
               >
-                <X className="w-3 h-3" />
+                <X className="h-3 w-3" />
               </button>
             </Badge>
           )}
-          <span className="text-xs text-foreground/60">
+          <span className="text-xs text-[var(--text-tertiary)]">
             {usersData?.pagination ? (
               <>
                 ({usersData.pagination.startIndex}-{usersData.pagination.endIndex} of{" "}
@@ -699,13 +716,12 @@ export default function UsersPage() {
             )}
           </span>
         </div>
-      )}
+      ) : null}
 
-      {/* Users Table */}
-      <Card>
+      <Card className="border-[var(--border-subtle)] bg-[var(--surface-2)] shadow-[var(--shadow-card)]">
         <CardHeader>
-          <CardTitle>All Users</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-[var(--text-primary)]">All Users</CardTitle>
+          <CardDescription className="text-[var(--text-secondary)]">
             Manage roles for organization members and promote event guests to staff.
           </CardDescription>
         </CardHeader>
@@ -718,11 +734,14 @@ export default function UsersPage() {
                 <table className="min-w-full text-sm">
                   <thead>
                     {table.getHeaderGroups().map((headerGroup) => (
-                      <tr key={headerGroup.id} className="text-left text-foreground/70 border-b">
+                      <tr
+                        key={headerGroup.id}
+                        className="border-b border-[var(--border-subtle)] text-left text-[var(--text-secondary)]"
+                      >
                         {headerGroup.headers.map((header) => (
                           <th
                             key={header.id}
-                            className="px-2 py-3 cursor-pointer"
+                            className="cursor-pointer whitespace-nowrap px-2 py-3"
                             onClick={header.column.getToggleSortingHandler()}
                           >
                             {flexRender(header.column.columnDef.header, header.getContext())}
@@ -742,10 +761,31 @@ export default function UsersPage() {
                       return (
                         <tr
                           key={row.id}
+                          role="link"
+                          tabIndex={0}
+                          aria-label={`Open ${`${user.firstName || ""} ${user.lastName || ""}`.trim() || "user"} details`}
                           className={cn(
-                            "border-b border-foreground/10",
-                            hasChanges ? "bg-yellow-50 border-yellow-200" : "",
+                            "cursor-pointer border-b border-[var(--border-subtle)] transition-colors hover:bg-[var(--surface-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--text-primary)]/30",
+                            hasChanges ? "bg-[var(--status-pending-bg)]" : "",
                           )}
+                          onClick={(clickEvent) => {
+                            if (
+                              clickEvent.target instanceof Element &&
+                              clickEvent.target.closest(
+                                "button, a, input, select, textarea, [role='menuitem']",
+                              )
+                            ) {
+                              return;
+                            }
+                            router.push(`${usersPath}/${user._id}`);
+                          }}
+                          onKeyDown={(keyboardEvent) => {
+                            if (keyboardEvent.target !== keyboardEvent.currentTarget) return;
+                            if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+                              keyboardEvent.preventDefault();
+                              router.push(`${usersPath}/${user._id}`);
+                            }
+                          }}
                         >
                           {row.getVisibleCells().map((cell) => (
                             <td key={cell.id} className="px-2 py-3">
@@ -761,8 +801,8 @@ export default function UsersPage() {
 
               {table.getRowModel().rows.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <p className="text-lg text-muted-foreground mb-2">No users found</p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="mb-2 text-lg text-[var(--text-secondary)]">No users found</p>
+                  <p className="text-sm text-[var(--text-secondary)]">
                     {searchQuery
                       ? "Try adjusting your search query"
                       : "No users found in the system"}
@@ -774,9 +814,8 @@ export default function UsersPage() {
         </CardContent>
       </Card>
 
-      {/* Pagination Controls */}
       <div className="flex items-center justify-between gap-3">
-        <div className="text-xs text-foreground/70">
+        <div className="text-xs text-[var(--text-secondary)]">
           {usersData?.pagination ? (
             <>
               Page {pageIndex + 1} of {usersData.pagination.totalPages || 1}
@@ -791,11 +830,12 @@ export default function UsersPage() {
             onValueChange={(value) => {
               const params = new URLSearchParams(searchParams.toString());
               params.set("pageSize", value);
-              params.set("page", "0"); // Reset to first page when changing page size
+              params.set("page", "0");
               router.replace(`${usersPath}?${params.toString()}`, {
                 scroll: false,
               });
             }}
+            className="w-24"
           >
             {[10, 20, 50, 100].map((number) => (
               <SelectOption key={number} value={String(number)}>
@@ -814,6 +854,7 @@ export default function UsersPage() {
               });
             }}
             disabled={!usersData?.pagination?.hasPreviousPage}
+            className="border-[var(--border-subtle)]"
           >
             Previous
           </Button>
@@ -828,6 +869,7 @@ export default function UsersPage() {
               });
             }}
             disabled={!usersData?.pagination?.hasNextPage}
+            className="border-[var(--border-subtle)]"
           >
             Next
           </Button>

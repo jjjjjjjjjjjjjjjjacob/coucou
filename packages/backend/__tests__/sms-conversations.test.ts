@@ -208,10 +208,13 @@ describe("sms conversations", () => {
       providerStatus: "sent",
     });
 
-    const updatedCount = await testBackend.mutation(internal.smsConversations.updateProviderStatus, {
-      providerMessageId: "SM_status",
-      providerStatus: "delivered",
-    });
+    const updatedCount = await testBackend.mutation(
+      internal.smsConversations.updateProviderStatus,
+      {
+        providerMessageId: "SM_status",
+        providerStatus: "delivered",
+      },
+    );
     const messages = await testBackend.run(async (databaseContext) => {
       return await databaseContext.db
         .query("smsConversationMessages")

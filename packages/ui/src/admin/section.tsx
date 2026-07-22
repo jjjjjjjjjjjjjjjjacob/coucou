@@ -8,17 +8,20 @@ export interface AdminSectionProps {
 
 /**
  * Standard admin section layout: title + meta header line, then children
- * (typically rows or a table). Used for "Attention", "Houses", "Pending".
+ * (typically rows or a table). Used for "Attention", "Partners", "Pending".
  */
 export function AdminSection({ title, meta, children }: AdminSectionProps) {
   return (
-    <section className="py-12" style={{ borderBottom: "1px solid var(--tt-rule)" }}>
-      <div
-        className="flex items-center justify-between pb-6 text-[13px]"
-        style={{ borderBottom: "1px solid var(--tt-rule)" }}
-      >
-        <span style={{ color: "var(--tt-fg)" }}>{title}</span>
-        {meta ? <span style={{ color: "var(--tt-fg-dim)" }}>{meta}</span> : null}
+    <section className="py-8" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+      <div className="flex items-center justify-between pb-4">
+        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+          {title}
+        </span>
+        {meta ? (
+          <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
+            {meta}
+          </span>
+        ) : null}
       </div>
       <div>{children}</div>
     </section>

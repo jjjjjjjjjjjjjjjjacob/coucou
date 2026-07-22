@@ -10,6 +10,14 @@ import {
   sanitizeOptionalRsvpConfirmationMessage,
 } from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import { useAction, useQuery } from "convex/react";
+import {
+  ClipboardList,
+  KeyRound,
+  LayoutDashboard,
+  MessageSquareText,
+  Save,
+  Trash2,
+} from "lucide-react";
 import React, { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -19,6 +27,7 @@ import { EventDetailsSection } from "@/components/event-form-sections/event-deta
 import { EventGuestPageSection } from "@/components/event-form-sections/event-guest-page-section";
 import { EventLookSection } from "@/components/event-form-sections/event-look-section";
 import { EventScheduleSection } from "@/components/event-form-sections/event-schedule-section";
+import { LinearTabs, LinearTabsList, LinearTabsTrigger } from "@/components/linear-tabs";
 import { ListConfirmationTextsSection } from "@/components/list-confirmation-texts-section";
 import {
   draftToPrimaryFieldConfig,
@@ -29,18 +38,18 @@ import {
 } from "@/components/primary-field-config-editor";
 import { RsvpConfirmationTextSection } from "@/components/rsvp-confirmation-text-section";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldLabel, FieldSwitchRow } from "@/components/ui/field";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { SectionCard } from "@/components/ui/section-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
 import {
@@ -63,6 +72,8 @@ import type {
   ListCredentialEdit,
 } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { cn } from "@/lib/utils";
+import { type EventEditorController, useEventEditContext } from "./[eventId]/event-edit-context";
 
 type EventUpdatePatch = {
   name?: string;
@@ -79,6 +90,7 @@ type EventUpdatePatch = {
   guestPortalLinkLabel?: string;
   guestPortalLinkUrl?: string;
   eventDate?: number;
+  eventEndDate?: number;
   eventTimezone?: string;
   maxAttendees?: number;
   status?: Event["status"];
@@ -98,6 +110,7 @@ type EventUpdatePatch = {
 type EventUnsetField =
   | "secondaryTitle"
   | "productionCompany"
+  | "eventEndDate"
   | "flyerStorageId"
   | "guestPortalImageStorageId"
   | "guestPortalLinkLabel"
@@ -121,22 +134,134 @@ function primaryFieldConfigDraftHasContent(draft: PrimaryFieldConfigDraft): bool
   return draft.socialPlatforms.length > 0 || draft.invitedBy.enabled;
 }
 
+function addDaysToDateString(dateString: string, days: number): string {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export type EventEditorSection = "details" | "confirmations" | "rsvp" | "lists";
+
+const EVENT_EDITOR_SECTION_LABELS: Record<EventEditorSection, string> = {
+  details: "Details",
+  confirmations: "Messages",
+  rsvp: "RSVP Setup",
+  lists: "Lists & Access",
+};
+
+const EVENT_EDITOR_PATCH_FIELDS: Record<EventEditorSection, readonly (keyof EventUpdatePatch)[]> = {
+  details: [
+    "name",
+    "secondaryTitle",
+    "description",
+    "hosts",
+    "productionCompany",
+    "location",
+    "eventDate",
+    "eventEndDate",
+    "eventTimezone",
+    "maxAttendees",
+    "status",
+    "flyerStorageId",
+    "customIconStorageId",
+    "themeBackgroundColor",
+    "themeTextColor",
+    "qrCodeColor",
+    "guestPortalImageStorageId",
+    "guestPortalLinkLabel",
+    "guestPortalLinkUrl",
+    "referralSharingEnabled",
+    "acts",
+  ],
+  confirmations: ["rsvpConfirmationMessageEnabled", "rsvpConfirmationMessage"],
+  rsvp: ["sendQrOnApproval", "attendanceQuestionEnabled", "customFields", "primaryFieldConfig"],
+  lists: [],
+};
+
+const EVENT_EDITOR_FORM_FIELDS: Record<
+  EventEditorSection,
+  readonly Extract<keyof EditEventFormData, string>[]
+> = {
+  details: [
+    "name",
+    "secondaryTitle",
+    "description",
+    "hosts",
+    "productionCompany",
+    "location",
+    "eventDate",
+    "eventTime",
+    "endsLate",
+    "eventTimezone",
+    "maxAttendees",
+    "status",
+    "flyerStorageId",
+    "customIconStorageId",
+    "themeBackgroundColor",
+    "themeTextColor",
+    "qrCodeColor",
+    "guestPortalImageStorageId",
+    "guestPortalLinkLabel",
+    "guestPortalLinkUrl",
+    "referralSharingEnabled",
+  ],
+  confirmations: ["rsvpConfirmationMessageEnabled", "rsvpConfirmationMessage"],
+  rsvp: ["sendQrOnApproval", "attendanceQuestionEnabled"],
+  lists: [],
+};
+
+const EVENT_EDITOR_UNSET_FIELDS: Record<EventEditorSection, readonly EventUnsetField[]> = {
+  details: [
+    "secondaryTitle",
+    "productionCompany",
+    "flyerStorageId",
+    "guestPortalImageStorageId",
+    "guestPortalLinkLabel",
+    "guestPortalLinkUrl",
+  ],
+  confirmations: ["rsvpConfirmationMessage"],
+  rsvp: ["primaryFieldConfig"],
+  lists: [],
+};
+
+interface EditEventDialogProps {
+  showTrigger?: boolean;
+  event: Event;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  inline?: boolean;
+  initialTab?: string;
+  variant?: "default" | "linear";
+  additionalTabTriggers?: React.ReactNode;
+  trailingTabTriggers?: React.ReactNode;
+  additionalTabContents?: React.ReactNode;
+}
+
 export default function EditEventDialog({
   showTrigger = true,
   event,
   open: externalOpen,
   onOpenChange: externalOnOpenChange,
-}: {
-  steve?: string;
-  showTrigger?: boolean;
-  event: Event;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-}) {
+  inline = false,
+  initialTab = "details",
+  variant = "default",
+  additionalTabTriggers,
+  trailingTabTriggers,
+  additionalTabContents,
+}: EditEventDialogProps) {
   const [internalOpen, setInternalOpen] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState(initialTab);
+  const TabRoot = variant === "linear" ? LinearTabs : Tabs;
+  const TabList = variant === "linear" ? LinearTabsList : TabsList;
+  const TabTrigger = variant === "linear" ? LinearTabsTrigger : TabsTrigger;
   const workspaceScope = useWorkspaceScope();
-  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const editContext = useEventEditContext();
+  const open = inline || (externalOpen !== undefined ? externalOpen : internalOpen);
   const setOpen = externalOnOpenChange || setInternalOpen;
+  const activeEditorSection = Object.hasOwn(EVENT_EDITOR_SECTION_LABELS, activeTab)
+    ? (activeTab as EventEditorSection)
+    : null;
   const defaultTimezone = React.useMemo(
     () => event.eventTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
     [event.eventTimezone],
@@ -155,6 +280,17 @@ export default function EditEventDialog({
       return "";
     }
   }, [event.eventDate, defaultTimezone]);
+  const defaultEndsLate = React.useMemo(() => {
+    if (!event.eventEndDate) return true;
+    try {
+      return (
+        extractDateFromTimestamp(event.eventEndDate, defaultTimezone) !==
+        extractDateFromTimestamp(event.eventDate, defaultTimezone)
+      );
+    } catch {
+      return true;
+    }
+  }, [event.eventDate, event.eventEndDate, defaultTimezone]);
   const normalizedEventBackgroundColor =
     normalizeHexColorInput(event.themeBackgroundColor) ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
   const normalizedEventTextColor =
@@ -174,6 +310,7 @@ export default function EditEventDialog({
       guestPortalLinkUrl: event.guestPortalLinkUrl ?? "",
       eventDate: defaultDate,
       eventTime: defaultTime,
+      endsLate: defaultEndsLate,
       eventTimezone: defaultTimezone,
       maxAttendees: event.maxAttendees ?? 1,
       status: event.status ?? "inactive",
@@ -195,12 +332,21 @@ export default function EditEventDialog({
   const [flyerStorageId, setFlyerStorageId] = React.useState<string | null>(
     event.flyerStorageId ?? null,
   );
+  const [savedFlyerStorageId, setSavedFlyerStorageId] = React.useState<string | null>(
+    event.flyerStorageId ?? null,
+  );
   const [eventIconStorageId, setEventIconStorageId] = React.useState<string | null>(
+    event.customIconStorageId ?? null,
+  );
+  const [savedEventIconStorageId, setSavedEventIconStorageId] = React.useState<string | null>(
     event.customIconStorageId ?? null,
   );
   const [guestPortalImageStorageId, setGuestPortalImageStorageId] = React.useState<string | null>(
     event.guestPortalImageStorageId ?? null,
   );
+  const [savedGuestPortalImageStorageId, setSavedGuestPortalImageStorageId] = React.useState<
+    string | null
+  >(event.guestPortalImageStorageId ?? null);
   const [saving, setSaving] = React.useState(false);
   const update = useAction(api.eventsNode.update);
   const creds = useQuery(
@@ -213,10 +359,15 @@ export default function EditEventDialog({
       : "skip",
   ) as CredentialResponse[] | undefined;
   const [lists, setLists] = React.useState<ListCredentialEdit[]>([]);
+  const [savedLists, setSavedLists] = React.useState<ListCredentialEdit[]>([]);
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>(
     event.customFields ?? [],
   );
+  const [savedCustomFields, setSavedCustomFields] = React.useState<CustomFieldDef[]>(
+    event.customFields ?? [],
+  );
   const [acts, setActs] = React.useState<EventAct[]>(event.acts ?? []);
+  const [savedActs, setSavedActs] = React.useState<EventAct[]>(event.acts ?? []);
   const workspace = useQuery(
     api.workspaces.getWorkspaceBySlug,
     open && workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
@@ -238,6 +389,15 @@ export default function EditEventDialog({
         ? primaryFieldConfigToDraft(event.primaryFieldConfig)
         : EMPTY_PRIMARY_FIELD_CONFIG,
     );
+  const [savedPrimaryFieldConfigDraft, setSavedPrimaryFieldConfigDraft] =
+    React.useState<PrimaryFieldConfigDraft>(() =>
+      event.primaryFieldConfig
+        ? primaryFieldConfigToDraft(event.primaryFieldConfig)
+        : EMPTY_PRIMARY_FIELD_CONFIG,
+    );
+  const [savedUsePrimaryFieldDefaults, setSavedUsePrimaryFieldDefaults] = React.useState(
+    !event.primaryFieldConfig,
+  );
 
   React.useEffect(() => {
     if (usePrimaryFieldDefaults) {
@@ -281,28 +441,82 @@ export default function EditEventDialog({
     ],
   );
 
+  const listsAreDirty = JSON.stringify(lists) !== JSON.stringify(savedLists);
+  const actsAreDirty = JSON.stringify(acts) !== JSON.stringify(savedActs);
+  const customFieldsAreDirty = JSON.stringify(customFields) !== JSON.stringify(savedCustomFields);
+  const primaryFieldsAreDirty =
+    usePrimaryFieldDefaults !== savedUsePrimaryFieldDefaults ||
+    JSON.stringify(primaryFieldConfigDraft) !== JSON.stringify(savedPrimaryFieldConfigDraft);
+
+  const isSectionDirty = React.useCallback(
+    (section: EventEditorSection) => {
+      const hasDirtyFormField = EVENT_EDITOR_FORM_FIELDS[section].some(
+        (fieldName) => form.formState.dirtyFields[fieldName] === true,
+      );
+      if (hasDirtyFormField) return true;
+      if (section === "details") return actsAreDirty;
+      if (section === "confirmations" || section === "lists") return listsAreDirty;
+      if (section === "rsvp") return customFieldsAreDirty || primaryFieldsAreDirty;
+      return false;
+    },
+    [
+      actsAreDirty,
+      customFieldsAreDirty,
+      form.formState.dirtyFields,
+      listsAreDirty,
+      primaryFieldsAreDirty,
+    ],
+  );
+
+  const activeSectionIsDirty = activeEditorSection ? isSectionDirty(activeEditorSection) : false;
+
+  const handleTabChange = (nextTab: string) => {
+    if (activeEditorSection && activeSectionIsDirty) {
+      toast.error("Save or undo this tab before switching sections");
+      return;
+    }
+    setActiveTab(nextTab);
+  };
+
+  const handleUndoSection = (section: EventEditorSection) => {
+    for (const fieldName of EVENT_EDITOR_FORM_FIELDS[section]) {
+      form.resetField(fieldName);
+    }
+    if (section === "details") {
+      setFlyerStorageId(savedFlyerStorageId);
+      setEventIconStorageId(savedEventIconStorageId);
+      setGuestPortalImageStorageId(savedGuestPortalImageStorageId);
+      setActs(savedActs.map((act) => ({ ...act })));
+    }
+    if (section === "confirmations" || section === "lists") {
+      setLists(savedLists.map((list) => ({ ...list })));
+    }
+    if (section === "rsvp") {
+      setCustomFields(savedCustomFields.map((field) => ({ ...field })));
+      setUsePrimaryFieldDefaults(savedUsePrimaryFieldDefaults);
+      setPrimaryFieldConfigDraft(savedPrimaryFieldConfigDraft);
+    }
+  };
+
   useEffect(() => {
     if (open && creds && workspaceScope) {
-      setLists(
-        creds.map((credential) => ({
-          id: credential._id,
-          listKey: credential.listKey,
-          password: "",
-          passwordEdited: false,
-          requirePassword: credential.hasPassword ?? false,
-          generateQR: credential.generateQR ?? false,
-          // v(n+1) tri-state override mirrors the wizard's `sendQrOnApprovalOverride`:
-          // undefined inherits the event toggle, true/false explicitly opt this list
-          // in or out of immediate QR send.
-          sendQrOnApprovalOverride:
-            typeof credential.sendQrOnApproval === "boolean"
-              ? credential.sendQrOnApproval
-              : typeof credential.defersQrDelivery === "boolean"
-                ? !credential.defersQrDelivery
-                : undefined,
-          approvalMessage: credential.approvalMessage ?? event.approvalMessage ?? "",
-        })),
-      );
+      const nextLists = creds.map((credential) => ({
+        id: credential._id,
+        listKey: credential.listKey,
+        password: "",
+        passwordEdited: false,
+        requirePassword: credential.hasPassword ?? false,
+        generateQR: credential.generateQR ?? false,
+        sendQrOnApprovalOverride:
+          typeof credential.sendQrOnApproval === "boolean"
+            ? credential.sendQrOnApproval
+            : typeof credential.defersQrDelivery === "boolean"
+              ? !credential.defersQrDelivery
+              : undefined,
+        approvalMessage: credential.approvalMessage ?? event.approvalMessage ?? "",
+      }));
+      setLists(nextLists);
+      setSavedLists(nextLists.map((list) => ({ ...list })));
       // Fetch stored passwords for display.
       getStoredPasswords({
         eventId: event._id,
@@ -381,7 +595,7 @@ export default function EditEventDialog({
   const removeList = (index: number) =>
     setLists((array) => array.filter((_, position) => position !== index));
 
-  const handleSubmit = async (values: EditEventFormData) => {
+  const handleSubmit = async (values: EditEventFormData, section: EventEditorSection) => {
     try {
       if (!workspaceScope) {
         toast.error("Workspace scope is required to update events");
@@ -472,7 +686,7 @@ export default function EditEventDialog({
       const trimmedGuestPortalLinkUrl = values.guestPortalLinkUrl?.trim() ?? "";
       const hasLabel = trimmedGuestPortalLinkLabel.length > 0;
       const hasUrl = trimmedGuestPortalLinkUrl.length > 0;
-      if ((hasLabel && !hasUrl) || (hasUrl && !hasLabel)) {
+      if (section === "details" && ((hasLabel && !hasUrl) || (hasUrl && !hasLabel))) {
         toast.error("Provide both a guest link label and URL or leave both blank");
         setSaving(false);
         return;
@@ -516,6 +730,27 @@ export default function EditEventDialog({
         computedTimestamp !== event.eventDate
       ) {
         patch.eventDate = computedTimestamp;
+      }
+      const endPolicyDirty = Boolean(
+        dateFieldsDirty || form.formState.dirtyFields.endsLate || event.eventEndDate === undefined,
+      );
+      if (section === "details" && values.eventDate && endPolicyDirty) {
+        const endsLate = values.endsLate ?? true;
+        const eventEndDate = endsLate ? addDaysToDateString(values.eventDate, 1) : values.eventDate;
+        const computedEndTimestamp = createTimestamp(
+          eventEndDate,
+          endsLate ? "04:00" : "23:59",
+          timezoneValue,
+        );
+        const targetStartTimestamp = computedTimestamp ?? event.eventDate;
+        if (computedEndTimestamp <= targetStartTimestamp) {
+          toast.error("Event end must be after the event start");
+          setSaving(false);
+          return;
+        }
+        if (computedEndTimestamp !== event.eventEndDate) {
+          patch.eventEndDate = computedEndTimestamp;
+        }
       }
       if (timezoneValue && timezoneValue !== event.eventTimezone) {
         patch.eventTimezone = timezoneValue;
@@ -594,15 +829,42 @@ export default function EditEventDialog({
       } else if (previousPrimaryFieldConfigKey !== nextPrimaryFieldConfigKey) {
         patch.primaryFieldConfig = nextPrimaryFieldConfig;
       }
+      const allowedPatchFields = new Set(EVENT_EDITOR_PATCH_FIELDS[section]);
+      const scopedPatch = Object.fromEntries(
+        Object.entries(patch).filter(([fieldKey]) =>
+          allowedPatchFields.has(fieldKey as keyof EventUpdatePatch),
+        ),
+      ) as EventUpdatePatch;
+      const allowedUnsetFields = new Set(EVENT_EDITOR_UNSET_FIELDS[section]);
+      const scopedUnsetFields = unsetFields.filter((fieldKey) => allowedUnsetFields.has(fieldKey));
+      const shouldSaveLists = section === "confirmations" || section === "lists";
+
       await update({
         eventId: event._id,
         ...workspaceScope.queryArgs,
-        patch,
-        unsetFields,
-        lists: outgoingLists,
+        ...(Object.keys(scopedPatch).length > 0 ? { patch: scopedPatch } : {}),
+        ...(scopedUnsetFields.length > 0 ? { unsetFields: scopedUnsetFields } : {}),
+        ...(shouldSaveLists ? { lists: outgoingLists } : {}),
       });
-      toast.success("Event updated");
-      setOpen(false);
+      form.reset(values);
+      if (section === "details") {
+        setSavedFlyerStorageId(flyerStorageId);
+        setSavedEventIconStorageId(eventIconStorageId);
+        setSavedGuestPortalImageStorageId(guestPortalImageStorageId);
+        setSavedActs(acts.map((act) => ({ ...act })));
+      }
+      if (section === "confirmations" || section === "lists") {
+        setSavedLists(lists.map((list) => ({ ...list })));
+      }
+      if (section === "rsvp") {
+        setSavedCustomFields(customFields.map((field) => ({ ...field })));
+        setSavedUsePrimaryFieldDefaults(usePrimaryFieldDefaults);
+        setSavedPrimaryFieldConfigDraft(primaryFieldConfigDraft);
+      }
+      toast.success(`${EVENT_EDITOR_SECTION_LABELS[section]} saved`);
+      if (!inline) {
+        setOpen(false);
+      }
     } catch (error: unknown) {
       const errorDetails = error as ApplicationError | Error;
       toast.error(errorDetails?.message || "Failed to update event");
@@ -611,359 +873,461 @@ export default function EditEventDialog({
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      {!externalOpen && showTrigger && (
-        <DialogTrigger asChild>
-          <button className="text-sm px-2 py-1 border rounded">Edit</button>
-        </DialogTrigger>
-      )}
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:max-w-[1200px] max-h-[calc(100vh-2rem)] gap-0 overflow-y-auto p-0">
-        <DialogHeader className="px-5 pt-5 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
-          <DialogTitle>Edit Event</DialogTitle>
-          <DialogDescription>
-            Update event details, list access, and confirmation texts.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="mx-auto w-full max-w-[1200px] px-5 pb-5 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-              <Tabs defaultValue="details">
-                <TabsList className="bg-foreground/5 dark:bg-foreground/10">
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                  <TabsTrigger value="schedule">Schedule</TabsTrigger>
-                  <TabsTrigger value="look">Look</TabsTrigger>
-                  <TabsTrigger value="lineup">Lineup</TabsTrigger>
-                  <TabsTrigger value="guest">Guest Page</TabsTrigger>
-                  <TabsTrigger value="confirmations">Confirmation Texts</TabsTrigger>
-                  <TabsTrigger value="rsvp">RSVP &amp; Lists</TabsTrigger>
-                </TabsList>
+  const activeEditorSectionRef = React.useRef(activeEditorSection);
+  activeEditorSectionRef.current = activeEditorSection;
 
-                <TabsContent value="details">
-                  <EventDetailsSection form={form} />
-                </TabsContent>
+  const handleSubmitRef = React.useRef(handleSubmit);
+  handleSubmitRef.current = handleSubmit;
 
-                <TabsContent value="schedule">
-                  <EventScheduleSection form={form} />
-                </TabsContent>
+  const handleUndoSectionRef = React.useRef(handleUndoSection);
+  handleUndoSectionRef.current = handleUndoSection;
 
-                <TabsContent value="look">
-                  <EventLookSection
-                    form={form}
-                    eventIconStorageId={eventIconStorageId}
-                    onEventIconChange={(value) => {
-                      setEventIconStorageId(value);
-                      form.setValue("customIconStorageId", value, {
-                        shouldDirty: true,
-                      });
-                    }}
-                    flyerStorageId={flyerStorageId}
-                    onFlyerChange={(value) => {
-                      setFlyerStorageId(value);
-                      form.setValue("flyerStorageId", value, {
-                        shouldDirty: true,
-                      });
-                    }}
-                  />
-                </TabsContent>
+  const editorController = React.useMemo<EventEditorController>(
+    () => ({
+      save: async () => {
+        const section = activeEditorSectionRef.current;
+        if (!section) return;
+        await form.handleSubmit((values) => handleSubmitRef.current(values, section))();
+      },
+      undo: () => {
+        const section = activeEditorSectionRef.current;
+        if (!section) return;
+        handleUndoSectionRef.current(section);
+      },
+      setFormValue: (field, value) => {
+        form.setValue(field, value, { shouldDirty: false });
+      },
+    }),
+    [form],
+  );
 
-                <TabsContent value="lineup">
-                  <div className="rounded-lg border bg-card p-4">
-                    <EventActsEditor acts={acts} onChange={setActs} />
-                  </div>
-                </TabsContent>
+  React.useEffect(() => {
+    if (!editContext || !inline) return;
+    editContext.registerController(editorController);
+    return () => editContext.unregisterController();
+  }, [editContext, inline, editorController]);
 
-                <TabsContent value="guest">
-                  <EventGuestPageSection
-                    form={form}
-                    guestPortalImageStorageId={guestPortalImageStorageId}
-                    onGuestPortalImageChange={(value) => {
-                      setGuestPortalImageStorageId(value);
-                      form.setValue("guestPortalImageStorageId", value, {
-                        shouldDirty: true,
-                      });
-                    }}
-                  />
-                </TabsContent>
+  React.useEffect(() => {
+    if (!editContext) return;
+    editContext.setIsDirty(activeSectionIsDirty);
+  }, [editContext, activeSectionIsDirty]);
 
-                <TabsContent value="confirmations">
-                  <div className="space-y-6">
-                    <RsvpConfirmationTextSection
-                      rsvpConfirmationMessageEnabled={currentRsvpConfirmationMessageEnabled}
-                      rsvpConfirmationMessage={currentRsvpConfirmationMessage}
-                      defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}
-                      onEnabledChange={(enabled) =>
-                        form.setValue("rsvpConfirmationMessageEnabled", enabled, {
-                          shouldDirty: true,
-                        })
-                      }
-                      onMessageChange={(message) =>
-                        form.setValue("rsvpConfirmationMessage", message, {
-                          shouldDirty: true,
-                        })
-                      }
-                      previewVariables={confirmationPreviewVariables}
-                    />
-                    <ListConfirmationTextsSection
-                      lists={lists}
-                      defaultApprovalMessage={defaultApprovalMessage}
-                      onApprovalMessageChange={setListApprovalMessage}
-                      resolveQrAttachmentEnabled={(list) =>
-                        list.generateQR &&
-                        (list.sendQrOnApprovalOverride ?? currentSendQrOnApproval)
-                      }
-                      onQrAttachmentChange={setListQrAttachmentEnabled}
-                      previewVariables={confirmationPreviewVariables}
-                    />
-                  </div>
-                </TabsContent>
+  React.useEffect(() => {
+    if (!editContext) return;
+    editContext.setSaving(saving);
+  }, [editContext, saving]);
 
-                <TabsContent value="rsvp" className="space-y-6">
-                  <div className="space-y-3 rounded-lg border bg-card p-4">
-                    <h4 className="font-medium text-sm text-muted-foreground">NOTIFICATIONS</h4>
-                    <label className="flex items-start gap-3 rounded border border-border/60 p-3">
-                      <Checkbox
-                        checked={currentSendQrOnApproval}
-                        onCheckedChange={(checked) =>
-                          form.setValue("sendQrOnApproval", Boolean(checked), {
-                            shouldDirty: true,
-                          })
-                        }
-                        className="mt-0.5"
+  React.useEffect(() => {
+    if (!editContext) return;
+    editContext.setSectionLabel(
+      activeEditorSection ? EVENT_EDITOR_SECTION_LABELS[activeEditorSection] : "",
+    );
+  }, [editContext, activeEditorSection]);
+
+  React.useEffect(() => {
+    // Keep the main editor form in sync with inline edits from the property panel
+    // so that a later save does not overwrite a value that was just updated inline.
+    if (!form.formState.dirtyFields.name) {
+      form.setValue("name", event.name || "", { shouldDirty: false });
+    }
+    if (!form.formState.dirtyFields.secondaryTitle) {
+      form.setValue("secondaryTitle", event.secondaryTitle ?? "", { shouldDirty: false });
+    }
+    if (!form.formState.dirtyFields.description) {
+      form.setValue("description", event.description ?? "", { shouldDirty: false });
+    }
+    if (!form.formState.dirtyFields.hosts) {
+      form.setValue("hosts", (event.hosts || []).join(", "), { shouldDirty: false });
+    }
+    if (!form.formState.dirtyFields.location) {
+      form.setValue("location", event.location || "", { shouldDirty: false });
+    }
+  }, [event.name, event.secondaryTitle, event.description, event.hosts, event.location, form]);
+
+  const showBottomSaveBar = !inline || !editContext;
+
+  const editorForm = (
+    <div
+      className={
+        inline
+          ? "min-w-0 pb-8"
+          : "mx-auto w-full max-w-[1200px] px-5 pb-5 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8"
+      }
+    >
+      <Form {...form}>
+        <form
+          onSubmit={form.handleSubmit((values) =>
+            activeEditorSection ? handleSubmit(values, activeEditorSection) : Promise.resolve(),
+          )}
+          className="space-y-6"
+        >
+          <TabRoot
+            value={activeTab}
+            onValueChange={handleTabChange}
+            className={
+              activeSectionIsDirty
+                ? "[&_[data-slot=tabs-trigger]:not([data-state=active])]:pointer-events-none [&_[data-slot=tabs-trigger]:not([data-state=active])]:opacity-40"
+                : undefined
+            }
+          >
+            <TabList
+              className={cn(
+                "w-full justify-start overflow-x-auto overflow-y-hidden border-b border-[var(--border-subtle)] px-1",
+                inline && "sticky top-0 z-20 bg-[var(--surface-2)]",
+              )}
+            >
+              {additionalTabTriggers}
+              <TabTrigger value="details" className="flex-none gap-1.5">
+                <LayoutDashboard className="h-4 w-4" /> Details
+              </TabTrigger>
+              <TabTrigger value="rsvp" className="flex-none gap-1.5">
+                <ClipboardList className="h-4 w-4" /> RSVP Setup
+              </TabTrigger>
+              <TabTrigger value="lists" className="flex-none gap-1.5">
+                <KeyRound className="h-4 w-4" /> Lists &amp; Access
+              </TabTrigger>
+              <TabTrigger value="confirmations" className="flex-none gap-1.5">
+                <MessageSquareText className="h-4 w-4" /> Messages
+              </TabTrigger>
+              {trailingTabTriggers}
+            </TabList>
+
+            <TabsContent value="details" className="space-y-4 pt-5">
+              <EventDetailsSection form={form} />
+              <EventScheduleSection form={form} showEndPolicy />
+              <EventLookSection
+                form={form}
+                eventIconStorageId={eventIconStorageId}
+                onEventIconChange={(value) => {
+                  setEventIconStorageId(value);
+                  form.setValue("customIconStorageId", value, {
+                    shouldDirty: true,
+                  });
+                }}
+                flyerStorageId={flyerStorageId}
+                onFlyerChange={(value) => {
+                  setFlyerStorageId(value);
+                  form.setValue("flyerStorageId", value, {
+                    shouldDirty: true,
+                  });
+                }}
+              />
+              <EventGuestPageSection
+                form={form}
+                guestPortalImageStorageId={guestPortalImageStorageId}
+                onGuestPortalImageChange={(value) => {
+                  setGuestPortalImageStorageId(value);
+                  form.setValue("guestPortalImageStorageId", value, {
+                    shouldDirty: true,
+                  });
+                }}
+              />
+              <SectionCard
+                title="Lineup"
+                description="Performers, billing descriptors, social links, and secret guests."
+              >
+                <EventActsEditor acts={acts} onChange={setActs} />
+              </SectionCard>
+            </TabsContent>
+
+            <TabsContent value="confirmations" className="pt-5">
+              <div className="space-y-4">
+                <RsvpConfirmationTextSection
+                  rsvpConfirmationMessageEnabled={currentRsvpConfirmationMessageEnabled}
+                  rsvpConfirmationMessage={currentRsvpConfirmationMessage}
+                  defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}
+                  onEnabledChange={(enabled) =>
+                    form.setValue("rsvpConfirmationMessageEnabled", enabled, {
+                      shouldDirty: true,
+                    })
+                  }
+                  onMessageChange={(message) =>
+                    form.setValue("rsvpConfirmationMessage", message, {
+                      shouldDirty: true,
+                    })
+                  }
+                  previewVariables={confirmationPreviewVariables}
+                />
+                <ListConfirmationTextsSection
+                  lists={lists}
+                  defaultApprovalMessage={defaultApprovalMessage}
+                  onApprovalMessageChange={setListApprovalMessage}
+                  resolveQrAttachmentEnabled={(list) =>
+                    list.generateQR && (list.sendQrOnApprovalOverride ?? currentSendQrOnApproval)
+                  }
+                  onQrAttachmentChange={setListQrAttachmentEnabled}
+                  previewVariables={confirmationPreviewVariables}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="lists" className="space-y-4 pt-5">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                  Lists &amp; access
+                </h3>
+                <p className="text-pretty text-sm text-[var(--text-secondary)]">
+                  Leave a password blank for an open list — the first list with no password receives
+                  RSVPs that skip the password step.
+                </p>
+              </div>
+              {lists.map((listPassword, index) => (
+                <SectionCard
+                  key={listPassword.id ?? index}
+                  title={listPassword.listKey.trim() || `List ${index + 1}`}
+                  action={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeList(index)}
+                      aria-label={`Remove ${listPassword.listKey.trim() || `list ${index + 1}`}`}
+                      className="relative h-8 w-8 text-[var(--text-secondary)] after:absolute after:-inset-1.5 after:content-[''] hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  }
+                >
+                  <div className="space-y-4">
+                    <Field className="max-w-sm">
+                      <FieldLabel htmlFor={`edit-list-name-${index}`}>List name</FieldLabel>
+                      <Input
+                        id={`edit-list-name-${index}`}
+                        placeholder="e.g. vip, general, backstage"
+                        value={listPassword.listKey}
+                        onChange={(event) => setList(index, "listKey", event.target.value)}
                       />
-                      <span className="space-y-1">
-                        <span className="block text-sm font-medium">Send QR on approval</span>
-                        <span className="block text-xs text-muted-foreground">
-                          When on, approval texts include the QR code immediately. Default off —
-                          most hosts send a manual blast closer to the event from the &quot;Send QR
-                          Codes&quot; button on the event card.
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-                  <div className="space-y-3 rounded-lg border bg-card p-4">
-                    <h4 className="font-medium text-sm text-muted-foreground">ATTENDANCE</h4>
-                    <label className="flex items-start gap-3 rounded border border-border/60 p-3">
-                      <Checkbox
-                        checked={form.watch("attendanceQuestionEnabled") ?? false}
-                        onCheckedChange={(checked) =>
-                          form.setValue("attendanceQuestionEnabled", Boolean(checked), {
-                            shouldDirty: true,
-                          })
-                        }
-                        className="mt-0.5"
-                      />
-                      <span className="space-y-1">
-                        <span className="block text-sm font-medium">Ask attendance question</span>
-                        <span className="block text-xs text-muted-foreground">
-                          When on, guests choose Yes, No, or Maybe during RSVP. When off, new RSVPs
-                          default to Yes.
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-                  <div className="space-y-3 rounded-lg border bg-card p-4">
-                    <h4 className="font-medium text-sm text-muted-foreground">
-                      ACCESS LISTS & PASSWORDS
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      Leave a password blank for an open list — the first list with no password
-                      receives RSVPs that skip the password step.
-                    </p>
+                    </Field>
                     <div className="space-y-3">
-                      {lists.map((listPassword, index) => (
-                        <div
-                          key={listPassword.id ?? index}
-                          className="space-y-4 rounded border bg-muted/20 p-4"
-                        >
-                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-                            <div className="flex flex-col">
-                              <label className="text-xs font-medium text-muted-foreground">
-                                List Name
-                              </label>
-                              <Input
-                                placeholder="e.g. vip, general, backstage"
-                                value={listPassword.listKey}
-                                onChange={(event) => setList(index, "listKey", event.target.value)}
-                              />
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <label className="text-xs font-medium text-muted-foreground">
-                                Password
-                              </label>
-                              <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
-                                <Checkbox
-                                  id={`edit-require-password-${index}`}
-                                  checked={listPassword.requirePassword}
-                                  onCheckedChange={(checked) =>
-                                    setList(index, "requirePassword", Boolean(checked))
-                                  }
-                                />
-                                <label
-                                  htmlFor={`edit-require-password-${index}`}
-                                  className="text-sm text-muted-foreground leading-tight"
-                                >
-                                  Require password
-                                </label>
-                              </div>
-                              {(() => {
-                                const storedPassword = listPassword.id
-                                  ? storedPasswords.get(listPassword.id)
-                                  : undefined;
-                                if (!listPassword.requirePassword) {
-                                  return (
-                                    <Input
-                                      placeholder="Open list — no password"
-                                      value=""
-                                      disabled
-                                    />
-                                  );
-                                }
-                                if (storedPassword && !listPassword.passwordEdited) {
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <Input
-                                        value={storedPassword}
-                                        readOnly
-                                        className="bg-muted/40 text-muted-foreground"
-                                      />
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        className="shrink-0 text-xs"
-                                        onClick={() => setListPassword(index, "")}
-                                      >
-                                        Change
-                                      </Button>
-                                    </div>
-                                  );
-                                }
+                      <FieldSwitchRow
+                        title="Require password"
+                        description="Guests must enter this list's password before they can RSVP."
+                        checked={listPassword.requirePassword}
+                        onCheckedChange={(checked) => setList(index, "requirePassword", checked)}
+                        switchId={`edit-require-password-${index}`}
+                      />
+                      {listPassword.requirePassword ? (
+                        <div className="ml-3 border-l-2 border-[var(--border-subtle)] pl-4">
+                          <Field className="max-w-sm">
+                            <FieldLabel htmlFor={`edit-list-password-${index}`}>
+                              Password
+                            </FieldLabel>
+                            {(() => {
+                              const storedPassword = listPassword.id
+                                ? storedPasswords.get(listPassword.id)
+                                : undefined;
+                              if (storedPassword && !listPassword.passwordEdited) {
                                 return (
-                                  <Input
-                                    placeholder="Enter password"
-                                    value={listPassword.password}
-                                    onChange={(event) => setListPassword(index, event.target.value)}
-                                  />
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      id={`edit-list-password-${index}`}
+                                      value={storedPassword}
+                                      readOnly
+                                      className="bg-muted/40 text-muted-foreground"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="shrink-0 text-xs"
+                                      onClick={() => setListPassword(index, "")}
+                                    >
+                                      Change
+                                    </Button>
+                                  </div>
                                 );
-                              })()}
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <label
-                                htmlFor={`edit-generate-qr-${index}`}
-                                className="text-xs font-medium text-muted-foreground"
-                              >
-                                QR Code Generation
-                              </label>
-                              <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
-                                <Checkbox
-                                  id={`edit-generate-qr-${index}`}
-                                  checked={listPassword.generateQR ?? false}
-                                  onCheckedChange={(checked) =>
-                                    setList(index, "generateQR", Boolean(checked))
-                                  }
+                              }
+                              return (
+                                <Input
+                                  id={`edit-list-password-${index}`}
+                                  placeholder="Enter password"
+                                  value={listPassword.password}
+                                  onChange={(event) => setListPassword(index, event.target.value)}
                                 />
-                                <label
-                                  htmlFor={`edit-generate-qr-${index}`}
-                                  className="text-sm text-muted-foreground leading-tight"
-                                >
-                                  Generate QR code for guests on this list
-                                </label>
-                              </div>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => removeList(index)}
-                              className="h-10 lg:self-end"
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                          {listPassword.generateQR ? (
-                            <div className="space-y-2">
-                              <label
-                                htmlFor={`edit-send-qr-on-approval-${index}`}
-                                className="text-xs font-medium text-muted-foreground"
-                              >
-                                Send QR on approval (this list)
-                              </label>
-                              <select
-                                id={`edit-send-qr-on-approval-${index}`}
-                                className="h-10 w-full max-w-sm rounded-md border border-input bg-background px-3 text-sm"
-                                value={
-                                  listPassword.sendQrOnApprovalOverride === true
-                                    ? "on"
-                                    : listPassword.sendQrOnApprovalOverride === false
-                                      ? "off"
-                                      : "inherit"
-                                }
-                                onChange={(eventChange) => {
-                                  const next = eventChange.target.value;
-                                  setList(
-                                    index,
-                                    "sendQrOnApprovalOverride",
-                                    next === "on" ? true : next === "off" ? false : undefined,
-                                  );
-                                }}
-                              >
-                                <option value="inherit">
-                                  Inherit from event ({currentSendQrOnApproval ? "on" : "off"})
-                                </option>
-                                <option value="on">On (always send)</option>
-                                <option value="off">Off (always defer)</option>
-                              </select>
-                            </div>
-                          ) : null}
+                              );
+                            })()}
+                          </Field>
                         </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addList}
-                        className="w-full"
-                      >
-                        + Add Another List
-                      </Button>
+                      ) : null}
+                      <FieldSwitchRow
+                        title="Generate QR codes"
+                        description="Approved guests on this list receive a scannable door QR code."
+                        checked={listPassword.generateQR ?? false}
+                        onCheckedChange={(checked) => setList(index, "generateQR", checked)}
+                        switchId={`edit-generate-qr-${index}`}
+                      />
+                      {listPassword.generateQR ? (
+                        <div className="ml-3 border-l-2 border-[var(--border-subtle)] pl-4">
+                          <Field className="max-w-sm">
+                            <FieldLabel htmlFor={`edit-send-qr-on-approval-${index}`}>
+                              Send QR on approval
+                            </FieldLabel>
+                            <select
+                              id={`edit-send-qr-on-approval-${index}`}
+                              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              value={
+                                listPassword.sendQrOnApprovalOverride === true
+                                  ? "on"
+                                  : listPassword.sendQrOnApprovalOverride === false
+                                    ? "off"
+                                    : "inherit"
+                              }
+                              onChange={(eventChange) => {
+                                const next = eventChange.target.value;
+                                setList(
+                                  index,
+                                  "sendQrOnApprovalOverride",
+                                  next === "on" ? true : next === "off" ? false : undefined,
+                                );
+                              }}
+                            >
+                              <option value="inherit">
+                                Inherit from event ({currentSendQrOnApproval ? "on" : "off"})
+                              </option>
+                              <option value="on">On (always send)</option>
+                              <option value="off">Off (always defer)</option>
+                            </select>
+                            <FieldDescription>
+                              Overrides the event-level QR delivery setting for this list only.
+                            </FieldDescription>
+                          </Field>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
+                </SectionCard>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addList}
+                className="w-full border-dashed border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              >
+                + Add Another List
+              </Button>
+            </TabsContent>
 
-                  <div className="rounded-lg border bg-card p-4 space-y-4">
-                    <h3 className="font-medium text-sm text-muted-foreground">PRIMARY FIELDS</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Social fields and the &ldquo;invited by&rdquo; question for this event.
-                      Defaults come from workspace settings; override here if needed.
-                    </p>
-                    <PrimaryFieldConfigOverrideEditor
-                      value={primaryFieldConfigDraft}
-                      onChange={setPrimaryFieldConfigDraft}
-                      useDefaults={usePrimaryFieldDefaults}
-                      onUseDefaultsChange={setUsePrimaryFieldDefaults}
-                      workspaceDefaults={workspacePrimaryFieldDefaultsDraft}
-                    />
-                  </div>
-                  <CustomFieldsEditor
-                    initial={event.customFields ?? []}
-                    onChange={setCustomFields}
-                    reservedKeys={primaryFieldConfigDraft.socialPlatforms.map(
-                      (platform) => platform.platformKey,
-                    )}
+            <TabsContent value="rsvp" className="space-y-4 pt-5">
+              <SectionCard
+                title="RSVP behavior"
+                description="How guests respond and when approval texts include QR codes."
+              >
+                <div className="space-y-3">
+                  <FieldSwitchRow
+                    title="Ask attendance question"
+                    description="When on, guests choose Yes, No, or Maybe during RSVP. When off, new RSVPs default to Yes."
+                    checked={form.watch("attendanceQuestionEnabled") ?? false}
+                    onCheckedChange={(checked) =>
+                      form.setValue("attendanceQuestionEnabled", checked, {
+                        shouldDirty: true,
+                      })
+                    }
                   />
-                </TabsContent>
-              </Tabs>
+                  <FieldSwitchRow
+                    title="Send QR on approval"
+                    description={
+                      <>
+                        When on, approval texts include the QR code immediately. Default off — most
+                        hosts send a manual blast closer to the event from the &quot;Send QR
+                        Codes&quot; button on the event card.
+                      </>
+                    }
+                    checked={currentSendQrOnApproval}
+                    onCheckedChange={(checked) =>
+                      form.setValue("sendQrOnApproval", checked, {
+                        shouldDirty: true,
+                      })
+                    }
+                  />
+                </div>
+              </SectionCard>
+              <SectionCard
+                title="Primary guest fields"
+                description="Social fields and the “invited by” question for this event. Defaults come from workspace settings; override here if needed."
+              >
+                <PrimaryFieldConfigOverrideEditor
+                  value={primaryFieldConfigDraft}
+                  onChange={setPrimaryFieldConfigDraft}
+                  useDefaults={usePrimaryFieldDefaults}
+                  onUseDefaultsChange={setUsePrimaryFieldDefaults}
+                  workspaceDefaults={workspacePrimaryFieldDefaultsDraft}
+                />
+              </SectionCard>
+              <CustomFieldsEditor
+                initial={event.customFields ?? []}
+                onChange={setCustomFields}
+                reservedKeys={primaryFieldConfigDraft.socialPlatforms.map(
+                  (platform) => platform.platformKey,
+                )}
+              />
+            </TabsContent>
+            {additionalTabContents}
 
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={saving}>
-                  {saving ? "Saving..." : "Save"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </div>
+            {showBottomSaveBar && activeEditorSection && activeSectionIsDirty ? (
+              <div className="sticky bottom-0 z-20 mt-6 flex flex-col gap-3 rounded-xl bg-[var(--surface-2)]/95 p-3 shadow-[var(--shadow-card)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-[var(--text-primary)]">
+                    Save {EVENT_EDITOR_SECTION_LABELS[activeEditorSection]}
+                  </p>
+                  <p className="text-pretty text-xs text-[var(--text-secondary)]">
+                    Only settings in this tab are saved. Changes in other tabs stay untouched.
+                  </p>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  {!inline ? (
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                      Cancel
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleUndoSection(activeEditorSection)}
+                    className="transition-transform duration-150 ease-out active:scale-[0.96]"
+                  >
+                    Undo changes
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={saving}
+                    className="min-w-36 transition-transform duration-150 ease-out active:scale-[0.96]"
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {saving
+                      ? "Saving..."
+                      : `Save ${EVENT_EDITOR_SECTION_LABELS[activeEditorSection]}`}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </TabRoot>
+        </form>
+      </Form>
+    </div>
+  );
+
+  if (inline) {
+    return editorForm;
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!externalOpen && showTrigger ? (
+        <DialogTrigger asChild>
+          <button className="min-h-10 rounded-md px-3 text-sm shadow-[var(--shadow-card)] transition-transform duration-150 ease-out active:scale-[0.96]">
+            Edit
+          </button>
+        </DialogTrigger>
+      ) : null}
+      <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-[1200px]">
+        <DialogHeader className="px-5 pt-5 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
+          <DialogTitle className="text-balance">Edit Event</DialogTitle>
+          <DialogDescription className="text-pretty">
+            Update event details and save each configuration tab independently.
+          </DialogDescription>
+        </DialogHeader>
+        {editorForm}
       </DialogContent>
     </Dialog>
   );

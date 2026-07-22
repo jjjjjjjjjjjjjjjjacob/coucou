@@ -1,8 +1,7 @@
 "use client";
 
-import { useAuth, useOrganizationList, useUser } from "@clerk/nextjs";
+import { useAuth, useOrganizationList } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
-import { AdminShell } from "@coucou/ui/admin";
 import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
 import { useAction, useConvexAuth, useQuery } from "convex/react";
 import Link from "next/link";
@@ -10,7 +9,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
-import { CoucouLogoWordmark } from "@/components/coucou-logo";
+import { CoucouLinearShell, useMaisonLinearBodyClass } from "@/components/coucou-linear-shell";
 import { MAISON_OBSCUR_TOAST_OPTIONS } from "@/lib/organization-navigation";
 import { getCoucouOrganizationSlug } from "@/lib/workspace-config";
 
@@ -22,22 +21,9 @@ function AdminLoadingState({ label = "Loading…" }: { label?: string }) {
   );
 }
 
-function useMaisonBodyClass() {
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.body.classList.add("maison-app-surface");
-    return () => {
-      document.body.classList.remove("maison-app-surface");
-    };
-  }, []);
-}
-
 function AdminGateSurface({ children }: { children: ReactNode }) {
   return (
-    <TenantTemplateProvider
-      siteConfigurationPreset="maison"
-      className="maison-app-surface min-h-screen"
-    >
+    <TenantTemplateProvider siteConfigurationPreset="maison" className="maison-linear min-h-screen">
       <div
         className="min-h-screen"
         style={{
@@ -63,12 +49,8 @@ function AdminSignedOutState() {
           Authentication
         </div>
         <h1
-          className="m-0"
-          style={{
-            fontFamily: "var(--tt-display)",
-            fontSize: 26,
-            color: "var(--tt-fg)",
-          }}
+          className="m-0 text-[22px] font-semibold tracking-tight"
+          style={{ color: "var(--tt-fg)" }}
         >
           Sign in to Coucou.
         </h1>
@@ -84,11 +66,11 @@ function AdminSignedOutState() {
         </p>
         <Link
           href="/admin/login?redirect_url=%2Fadmin"
-          className="inline-flex items-center px-5 py-3 text-[13px] transition-opacity hover:opacity-80"
+          className="inline-flex items-center rounded-md px-4 py-2 text-[13px] transition-colors hover:bg-[var(--tt-highlight)]"
           style={{
             background: "transparent",
             color: "var(--tt-fg)",
-            border: "1px solid var(--tt-fg)",
+            border: "1px solid var(--tt-rule-strong)",
           }}
         >
           Sign in
@@ -103,12 +85,8 @@ function AdminDeniedState() {
     <div className="flex min-h-[60vh] items-center justify-center">
       <div className="max-w-md space-y-3 text-center">
         <h1
-          className="m-0"
-          style={{
-            fontFamily: "var(--tt-display)",
-            fontSize: 26,
-            color: "var(--tt-fg)",
-          }}
+          className="m-0 text-[22px] font-semibold tracking-tight"
+          style={{ color: "var(--tt-fg)" }}
         >
           Coucou organization required.
         </h1>
@@ -125,12 +103,8 @@ function AdminActivationErrorState({ message }: { message: string }) {
     <div className="flex min-h-[60vh] items-center justify-center">
       <div className="max-w-md space-y-3 text-center">
         <h1
-          className="m-0"
-          style={{
-            fontFamily: "var(--tt-display)",
-            fontSize: 26,
-            color: "var(--tt-fg)",
-          }}
+          className="m-0 text-[22px] font-semibold tracking-tight"
+          style={{ color: "var(--tt-fg)" }}
         >
           Could not open Coucou admin.
         </h1>
@@ -413,22 +387,11 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
 }
 
 function AdminAuthenticatedShell({ children }: { children: ReactNode }) {
-  const { user } = useUser();
-  const operatorEmail = user?.primaryEmailAddress?.emailAddress ?? "operator";
-
-  return (
-    <AdminShell
-      brand={<CoucouLogoWordmark markSize={20} />}
-      sidebar={<AdminSidebar />}
-      sidebarFooter={<>{operatorEmail} · staff</>}
-    >
-      {children}
-    </AdminShell>
-  );
+  return <CoucouLinearShell sidebar={<AdminSidebar />}>{children}</CoucouLinearShell>;
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  useMaisonBodyClass();
+  useMaisonLinearBodyClass();
 
   return (
     <AdminAccessGate>

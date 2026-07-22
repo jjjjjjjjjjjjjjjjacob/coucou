@@ -1,7 +1,7 @@
 "use client";
 import type { Path, PathValue } from "react-hook-form";
 import { StorageImageUpload } from "@/components/flyer-upload";
-import { Checkbox } from "@/components/ui/checkbox";
+import { FieldSwitchRow } from "@/components/ui/field";
 import {
   FormControl,
   FormDescription,
@@ -11,6 +11,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { SectionCard } from "@/components/ui/section-card";
 import type { BaseEventFormValues, UseFormReturn } from "@/lib/types";
 
 export interface EventGuestPageSectionProps<FormValues extends BaseEventFormValues> {
@@ -25,8 +26,11 @@ export function EventGuestPageSection<FormValues extends BaseEventFormValues>({
   onGuestPortalImageChange,
 }: EventGuestPageSectionProps<FormValues>) {
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-4">
-      <h3 className="font-medium text-sm text-muted-foreground">GUEST EXPERIENCE</h3>
+    <SectionCard
+      title="Guest page"
+      description="Status imagery, outbound links, and referral sharing."
+      contentClassName="space-y-4"
+    >
       <FormField
         control={form.control}
         name={"guestPortalImageStorageId" as Path<FormValues>}
@@ -124,24 +128,16 @@ export function EventGuestPageSection<FormValues extends BaseEventFormValues>({
         name={"referralSharingEnabled" as Path<FormValues>}
         render={({ field }) => (
           <FormItem>
-            <label className="flex items-start gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-              <FormControl>
-                <Checkbox
-                  checked={Boolean(field.value)}
-                  onCheckedChange={(checked) => field.onChange(Boolean(checked))}
-                />
-              </FormControl>
-              <span className="space-y-1">
-                <span className="block text-sm font-medium">Show referral sharing CTA</span>
-                <FormDescription>
-                  Adds the guest sharing button on pending status pages and approved tickets.
-                </FormDescription>
-              </span>
-            </label>
+            <FieldSwitchRow
+              title="Show referral sharing CTA"
+              description="Adds the guest sharing button on pending status pages and approved tickets."
+              checked={Boolean(field.value)}
+              onCheckedChange={(checked) => field.onChange(checked)}
+            />
             <FormMessage />
           </FormItem>
         )}
       />
-    </div>
+    </SectionCard>
   );
 }

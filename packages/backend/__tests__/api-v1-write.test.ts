@@ -5,7 +5,7 @@ import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregat
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { normalizeAndHashPhoneNumber } from "../convex/lib/phoneHash";
-import { countRsvpsWithAggregate } from "../convex/lib/rsvpAggregate";
+import { countRsvpsWithAggregate, updateRsvpInAggregate } from "../convex/lib/rsvpAggregate";
 import schema from "../convex/schema";
 
 const convexModules = {
@@ -122,12 +122,20 @@ async function seedEvent(
   return eventId;
 }
 
-async function issueApiKey(testBackend: TestBackend): Promise<string> {
+async function issueApiKey(
+  testBackend: TestBackend,
+  scopes: ("events:read" | "events:write" | "rsvps:read" | "rsvps:write")[] = [
+    "rsvps:read",
+    "rsvps:write",
+  ],
+  defaultRsvpListKey?: string,
+): Promise<string> {
   const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
   const created = await hostBackend.mutation(api.apiClients.create, {
     workspaceSlug: WORKSPACE_SLUG,
     displayName: "Write key",
-    scopes: ["rsvps:read", "rsvps:write"],
+    scopes,
+    defaultRsvpListKey,
   });
   await testBackend.run(async (databaseContext) => {
     await databaseContext.db.patch(created.apiClientId, { lastUsedAt: Date.now() });
@@ -147,6 +155,175 @@ function buildJsonRequest(plaintextKey: string, method: string, body?: unknown):
 }
 
 describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
+  it("uses password, legacy list, client default, then fallback precedence", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "vip",
+        passwordNormalized: "secret",
+        createdAt: Date.now(),
+      });
+    });
+    const plaintextKey = await issueApiKey(testBackend, ["rsvps:write"], "ga");
+
+    const passwordResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551230020",
+        name: "Password Guest",
+        listKey: "ga",
+        listPassword: " SECRET ",
+      }),
+    );
+    expect(passwordResponse.status).toBe(201);
+    expect((await passwordResponse.json()).rsvp.listKey).toBe("vip");
+
+    const defaultResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551230021",
+        name: "Default Guest",
+      }),
+    );
+    expect(defaultResponse.status).toBe(201);
+    expect((await defaultResponse.json()).rsvp.listKey).toBe("ga");
+
+    const invalidPasswordResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551230022",
+        name: "Wrong Password",
+        listPassword: "wrong",
+      }),
+    );
+    expect(invalidPasswordResponse.status).toBe(400);
+    expect((await invalidPasswordResponse.json()).error.field).toBe("listPassword");
+  });
+
+  it("surfaces a missing configured default instead of silently falling back", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    await seedEvent(testBackend);
+    const plaintextKey = await issueApiKey(testBackend, ["rsvps:write"], "missing");
+    const response = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551230023",
+        name: "Configuration Guest",
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect((await response.json()).error.field).toBe("listKey");
+  });
+
+  it("validates and persists required custom, social, and invited-by values", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(eventId, {
+        customFields: [{ key: "company", label: "Company", required: true, trimWhitespace: true }],
+        primaryFieldConfig: {
+          socialPlatforms: [{ platformKey: "instagram", label: "Instagram", required: true }],
+          invitedBy: { enabled: true, label: "Invited by", required: true },
+        },
+      });
+    });
+    const plaintextKey = await issueApiKey(testBackend);
+    const missingResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551230024",
+        name: "Required Guest",
+        listKey: "ga",
+      }),
+    );
+    expect(missingResponse.status).toBe(400);
+    expect((await missingResponse.json()).error.field).toBe("customFieldValues.company");
+
+    const response = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551230024",
+        name: "Required Guest",
+        listKey: "ga",
+        customFieldValues: { company: "  Market  " },
+        socialProfiles: [{ platformKey: "instagram", handle: "@marketguest" }],
+        invitedByName: "Host Person",
+      }),
+    );
+    expect(response.status).toBe(201);
+    await testBackend.run(async (databaseContext) => {
+      const rsvp = await databaseContext.db.query("rsvps").unique();
+      expect(rsvp?.customFieldValues).toEqual({ company: "Market" });
+      expect(rsvp?.invitedByName).toBe("Host Person");
+      const socialSnapshot = await databaseContext.db.query("rsvpSocialProfiles").unique();
+      expect(socialSnapshot?.platformKey).toBe("instagram");
+      expect(socialSnapshot?.handle).toBe("marketguest");
+    });
+  });
+
+  it("rejects a denied same-list retry and permits a different valid password", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "vip",
+        passwordNormalized: "vip-pass",
+        createdAt: Date.now(),
+      });
+    });
+    const plaintextKey = await issueApiKey(testBackend);
+    const body = {
+      phone: "+15551230025",
+      name: "Retry Guest",
+      listKey: "ga",
+    };
+    const createdResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", body),
+    );
+    expect(createdResponse.status).toBe(201);
+    await testBackend.run(async (databaseContext) => {
+      const rsvp = await databaseContext.db.query("rsvps").unique();
+      if (!rsvp) throw new Error("RSVP was not created");
+      await databaseContext.db.patch(rsvp._id, {
+        status: "denied",
+        approvalStatus: "denied",
+        updatedAt: Date.now(),
+      });
+      const deniedRsvp = await databaseContext.db.get(rsvp._id);
+      if (deniedRsvp) {
+        await updateRsvpInAggregate(databaseContext, rsvp, deniedRsvp);
+      }
+    });
+
+    const sameListResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", body),
+    );
+    expect(sameListResponse.status).toBe(409);
+
+    const differentListResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        ...body,
+        listKey: undefined,
+        listPassword: "vip-pass",
+      }),
+    );
+    expect(differentListResponse.status).toBe(200);
+    expect((await differentListResponse.json()).rsvp).toMatchObject({
+      approvalStatus: "pending",
+      listKey: "vip",
+    });
+  });
+
   it("creates a guest RSVP for an unknown phone", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
@@ -365,10 +542,7 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
 });
 
 describe("PATCH and DELETE /api/v1/rsvps/{rsvpId}", () => {
-  async function createRsvpViaApi(
-    testBackend: TestBackend,
-    plaintextKey: string,
-  ): Promise<string> {
+  async function createRsvpViaApi(testBackend: TestBackend, plaintextKey: string): Promise<string> {
     const response = await testBackend.fetch(
       "/api/v1/events/evt-write-api/rsvps",
       buildJsonRequest(plaintextKey, "POST", {
@@ -451,5 +625,132 @@ describe("PATCH and DELETE /api/v1/rsvps/{rsvpId}", () => {
       buildJsonRequest(plaintextKey, "PATCH", { attendanceStatus: "no" }),
     );
     expect(unknownIdResponse.status).toBe(404);
+  });
+});
+
+describe("PATCH /api/v1/events/{eventRouteId}", () => {
+  it("updates public event fields and emits event.updated", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    await seedEvent(testBackend);
+    const plaintextKey = await issueApiKey(testBackend, ["events:write"]);
+
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    await hostBackend.mutation(api.webhookEndpoints.create, {
+      workspaceSlug: WORKSPACE_SLUG,
+      url: ENDPOINT_URL,
+      subscribedEventTypes: ["event.updated"],
+    });
+
+    const newEventDate = Date.now() + 3 * 86_400_000;
+    const response = await testBackend.fetch(
+      "/api/v1/events/evt-write-api",
+      buildJsonRequest(plaintextKey, "PATCH", {
+        name: "Renamed Event",
+        location: "New Venue",
+        eventDate: newEventDate,
+        description: "Updated description",
+        maxAttendees: 4,
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.changed).toBe(true);
+    expect(body.event.name).toBe("Renamed Event");
+    expect(body.event.location).toBe("New Venue");
+    expect(body.event.eventDate).toBe(newEventDate);
+    expect(body.event.maxAttendeesPerRsvp).toBe(4);
+
+    await drainScheduledFunctions(testBackend);
+    expect(capturedWebhookRequestCount).toBe(1); // event.updated
+
+    // An identical re-PATCH is a no-op: no webhook echo.
+    const noOpResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api",
+      buildJsonRequest(plaintextKey, "PATCH", {
+        name: "Renamed Event",
+        location: "New Venue",
+      }),
+    );
+    expect(noOpResponse.status).toBe(200);
+    const noOpBody = await noOpResponse.json();
+    expect(noOpBody.changed).toBe(false);
+    await drainScheduledFunctions(testBackend);
+    expect(capturedWebhookRequestCount).toBe(1); // unchanged
+  });
+
+  it("clears nullable fields with null and validates values", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(eventId, {
+        description: "Existing description",
+        eventEndDate: Date.now() + 90_000_000,
+      });
+    });
+    const plaintextKey = await issueApiKey(testBackend, ["events:write"]);
+
+    const clearResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api",
+      buildJsonRequest(plaintextKey, "PATCH", { description: null, eventEndDate: null }),
+    );
+    expect(clearResponse.status).toBe(200);
+    const clearBody = await clearResponse.json();
+    expect(clearBody.event.description).toBeNull();
+    expect(clearBody.event.eventEndDate).toBeNull();
+
+    const emptyNameResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api",
+      buildJsonRequest(plaintextKey, "PATCH", { name: "   " }),
+    );
+    expect(emptyNameResponse.status).toBe(400);
+
+    const badEndDateResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api",
+      buildJsonRequest(plaintextKey, "PATCH", { eventEndDate: 1 }),
+    );
+    expect(badEndDateResponse.status).toBe(400);
+
+    const badAttendeesResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api",
+      buildJsonRequest(plaintextKey, "PATCH", { maxAttendees: 0 }),
+    );
+    expect(badAttendeesResponse.status).toBe(400);
+  });
+
+  it("requires the events:write scope and 404s across workspaces", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    await seedWorkspace(testBackend, OTHER_WORKSPACE_SLUG);
+    await seedEvent(testBackend);
+    await seedEvent(testBackend, {
+      workspaceSlug: OTHER_WORKSPACE_SLUG,
+      shortId: "evt-foreign-event-patch",
+    });
+
+    const readOnlyKey = await issueApiKey(testBackend, ["events:read", "rsvps:write"]);
+    const forbiddenResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api",
+      buildJsonRequest(readOnlyKey, "PATCH", { name: "Nope" }),
+    );
+    expect(forbiddenResponse.status).toBe(403);
+
+    const writeKey = await issueApiKey(testBackend, ["events:write"]);
+    const crossWorkspaceResponse = await testBackend.fetch(
+      "/api/v1/events/evt-foreign-event-patch",
+      buildJsonRequest(writeKey, "PATCH", { name: "Nope" }),
+    );
+    expect(crossWorkspaceResponse.status).toBe(404);
+
+    // Host-only fields in the body are simply ignored.
+    const sneakyResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api",
+      buildJsonRequest(writeKey, "PATCH", { lifecycle: "draft", publishedAt: null }),
+    );
+    expect(sneakyResponse.status).toBe(200);
+    const sneakyBody = await sneakyResponse.json();
+    expect(sneakyBody.changed).toBe(false);
+    expect(sneakyBody.event.lifecycle).toBe("published");
   });
 });

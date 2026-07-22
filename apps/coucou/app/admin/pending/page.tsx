@@ -4,10 +4,17 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
 import { useQuery } from "convex/react";
+import { Copy, Mail, SquarePen } from "lucide-react";
 import { useState } from "react";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
 import { TenantApplicationDetailDialog } from "@/components/admin/tenant-application-detail-dialog";
+import {
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 import { Select, SelectOption } from "@/components/ui/select";
+import { copyTextWithToast } from "@/lib/clipboard";
 
 interface ApplicationRow {
   _id: Id<"tenantApplications">;
@@ -56,7 +63,7 @@ export default function AdminPendingPage() {
   const columns: AdminDataTableColumn<ApplicationRow>[] = [
     {
       key: "name",
-      label: "House",
+      label: "Partner",
       width: "26%",
       render: (row) => row.name,
     },
@@ -140,12 +147,7 @@ export default function AdminPendingPage() {
                 setCursor(null);
                 setCursorStack([]);
               }}
-              className="h-8 border-0 bg-transparent text-[13px]"
-              style={{
-                borderBottom: "1px solid var(--tt-rule)",
-                borderRadius: 0,
-                color: "var(--tt-fg)",
-              }}
+              className="h-8 text-[13px]"
             >
               <SelectOption value="pending">Pending</SelectOption>
               <SelectOption value="accepted">Accepted</SelectOption>
@@ -167,6 +169,34 @@ export default function AdminPendingPage() {
               ? "No applications waiting."
               : "No applications match this filter."
           }
+          renderRowContextMenu={(row) => (
+            <ContextMenuContent className="w-56 border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)] shadow-[var(--shadow-card)]">
+              <ContextMenuItem onSelect={() => setSelected(row)}>
+                <SquarePen className="h-4 w-4" />
+                Review application
+              </ContextMenuItem>
+              {row.operatorEmail ? (
+                <>
+                  <ContextMenuSeparator className="bg-[var(--border-subtle)]" />
+                  <ContextMenuItem asChild>
+                    <a href={`mailto:${row.operatorEmail}`}>
+                      <Mail className="h-4 w-4" />
+                      Email operator
+                    </a>
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={(selectEvent) => {
+                      selectEvent.preventDefault();
+                      void copyTextWithToast(row.operatorEmail ?? "", "Email copied");
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                    Copy operator email
+                  </ContextMenuItem>
+                </>
+              ) : null}
+            </ContextMenuContent>
+          )}
         />
       </AdminSection>
 

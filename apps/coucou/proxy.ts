@@ -56,7 +56,12 @@ function matchClientAuthPath(pathname: string): SiteKey | null {
   const match = pathname.match(/^\/clients\/([^/]+)\/sign-in\/?$/);
   if (!match) return null;
   const candidate = match[1];
-  if (candidate !== "dojo" && candidate !== "club-chlorine" && candidate !== "coucou") {
+  if (
+    candidate !== "dojo" &&
+    candidate !== "club-chlorine" &&
+    candidate !== "danza-organica" &&
+    candidate !== "coucou"
+  ) {
     return null;
   }
   if (siteConfigurations[candidate].appKind !== "client") {

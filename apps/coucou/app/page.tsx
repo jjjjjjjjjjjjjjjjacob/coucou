@@ -29,7 +29,7 @@ const PRINCIPLES: Array<{
   {
     number: "04",
     title: "White-label, by engagement.",
-    description: "Bespoke branding for every house. We set it up with you. Coucou never appears.",
+    description: "Bespoke branding for every partner. We set it up with you. Coucou never appears.",
   },
 ];
 

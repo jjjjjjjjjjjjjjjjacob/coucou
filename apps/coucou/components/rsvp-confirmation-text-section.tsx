@@ -1,5 +1,6 @@
 import { MessageTemplateVariableButtons } from "@/components/message-template-variable-buttons";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldDescription, FieldLabel, FieldSwitchRow } from "@/components/ui/field";
+import { SectionCard } from "@/components/ui/section-card";
 import { Textarea } from "@/components/ui/textarea";
 import {
   applyMessageTemplateVariables,
@@ -39,37 +40,22 @@ export function RsvpConfirmationTextSection({
   );
 
   return (
-    <div className={cn("space-y-4 rounded-lg border bg-card p-4", className)}>
-      <div className="space-y-1">
-        <h3 className="font-medium text-sm text-muted-foreground">INITIAL CONFIRMATION TEXT</h3>
-        <p className="text-sm text-muted-foreground">
-          Sent after a guest submits an RSVP by replying to a text blast.
-        </p>
-      </div>
+    <SectionCard
+      title="Initial RSVP confirmation"
+      description="Sent after a guest submits an RSVP by replying to a text blast."
+      className={className}
+      contentClassName="space-y-4"
+    >
+      <FieldSwitchRow
+        title="Send initial confirmation text"
+        description="Turn this off when the text blast copy already tells guests what will happen next."
+        checked={rsvpConfirmationMessageEnabled}
+        onCheckedChange={onEnabledChange}
+        switchId="rsvp-confirmation-message-enabled"
+      />
 
-      <label className="flex items-start gap-3 rounded border border-border/60 p-3">
-        <Checkbox
-          id="rsvp-confirmation-message-enabled"
-          aria-label="Send initial confirmation text"
-          checked={rsvpConfirmationMessageEnabled}
-          onCheckedChange={(checked) => onEnabledChange(checked === true)}
-          className="mt-0.5"
-        />
-        <span className="space-y-1">
-          <span className="block text-sm font-medium">Send initial confirmation text</span>
-          <span className="block text-xs text-muted-foreground">
-            Turn this off when the text blast copy already tells guests what will happen next.
-          </span>
-        </span>
-      </label>
-
-      <div className={cn("space-y-2", !rsvpConfirmationMessageEnabled && "opacity-50")}>
-        <label
-          htmlFor="rsvp-confirmation-message"
-          className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground"
-        >
-          Confirmation copy
-        </label>
+      <Field className={cn(!rsvpConfirmationMessageEnabled && "opacity-50")}>
+        <FieldLabel htmlFor="rsvp-confirmation-message">Confirmation copy</FieldLabel>
         <Textarea
           id="rsvp-confirmation-message"
           rows={3}
@@ -85,21 +71,23 @@ export function RsvpConfirmationTextSection({
             variableNames={RSVP_CONFIRMATION_VARIABLES}
           />
         ) : null}
-        <p className="text-xs text-muted-foreground">
+        <FieldDescription className="text-xs">
           Leave blank to use the default confirmation for this event.
-        </p>
-      </div>
+        </FieldDescription>
+      </Field>
 
-      <div className="space-y-1 rounded-md border border-border/70 bg-background p-3">
-        <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Preview</div>
+      <div className="space-y-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3">
+        <div className="text-xs font-medium text-[var(--text-tertiary)]">Preview</div>
         {rsvpConfirmationMessageEnabled ? (
-          <div className="whitespace-pre-wrap text-sm">{previewMessage}</div>
+          <div className="whitespace-pre-wrap text-sm text-[var(--text-primary)]">
+            {previewMessage}
+          </div>
         ) : (
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm text-[var(--text-secondary)]">
             No initial confirmation text will send.
           </div>
         )}
       </div>
-    </div>
+    </SectionCard>
   );
 }

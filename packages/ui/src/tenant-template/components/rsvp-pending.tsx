@@ -54,6 +54,7 @@ const DEFAULT_HEADING: Record<string, string> = {
   atrium: "Sent to the host.",
   maison: "Sent to the host.",
   chlorine: "Sent for review.",
+  danza: "Sent for review.",
   coucou: "Sent for review.",
 };
 
@@ -65,6 +66,8 @@ const DEFAULT_DESCRIPTION: Record<string, string> = {
     "Your password put you on the request list — the host reviews these personally on Friday afternoon. You'll have an answer by evening, one way or the other.",
   chlorine:
     "Your request is in. The host reviews these personally — you'll get a text the moment your status changes.",
+  danza:
+    "Your request is in. The host reviews these personally — you'll get a text the moment your status changes.",
   coucou: "Your request is in. We'll let you know once it's been reviewed.",
 };
 
@@ -73,6 +76,7 @@ const _DEFAULT_STATUS: Record<string, string> = {
   atrium: "Awaiting review",
   maison: "Awaiting review",
   chlorine: "Awaiting review",
+  danza: "Awaiting review",
   coucou: "Awaiting review",
 };
 

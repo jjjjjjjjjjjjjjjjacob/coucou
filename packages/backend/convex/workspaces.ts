@@ -1293,6 +1293,13 @@ export const seedDefaultWorkspaces = mutation({
       primaryDomain: "clubchlorine.party",
     });
 
+    const danzaOrganicaWorkspaceId = await upsertWorkspaceRecord(ctx, {
+      slug: "danza-organica",
+      name: "Danza Organica",
+      kind: "client",
+      primaryDomain: "danzaorganica.coucou.events",
+    });
+
     const coucouWorkspaceId = await upsertWorkspaceRecord(ctx, {
       slug: "coucou",
       name: "Coucou",
@@ -1313,6 +1320,12 @@ export const seedDefaultWorkspaces = mutation({
       appKind: "client",
     });
     await upsertWorkspaceSiteRecord(ctx, {
+      workspaceId: danzaOrganicaWorkspaceId,
+      siteKey: "danza-organica",
+      domain: "danzaorganica.coucou.events",
+      appKind: "client",
+    });
+    await upsertWorkspaceSiteRecord(ctx, {
       workspaceId: coucouWorkspaceId,
       siteKey: "coucou",
       domain: "coucou.events",
@@ -1322,6 +1335,7 @@ export const seedDefaultWorkspaces = mutation({
     return {
       dojoWorkspaceId,
       clubChlorineWorkspaceId,
+      danzaOrganicaWorkspaceId,
       coucouWorkspaceId,
     };
   },

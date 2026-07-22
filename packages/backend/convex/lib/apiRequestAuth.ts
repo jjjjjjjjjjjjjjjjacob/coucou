@@ -22,8 +22,12 @@ const API_ERROR_CODE_STATUS: Record<ApiErrorCode, number> = {
   internal_error: 500,
 };
 
-export function buildApiErrorResponse(code: ApiErrorCode, message: string): Response {
-  return new Response(JSON.stringify({ error: { code, message } }), {
+export function buildApiErrorResponse(
+  code: ApiErrorCode,
+  message: string,
+  field?: string,
+): Response {
+  return new Response(JSON.stringify({ error: { code, message, ...(field ? { field } : {}) } }), {
     status: API_ERROR_CODE_STATUS[code],
     headers: { "Content-Type": "application/json" },
   });

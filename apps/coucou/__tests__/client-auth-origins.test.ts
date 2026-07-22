@@ -19,4 +19,20 @@ describe("client auth origins", () => {
       }),
     ).toBe("https://clubchlorine.club/");
   });
+
+  it("allows the Danza Organica production origin", () => {
+    const allowedRedirectOrigins = buildClientAuthAllowedRedirectOrigins("danza-organica");
+
+    expect(allowedRedirectOrigins).toContain("https://danzaorganica.coucou.events");
+  });
+
+  it("resolves the Danza Organica satellite home from its production origin", () => {
+    expect(
+      resolveSatelliteHomeUrl("danza-organica", {
+        candidateOrigins: [
+          "https://danzaorganica.coucou.events/events/sample?__clerk_synced=false",
+        ],
+      }),
+    ).toBe("https://danzaorganica.coucou.events/");
+  });
 });

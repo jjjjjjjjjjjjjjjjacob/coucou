@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { Id } from "@convex/_generated/dataModel";
 import { fireEvent, render, screen } from "@testing-library/react";
 import EventCardClient from "../app/workspaces/[workspaceSlug]/host/events/event-card-client";
+import { EventDetailLayout } from "../components/event-detail-layout";
 import { Select, SelectOption } from "../components/ui/select";
 import { HapticProvider } from "../contexts/haptic-context";
 import {
@@ -218,5 +219,48 @@ describe("admin dashboard design pass", () => {
     });
 
     expect(await screen.findByRole("menuitem", { name: /Send QR codes \(1\)/ })).toBeTruthy();
+  });
+
+  it("places event actions beside the details visibility control", () => {
+    render(
+      <EventDetailLayout
+        titleBarProps={{
+          title: "Club Chlorine",
+          actions: <button type="button">Actions</button>,
+        }}
+        propertyPanel={<div>Event properties</div>}
+      >
+        <div>Event editor</div>
+      </EventDetailLayout>,
+    );
+
+    const hideDetailsButton = screen.getByRole("button", { name: "Hide event details" });
+    const actionsButton = screen.getByRole("button", { name: "Actions" });
+
+    expect(hideDetailsButton.parentElement?.parentElement).toBe(
+      actionsButton.parentElement?.parentElement,
+    );
+
+    fireEvent.click(hideDetailsButton);
+
+    expect(screen.getByRole("button", { name: "Show event details" })).toBeTruthy();
+    expect(screen.queryByText("Event properties")).toBeNull();
+  });
+
+  it("includes every in-event management action in the card context menu", async () => {
+    setConvexQueryResponse(0);
+
+    render(
+      <HapticProvider>
+        <EventCardClient event={createEvent()} fileUrl={null} />
+      </HapticProvider>,
+    );
+
+    fireEvent.contextMenu(screen.getByRole("link", { name: "Open Club Chlorine details" }));
+
+    expect(await screen.findByRole("menuitem", { name: "Duplicate to draft" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Unpublish" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Set as featured" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Delete event" })).toBeTruthy();
   });
 });

@@ -4,8 +4,10 @@ import { ExternalLink, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { DEFAULT_SECRET_GUEST_DISPLAY_NAME } from "@/lib/event-metadata";
 import type { EventAct } from "@/lib/types";
 
@@ -58,32 +60,30 @@ export function EventActsEditor({ acts, onChange }: EventActsEditorProps) {
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        <h3 className="font-medium text-sm text-muted-foreground">LINEUP ACTS</h3>
-        <p className="text-sm text-muted-foreground">
-          Add ordered acts, descriptor badges, social links, and public secret guest labels.
-        </p>
-      </div>
-
-      <div className="space-y-4">
+      <div className="space-y-3">
         {displayedActs.map((act, actIndex) => {
           const descriptorBadges = act.descriptorBadges ?? [];
           const isSecretGuest = act.isSecretGuest === true;
           return (
-            <div key={actIndex} className="space-y-4 rounded-md border bg-background p-4">
+            <div
+              key={actIndex}
+              className="space-y-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4"
+            >
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Act Name</label>
+                <Field>
+                  <FieldLabel htmlFor={`act-name-${actIndex}`}>Act name</FieldLabel>
                   <Input
+                    id={`act-name-${actIndex}`}
                     placeholder="Malice K"
                     value={act.name}
                     onChange={(event) => updateAct(actIndex, "name", event.target.value)}
                   />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Social Link</label>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`act-social-${actIndex}`}>Social link</FieldLabel>
                   <div className="flex items-center gap-2">
                     <Input
+                      id={`act-social-${actIndex}`}
                       type="url"
                       placeholder="https://instagram.com/..."
                       value={act.socialUrl ?? ""}
@@ -94,32 +94,31 @@ export function EventActsEditor({ acts, onChange }: EventActsEditorProps) {
                         href={act.socialUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:text-foreground"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                         aria-label="Open act social link"
                       >
                         <ExternalLink className="h-4 w-4" />
                       </a>
                     ) : null}
                   </div>
-                </div>
+                </Field>
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
+                  size="icon"
                   onClick={() => removeAct(actIndex)}
-                  className="h-10 lg:self-end"
-                  aria-label="Remove act"
+                  className="relative h-8 w-8 justify-self-end text-[var(--text-secondary)] after:absolute after:-inset-1.5 after:content-[''] hover:text-destructive lg:self-end lg:justify-self-auto"
+                  aria-label={`Remove ${act.name.trim() || `act ${actIndex + 1}`}`}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
 
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Descriptor Badges
-                  </label>
+                <Field>
+                  <FieldLabel htmlFor={`act-badges-${actIndex}`}>Descriptor badges</FieldLabel>
                   <Input
+                    id={`act-badges-${actIndex}`}
                     placeholder="DJ, LIVE, FR"
                     value={descriptorBadges.join(", ")}
                     onChange={(event) => updateDescriptorBadges(actIndex, event.target.value)}
@@ -133,32 +132,35 @@ export function EventActsEditor({ acts, onChange }: EventActsEditorProps) {
                       ))}
                     </div>
                   ) : null}
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">Visibility</label>
-                  <label className="flex h-10 items-center gap-2 rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground">
-                    <Checkbox
+                </Field>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 pt-0.5 lg:pt-6">
+                    <Switch
+                      id={`act-secret-${actIndex}`}
                       checked={isSecretGuest}
-                      onCheckedChange={(checked) =>
-                        updateAct(actIndex, "isSecretGuest", Boolean(checked))
-                      }
+                      onCheckedChange={(checked) => updateAct(actIndex, "isSecretGuest", checked)}
                     />
-                    <span>Hide the real name publicly</span>
-                  </label>
+                    <Label
+                      htmlFor={`act-secret-${actIndex}`}
+                      className="text-sm font-normal text-[var(--text-secondary)]"
+                    >
+                      Hide the real name publicly
+                    </Label>
+                  </div>
                   {isSecretGuest ? (
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        Public Secret Label
-                      </label>
+                    <Field>
+                      <FieldLabel htmlFor={`act-secret-label-${actIndex}`}>
+                        Public secret label
+                      </FieldLabel>
                       <Input
+                        id={`act-secret-label-${actIndex}`}
                         placeholder={DEFAULT_SECRET_GUEST_DISPLAY_NAME}
                         value={act.secretDisplayName ?? DEFAULT_SECRET_GUEST_DISPLAY_NAME}
                         onChange={(event) =>
                           updateAct(actIndex, "secretDisplayName", event.target.value)
                         }
                       />
-                    </div>
+                    </Field>
                   ) : null}
                 </div>
               </div>
@@ -167,7 +169,13 @@ export function EventActsEditor({ acts, onChange }: EventActsEditorProps) {
         })}
       </div>
 
-      <Button type="button" variant="outline" size="sm" onClick={addAct} className="w-full">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={addAct}
+        className="w-full border-dashed border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+      >
         <Plus className="h-4 w-4" />
         Add Act
       </Button>

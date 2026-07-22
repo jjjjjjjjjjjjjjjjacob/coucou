@@ -1,6 +1,7 @@
 "use client";
 import type { Path, PathValue } from "react-hook-form";
 import { DateTimePicker } from "@/components/date-time-picker";
+import { FieldSwitchRow } from "@/components/ui/field";
 import {
   FormControl,
   FormDescription,
@@ -9,15 +10,18 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { SectionCard } from "@/components/ui/section-card";
 import { Select, SelectOption } from "@/components/ui/select";
 import type { BaseEventFormValues, UseFormReturn } from "@/lib/types";
 
 export interface EventScheduleSectionProps<FormValues extends BaseEventFormValues> {
   form: UseFormReturn<FormValues>;
+  showEndPolicy?: boolean;
 }
 
 export function EventScheduleSection<FormValues extends BaseEventFormValues>({
   form,
+  showEndPolicy = false,
 }: EventScheduleSectionProps<FormValues>) {
   const selectedEventTime = form.watch("eventTime" as Path<FormValues>) as string | undefined;
   const selectedEventTimezone = form.watch("eventTimezone" as Path<FormValues>) as
@@ -30,8 +34,10 @@ export function EventScheduleSection<FormValues extends BaseEventFormValues>({
   const displayDate = selectedEventDate;
 
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-4">
-      <h3 className="font-medium text-sm text-muted-foreground">DATE & CAPACITY</h3>
+    <SectionCard
+      title="Schedule & capacity"
+      description="Start time, automatic event close, attendee limits, and RSVP availability."
+    >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <FormField
           control={form.control}
@@ -40,7 +46,9 @@ export function EventScheduleSection<FormValues extends BaseEventFormValues>({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Start Date, Time & Timezone</FormLabel>
-              <FormDescription>RSVPs close 24 hours after this start time.</FormDescription>
+              <FormDescription>
+                The event closes automatically at midnight or 4:00 AM for late events.
+              </FormDescription>
               <FormControl>
                 <DateTimePicker
                   date={displayDate}
@@ -67,6 +75,23 @@ export function EventScheduleSection<FormValues extends BaseEventFormValues>({
             </FormItem>
           )}
         />
+        {showEndPolicy ? (
+          <FormField
+            control={form.control}
+            name={"endsLate" as Path<FormValues>}
+            render={({ field }) => (
+              <FormItem>
+                <FieldSwitchRow
+                  title="Late event"
+                  description="Late events close at 4:00 AM the following day. Standard events close at midnight on the event date."
+                  checked={Boolean(field.value)}
+                  onCheckedChange={(checked) => field.onChange(checked)}
+                />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : null}
         <FormField
           control={form.control}
           name={"maxAttendees" as Path<FormValues>}
@@ -120,6 +145,6 @@ export function EventScheduleSection<FormValues extends BaseEventFormValues>({
           )}
         />
       </div>
-    </div>
+    </SectionCard>
   );
 }

@@ -214,3 +214,98 @@ export const RECIPIENT_STATUS_LABELS: Record<RecipientApprovalStatus, string> = 
   approved: "Approved",
   denied: "Denied",
 };
+
+// --- Guest directory filter state ---------------------------------------
+// Person-level filter vocabulary shared between the Guests directory page
+// and the text blast "Who" step. Composes the recipient filter/history
+// states above with directory-only facets (tags, default list, consent,
+// latest-event status).
+
+export type GuestDirectorySmsConsentFilter = "any" | "consented" | "not_consented";
+export type GuestDirectoryLatestEventFilter = "any" | "yes" | "no";
+export type GuestDirectorySortOption = "name" | "latestRsvpAt" | "firstRsvpAt" | "eventCount";
+export type GuestDirectorySortDirection = "asc" | "desc";
+
+export interface GuestDirectoryFilterState {
+  searchText: string;
+  eventIds: string[];
+  recipientFilter: RecipientFilterState;
+  recipientHistoryFilter: RecipientHistoryFilterState;
+  smsConsentFilter: GuestDirectorySmsConsentFilter;
+  tags: string[];
+  defaultListKeys: string[];
+  rsvpedToLatestEvent: GuestDirectoryLatestEventFilter;
+  sortBy: GuestDirectorySortOption;
+  sortDirection: GuestDirectorySortDirection;
+}
+
+export const createDefaultGuestDirectoryFilterState = (): GuestDirectoryFilterState => ({
+  searchText: "",
+  eventIds: [],
+  recipientFilter: { type: "all" },
+  recipientHistoryFilter: { type: "none", textBlastIds: [] },
+  smsConsentFilter: "any",
+  tags: [],
+  defaultListKeys: [],
+  rsvpedToLatestEvent: "any",
+  sortBy: "latestRsvpAt",
+  sortDirection: "desc",
+});
+
+export const isGuestDirectoryFilterConfigured = (state: GuestDirectoryFilterState): boolean =>
+  isRecipientFilterConfigured(state.recipientFilter) &&
+  recipientHistoryFilterIsConfigured(state.recipientHistoryFilter);
+
+export interface GuestDirectoryQueryFilterArgs {
+  searchText?: string;
+  eventIds?: string[];
+  recipientFilter?: string;
+  recipientHistoryFilter?: {
+    type: "received_any" | "not_received_any";
+    textBlastIds: string[];
+  };
+  smsConsentFilter?: GuestDirectorySmsConsentFilter;
+  tags?: string[];
+  defaultListKeys?: string[];
+  rsvpedToLatestEvent?: GuestDirectoryLatestEventFilter;
+  sortBy: GuestDirectorySortOption;
+  sortDirection: GuestDirectorySortDirection;
+}
+
+/** Serializes the filter state into guestDirectory.listGuestDirectoryPaginated args. */
+export const encodeGuestDirectoryFilterArgs = (
+  state: GuestDirectoryFilterState,
+): GuestDirectoryQueryFilterArgs => ({
+  searchText: state.searchText.trim() ? state.searchText.trim() : undefined,
+  eventIds: state.eventIds.length > 0 ? state.eventIds : undefined,
+  recipientFilter: isRecipientFilterConfigured(state.recipientFilter)
+    ? encodeRecipientFilter(state.recipientFilter)
+    : undefined,
+  recipientHistoryFilter:
+    state.recipientHistoryFilter.type !== "none" &&
+    state.recipientHistoryFilter.textBlastIds.length > 0
+      ? {
+          type: state.recipientHistoryFilter.type,
+          textBlastIds: state.recipientHistoryFilter.textBlastIds,
+        }
+      : undefined,
+  smsConsentFilter: state.smsConsentFilter !== "any" ? state.smsConsentFilter : undefined,
+  tags: state.tags.length > 0 ? state.tags : undefined,
+  defaultListKeys: state.defaultListKeys.length > 0 ? state.defaultListKeys : undefined,
+  rsvpedToLatestEvent: state.rsvpedToLatestEvent !== "any" ? state.rsvpedToLatestEvent : undefined,
+  sortBy: state.sortBy,
+  sortDirection: state.sortDirection,
+});
+
+export const countActiveGuestDirectoryFilters = (state: GuestDirectoryFilterState): number => {
+  let activeFilterCount = 0;
+  if (state.searchText.trim()) activeFilterCount += 1;
+  if (state.eventIds.length > 0) activeFilterCount += 1;
+  if (state.recipientFilter.type !== "all") activeFilterCount += 1;
+  if (state.recipientHistoryFilter.type !== "none") activeFilterCount += 1;
+  if (state.smsConsentFilter !== "any") activeFilterCount += 1;
+  if (state.tags.length > 0) activeFilterCount += 1;
+  if (state.defaultListKeys.length > 0) activeFilterCount += 1;
+  if (state.rsvpedToLatestEvent !== "any") activeFilterCount += 1;
+  return activeFilterCount;
+};

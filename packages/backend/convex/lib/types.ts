@@ -90,6 +90,7 @@ export type EventPatch = Partial<
 export type EventUnsetField =
   | "secondaryTitle"
   | "productionCompany"
+  | "eventEndDate"
   | "flyerStorageId"
   | "guestPortalImageStorageId"
   | "guestPortalLinkLabel"

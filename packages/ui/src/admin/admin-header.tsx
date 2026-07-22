@@ -6,7 +6,7 @@ export interface AdminHeaderProps {
    */
   eyebrow?: string;
   /**
-   * Title — large display text.
+   * Title — page heading.
    */
   title: string;
   /**
@@ -18,27 +18,27 @@ export interface AdminHeaderProps {
 export function AdminHeader({ eyebrow, title, status }: AdminHeaderProps) {
   return (
     <div
-      className="flex items-end justify-between pb-12"
-      style={{ borderBottom: "1px solid var(--tt-rule)" }}
+      className="flex flex-col gap-3 pb-6 sm:flex-row sm:items-end sm:justify-between"
+      style={{ borderBottom: "1px solid var(--border-subtle)" }}
     >
-      <div>
+      <div className="space-y-1.5">
         {eyebrow ? (
           <div
-            className="mb-3 text-[11px] uppercase tracking-[0.06em]"
-            style={{ color: "var(--tt-fg-mute)" }}
+            className="text-[11px] font-medium uppercase tracking-[0.08em]"
+            style={{ color: "var(--text-tertiary)" }}
           >
             {eyebrow}
           </div>
         ) : null}
-        <div
-          className="text-[26px] leading-tight tracking-[-0.01em]"
-          style={{ color: "var(--tt-fg)", fontFamily: "var(--tt-display)" }}
+        <h1
+          className="m-0 text-2xl font-semibold tracking-tight"
+          style={{ color: "var(--text-primary)" }}
         >
           {title}
-        </div>
+        </h1>
       </div>
       {status ? (
-        <div className="text-[13px]" style={{ color: "var(--tt-fg-dim)" }}>
+        <div className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
           {status}
         </div>
       ) : null}

@@ -5,6 +5,7 @@ import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 const apiClientScopeValidator = v.union(
   v.literal("events:read"),
+  v.literal("events:write"),
   v.literal("rsvps:read"),
   v.literal("rsvps:write"),
 );
@@ -14,6 +15,7 @@ export const create = mutation({
     workspaceSlug: v.string(),
     displayName: v.string(),
     scopes: v.array(apiClientScopeValidator),
+    defaultRsvpListKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const resolvedScope = await requireWorkspaceHost(ctx, { workspaceSlug: args.workspaceSlug });
@@ -40,10 +42,12 @@ export const create = mutation({
 
     const { plaintextKey, keyPrefix } = generateApiClientKey();
     const keyHash = await hashApiClientKey(plaintextKey);
+    const defaultRsvpListKey = args.defaultRsvpListKey?.trim() || undefined;
 
     const apiClientId = await ctx.db.insert("apiClients", {
       workspaceId: resolvedScope.workspaceId,
       displayName: trimmedDisplayName,
+      defaultRsvpListKey,
       keyPrefix,
       keyHash,
       scopes: requestedScopes,
@@ -53,6 +57,29 @@ export const create = mutation({
 
     // The plaintext key is returned exactly once and never stored.
     return { apiClientId, plaintextKey, keyPrefix };
+  },
+});
+
+export const updateDefaultRsvpListKey = mutation({
+  args: {
+    workspaceSlug: v.string(),
+    apiClientId: v.id("apiClients"),
+    defaultRsvpListKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const resolvedScope = await requireWorkspaceHost(ctx, { workspaceSlug: args.workspaceSlug });
+    const apiClient = await ctx.db.get(args.apiClientId);
+    if (
+      !apiClient ||
+      apiClient.workspaceId !== resolvedScope.workspaceId ||
+      apiClient.revokedAt !== undefined
+    ) {
+      throw new Error("Active API key not found");
+    }
+
+    const defaultRsvpListKey = args.defaultRsvpListKey?.trim() || undefined;
+    await ctx.db.patch(args.apiClientId, { defaultRsvpListKey });
+    return { defaultRsvpListKey: defaultRsvpListKey ?? null };
   },
 });
 
@@ -95,6 +122,7 @@ export const listForWorkspace = query({
     return apiClients.map((apiClient) => ({
       apiClientId: apiClient._id,
       displayName: apiClient.displayName,
+      defaultRsvpListKey: apiClient.defaultRsvpListKey ?? null,
       keyPrefix: apiClient.keyPrefix,
       scopes: apiClient.scopes,
       createdByClerkUserId: apiClient.createdByClerkUserId,

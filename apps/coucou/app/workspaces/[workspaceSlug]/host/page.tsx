@@ -4,18 +4,26 @@ import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, TicketCheck, TrendingUp, Users } from "lucide-react";
+import { CalendarDays, DoorOpen, Users } from "lucide-react";
 import Link from "next/link";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { navigationItems, quickActions } from "@/components/app-sidebar";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { PageCard } from "@/components/ui/page-card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import type { RecentActivityEntry } from "@/lib/types";
-import { useWorkspaceScope } from "@/lib/use-workspace-scope";
-import {
-  buildWorkspaceOperationPath,
-  type WorkspaceOperationSurface,
-} from "@/lib/workspace-config";
+import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
+
+const QUICK_ACTIONS = [
+  { title: "Events", href: "events", icon: CalendarDays },
+  { title: "RSVPs", href: "rsvps", icon: Users },
+  { title: "Door Scan", href: "/door/scan", icon: DoorOpen, isAbsolute: true },
+];
+
+function resolveQuickHref(base: string, workspaceSlug: string): string {
+  if (base.startsWith("/")) return base;
+  return `/workspaces/${workspaceSlug}/host/${base}`;
+}
 
 export default function HostDashboard() {
   const { isSignedIn } = useAuth();
@@ -45,11 +53,9 @@ export default function HostDashboard() {
   });
   const recentActivity = recentActivityQuery.data as RecentActivityEntry[] | undefined;
 
-  if (!workspaceScope) {
-    return <DashboardSkeleton />;
-  }
+  const rsvpsPath = useWorkspaceOperationPath("host", "rsvps");
 
-  if (!dashboardStats) {
+  if (!workspaceScope || !dashboardStats) {
     return <DashboardSkeleton />;
   }
 
@@ -75,119 +81,79 @@ export default function HostDashboard() {
     },
   };
 
-  const allQuickLinks = [...navigationItems, ...quickActions]
-    .filter((item) => item.url !== "/host")
-    .map((item) => {
-      const match = item.url.match(/^\/(host|door)(?:\/(.*))?$/);
-      if (!match) {
-        return item;
-      }
-
-      return {
-        ...item,
-        url: buildWorkspaceOperationPath(
-          workspaceScope.workspaceSlug,
-          match[1] as WorkspaceOperationSurface,
-          match[2] ?? "",
-        ),
-      };
-    });
+  const quickActions = QUICK_ACTIONS.map((action) => ({
+    ...action,
+    href: action.isAbsolute
+      ? action.href
+      : resolveQuickHref(action.href, workspaceScope.workspaceSlug),
+  }));
 
   return (
-    <div className="flex-1 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-          <p className="text-muted-foreground">Overview of your events and RSVPs</p>
-        </div>
-      </div>
+    <div className="flex-1 space-y-6">
+      <DashboardTitleBar
+        title="Overview"
+        subtitle="A quick look at your events and guests."
+        breadcrumb={[{ label: "Workspace" }, { label: "Overview" }]}
+      />
 
-      {/* Quick Links Section */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-        {allQuickLinks.map((item) => (
-          <Link key={item.url} href={item.url}>
-            <Card className="cursor-pointer transition-all hover:shadow-md hover:border-primary/50">
-              <CardContent className="flex flex-col items-center justify-center p-4 text-center gap-2">
-                <item.icon className="h-6 w-6 text-primary" />
-                <span className="text-sm font-medium">{item.title}</span>
-              </CardContent>
-            </Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {quickActions.map((action) => (
+          <Link
+            key={action.title}
+            href={action.href}
+            className="group flex flex-col gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4 shadow-[var(--shadow-card)] transition-colors hover:bg-[var(--surface-3)]"
+          >
+            <action.icon className="h-5 w-5 text-[var(--text-secondary)]" />
+            <span className="text-sm font-medium text-[var(--text-primary)]">{action.title}</span>
           </Link>
         ))}
       </div>
 
-      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Events</CardTitle>
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{dashboardStats.totalEvents}</div>
-            <p className="text-xs text-muted-foreground">Events created</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total RSVPs</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{dashboardStats.totalRsvps}</div>
-            <p className="text-xs text-muted-foreground">
-              {dashboardStats.rsvpTrend >= 0 ? "+" : ""}
-              {dashboardStats.rsvpTrend}% from last month
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Approval Rate</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{dashboardStats.approvalRate}%</div>
-            <p className="text-xs text-muted-foreground">
-              {dashboardStats.approvedRsvps} of {dashboardStats.totalRsvps} approved
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Redemption Rate</CardTitle>
-            <TicketCheck className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{dashboardStats.redemptionRate}%</div>
-            <p className="text-xs text-muted-foreground">
-              {dashboardStats.redeemedTickets} tickets redeemed
-            </p>
-          </CardContent>
-        </Card>
+        <PageCard title="Total Events" description="Events created">
+          <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+            {dashboardStats.totalEvents}
+          </div>
+        </PageCard>
+        <PageCard title="Total RSVPs" description="Guests across all events">
+          <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+            {dashboardStats.totalRsvps}
+          </div>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            {dashboardStats.rsvpTrend >= 0 ? "+" : ""}
+            {dashboardStats.rsvpTrend}% from last month
+          </p>
+        </PageCard>
+        <PageCard title="Approval Rate" description="RSVPs approved">
+          <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+            {dashboardStats.approvalRate}%
+          </div>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            {dashboardStats.approvedRsvps} of {dashboardStats.totalRsvps} approved
+          </p>
+        </PageCard>
+        <PageCard title="Redemption Rate" description="Tickets redeemed">
+          <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+            {dashboardStats.redemptionRate}%
+          </div>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            {dashboardStats.redeemedTickets} tickets redeemed
+          </p>
+        </PageCard>
       </div>
 
-      {/* Charts Section */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        {/* RSVP Trends Chart */}
-        <Card className="col-span-4">
-          <CardHeader>
-            <CardTitle>RSVP Trends</CardTitle>
-            <CardDescription>Daily RSVP submissions over the last 30 days</CardDescription>
-          </CardHeader>
-          <CardContent className="pl-2">
+        <PageCard
+          title="RSVP Trends"
+          description="Daily submissions over the last 30 days"
+          className="col-span-4"
+        >
+          <div className="min-h-[16rem]">
             <ChartContainer config={chartConfig}>
               <AreaChart
                 accessibilityLayer
                 data={rsvpTrends || []}
-                margin={{
-                  left: 12,
-                  right: 12,
-                }}
+                margin={{ left: 12, right: 12 }}
               >
                 <CartesianGrid vertical={false} />
                 <XAxis
@@ -209,58 +175,56 @@ export default function HostDashboard() {
                 />
               </AreaChart>
             </ChartContainer>
-          </CardContent>
-        </Card>
+          </div>
+        </PageCard>
 
-        {/* Recent Activity */}
-        <Card className="col-span-3">
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Latest RSVPs from the past week</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentActivity?.slice(0, 5).map((activity) => (
-                <div key={activity.id} className="flex items-center">
-                  <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">{activity.guestName}</p>
-                    <p className="text-sm text-muted-foreground">{activity.eventName}</p>
-                  </div>
-                  <div className="ml-auto">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        activity.status === "approved"
-                          ? "bg-green-100 text-green-800"
-                          : activity.status === "denied"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-yellow-100 text-yellow-800"
-                      }`}
-                    >
-                      {activity.status}
-                    </span>
-                  </div>
+        <PageCard
+          title="Recent Activity"
+          description="Latest RSVPs from the past week"
+          className="col-span-3"
+          action={
+            <Link
+              href={rsvpsPath}
+              className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            >
+              View all
+            </Link>
+          }
+        >
+          <div className="space-y-3">
+            {recentActivity?.slice(0, 5).map((activity) => (
+              <div key={activity.id} className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+                    {activity.guestName}
+                  </p>
+                  <p className="truncate text-xs text-[var(--text-secondary)]">
+                    {activity.eventName}
+                  </p>
                 </div>
-              )) || <p className="text-sm text-muted-foreground">No recent activity</p>}
-            </div>
-          </CardContent>
-        </Card>
+                <StatusBadge
+                  variant={
+                    activity.status === "approved"
+                      ? "approved"
+                      : activity.status === "denied"
+                        ? "denied"
+                        : "pending"
+                  }
+                  label={activity.status}
+                />
+              </div>
+            )) || <p className="text-sm text-[var(--text-secondary)]">No recent activity</p>}
+          </div>
+        </PageCard>
       </div>
 
-      {/* Event Performance Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Event Performance</CardTitle>
-          <CardDescription>RSVP breakdown by event (last 10 events)</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <PageCard title="Event Performance" description="RSVP breakdown by event (last 10 events)">
+        <div className="min-h-[20rem]">
           <ChartContainer config={eventChartConfig}>
             <BarChart
               accessibilityLayer
               data={eventPerformance || []}
-              margin={{
-                left: 12,
-                right: 12,
-              }}
+              margin={{ left: 12, right: 12 }}
             >
               <CartesianGrid vertical={false} />
               <XAxis
@@ -287,63 +251,33 @@ export default function HostDashboard() {
               />
             </BarChart>
           </ChartContainer>
-        </CardContent>
-      </Card>
+        </div>
+      </PageCard>
     </div>
   );
 }
 
 function DashboardSkeleton() {
   return (
-    <div className="flex-1 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="h-8 w-32 bg-muted rounded animate-pulse" />
-          <div className="h-4 w-48 bg-muted rounded animate-pulse mt-2" />
-        </div>
+    <div className="flex-1 space-y-6">
+      <div className="h-8 w-40 animate-pulse rounded bg-[var(--surface-3)]" />
+      <div className="h-4 w-64 animate-pulse rounded bg-[var(--surface-3)]" />
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {[...Array(4)].map((_, index) => (
+          <div key={index} className="h-20 animate-pulse rounded-lg bg-[var(--surface-3)]" />
+        ))}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {[...Array(4)].map((_, i) => (
-          <Card key={i}>
-            <CardHeader>
-              <div className="h-4 w-24 bg-muted rounded animate-pulse" />
-            </CardHeader>
-            <CardContent>
-              <div className="h-8 w-16 bg-muted rounded animate-pulse" />
-              <div className="h-3 w-32 bg-muted rounded animate-pulse mt-2" />
-            </CardContent>
-          </Card>
+        {[...Array(4)].map((_, index) => (
+          <div key={index} className="h-28 animate-pulse rounded-lg bg-[var(--surface-3)]" />
         ))}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4">
-          <CardHeader>
-            <div className="h-6 w-32 bg-muted rounded animate-pulse" />
-            <div className="h-4 w-48 bg-muted rounded animate-pulse" />
-          </CardHeader>
-          <CardContent>
-            <div className="h-64 bg-muted rounded animate-pulse" />
-          </CardContent>
-        </Card>
-
-        <Card className="col-span-3">
-          <CardHeader>
-            <div className="h-6 w-32 bg-muted rounded animate-pulse" />
-            <div className="h-4 w-48 bg-muted rounded animate-pulse" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="flex items-center space-x-4">
-                  <div className="h-4 w-24 bg-muted rounded animate-pulse" />
-                  <div className="h-4 w-16 bg-muted rounded animate-pulse ml-auto" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="col-span-4 h-80 animate-pulse rounded-lg bg-[var(--surface-3)]" />
+        <div className="col-span-3 h-80 animate-pulse rounded-lg bg-[var(--surface-3)]" />
       </div>
     </div>
   );

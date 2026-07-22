@@ -12,7 +12,12 @@ interface WorkspaceLike {
 }
 
 export function isSiteKey(value: string | null | undefined): value is SiteKey {
-  return value === "dojo" || value === "club-chlorine" || value === "coucou";
+  return (
+    value === "dojo" ||
+    value === "club-chlorine" ||
+    value === "danza-organica" ||
+    value === "coucou"
+  );
 }
 
 export function normalizeDomainOrigin(domain: string | null | undefined): string | null {

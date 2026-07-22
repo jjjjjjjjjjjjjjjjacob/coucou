@@ -2,7 +2,6 @@
 
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
-import { resolvePreset } from "@coucou/sdk";
 import { useConvexAuth, useQuery } from "convex/react";
 import { Check, ChevronsUpDown, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -29,10 +28,6 @@ import {
   hasWorkspaceWriteAccess,
 } from "@/lib/workspace-roles";
 
-const MAISON_STYLE_VARS = resolvePreset({
-  siteConfigurationPreset: "maison",
-}).styleVars;
-
 interface AccessibleWorkspace {
   slug: string;
   name: string;
@@ -47,7 +42,7 @@ export function hasDoorAccess(role: string | undefined): boolean {
   return hasWorkspaceReadAccess(role);
 }
 
-function useAccessibleWorkspaces(): AccessibleWorkspace[] {
+export function useAccessibleWorkspaces(): AccessibleWorkspace[] {
   const { isSignedIn } = useAuth();
   const { isAuthenticated } = useConvexAuth();
   const workspaceNavigationAccess = useQuery(
@@ -87,13 +82,14 @@ export function SquareMark({ initial, logo = false, size = "md" }: SquareMarkPro
   const dimension = size === "sm" ? 24 : 32;
   return (
     <div
-      className="flex flex-shrink-0 items-center justify-center"
+      className="flex flex-shrink-0 items-center justify-center overflow-hidden"
       style={{
         width: dimension,
         height: dimension,
-        border: "1px solid var(--tt-rule-strong)",
-        borderRadius: 2,
-        color: "var(--tt-fg)",
+        border: "1px solid var(--border-strong)",
+        borderRadius: 6,
+        backgroundColor: "var(--tt-bg)",
+        color: "var(--text-primary)",
         fontFamily: "Georgia, 'Times New Roman', serif",
         fontSize: size === "sm" ? 13 : 16,
         lineHeight: 1,
@@ -135,26 +131,20 @@ export function SidebarTenantSwitcher() {
                 <span className="truncate font-semibold">{currentBrandName}</span>
                 <span className="truncate text-xs">Dashboard</span>
               </div>
-              <ChevronsUpDown className="ml-auto size-4" style={{ color: "var(--tt-fg-dim)" }} />
+              <ChevronsUpDown className="ml-auto size-4 text-[var(--text-tertiary)]" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
-            className="maison-app-surface z-50 w-(--radix-dropdown-menu-trigger-width) min-w-64"
+            className="z-50 min-w-64 w-(--radix-dropdown-menu-trigger-width) border-[var(--border-strong)] bg-[var(--surface-2)] text-[var(--text-primary)]"
             align="start"
             side={isMobile ? "bottom" : "right"}
             sideOffset={4}
-            style={{
-              ...MAISON_STYLE_VARS,
-              backgroundColor: "var(--tt-bg)",
-              color: "var(--tt-fg)",
-              borderColor: "var(--tt-rule-strong)",
-            }}
           >
-            <DropdownMenuLabel className="text-xs" style={{ color: "var(--tt-fg-mute)" }}>
+            <DropdownMenuLabel className="text-xs text-[var(--text-tertiary)]">
               Workspaces
             </DropdownMenuLabel>
             {accessibleWorkspaces.length === 0 ? (
-              <DropdownMenuItem disabled style={{ color: "var(--tt-fg-dim)" }}>
+              <DropdownMenuItem disabled className="text-[var(--text-tertiary)]">
                 No other workspaces
               </DropdownMenuItem>
             ) : (
@@ -180,7 +170,7 @@ export function SidebarTenantSwitcher() {
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => router.push("/orgs/select")}
-              style={{ color: "var(--tt-fg-dim)" }}
+              className="text-[var(--text-tertiary)]"
             >
               Manage workspaces
             </DropdownMenuItem>

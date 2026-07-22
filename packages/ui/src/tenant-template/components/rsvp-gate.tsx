@@ -55,6 +55,7 @@ const DEFAULT_HEADING: Record<string, string> = {
   atrium: "The password.",
   maison: "The password.",
   chlorine: "The password.",
+  danza: "List password.",
   coucou: "The password.",
 };
 
@@ -63,6 +64,7 @@ const DEFAULT_SUB: Record<string, string> = {
   atrium: "Enter the password you were given. We do not mind about case.",
   maison: "You will have received it. Type it as it was sent — we are not particular about case.",
   chlorine: "Enter the password you received from your host. Case-insensitive.",
+  danza: "Enter the password you received from your host. Case-insensitive.",
   coucou: "Enter the password you received from your host. Case-insensitive.",
 };
 

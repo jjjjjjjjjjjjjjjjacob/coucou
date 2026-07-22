@@ -35,6 +35,19 @@ import {
 } from "./lib/primaryFields";
 import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./lib/profileValueRecords";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import {
+  customFieldIsMissing,
+  getExcludedClerkUserIdsForFilter,
+  getExcludedEventRsvpsForFilter,
+  parseRecipientFilter,
+  passesRecipientHistoryFilter,
+  type RecipientFilterConfig,
+  type RecipientHistoryFilterConfig,
+  recipientHistoryFilterValidator,
+  rsvpHasSentApprovalSms,
+  type SiteScopeArgs,
+  statusesForFilter,
+} from "./lib/recipientFiltering";
 import { insertRsvpIntoAggregate } from "./lib/rsvpAggregate";
 import {
   type ApprovalStatus,
@@ -73,31 +86,6 @@ function notificationTypeToConversationKind(type: string): SmsConversationKind {
       return "system";
   }
 }
-
-type RsvpStatus = ApprovalStatus;
-
-type RecipientFilterConfig =
-  | { type: "all" }
-  | { type: "approved_no_approval_sms" }
-  | { type: "approved_with_approval_sms" }
-  | { type: "status"; status: RsvpStatus }
-  | { type: "custom_field_missing"; fieldKey: string }
-  | { type: "rsvp_before"; timestamp: number }
-  | { type: "previous_approved_not_rsvped"; excludedEventId: Id<"events"> };
-
-type RecipientHistoryFilterConfig =
-  | { type: "received_any"; textBlastIds: Id<"textBlasts">[] }
-  | { type: "not_received_any"; textBlastIds: Id<"textBlasts">[] };
-
-const ALL_RSVP_STATUSES: RsvpStatus[] = ["pending", "approved", "denied"];
-const DEFAULT_APPROVED_STATUSES: RsvpStatus[] = ["approved"];
-
-const recipientHistoryFilterValidator = v.optional(
-  v.object({
-    type: v.union(v.literal("received_any"), v.literal("not_received_any")),
-    textBlastIds: v.array(v.id("textBlasts")),
-  }),
-);
 
 const replyActionInputValidator = v.object({
   replyCode: v.string(),
@@ -215,125 +203,6 @@ const validateBlastConfiguration = (args: {
   }
 };
 
-const parseRecipientFilter = (rawFilter: string | null | undefined): RecipientFilterConfig => {
-  if (!rawFilter) {
-    return { type: "all" };
-  }
-
-  if (rawFilter === "approved_no_approval_sms") {
-    return { type: "approved_no_approval_sms" };
-  }
-
-  if (rawFilter === "approved_with_approval_sms") {
-    return { type: "approved_with_approval_sms" };
-  }
-
-  try {
-    const parsed = JSON.parse(rawFilter) as Partial<RecipientFilterConfig>;
-    if (!parsed || typeof parsed !== "object" || typeof parsed.type !== "string") {
-      return { type: "all" };
-    }
-
-    switch (parsed.type) {
-      case "all":
-        return { type: "all" };
-      case "approved_no_approval_sms":
-        return { type: "approved_no_approval_sms" };
-      case "approved_with_approval_sms":
-        return { type: "approved_with_approval_sms" };
-      case "status":
-        if (
-          typeof parsed.status === "string" &&
-          ALL_RSVP_STATUSES.includes(parsed.status as RsvpStatus)
-        ) {
-          return { type: "status", status: parsed.status as RsvpStatus };
-        }
-        break;
-      case "custom_field_missing":
-        if (typeof (parsed as { fieldKey?: unknown }).fieldKey === "string") {
-          return {
-            type: "custom_field_missing",
-            fieldKey: (parsed as { fieldKey: string }).fieldKey,
-          };
-        }
-        break;
-      case "rsvp_before":
-        if (
-          typeof (parsed as { timestamp?: unknown }).timestamp === "number" &&
-          Number.isFinite((parsed as { timestamp: number }).timestamp)
-        ) {
-          return {
-            type: "rsvp_before",
-            timestamp: (parsed as { timestamp: number }).timestamp,
-          };
-        }
-        break;
-      case "previous_approved_not_rsvped":
-        if (typeof (parsed as { excludedEventId?: unknown }).excludedEventId === "string") {
-          return {
-            type: "previous_approved_not_rsvped",
-            excludedEventId: (parsed as { excludedEventId: Id<"events"> }).excludedEventId,
-          };
-        }
-        break;
-      default:
-        break;
-    }
-  } catch (error) {
-    console.warn(`[parseRecipientFilter] Failed to parse recipient filter: ${rawFilter}`, error);
-  }
-
-  return { type: "all" };
-};
-
-const statusesForFilter = (filter: RecipientFilterConfig): RsvpStatus[] => {
-  switch (filter.type) {
-    case "all":
-    case "approved_no_approval_sms":
-    case "approved_with_approval_sms":
-      return DEFAULT_APPROVED_STATUSES;
-    case "status":
-      return [filter.status];
-    case "custom_field_missing":
-    case "rsvp_before":
-      return ["pending", "approved"];
-    case "previous_approved_not_rsvped":
-      return DEFAULT_APPROVED_STATUSES;
-    default:
-      return DEFAULT_APPROVED_STATUSES;
-  }
-};
-
-const customFieldIsMissing = (rsvp: Doc<"rsvps">, fieldKey: string): boolean => {
-  const value = rsvp.customFieldValues?.[fieldKey];
-  if (value === undefined) {
-    return true;
-  }
-  if (typeof value !== "string") {
-    return true;
-  }
-  return value.trim().length === 0;
-};
-
-async function rsvpHasSentApprovalSms(
-  ctx: Pick<QueryCtx, "db">,
-  rsvp: Doc<"rsvps">,
-): Promise<boolean> {
-  const approvalSms = await ctx.db
-    .query("smsNotifications")
-    .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", rsvp.eventId))
-    .filter((queryBuilder) =>
-      queryBuilder.and(
-        queryBuilder.eq(queryBuilder.field("recipientClerkUserId"), rsvp.clerkUserId),
-        queryBuilder.eq(queryBuilder.field("type"), "approval"),
-        queryBuilder.eq(queryBuilder.field("status"), "sent"),
-      ),
-    )
-    .first();
-
-  return approvalSms !== null;
-}
-
 type IdentityWithRole = UserIdentity & { role?: string };
 
 const identityHasHostRole = (identity: IdentityWithRole): boolean => {
@@ -350,11 +219,6 @@ const identityCanManageBlast = (identity: IdentityWithRole, blastOwnerId: string
 function getEventBaseUrl(event: Pick<Doc<"events">, "siteKey"> | null): string | null {
   return resolvePublicBaseUrlForEvent(event);
 }
-
-type SiteScopeArgs = {
-  siteKey?: string;
-  workspaceSlug?: string;
-};
 
 async function ensureEventsInSiteScope(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
@@ -821,46 +685,6 @@ type RecipientSelectionArgs = {
   skipAlreadySentForBlast?: boolean;
 };
 
-async function hasSentDeliveryForAnyBlast(
-  ctx: Pick<QueryCtx, "db">,
-  phoneHash: string,
-  textBlastIds: Id<"textBlasts">[],
-): Promise<boolean> {
-  for (const textBlastId of textBlastIds) {
-    const sentDelivery = await ctx.db
-      .query("textBlastRecipients")
-      .withIndex("by_text_blast_phone", (queryBuilder) =>
-        queryBuilder.eq("textBlastId", textBlastId).eq("phoneHash", phoneHash),
-      )
-      .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("status"), "sent"))
-      .first();
-
-    if (sentDelivery) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-async function passesRecipientHistoryFilter(
-  ctx: Pick<QueryCtx, "db">,
-  phoneHash: string,
-  recipientHistoryFilter?: RecipientHistoryFilterConfig,
-): Promise<boolean> {
-  if (!recipientHistoryFilter || recipientHistoryFilter.textBlastIds.length === 0) {
-    return true;
-  }
-
-  const hasSentDelivery = await hasSentDeliveryForAnyBlast(
-    ctx,
-    phoneHash,
-    recipientHistoryFilter.textBlastIds,
-  );
-
-  return recipientHistoryFilter.type === "received_any" ? hasSentDelivery : !hasSentDelivery;
-}
-
 async function alreadySentForBlast(
   ctx: Pick<QueryCtx, "db">,
   textBlastId: Id<"textBlasts"> | undefined,
@@ -879,40 +703,6 @@ async function alreadySentForBlast(
     .first();
 
   return sentDelivery !== null;
-}
-
-function isPreviousApprovedNotRsvpedFilter(
-  filterConfig: RecipientFilterConfig,
-): filterConfig is Extract<RecipientFilterConfig, { type: "previous_approved_not_rsvped" }> {
-  return filterConfig.type === "previous_approved_not_rsvped";
-}
-
-async function getExcludedEventRsvpsForFilter(
-  ctx: Pick<QueryCtx, "db">,
-  filterConfig: RecipientFilterConfig,
-  scope: SiteScopeArgs,
-): Promise<Doc<"rsvps">[]> {
-  if (!isPreviousApprovedNotRsvpedFilter(filterConfig)) {
-    return [];
-  }
-
-  await ensureEventInSiteScope(ctx, filterConfig.excludedEventId, scope);
-
-  return await ctx.db
-    .query("rsvps")
-    .withIndex("by_event", (queryBuilder) =>
-      queryBuilder.eq("eventId", filterConfig.excludedEventId),
-    )
-    .collect();
-}
-
-async function getExcludedClerkUserIdsForFilter(
-  ctx: Pick<QueryCtx, "db">,
-  filterConfig: RecipientFilterConfig,
-  scope: SiteScopeArgs,
-): Promise<Set<string>> {
-  const excludedEventRsvps = await getExcludedEventRsvpsForFilter(ctx, filterConfig, scope);
-  return new Set(excludedEventRsvps.map((rsvp) => rsvp.clerkUserId));
 }
 
 async function getExcludedPhoneHashesForFilter(

@@ -539,10 +539,7 @@ describe("text blast recipient selection", () => {
     expect(targetRsvp?.listKey).toBe("ga");
     expect(targetRsvp?.smsConsent).toBe(true);
     expect(targetRsvp?.customFieldValues).toEqual({ shirt: "Large" });
-    expect(conversationMessages.map((message) => message.direction)).toEqual([
-      "inbound",
-      "system",
-    ]);
+    expect(conversationMessages.map((message) => message.direction)).toEqual(["inbound", "system"]);
     expect(conversationMessages[0]?.body).toBe("return");
     expect(conversationMessages[1]?.body).toContain("Reply action submitted");
   });

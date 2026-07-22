@@ -1,13 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { getFunctionName } from "convex/server";
 import type { AnyFunctionReference } from "convex/server";
+import { getFunctionName } from "convex/server";
 import type React from "react";
-import type {
-  Event,
-  SmsConversationMessage,
-  SmsConversationThread,
-} from "../lib/types";
+import type { Event, SmsConversationMessage, SmsConversationThread } from "../lib/types";
 
 type QueryReference = AnyFunctionReference;
 type ActionReference = AnyFunctionReference;
@@ -61,9 +57,7 @@ function buildThread(patch: Partial<SmsConversationThread> = {}): SmsConversatio
   } as SmsConversationThread;
 }
 
-function buildMessage(
-  patch: Partial<SmsConversationMessage> = {},
-): SmsConversationMessage {
+function buildMessage(patch: Partial<SmsConversationMessage> = {}): SmsConversationMessage {
   return {
     _id: "message_1",
     threadId: "thread_1",
@@ -122,9 +116,7 @@ mock.module("@/contexts/haptic-context", () => ({
   }),
 }));
 
-const { default: TextsPage } = await import(
-  "../app/workspaces/[workspaceSlug]/host/texts/page"
-);
+const { default: TextsPage } = await import("../app/workspaces/[workspaceSlug]/host/texts/page");
 
 describe("TextsPage", () => {
   beforeEach(() => {

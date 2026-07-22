@@ -168,17 +168,12 @@ export default function GuestListPage() {
               year: "numeric",
               timeZone: event.eventTimezone ?? "UTC",
             });
+            const optionLabel = hasEventSecondaryTitle(event)
+              ? `${event.name} — ${event.secondaryTitle} · ${formattedDate}`
+              : `${event.name} · ${formattedDate}`;
             return (
               <SelectOption key={event._id} value={event._id}>
-                <div className="flex flex-col">
-                  <span className="font-medium leading-tight">{event.name}</span>
-                  {hasEventSecondaryTitle(event) && (
-                    <span className="text-xs text-muted-foreground leading-tight">
-                      {event.secondaryTitle}
-                    </span>
-                  )}
-                  <span className="text-xs text-muted-foreground">{formattedDate}</span>
-                </div>
+                {optionLabel}
               </SelectOption>
             );
           })}

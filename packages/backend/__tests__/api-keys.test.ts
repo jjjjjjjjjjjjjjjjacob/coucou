@@ -60,7 +60,8 @@ describe("isApiClientScope", () => {
   });
 
   it("rejects unknown scopes", () => {
-    expect(isApiClientScope("events:write")).toBe(false);
+    expect(isApiClientScope("events:delete")).toBe(false);
+    expect(isApiClientScope("admin")).toBe(false);
     expect(isApiClientScope("")).toBe(false);
   });
 });

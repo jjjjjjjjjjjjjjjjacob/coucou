@@ -107,3 +107,83 @@ describe("text blast filters", () => {
     );
   });
 });
+
+describe("guest directory filter state", () => {
+  it("creates an unconfigured-free default state", async () => {
+    const { createDefaultGuestDirectoryFilterState, isGuestDirectoryFilterConfigured } =
+      await import("../lib/text-blast-filters");
+    const defaultState = createDefaultGuestDirectoryFilterState();
+    expect(defaultState.recipientFilter).toEqual({ type: "all" });
+    expect(defaultState.recipientHistoryFilter).toEqual({ type: "none", textBlastIds: [] });
+    expect(defaultState.sortBy).toBe("latestRsvpAt");
+    expect(isGuestDirectoryFilterConfigured(defaultState)).toBe(true);
+  });
+
+  it("encodes only active filters into query args", async () => {
+    const { createDefaultGuestDirectoryFilterState, encodeGuestDirectoryFilterArgs } = await import(
+      "../lib/text-blast-filters"
+    );
+    const defaultEncoded = encodeGuestDirectoryFilterArgs(createDefaultGuestDirectoryFilterState());
+    expect(defaultEncoded.searchText).toBeUndefined();
+    expect(defaultEncoded.eventIds).toBeUndefined();
+    expect(defaultEncoded.recipientFilter).toBeUndefined();
+    expect(defaultEncoded.recipientHistoryFilter).toBeUndefined();
+    expect(defaultEncoded.smsConsentFilter).toBeUndefined();
+    expect(defaultEncoded.tags).toBeUndefined();
+    expect(defaultEncoded.rsvpedToLatestEvent).toBeUndefined();
+    expect(defaultEncoded.sortBy).toBe("latestRsvpAt");
+    expect(defaultEncoded.sortDirection).toBe("desc");
+
+    const activeEncoded = encodeGuestDirectoryFilterArgs({
+      ...createDefaultGuestDirectoryFilterState(),
+      searchText: "  casey  ",
+      eventIds: ["event_1"],
+      recipientFilter: { type: "status", status: "pending" },
+      recipientHistoryFilter: { type: "received_any", textBlastIds: ["blast_1"] },
+      smsConsentFilter: "consented",
+      tags: ["vip"],
+      defaultListKeys: ["ga"],
+      rsvpedToLatestEvent: "no",
+    });
+    expect(activeEncoded.searchText).toBe("casey");
+    expect(activeEncoded.eventIds).toEqual(["event_1"]);
+    expect(activeEncoded.recipientFilter).toBe(
+      JSON.stringify({ type: "status", status: "pending" }),
+    );
+    expect(activeEncoded.recipientHistoryFilter).toEqual({
+      type: "received_any",
+      textBlastIds: ["blast_1"],
+    });
+    expect(activeEncoded.smsConsentFilter).toBe("consented");
+    expect(activeEncoded.tags).toEqual(["vip"]);
+    expect(activeEncoded.defaultListKeys).toEqual(["ga"]);
+    expect(activeEncoded.rsvpedToLatestEvent).toBe("no");
+  });
+
+  it("omits an unconfigured history filter and counts active filters", async () => {
+    const {
+      countActiveGuestDirectoryFilters,
+      createDefaultGuestDirectoryFilterState,
+      encodeGuestDirectoryFilterArgs,
+      isGuestDirectoryFilterConfigured,
+    } = await import("../lib/text-blast-filters");
+
+    const partialHistoryState = {
+      ...createDefaultGuestDirectoryFilterState(),
+      recipientHistoryFilter: { type: "received_any" as const, textBlastIds: [] },
+    };
+    expect(isGuestDirectoryFilterConfigured(partialHistoryState)).toBe(false);
+    expect(
+      encodeGuestDirectoryFilterArgs(partialHistoryState).recipientHistoryFilter,
+    ).toBeUndefined();
+
+    expect(countActiveGuestDirectoryFilters(createDefaultGuestDirectoryFilterState())).toBe(0);
+    expect(
+      countActiveGuestDirectoryFilters({
+        ...createDefaultGuestDirectoryFilterState(),
+        tags: ["vip"],
+        smsConsentFilter: "not_consented",
+      }),
+    ).toBe(2);
+  });
+});

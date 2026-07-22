@@ -2,11 +2,25 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
+import { normalizeCredentialPassword } from "./lib/credentialPasswords";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { formatPhoneNumberForSms, obfuscatePhoneNumber } from "./lib/phoneUtils";
-import { countRsvpsWithAggregate, insertRsvpIntoAggregate } from "./lib/rsvpAggregate";
+import {
+  buildInvitedByPatch,
+  collectRequiredPrimaryFieldErrors,
+  sanitizeSubmittedSocialProfiles,
+  submittedSocialProfileValidator,
+} from "./lib/primaryFields";
+import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./lib/profileValueRecords";
+import {
+  countRsvpsWithAggregate,
+  insertRsvpIntoAggregate,
+  updateRsvpInAggregate,
+} from "./lib/rsvpAggregate";
 import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./lib/rsvpStatus";
+import { buildRsvpTicketSnapshot } from "./lib/rsvpTicketSnapshot";
+import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
 
 export const API_EVENTS_DEFAULT_PAGE_SIZE = 25;
 export const API_EVENTS_MAX_PAGE_SIZE = 100;
@@ -127,7 +141,38 @@ export const getEventForApiClient = internalQuery({
       lists: listCredentials.map((listCredential) => ({
         listKey: listCredential.listKey,
         isPasswordProtected: Boolean(listCredential.passwordNormalized?.trim()),
+        generatesQrCode: listCredential.generateQR === true,
       })),
+      rsvpForm: {
+        attendanceQuestionEnabled: event.attendanceQuestionEnabled === true,
+        maxAttendees: event.maxAttendees ?? 1,
+        acceptsListPassword: listCredentials.some((credential) =>
+          Boolean(credential.passwordNormalized?.trim()),
+        ),
+        customFields: (event.customFields ?? []).map((field) => ({
+          key: field.key,
+          label: field.label,
+          placeholder: field.placeholder,
+          required: field.required === true,
+          trimWhitespace: field.trimWhitespace !== false,
+        })),
+        socialPlatforms: (event.primaryFieldConfig?.socialPlatforms ?? []).map((platform) => ({
+          platformKey: platform.platformKey,
+          label: platform.label,
+          placeholder: platform.placeholder,
+          profileUrlPrefix: platform.profileUrlPrefix,
+          required: platform.required === true,
+        })),
+        invitedBy:
+          event.primaryFieldConfig?.invitedBy?.enabled === true
+            ? {
+                enabled: true,
+                label: event.primaryFieldConfig.invitedBy.label,
+                placeholder: event.primaryFieldConfig.invitedBy.placeholder,
+                required: event.primaryFieldConfig.invitedBy.required === true,
+              }
+            : null,
+      },
       attendanceCounts: {
         approved: approvedCount,
         pending: pendingCount,
@@ -185,17 +230,7 @@ export const lookupRsvpForPhoneForApiClient = internalQuery({
 
     return {
       eventFound: true as const,
-      rsvp: {
-        rsvpId: rsvp._id,
-        approvalStatus: resolveApprovalStatus(rsvp),
-        attendanceStatus: sanitizeAttendanceStatus(rsvp.attendanceStatus),
-        listKey: rsvp.listKey,
-        attendees: rsvp.attendees ?? 1,
-        name: rsvp.userName ?? null,
-        isGuest,
-        createdAt: rsvp.createdAt,
-        updatedAt: rsvp.updatedAt,
-      },
+      rsvp: await buildApiRsvpSummary(ctx, event, rsvp, isGuest),
     };
   },
 });
@@ -204,11 +239,17 @@ const apiAttendanceStatusValidator = v.union(v.literal("yes"), v.literal("no"), 
 
 interface ApiWriteFailure {
   ok: false;
-  errorCode: "not_found" | "invalid_request";
+  errorCode: "not_found" | "invalid_request" | "conflict";
   message: string;
+  field?: string;
 }
 
-function buildApiRsvpSummary(rsvp: Doc<"rsvps">, isGuest: boolean) {
+async function buildApiRsvpSummary(
+  ctx: QueryCtx | MutationCtx,
+  event: Doc<"events">,
+  rsvp: Doc<"rsvps">,
+  isGuest: boolean,
+) {
   return {
     rsvpId: rsvp._id,
     approvalStatus: resolveApprovalStatus(rsvp),
@@ -219,6 +260,7 @@ function buildApiRsvpSummary(rsvp: Doc<"rsvps">, isGuest: boolean) {
     isGuest,
     createdAt: rsvp.createdAt,
     updatedAt: rsvp.updatedAt,
+    ticket: await buildRsvpTicketSnapshot(ctx, event, rsvp),
   };
 }
 
@@ -249,6 +291,118 @@ async function upsertGuestContact(
   });
 }
 
+type ApiRsvpListSelectorField = "listPassword" | "listKey";
+
+async function resolveListCredentialForApiWrite(
+  ctx: MutationCtx,
+  event: Doc<"events">,
+  apiClientId: Doc<"apiClients">["_id"],
+  input: { listPassword?: string; listKey?: string },
+): Promise<
+  | {
+      ok: true;
+      listCredential: Doc<"listCredentials">;
+      selectorField: ApiRsvpListSelectorField;
+    }
+  | ApiWriteFailure
+> {
+  const listCredentials = await ctx.db
+    .query("listCredentials")
+    .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
+    .collect();
+  const submittedPassword = input.listPassword?.trim();
+  if (submittedPassword) {
+    const normalizedPassword = normalizeCredentialPassword(submittedPassword);
+    const matchedCredential = listCredentials.find(
+      (credential) => credential.passwordNormalized === normalizedPassword,
+    );
+    if (!matchedCredential) {
+      return {
+        ok: false,
+        errorCode: "invalid_request",
+        message: "That list password is not valid for this event",
+        field: "listPassword",
+      };
+    }
+    return { ok: true, listCredential: matchedCredential, selectorField: "listPassword" };
+  }
+
+  const submittedListKey = input.listKey?.trim();
+  if (submittedListKey) {
+    const matchedCredential = listCredentials.find(
+      (credential) => credential.listKey === submittedListKey,
+    );
+    if (!matchedCredential) {
+      return {
+        ok: false,
+        errorCode: "invalid_request",
+        message: `Unknown listKey: ${submittedListKey}`,
+        field: "listKey",
+      };
+    }
+    return { ok: true, listCredential: matchedCredential, selectorField: "listKey" };
+  }
+
+  const apiClient = await ctx.db.get(apiClientId);
+  const defaultRsvpListKey = apiClient?.defaultRsvpListKey?.trim();
+  if (defaultRsvpListKey) {
+    const matchedCredential = listCredentials.find(
+      (credential) => credential.listKey === defaultRsvpListKey,
+    );
+    if (!matchedCredential) {
+      return {
+        ok: false,
+        errorCode: "conflict",
+        message: `The API client's default RSVP list (${defaultRsvpListKey}) is not configured for this event`,
+        field: "listKey",
+      };
+    }
+    return { ok: true, listCredential: matchedCredential, selectorField: "listKey" };
+  }
+
+  const fallbackCredential =
+    listCredentials.find((credential) => credential.listKey === "ga") ??
+    listCredentials.find((credential) => !credential.passwordNormalized?.trim()) ??
+    listCredentials[0];
+  if (!fallbackCredential) {
+    return {
+      ok: false,
+      errorCode: "conflict",
+      message: "This event has no RSVP lists configured",
+      field: "listKey",
+    };
+  }
+  return { ok: true, listCredential: fallbackCredential, selectorField: "listKey" };
+}
+
+function sanitizeApiCustomFieldValues(
+  event: Doc<"events">,
+  submittedValues: Record<string, string> | undefined,
+): { ok: true; values: Record<string, string> | undefined } | ApiWriteFailure {
+  const sanitizedValues: Record<string, string> = {};
+  for (const field of event.customFields ?? []) {
+    const rawValue = submittedValues?.[field.key];
+    const value =
+      rawValue === undefined ? "" : field.trimWhitespace === false ? rawValue : rawValue.trim();
+    if (field.required === true && value.length === 0) {
+      return {
+        ok: false,
+        errorCode: "invalid_request",
+        message: `${field.label} is required`,
+        field: `customFieldValues.${field.key}`,
+      };
+    }
+    if (value.length > 0) {
+      sanitizedValues[field.key] = value;
+    }
+  }
+
+  return {
+    ok: true,
+    values: Object.keys(sanitizedValues).length > 0 ? sanitizedValues : undefined,
+  };
+}
+
 export const createRsvpFromApiClient = internalMutation({
   args: {
     apiClientId: v.id("apiClients"),
@@ -256,10 +410,14 @@ export const createRsvpFromApiClient = internalMutation({
     eventRouteId: v.string(),
     phone: v.string(),
     name: v.string(),
-    listKey: v.string(),
+    listKey: v.optional(v.string()),
+    listPassword: v.optional(v.string()),
     attendees: v.optional(v.number()),
     attendanceStatus: v.optional(apiAttendanceStatusValidator),
     note: v.optional(v.string()),
+    customFieldValues: v.optional(v.record(v.string(), v.string())),
+    socialProfiles: v.optional(v.array(submittedSocialProfileValidator)),
+    invitedByName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const event = await getEventInWorkspaceByRouteId(ctx, args.workspaceSlug, args.eventRouteId);
@@ -271,21 +429,14 @@ export const createRsvpFromApiClient = internalMutation({
       } satisfies ApiWriteFailure;
     }
 
-    // The host installed this API key, so the key is workspace-trusted and
-    // list passwords are deliberately bypassed — but the list must exist.
-    const listCredential = await ctx.db
-      .query("listCredentials")
-      .withIndex("by_event_key", (queryBuilder) =>
-        queryBuilder.eq("eventId", event._id).eq("listKey", args.listKey),
-      )
-      .first();
-    if (!listCredential) {
-      return {
-        ok: false,
-        errorCode: "invalid_request",
-        message: `Unknown listKey: ${args.listKey}`,
-      } satisfies ApiWriteFailure;
+    const resolvedList = await resolveListCredentialForApiWrite(ctx, event, args.apiClientId, {
+      listPassword: args.listPassword,
+      listKey: args.listKey,
+    });
+    if (!resolvedList.ok) {
+      return resolvedList;
     }
+    const selectedListKey = resolvedList.listCredential.listKey;
 
     const maxAttendeesPerRsvp = event.maxAttendees ?? 1;
     const requestedAttendees = args.attendees ?? 1;
@@ -298,6 +449,7 @@ export const createRsvpFromApiClient = internalMutation({
         ok: false,
         errorCode: "invalid_request",
         message: `attendees must be an integer between 1 and ${maxAttendeesPerRsvp}`,
+        field: "attendees",
       } satisfies ApiWriteFailure;
     }
 
@@ -307,8 +459,45 @@ export const createRsvpFromApiClient = internalMutation({
         ok: false,
         errorCode: "invalid_request",
         message: "name is required",
+        field: "name",
       } satisfies ApiWriteFailure;
     }
+
+    const sanitizedCustomFields = sanitizeApiCustomFieldValues(event, args.customFieldValues);
+    if (!sanitizedCustomFields.ok) {
+      return sanitizedCustomFields;
+    }
+
+    const sanitizedSocialProfiles = sanitizeSubmittedSocialProfiles(
+      args.socialProfiles,
+      event.primaryFieldConfig,
+    );
+    const primaryFieldErrors = collectRequiredPrimaryFieldErrors({
+      primaryFieldConfig: event.primaryFieldConfig,
+      submittedProfiles: sanitizedSocialProfiles,
+      invitedByName: args.invitedByName,
+    });
+    if (primaryFieldErrors.length > 0) {
+      const submittedPlatformKeys = new Set(
+        sanitizedSocialProfiles.map((profile) => profile.platformKey),
+      );
+      const missingSocialPlatform = event.primaryFieldConfig?.socialPlatforms?.find(
+        (platform) =>
+          platform.required === true && !submittedPlatformKeys.has(platform.platformKey),
+      );
+      return {
+        ok: false,
+        errorCode: "invalid_request",
+        message: primaryFieldErrors[0],
+        field: missingSocialPlatform
+          ? `socialProfiles.${missingSocialPlatform.platformKey}`
+          : "invitedByName",
+      } satisfies ApiWriteFailure;
+    }
+    const invitedByPatch =
+      event.primaryFieldConfig?.invitedBy?.enabled === true
+        ? buildInvitedByPatch(args.invitedByName)
+        : {};
 
     const normalizedPhoneNumber = formatPhoneNumberForSms(args.phone);
     const { phoneHash } = await normalizeAndHashPhoneNumber(args.phone);
@@ -346,6 +535,24 @@ export const createRsvpFromApiClient = internalMutation({
     }
 
     if (existingRsvp) {
+      const existingApprovalStatus = resolveApprovalStatus(existingRsvp);
+      if (existingApprovalStatus === "denied" && existingRsvp.listKey === selectedListKey) {
+        return {
+          ok: false,
+          errorCode: "conflict",
+          message: "Denied for this list; try a different list password",
+          field: resolvedList.selectorField,
+        } satisfies ApiWriteFailure;
+      }
+      if (existingApprovalStatus === "approved" && existingRsvp.listKey !== selectedListKey) {
+        return {
+          ok: false,
+          errorCode: "conflict",
+          message: "An approved RSVP cannot be moved to another list",
+          field: resolvedList.selectorField,
+        } satisfies ApiWriteFailure;
+      }
+
       // Update only consumer-writable fields; approval/ticket state is
       // host-only. A no-op patch emits no webhook (prevents echo loops).
       const patch: Partial<Doc<"rsvps">> = {};
@@ -365,18 +572,59 @@ export const createRsvpFromApiClient = internalMutation({
       if (args.note !== undefined && existingRsvp.note !== args.note) {
         patch.note = args.note;
       }
+      if (args.customFieldValues !== undefined) {
+        patch.customFieldValues = sanitizedCustomFields.values;
+      }
+      Object.assign(patch, invitedByPatch);
+
+      if (existingRsvp.listKey !== selectedListKey) {
+        patch.listKey = selectedListKey;
+        patch.status = "pending";
+        patch.approvalStatus = "pending";
+        patch.ticketStatus = "not-issued";
+      }
 
       if (Object.keys(patch).length > 0) {
+        const oldRsvp = existingRsvp;
         patch.apiClientId = args.apiClientId;
         patch.updatedAt = now;
         await ctx.db.patch(existingRsvp._id, patch);
+        const aggregateRsvp = await ctx.db.get(existingRsvp._id);
+        if (aggregateRsvp) {
+          await updateRsvpInAggregate(ctx, oldRsvp, aggregateRsvp);
+        }
+      }
+
+      if (sanitizedSocialProfiles.length > 0) {
+        await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+          event,
+          rsvpId: existingRsvp._id,
+          clerkUserId: existingRsvp.clerkUserId,
+          userId: matchedUser?._id,
+          submittedProfiles: sanitizedSocialProfiles,
+        });
+        await replaceRsvpSocialProfileSnapshots(ctx, {
+          eventId: event._id,
+          rsvpId: existingRsvp._id,
+          clerkUserId: existingRsvp.clerkUserId,
+          userId: matchedUser?._id,
+          configuredPlatformKeys: new Set(
+            sanitizedSocialProfiles.map((profile) => profile.platformKey),
+          ),
+          submittedProfiles: sanitizedSocialProfiles,
+        });
       }
 
       const updatedRsvp = await ctx.db.get(existingRsvp._id);
       return {
         ok: true as const,
         created: false,
-        rsvp: buildApiRsvpSummary(updatedRsvp ?? existingRsvp, !matchedRealClerkUserId),
+        rsvp: await buildApiRsvpSummary(
+          ctx,
+          event,
+          updatedRsvp ?? existingRsvp,
+          isGuestClerkUserId((updatedRsvp ?? existingRsvp).clerkUserId),
+        ),
       };
     }
 
@@ -398,13 +646,15 @@ export const createRsvpFromApiClient = internalMutation({
     const rsvpId = await ctx.db.insert("rsvps", {
       eventId: event._id,
       clerkUserId,
-      listKey: args.listKey,
+      listKey: selectedListKey,
       ticketStatus: "not-issued",
       userName: trimmedName,
       note: args.note,
       // The consumer acts on the matched user's behalf.
       shareContact: true,
       attendees: requestedAttendees,
+      customFieldValues: sanitizedCustomFields.values,
+      ...invitedByPatch,
       status: "pending",
       approvalStatus: "pending",
       attendanceStatus: sanitizeAttendanceStatus(args.attendanceStatus),
@@ -419,10 +669,35 @@ export const createRsvpFromApiClient = internalMutation({
       await insertRsvpIntoAggregate(ctx, insertedRsvp);
     }
 
+    if (insertedRsvp && sanitizedSocialProfiles.length > 0) {
+      await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+        event,
+        rsvpId,
+        clerkUserId,
+        userId: matchedUser?._id,
+        submittedProfiles: sanitizedSocialProfiles,
+      });
+      await replaceRsvpSocialProfileSnapshots(ctx, {
+        eventId: event._id,
+        rsvpId,
+        clerkUserId,
+        userId: matchedUser?._id,
+        configuredPlatformKeys: new Set(
+          sanitizedSocialProfiles.map((profile) => profile.platformKey),
+        ),
+        submittedProfiles: sanitizedSocialProfiles,
+      });
+    }
+
     return {
       ok: true as const,
       created: true,
-      rsvp: buildApiRsvpSummary(insertedRsvp as Doc<"rsvps">, !matchedRealClerkUserId),
+      rsvp: await buildApiRsvpSummary(
+        ctx,
+        event,
+        insertedRsvp as Doc<"rsvps">,
+        !matchedRealClerkUserId,
+      ),
     };
   },
 });
@@ -467,7 +742,156 @@ export const updateAttendanceFromApiClient = internalMutation({
     const updatedRsvp = await ctx.db.get(normalizedRsvpId);
     return {
       ok: true as const,
-      rsvp: buildApiRsvpSummary(updatedRsvp ?? rsvp, isGuestClerkUserId(rsvp.clerkUserId)),
+      rsvp: await buildApiRsvpSummary(
+        ctx,
+        event,
+        updatedRsvp ?? rsvp,
+        isGuestClerkUserId(rsvp.clerkUserId),
+      ),
+    };
+  },
+});
+
+// Event fields a partner API consumer may update. Lifecycle, publish state,
+// approval flows, theming, and form config remain host-only.
+export const updateEventFromApiClient = internalMutation({
+  args: {
+    apiClientId: v.id("apiClients"),
+    workspaceSlug: v.string(),
+    eventRouteId: v.string(),
+    name: v.optional(v.string()),
+    secondaryTitle: v.optional(v.union(v.string(), v.null())),
+    description: v.optional(v.union(v.string(), v.null())),
+    location: v.optional(v.string()),
+    eventDate: v.optional(v.number()),
+    eventEndDate: v.optional(v.union(v.number(), v.null())),
+    eventTimezone: v.optional(v.union(v.string(), v.null())),
+    maxAttendees: v.optional(v.number()),
+    flyerUrl: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const event = await getEventInWorkspaceByRouteId(ctx, args.workspaceSlug, args.eventRouteId);
+    if (!event) {
+      return {
+        ok: false,
+        errorCode: "not_found",
+        message: "Event not found",
+      } satisfies ApiWriteFailure;
+    }
+
+    const invalidRequest = (message: string): ApiWriteFailure => ({
+      ok: false,
+      errorCode: "invalid_request",
+      message,
+    });
+
+    const patch: Partial<Doc<"events">> = {};
+
+    if (args.name !== undefined) {
+      const trimmedName = args.name.trim();
+      if (trimmedName.length === 0) {
+        return invalidRequest("name cannot be empty");
+      }
+      if (trimmedName !== event.name) {
+        patch.name = trimmedName;
+      }
+    }
+
+    if (args.location !== undefined) {
+      const trimmedLocation = args.location.trim();
+      if (trimmedLocation.length === 0) {
+        return invalidRequest("location cannot be empty");
+      }
+      if (trimmedLocation !== event.location) {
+        patch.location = trimmedLocation;
+      }
+    }
+
+    if (args.eventDate !== undefined) {
+      if (!Number.isInteger(args.eventDate) || args.eventDate <= 0) {
+        return invalidRequest("eventDate must be a positive ms-epoch timestamp");
+      }
+      if (args.eventDate !== event.eventDate) {
+        patch.eventDate = args.eventDate;
+      }
+    }
+
+    if (args.eventEndDate !== undefined) {
+      const nextEventEndDate = args.eventEndDate ?? undefined;
+      if (
+        nextEventEndDate !== undefined &&
+        (!Number.isInteger(nextEventEndDate) || nextEventEndDate <= 0)
+      ) {
+        return invalidRequest("eventEndDate must be a positive ms-epoch timestamp or null");
+      }
+      if (nextEventEndDate !== event.eventEndDate) {
+        patch.eventEndDate = nextEventEndDate;
+      }
+    }
+
+    const resolvedEventDate = patch.eventDate ?? event.eventDate;
+    const resolvedEventEndDate = "eventEndDate" in patch ? patch.eventEndDate : event.eventEndDate;
+    if (resolvedEventEndDate !== undefined && resolvedEventEndDate <= resolvedEventDate) {
+      return invalidRequest("eventEndDate must be after eventDate");
+    }
+
+    if (args.maxAttendees !== undefined) {
+      if (!Number.isInteger(args.maxAttendees) || args.maxAttendees < 1) {
+        return invalidRequest("maxAttendees must be an integer of at least 1");
+      }
+      if (args.maxAttendees !== (event.maxAttendees ?? 1)) {
+        patch.maxAttendees = args.maxAttendees;
+      }
+    }
+
+    const applyNullableStringField = (
+      fieldName: "secondaryTitle" | "description" | "eventTimezone" | "flyerUrl",
+      submittedValue: string | null | undefined,
+    ): ApiWriteFailure | null => {
+      if (submittedValue === undefined) {
+        return null;
+      }
+      const nextValue = submittedValue === null ? undefined : submittedValue.trim() || undefined;
+      if (fieldName === "flyerUrl" && nextValue !== undefined) {
+        try {
+          const parsedUrl = new URL(nextValue);
+          if (parsedUrl.protocol !== "https:") {
+            return invalidRequest("flyerUrl must be an https:// URL");
+          }
+        } catch {
+          return invalidRequest("flyerUrl must be a valid URL");
+        }
+      }
+      if (nextValue !== event[fieldName]) {
+        patch[fieldName] = nextValue;
+      }
+      return null;
+    };
+
+    for (const [fieldName, submittedValue] of [
+      ["secondaryTitle", args.secondaryTitle],
+      ["description", args.description],
+      ["eventTimezone", args.eventTimezone],
+      ["flyerUrl", args.flyerUrl],
+    ] as const) {
+      const fieldFailure = applyNullableStringField(fieldName, submittedValue);
+      if (fieldFailure) {
+        return fieldFailure;
+      }
+    }
+
+    // A no-op update patches nothing and therefore emits no webhook,
+    // so consumers mirroring event.updated can't echo their own writes.
+    if (Object.keys(patch).length > 0) {
+      patch.updatedAt = Date.now();
+      await ctx.db.patch(event._id, patch);
+    }
+
+    const updatedEvent = await ctx.db.get(event._id);
+    return {
+      ok: true as const,
+      changed: Object.keys(patch).length > 0,
+      event: await buildApiEventSummary(ctx, updatedEvent ?? event),
     };
   },
 });

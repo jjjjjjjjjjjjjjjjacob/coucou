@@ -14,7 +14,7 @@ import { useQuery } from "convex/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
+import { TenancyList } from "@/components/admin/tenancy-list";
 import { buildWorkspaceOperationPath, getCoucouOrganizationSlug } from "@/lib/workspace-config";
 
 function formatRelative(timestamp: number): string {
@@ -61,116 +61,29 @@ export default function CoucouAdminPage() {
   const attentionFlags = useQuery(api.workspaces.listAttentionFlags);
   const pendingApplications = useQuery(api.workspaces.listPendingApplications);
 
-  const houseCount = tenancies?.totalCount ?? 0;
+  const partnerCount = tenancies?.totalCount ?? 0;
   const flagCount = attentionFlags?.length ?? 0;
   const pendingCount = pendingApplications?.length ?? 0;
   const tenantMemberships = memberships.filter(
     (membership) => membership.organization.slug?.toLowerCase() !== getCoucouOrganizationSlug(),
   );
 
-  const formatPlanCell = (row: TenancyRow): string => {
-    if (!row.plan) return row.kind ?? "—";
-    return row.plan.tier;
-  };
-
-  const formatMrrCell = (row: TenancyRow): string => {
-    if (!row.plan?.priceCents) return "—";
-    return `$${(row.plan.priceCents / 100).toLocaleString()}`;
-  };
-
-  const tenancyColumns: AdminDataTableColumn<TenancyRow>[] = [
-    {
-      key: "name",
-      label: "Name",
-      width: "22%",
-      render: (row) => (
-        <Link
-          href={buildWorkspaceOperationPath(row.slug, "host")}
-          style={{ color: "var(--tt-fg)" }}
-          className="hover:underline"
-        >
-          {row.name}
-        </Link>
-      ),
-    },
-    {
-      key: "plan",
-      label: "Plan",
-      width: "10%",
-      render: formatPlanCell,
-      cellStyle: () => ({ color: "var(--tt-fg-dim)" }),
-    },
-    {
-      key: "domain",
-      label: "Domain",
-      width: "20%",
-      render: (row) => row.primaryDomain ?? "—",
-      cellStyle: () => ({ color: "var(--tt-fg-dim)" }),
-    },
-    {
-      key: "events",
-      label: "Events",
-      width: "8%",
-      render: (row) => row.eventCount,
-      cellStyle: () => ({ color: "var(--tt-fg-dim)" }),
-    },
-    {
-      key: "guests",
-      label: "Guests",
-      width: "8%",
-      render: (row) => row.guestCount,
-      cellStyle: () => ({ color: "var(--tt-fg-dim)" }),
-    },
-    {
-      key: "mrr",
-      label: "MRR",
-      width: "10%",
-      render: formatMrrCell,
-      cellStyle: () => ({ color: "var(--tt-fg-dim)" }),
-    },
-    {
-      key: "status",
-      label: "Status",
-      width: "10%",
-      alignRight: true,
-      render: (row) => row.plan?.billingStatus ?? "ok",
-      cellStyle: (row) => ({
-        color: row.plan?.billingStatus === "overdue" ? "var(--tt-fg)" : "var(--tt-fg-dim)",
-      }),
-    },
-    {
-      key: "open",
-      label: "",
-      width: "12%",
-      alignRight: true,
-      render: (row) => (
-        <Link
-          href={buildWorkspaceOperationPath(row.slug, "host")}
-          className="hover:underline"
-          style={{ color: "var(--tt-fg)" }}
-        >
-          Open
-        </Link>
-      ),
-    },
-  ];
-
   return (
     <>
       <AdminHeader
         eyebrow="Tenancies"
         title={
-          houseCount === 0
-            ? "No houses yet."
-            : houseCount === 1
-              ? "One house."
-              : `${houseCount} houses.`
+          partnerCount === 0
+            ? "No partners yet."
+            : partnerCount === 1
+              ? "One partner."
+              : `${partnerCount} partners.`
         }
         status={<span>· all systems nominal</span>}
       />
 
       <KpiRow columns={5}>
-        <Kpi label="Active" value={houseCount} />
+        <Kpi label="Active" value={partnerCount} />
         <Kpi label="Routed · 30d" value="—" />
         <Kpi label="MRR" value="—" />
         <Kpi label="Flags" value={flagCount} />
@@ -199,13 +112,11 @@ export default function CoucouAdminPage() {
       </AdminSection>
 
       <AdminSection
-        title="Houses"
+        title="Partners"
         meta={tenancies?.totalCount ? `${tenancies.totalCount} active` : undefined}
       >
-        <AdminDataTable<TenancyRow>
-          columns={tenancyColumns}
+        <TenancyList
           rows={tenancies?.page as TenancyRow[] | undefined}
-          rowKey={(row) => row._id}
           search={{
             value: search,
             onChange: (value) => {
@@ -224,7 +135,6 @@ export default function CoucouAdminPage() {
             totalCount: tenancies?.totalCount,
           }}
           emptyMessage="No workspaces yet."
-          onRowClick={(row) => router.push(buildWorkspaceOperationPath(row.slug, "host"))}
         />
       </AdminSection>
 

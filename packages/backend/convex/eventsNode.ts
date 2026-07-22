@@ -36,6 +36,7 @@ const HEX_COLOR_PATTERN = /^#(?:[0-9A-Fa-f]{6})$/;
 const eventUnsetFieldValidator = v.union(
   v.literal("secondaryTitle"),
   v.literal("productionCompany"),
+  v.literal("eventEndDate"),
   v.literal("flyerStorageId"),
   v.literal("guestPortalImageStorageId"),
   v.literal("guestPortalLinkLabel"),
@@ -247,6 +248,7 @@ export const create = action({
     guestPortalLinkLabel: v.optional(v.string()),
     guestPortalLinkUrl: v.optional(v.string()),
     eventDate: v.number(),
+    eventEndDate: v.optional(v.number()),
     eventTimezone: v.optional(v.string()),
     status: v.optional(eventStatusValidator),
     maxAttendees: v.optional(v.number()),
@@ -393,6 +395,7 @@ export const create = action({
       guestPortalLinkLabel: normalizedGuestPortalLinkLabel,
       guestPortalLinkUrl: normalizedGuestPortalLinkUrl,
       eventDate: args.eventDate,
+      eventEndDate: args.eventEndDate,
       eventTimezone: args.eventTimezone,
       status: eventStatus,
       maxAttendees: args.maxAttendees ?? 1,

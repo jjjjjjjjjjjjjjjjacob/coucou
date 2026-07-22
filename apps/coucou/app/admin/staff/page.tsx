@@ -3,10 +3,24 @@
 import { api } from "@convex/_generated/api";
 import { AdminEmptyState, AdminHeader, AdminSection, Kpi, KpiRow } from "@coucou/ui/admin";
 import { useMutation, useQuery } from "convex/react";
+import { Building2, Mail, Phone, UserCog } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/admin-data-table";
+import {
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+} from "@/components/ui/context-menu";
 import { Select, SelectOption } from "@/components/ui/select";
+import { copyTextWithToast } from "@/lib/clipboard";
+import { buildWorkspaceOperationPath } from "@/lib/workspace-config";
 
 interface MembershipRow {
   _id: string;
@@ -42,6 +56,7 @@ function buildDisplayName(row: MembershipRow): string {
 }
 
 export default function AdminStaffPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [cursor, setCursor] = useState<string | null>(null);
@@ -55,6 +70,81 @@ export default function AdminStaffPage() {
   });
 
   const updateRole = useMutation(api.orgMemberships.updateMembershipRole);
+
+  const handleRoleChange = async (row: MembershipRow, nextRole: string) => {
+    try {
+      await updateRole({
+        clerkUserId: row.clerkUserId,
+        organizationId: row.organizationId,
+        role: nextRole,
+      });
+      toast.success(`Role updated to ${nextRole}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed");
+    }
+  };
+
+  const renderMembershipContextMenu = (row: MembershipRow) => (
+    <ContextMenuContent className="w-56 border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)] shadow-[var(--shadow-card)]">
+      {row.workspace ? (
+        <ContextMenuItem
+          onSelect={() =>
+            row.workspace && router.push(buildWorkspaceOperationPath(row.workspace.slug, "host"))
+          }
+        >
+          <Building2 className="h-4 w-4" />
+          Open {row.workspace.name}
+        </ContextMenuItem>
+      ) : null}
+
+      <ContextMenuSub>
+        <ContextMenuSubTrigger>
+          <UserCog className="h-4 w-4" />
+          Set role
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent className="w-44 border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
+          <ContextMenuRadioGroup
+            value={row.role}
+            onValueChange={(nextRole) => void handleRoleChange(row, nextRole)}
+          >
+            {ROLE_OPTIONS.map((role) => (
+              <ContextMenuRadioItem key={role} value={role}>
+                {role}
+              </ContextMenuRadioItem>
+            ))}
+          </ContextMenuRadioGroup>
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+
+      {row.email || row.phone ? (
+        <ContextMenuSeparator className="bg-[var(--border-subtle)]" />
+      ) : null}
+
+      {row.email ? (
+        <ContextMenuItem
+          onSelect={(selectEvent) => {
+            selectEvent.preventDefault();
+            void copyTextWithToast(row.email ?? "", "Email copied");
+          }}
+        >
+          <Mail className="h-4 w-4" />
+          Copy email
+        </ContextMenuItem>
+      ) : null}
+
+      {row.phone ? (
+        <ContextMenuItem
+          onSelect={(selectEvent) => {
+            selectEvent.preventDefault();
+            void copyTextWithToast(row.phone ?? "", "Phone copied");
+          }}
+        >
+          <Phone className="h-4 w-4" />
+          Copy phone
+        </ContextMenuItem>
+      ) : null}
+    </ContextMenuContent>
+  );
 
   const columns: AdminDataTableColumn<MembershipRow>[] = [
     {
@@ -87,26 +177,9 @@ export default function AdminStaffPage() {
       render: (row) => (
         <Select
           value={row.role}
-          onChange={async (event) => {
-            const next = event.target.value;
-            try {
-              await updateRole({
-                clerkUserId: row.clerkUserId,
-                organizationId: row.organizationId,
-                role: next,
-              });
-              toast.success(`Role updated to ${next}`);
-            } catch (error) {
-              toast.error(error instanceof Error ? error.message : "Failed");
-            }
-          }}
+          onChange={(event) => void handleRoleChange(row, event.target.value)}
           onClick={(event) => event.stopPropagation()}
-          className="h-7 border-0 bg-transparent text-[12px]"
-          style={{
-            borderBottom: "1px solid var(--tt-rule)",
-            borderRadius: 0,
-            color: "var(--tt-fg)",
-          }}
+          className="h-7 text-[12px]"
         >
           {ROLE_OPTIONS.includes(row.role) ? null : (
             <SelectOption value={row.role}>{row.role}</SelectOption>
@@ -179,12 +252,7 @@ export default function AdminStaffPage() {
                 setCursor(null);
                 setCursorStack([]);
               }}
-              className="h-8 border-0 bg-transparent text-[13px]"
-              style={{
-                borderBottom: "1px solid var(--tt-rule)",
-                borderRadius: 0,
-                color: "var(--tt-fg)",
-              }}
+              className="h-8 text-[13px]"
             >
               <SelectOption value="all">All roles</SelectOption>
               {ROLE_OPTIONS.map((role) => (
@@ -209,6 +277,7 @@ export default function AdminStaffPage() {
               description="As soon as users join a workspace's Clerk organization they'll appear here."
             />
           }
+          renderRowContextMenu={renderMembershipContextMenu}
         />
       </AdminSection>
     </>

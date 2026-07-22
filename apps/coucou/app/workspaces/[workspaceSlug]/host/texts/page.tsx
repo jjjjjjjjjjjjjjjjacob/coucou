@@ -16,6 +16,7 @@ import {
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -305,30 +306,28 @@ export default function TextsPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-7rem)] flex-1 flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Texts</h2>
-          <p className="text-muted-foreground">
-            Per-event SMS threads with guests, reply actions, and delivery history.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            setSearchQuery("");
-            setSelectedThreadId(null);
-          }}
-        >
-          <RefreshCw className="h-4 w-4" />
-          Reset view
-        </Button>
-      </div>
-
-      <div className="grid min-h-[40rem] flex-1 gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col rounded-lg border border-border bg-card">
-          <div className="shrink-0 space-y-3 border-b border-border p-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <DashboardTitleBar
+        title="Texts"
+        subtitle="Per-event SMS threads with guests, reply actions, and delivery history."
+        secondaryAction={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setSearchQuery("");
+              setSelectedThreadId(null);
+            }}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Reset view
+          </Button>
+        }
+        breadcrumb={[{ label: "Workspace" }]}
+      />
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)]">
+          <div className="shrink-0 space-y-3 border-b border-[var(--border-subtle)] p-3">
             <Select
               value={selectedEventId ?? ""}
               onValueChange={(value) => {
@@ -382,8 +381,8 @@ export default function TextsPage() {
                     className={cn(
                       "mb-2 w-full rounded-md border p-3 text-left transition-colors",
                       isSelected
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-background hover:bg-secondary/60",
+                        ? "border-[var(--border-strong)] bg-[var(--surface-3)]"
+                        : "border-[var(--border-subtle)] bg-[var(--surface-1)] hover:bg-[var(--surface-3)]",
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -416,12 +415,12 @@ export default function TextsPage() {
           </div>
         </aside>
 
-        <section className="flex min-h-0 flex-col rounded-lg border border-border bg-card">
+        <section className="flex min-h-0 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)]">
           {!selectedThreadId || !selectedThread ? (
             <EmptyThreadState />
           ) : (
             <>
-              <div className="shrink-0 border-b border-border px-4 py-3">
+              <div className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <h3 className="truncate text-base font-semibold">
@@ -440,14 +439,14 @@ export default function TextsPage() {
                   </Badge>
                 </div>
                 {!selectedThread.canSend && selectedThread.sendDisabledReason ? (
-                  <div className="mt-3 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  <div className="mt-3 flex items-center gap-2 rounded-md border border-[var(--status-pending)]/30 bg-[var(--status-pending-bg)] px-3 py-2 text-xs text-[var(--status-pending)]">
                     <AlertCircle className="h-4 w-4" />
                     {selectedThread.sendDisabledReason}
                   </div>
                 ) : null}
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto bg-secondary/20 px-3 py-4 lg:px-5">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--surface-1)] px-3 py-4 lg:px-5">
                 {threadDetail?.messages.length === 0 ? (
                   <div className="py-16 text-center text-sm text-muted-foreground">
                     No messages recorded in this thread yet.
@@ -462,7 +461,7 @@ export default function TextsPage() {
                 )}
               </div>
 
-              <div className="shrink-0 border-t border-border p-3">
+              <div className="shrink-0 border-t border-[var(--border-subtle)] p-3">
                 <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
                   <span>
                     Manual Twilio SMS

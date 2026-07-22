@@ -18,6 +18,8 @@ import {
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DashboardTitleBar } from "@/components/dashboard-title-bar";
+import { PageToolbar } from "@/components/page-toolbar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +31,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectOption } from "@/components/ui/select";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { formatEventTitleInline } from "@/lib/event-display";
 import type { Event, TextBlast, TextBlastStatus } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
@@ -57,7 +59,7 @@ function getBlastTargetEventIds(blast: TextBlast): Id<"events">[] {
     : [blast.eventId];
 }
 
-function getStatusIcon(status: TextBlastStatus) {
+function _getStatusIcon(status: TextBlastStatus) {
   switch (status) {
     case "draft":
       return <Clock className="h-4 w-4" />;
@@ -72,21 +74,35 @@ function getStatusIcon(status: TextBlastStatus) {
   }
 }
 
-function getStatusBadgeProps(status: TextBlastStatus): {
-  variant: NonNullable<BadgeProps["variant"]>;
-  label: string;
-} {
+function getStatusBadgeVariant(
+  status: TextBlastStatus,
+): "draft" | "published" | "denied" | "pending" {
   switch (status) {
     case "draft":
-      return { variant: "secondary", label: "Draft" };
-    case "sending":
-      return { variant: "default", label: "Sending" };
+      return "draft";
     case "sent":
-      return { variant: "success", label: "Sent" };
+      return "published";
     case "failed":
-      return { variant: "destructive", label: "Failed" };
+      return "denied";
+    case "sending":
+      return "pending";
     default:
-      return { variant: "secondary", label: status };
+      return "draft";
+  }
+}
+
+function getStatusLabel(status: TextBlastStatus): string {
+  switch (status) {
+    case "draft":
+      return "Draft";
+    case "sending":
+      return "Sending";
+    case "sent":
+      return "Sent";
+    case "failed":
+      return "Failed";
+    default:
+      return status;
   }
 }
 
@@ -134,7 +150,6 @@ export default function TextBlastsPage() {
   const [dialogMode, setDialogMode] = useState<"full" | "replyActions">("full");
   const [sendingBlastId, setSendingBlastId] = useState<Id<"textBlasts"> | null>(null);
 
-  // Get unique sender names for filter dropdown
   const uniqueSenders = useMemo(() => {
     if (!textBlasts) return [];
     const senderMap = new Map<string, string>();
@@ -159,7 +174,6 @@ export default function TextBlastsPage() {
     if (!textBlasts) return [];
 
     let filtered = textBlasts.filter((blast) => {
-      // Search filter
       const targetEvents = getBlastTargetEventIds(blast)
         .map((eventId) => eventsMap.get(eventId))
         .filter((event): event is Event => event !== undefined);
@@ -179,16 +193,13 @@ export default function TextBlastsPage() {
         return false;
       }
 
-      // Status filter
       if (filterBy !== "all" && blast.status !== filterBy) return false;
 
-      // Sent by filter
       if (sentByFilter !== "all" && blast.sentBy !== sentByFilter) return false;
 
       return true;
     });
 
-    // Sort
     filtered = [...filtered].sort((a, b) => {
       switch (sortBy) {
         case "name":
@@ -263,91 +274,134 @@ export default function TextBlastsPage() {
   };
 
   return (
-    <div className="flex-1 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Text Blasts</h2>
-          <p className="text-muted-foreground">Send bulk SMS messages to event attendees</p>
+    <div className="flex-1 space-y-5">
+      <DashboardTitleBar
+        title="Text Blasts"
+        subtitle="Send bulk SMS messages to event attendees"
+        action={
+          <Button onClick={handleCreateNew}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Text Blast
+          </Button>
+        }
+        breadcrumb={[{ label: "Workspace" }]}
+      />
+      <PageToolbar
+        mobileFilterContent={
+          <>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-secondary)]">Event</label>
+              <Select
+                value={selectedEventId}
+                onValueChange={(value) => {
+                  setSelectedEventId(value);
+                  setSentByFilter("all");
+                }}
+              >
+                <SelectOption value="all">All Events</SelectOption>
+                {eventsSorted.map((event) => (
+                  <SelectOption key={event._id} value={event._id}>
+                    {formatEventTitleInline(event)}
+                  </SelectOption>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-secondary)]">Status</label>
+              <Select
+                value={filterBy}
+                onValueChange={(value) => setFilterBy(value as FilterOption)}
+              >
+                <SelectOption value="all">All Statuses</SelectOption>
+                <SelectOption value="draft">Drafts</SelectOption>
+                <SelectOption value="sent">Sent</SelectOption>
+                <SelectOption value="failed">Failed</SelectOption>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-secondary)]">Sort</label>
+              <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortOption)}>
+                <SelectOption value="date">Sort by Date</SelectOption>
+                <SelectOption value="name">Sort by Name</SelectOption>
+                <SelectOption value="recipients">Sort by Recipients</SelectOption>
+              </Select>
+            </div>
+          </>
+        }
+      >
+        <Select
+          value={selectedEventId}
+          onValueChange={(value) => {
+            setSelectedEventId(value);
+            setSentByFilter("all");
+          }}
+          className="hidden w-56 sm:inline-flex"
+        >
+          <SelectOption value="all">All Events</SelectOption>
+          {eventsSorted.map((event) => (
+            <SelectOption key={event._id} value={event._id}>
+              {formatEventTitleInline(event)}
+            </SelectOption>
+          ))}
+        </Select>
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--text-secondary)]" />
+          <Input
+            placeholder="Search text blasts..."
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            className="pl-8"
+          />
         </div>
-        <Button onClick={handleCreateNew}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Text Blast
-        </Button>
-      </div>
-
-      {/* Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="flex flex-col sm:flex-row gap-2 flex-1 flex-wrap">
-          {/* Event Selector */}
+        <Select
+          value={filterBy}
+          onValueChange={(value) => setFilterBy(value as FilterOption)}
+          className="hidden w-44 sm:inline-flex"
+        >
+          <SelectOption value="all">All Statuses</SelectOption>
+          <SelectOption value="draft">Drafts</SelectOption>
+          <SelectOption value="sent">Sent</SelectOption>
+          <SelectOption value="failed">Failed</SelectOption>
+        </Select>
+        {uniqueSenders.length > 1 ? (
           <Select
-            value={selectedEventId}
-            onValueChange={(value) => {
-              setSelectedEventId(value);
-              setSentByFilter("all");
-            }}
+            value={sentByFilter}
+            onValueChange={(value) => setSentByFilter(value)}
+            className="hidden w-44 sm:inline-flex"
           >
-            <SelectOption value="all">All Events</SelectOption>
-            {eventsSorted.map((event) => (
-              <SelectOption key={event._id} value={event._id}>
-                {formatEventTitleInline(event)}
+            <SelectOption value="all">All Hosts</SelectOption>
+            {uniqueSenders.map(({ sentById, sentByName }) => (
+              <SelectOption key={sentById} value={sentById}>
+                {sentByName}
               </SelectOption>
             ))}
           </Select>
+        ) : null}
+        <Select
+          value={sortBy}
+          onValueChange={(value) => setSortBy(value as SortOption)}
+          className="hidden w-44 sm:inline-flex"
+        >
+          <SelectOption value="date">Sort by Date</SelectOption>
+          <SelectOption value="name">Sort by Name</SelectOption>
+          <SelectOption value="recipients">Sort by Recipients</SelectOption>
+        </Select>
+      </PageToolbar>
 
-          {/* Search */}
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search text blasts..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8"
-            />
-          </div>
-
-          {/* Status Filter */}
-          <Select value={filterBy} onValueChange={(value) => setFilterBy(value as FilterOption)}>
-            <SelectOption value="all">All Statuses</SelectOption>
-            <SelectOption value="draft">Drafts</SelectOption>
-            <SelectOption value="sent">Sent</SelectOption>
-            <SelectOption value="failed">Failed</SelectOption>
-          </Select>
-
-          {/* Sent By Filter */}
-          {uniqueSenders.length > 1 && (
-            <Select value={sentByFilter} onValueChange={(value) => setSentByFilter(value)}>
-              <SelectOption value="all">All Hosts</SelectOption>
-              {uniqueSenders.map(({ sentById, sentByName }) => (
-                <SelectOption key={sentById} value={sentById}>
-                  {sentByName}
-                </SelectOption>
-              ))}
-            </Select>
-          )}
-
-          {/* Sort */}
-          <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortOption)}>
-            <SelectOption value="date">Sort by Date</SelectOption>
-            <SelectOption value="name">Sort by Name</SelectOption>
-            <SelectOption value="recipients">Sort by Recipients</SelectOption>
-          </Select>
-        </div>
-      </div>
-
-      {/* Text Blasts Grid */}
       {filteredAndSortedBlasts.length === 0 ? (
-        <Card>
+        <Card className="border-[var(--border-subtle)] bg-[var(--surface-2)] shadow-[var(--shadow-card)]">
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <Send className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No text blasts found</h3>
-            <p className="text-muted-foreground text-center mb-4">
+            <Send className="mb-4 h-12 w-12 text-[var(--text-secondary)]" />
+            <h3 className="mb-2 text-lg font-semibold text-[var(--text-primary)]">
+              No text blasts found
+            </h3>
+            <p className="mb-4 max-w-md text-center text-[var(--text-secondary)]">
               {searchQuery || filterBy !== "all" || sentByFilter !== "all"
                 ? "Try adjusting your search or filters"
                 : "Create your first text blast to send SMS messages to event attendees"}
             </p>
             <Button onClick={handleCreateNew}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="mr-2 h-4 w-4" />
               Create Text Blast
             </Button>
           </CardContent>
@@ -359,23 +413,28 @@ export default function TextBlastsPage() {
               .map((eventId) => eventsMap.get(eventId))
               .filter((event): event is Event => event !== undefined)
               .map((event) => formatEventTitleInline(event));
-            const statusBadge = getStatusBadgeProps(blast.status);
+            const statusVariant = getStatusBadgeVariant(blast.status);
             return (
-              <Card key={blast._id} className="hover:shadow-md transition-shadow">
+              <Card
+                key={blast._id}
+                className="border-[var(--border-subtle)] bg-[var(--surface-2)] shadow-[var(--shadow-card)] transition-shadow hover:shadow-lg"
+              >
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
-                    <div className="space-y-1 flex-1">
-                      <CardTitle className="text-lg line-clamp-1">{blast.name}</CardTitle>
-                      <p className="text-sm text-muted-foreground line-clamp-1">
+                    <div className="flex-1 space-y-1">
+                      <CardTitle className="line-clamp-1 text-lg text-[var(--text-primary)]">
+                        {blast.name}
+                      </CardTitle>
+                      <p className="line-clamp-1 text-sm text-[var(--text-secondary)]">
                         Sent by {blast.sentByName}
                       </p>
-                      {targetEventLabels.length > 0 && (
-                        <p className="text-xs text-muted-foreground line-clamp-1">
+                      {targetEventLabels.length > 0 ? (
+                        <p className="line-clamp-1 text-xs text-[var(--text-tertiary)]">
                           {targetEventLabels.length === 1
                             ? targetEventLabels[0]
                             : `${targetEventLabels.length} events`}
                         </p>
-                      )}
+                      ) : null}
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -383,32 +442,33 @@ export default function TextBlastsPage() {
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
                         {(blast.status === "draft" || blast.status === "failed") && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <DropdownMenuItem
-                                onSelect={(e) => e.preventDefault()}
+                                onSelect={(selectEvent) => selectEvent.preventDefault()}
                                 disabled={sendingBlastId === blast._id}
+                                className="focus:bg-[var(--surface-3)] focus:text-[var(--text-primary)]"
                               >
-                                <Send className="h-4 w-4 mr-2" />
+                                <Send className="mr-2 h-4 w-4" />
                                 {sendingBlastId === blast._id ? "Sending..." : "Send Now"}
                               </DropdownMenuItem>
                             </AlertDialogTrigger>
-                            <AlertDialogContent>
+                            <AlertDialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Send Text Blast</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to send &ldquo;
-                                  {blast.name}&rdquo; to {blast.recipientCount} recipient
-                                  {blast.recipientCount !== 1 ? "s" : ""}?
-                                  {blast.status === "failed" &&
-                                    " This will retry the failed blast."}
-                                  This action cannot be undone.
+                                <AlertDialogDescription className="text-[var(--text-secondary)]">
+                                  Are you sure you want to send \u201c{blast.name}\u201d to{" "}
+                                  {blast.recipientCount} recipient
+                                  {blast.recipientCount !== 1 ? "s" : ""}? This action cannot be
+                                  undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogCancel className="border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)] hover:bg-[var(--surface-3)]">
+                                  Cancel
+                                </AlertDialogCancel>
                                 <AlertDialogAction onClick={() => handleSendBlast(blast._id)}>
                                   Send {blast.recipientCount} Message
                                   {blast.recipientCount !== 1 ? "s" : ""}
@@ -418,73 +478,56 @@ export default function TextBlastsPage() {
                           </AlertDialog>
                         )}
                         <DropdownMenuItem
-                          onClick={() => {
+                          onSelect={() => {
                             setSelectedBlastForDialog(blast._id);
                             setDialogMode("full");
                             setIsDialogOpen(true);
                           }}
+                          className="focus:bg-[var(--surface-3)] focus:text-[var(--text-primary)]"
                         >
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => {
+                          onSelect={() => {
                             setSelectedBlastForDialog(blast._id);
                             setDialogMode("replyActions");
                             setIsDialogOpen(true);
                           }}
+                          className="focus:bg-[var(--surface-3)] focus:text-[var(--text-primary)]"
                         >
-                          <MessageSquare className="h-4 w-4 mr-2" />
+                          <MessageSquare className="mr-2 h-4 w-4" />
                           Manage Reply Actions
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDuplicateBlast(blast._id)}>
-                          <Copy className="h-4 w-4 mr-2" />
+                        <DropdownMenuItem
+                          onSelect={() => handleDuplicateBlast(blast._id)}
+                          className="focus:bg-[var(--surface-3)] focus:text-[var(--text-primary)]"
+                        >
+                          <Copy className="mr-2 h-4 w-4" />
                           Duplicate
                         </DropdownMenuItem>
                         {blast.status !== "sending" && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <DropdownMenuItem
-                                onSelect={(e) => e.preventDefault()}
-                                className="text-destructive"
+                                onSelect={(selectEvent) => selectEvent.preventDefault()}
+                                className="text-destructive focus:bg-[var(--surface-3)] focus:text-destructive"
                               >
-                                <Trash2 className="h-4 w-4 mr-2" />
+                                <Trash2 className="mr-2 h-4 w-4" />
                                 Delete
                               </DropdownMenuItem>
                             </AlertDialogTrigger>
-                            <AlertDialogContent>
+                            <AlertDialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Delete Text Blast</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {blast.status === "sent" ? (
-                                    <>
-                                      Are you sure you want to delete &ldquo;
-                                      {blast.name}&rdquo;? This text blast was already sent to{" "}
-                                      {blast.sentCount} recipient
-                                      {blast.sentCount !== 1 ? "s" : ""}.
-                                      <br />
-                                      <br />
-                                      This will remove the text blast record from your dashboard,
-                                      but it will not affect messages that were already sent. This
-                                      action cannot be undone.
-                                    </>
-                                  ) : blast.status === "failed" ? (
-                                    <>
-                                      Are you sure you want to delete &ldquo;
-                                      {blast.name}&rdquo;? This text blast failed to send.
-                                      <br />
-                                      <br />
-                                      This action cannot be undone.
-                                    </>
-                                  ) : (
-                                    <>
-                                      Are you sure you want to delete &ldquo;
-                                      {blast.name}&rdquo;? This action cannot be undone.
-                                    </>
-                                  )}
+                                <AlertDialogDescription className="text-[var(--text-secondary)]">
+                                  Are you sure you want to delete \u201c{blast.name}\u201d? This
+                                  action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogCancel className="border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)] hover:bg-[var(--surface-3)]">
+                                  Cancel
+                                </AlertDialogCancel>
                                 <AlertDialogAction
                                   onClick={() => handleDeleteBlast(blast._id)}
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -501,25 +544,28 @@ export default function TextBlastsPage() {
                 </CardHeader>
 
                 <CardContent className="space-y-3">
-                  {/* Status Badge */}
                   <div className="flex items-center gap-2">
-                    <Badge variant={statusBadge.variant} className="flex items-center gap-1">
-                      {getStatusIcon(blast.status)}
-                      {statusBadge.label}
-                    </Badge>
+                    <StatusBadge
+                      variant={statusVariant}
+                      label={getStatusLabel(blast.status)}
+                      showDot={false}
+                    />
                     {(blast.replyActionCount ?? 0) > 0 && (
-                      <Badge variant="outline" className="flex items-center gap-1">
+                      <Badge
+                        variant="outline"
+                        className="flex items-center gap-1 border-[var(--border-subtle)] text-[var(--text-secondary)]"
+                      >
                         <MessageSquare className="h-3 w-3" />
                         {blast.replyActionCount} repl{blast.replyActionCount === 1 ? "y" : "ies"}
                       </Badge>
                     )}
                   </div>
 
-                  {/* Message Preview */}
-                  <p className="text-sm line-clamp-3 text-muted-foreground">{blast.message}</p>
+                  <p className="line-clamp-3 text-sm text-[var(--text-secondary)]">
+                    {blast.message}
+                  </p>
 
-                  {/* Stats */}
-                  <div className="flex justify-between text-xs text-muted-foreground">
+                  <div className="flex justify-between text-xs text-[var(--text-secondary)]">
                     <span>
                       {blast.recipientCount} recipient
                       {blast.recipientCount !== 1 ? "s" : ""}
@@ -531,21 +577,27 @@ export default function TextBlastsPage() {
                     </span>
                   </div>
 
-                  {/* Delivery Stats for Sent Blasts */}
                   {blast.status === "sent" && (
                     <div className="flex justify-between text-xs">
-                      <span className="text-green-600">✓ {blast.sentCount} delivered</span>
+                      <span className="text-[var(--status-approved)]">
+                        ✓ {blast.sentCount} delivered
+                      </span>
                       {blast.failedCount > 0 && (
-                        <span className="text-red-600">✗ {blast.failedCount} failed</span>
+                        <span className="text-[var(--status-denied)]">
+                          ✗ {blast.failedCount} failed
+                        </span>
                       )}
                     </div>
                   )}
 
-                  {/* Target Lists */}
                   <div className="flex flex-wrap gap-1">
                     {blast.targetLists.map((listKey) => (
-                      <Badge key={listKey} variant="outline" className="text-xs">
-                        {listKey.toUpperCase()}
+                      <Badge
+                        key={listKey}
+                        variant="secondary"
+                        className="text-xs bg-[var(--surface-3)] text-[var(--text-primary)]"
+                      >
+                        {listKey}
                       </Badge>
                     ))}
                   </div>
@@ -556,7 +608,6 @@ export default function TextBlastsPage() {
         </div>
       )}
 
-      {/* Text Blast Dialog */}
       <TextBlastDialog
         isOpen={isDialogOpen}
         onClose={() => {

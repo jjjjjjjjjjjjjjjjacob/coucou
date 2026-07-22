@@ -6,6 +6,7 @@ export const CLERK_SATELLITE_SYNC_VALUE = "false";
 const localClientSiteOrigins: Partial<Record<SiteKey, string>> = {
   dojo: "http://localhost:5678",
   "club-chlorine": "http://localhost:5679",
+  "danza-organica": "http://localhost:5677",
 };
 
 export function getSiteOrigin(siteConfiguration: SiteConfiguration): string {
