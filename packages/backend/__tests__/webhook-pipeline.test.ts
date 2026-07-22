@@ -75,6 +75,10 @@ afterEach(() => {
   } else {
     process.env.DEV_TWILIO_ENABLED = previousDevTwilioEnabled;
   }
+  // Discard any timers a test left behind — a leaked scheduled-function
+  // timer firing during a later test runs against a torn-down convex-test
+  // instance and corrupts its global function stack.
+  vi.clearAllTimers();
   vi.useRealTimers();
 });
 
@@ -96,8 +100,35 @@ function createHostIdentity(subject: string): Partial<UserIdentity> {
   } as unknown as Partial<UserIdentity>;
 }
 
+// Yield real macrotasks so a just-fired scheduled function can progress
+// through its async work (dynamic module imports, db writes) before the
+// drain loop inspects state. setImmediate is not covered by bun's fake
+// timers, so this settles without advancing the fake clock.
+async function settleAsyncWork() {
+  for (let yieldIteration = 0; yieldIteration < 20; yieldIteration++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
 async function drainScheduledFunctions(testBackend: TestBackend) {
-  await testBackend.finishAllScheduledFunctions(vi.runAllTimers);
+  // Advance ONE timer per iteration instead of vi.runAllTimers: firing every
+  // pending timer at once runs scheduled functions concurrently, and
+  // convex-test's global function stack then resolves a function's module
+  // against whichever component happens to be executing (e.g. the
+  // rsvpAggregate component), throwing "Could not find module". Stepping a
+  // single timer keeps scheduled functions serialized. The fake-timer count
+  // is the loop condition — a scheduled follow-up (webhook retry) registers
+  // a new timer before the previous one settles out of it.
+  for (let drainIteration = 0; drainIteration < 500; drainIteration++) {
+    await settleAsyncWork();
+    await testBackend.finishInProgressScheduledFunctions();
+    await settleAsyncWork();
+    if (vi.getTimerCount() === 0) {
+      return;
+    }
+    vi.advanceTimersToNextTimer();
+  }
+  throw new Error("drainScheduledFunctions: too many iterations");
 }
 
 async function seedWorkspace(testBackend: TestBackend) {
