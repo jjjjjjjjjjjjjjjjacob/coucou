@@ -43,10 +43,16 @@ interface CapturedWebhookRequest {
 let capturedWebhookRequests: CapturedWebhookRequest[] = [];
 let webhookResponseStatus = 200;
 const originalFetch = globalThis.fetch;
+let previousDevTwilioEnabled: string | undefined;
 
 beforeEach(() => {
   capturedWebhookRequests = [];
   webhookResponseStatus = 200;
+  // Approval flows schedule notifications:sendApprovalSms, which throws when
+  // Twilio env vars are absent (CI). Disable the Twilio path so scheduled
+  // drains stay deterministic regardless of environment.
+  previousDevTwilioEnabled = process.env.DEV_TWILIO_ENABLED;
+  process.env.DEV_TWILIO_ENABLED = "false";
   vi.useFakeTimers();
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : String(input);
@@ -64,6 +70,11 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (previousDevTwilioEnabled === undefined) {
+    delete process.env.DEV_TWILIO_ENABLED;
+  } else {
+    process.env.DEV_TWILIO_ENABLED = previousDevTwilioEnabled;
+  }
   vi.useRealTimers();
 });
 
