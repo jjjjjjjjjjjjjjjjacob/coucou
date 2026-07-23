@@ -434,8 +434,9 @@ export default function DevelopersDocsPage() {
                   <InlineCode>attendees</InlineCode> is capped by the event&apos;s per-RSVP maximum.
                 </>,
                 <>
-                  New RSVPs start as <InlineCode>approvalStatus: "pending"</InlineCode> — approval
-                  stays in this dashboard.
+                  New RSVPs start as <InlineCode>approvalStatus: "pending"</InlineCode> unless the
+                  selected list still has automatic approvals available. Automatic approvals return
+                  the issued ticket in the same response.
                 </>,
               ]}
             />

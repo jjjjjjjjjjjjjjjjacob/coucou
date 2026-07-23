@@ -15,6 +15,7 @@ type ListPayload = {
   generateQR?: boolean;
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
 };
 
 type CreateEventActionArgs = {
@@ -41,6 +42,8 @@ type CredentialQueryResult = Array<{
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
+  autoApprovedCount?: number;
 }>;
 
 const actionCalls: ActionCall[] = [];
@@ -407,6 +410,7 @@ describe("event confirmation texts", () => {
         generateQR: true,
         sendQrOnApproval: true,
         approvalMessage: "Press approved.",
+        autoApproveLimit: 25,
       },
     ];
 
@@ -438,6 +442,7 @@ describe("event confirmation texts", () => {
         generateQR: true,
         sendQrOnApproval: true,
         approvalMessage: "Press approved.",
+        autoApproveLimit: 25,
       });
     });
   });
@@ -467,6 +472,7 @@ describe("event confirmation texts", () => {
         generateQR: true,
         sendQrOnApproval: true,
         approvalMessage: "Press approved.",
+        autoApproveLimit: 25,
       },
     ];
 
@@ -504,6 +510,7 @@ describe("event confirmation texts", () => {
         generateQR: true,
         sendQrOnApproval: true,
         approvalMessage: "Press approved.",
+        autoApproveLimit: 25,
       });
     });
     expect(actionCalls.some((actionCall) => actionCall.actionName === "update")).toBe(false);
@@ -531,6 +538,9 @@ describe("event confirmation texts", () => {
     await screen.findByRole("heading", { name: "Guest page" });
     await clickContinue();
     await screen.findByRole("heading", { name: "Lists & access" });
+    fireEvent.change(screen.getByLabelText("Auto-approve limit for vip"), {
+      target: { value: "50" },
+    });
     await clickContinue();
     await screen.findByRole("heading", { name: "Messages" });
 
@@ -585,6 +595,7 @@ describe("event confirmation texts", () => {
         sendQrOnApproval: true,
         approvalMessage:
           "Hi {{ firstName }}, approved for {{eventName}} at {{eventLocation}} on {{eventDate}}. Ticket: {{qrCodeUrl}}",
+        autoApproveLimit: 50,
       });
     });
   });
@@ -600,6 +611,7 @@ describe("event confirmation texts", () => {
         generateQR: true,
         sendQrOnApproval: true,
         approvalMessage: "Hi {{firstName}}, VIP for {{eventName}}.",
+        autoApproveLimit: 40,
       },
       {
         _id: "credential_ga",
@@ -637,6 +649,61 @@ describe("event confirmation texts", () => {
       expect(screen.getByText("Hi John, VIP for Spring Gala.")).toBeInTheDocument();
       expect(screen.getByText("Legacy Main Room copy.")).toBeInTheDocument();
       expect(screen.getAllByLabelText("Attach generated QR code")[0]).toBeChecked();
+      expect(screen.getByDisplayValue("40")).toBeInTheDocument();
+    });
+  });
+
+  it("saves an updated per-list auto-approve limit", async () => {
+    actionHookFallbackHandlers = [mockUpdateActionHandler, mockGetStoredPasswordsActionHandler];
+    actionHookFallbackIndex = 0;
+    credentialQueryResult = [
+      {
+        _id: "credential_vip",
+        listKey: "vip",
+        hasPassword: false,
+        generateQR: false,
+        autoApproveLimit: 10,
+      },
+    ];
+    const event = {
+      _id: "event_1",
+      name: "Spring Gala",
+      hosts: ["Host One"],
+      location: "Main Room",
+      eventDate: Date.now() + 60_000,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    } as unknown as Event;
+
+    render(
+      <EditEventDialog
+        event={event}
+        open
+        initialTab="lists"
+        onOpenChange={() => {}}
+        showTrigger={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Auto-approve first")).toHaveValue(10);
+    });
+    fireEvent.change(screen.getByLabelText("Auto-approve first"), {
+      target: { value: "50" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Lists & Access" }));
+
+    await waitFor(() => {
+      const updateCall = actionCalls.find((actionCall) => actionCall.actionName === "update");
+      expect(updateCall).toBeDefined();
+      const updateArgs = updateCall?.args as { lists: ListPayload[] };
+      expect(updateArgs.lists).toContainEqual(
+        expect.objectContaining({
+          id: "credential_vip",
+          listKey: "vip",
+          autoApproveLimit: 50,
+        }),
+      );
     });
   });
 

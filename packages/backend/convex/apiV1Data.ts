@@ -18,6 +18,7 @@ import {
   insertRsvpIntoAggregate,
   updateRsvpInAggregate,
 } from "./lib/rsvpAggregate";
+import { tryAutoApproveRsvp } from "./lib/rsvpApproval";
 import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./lib/rsvpStatus";
 import { buildRsvpTicketSnapshot } from "./lib/rsvpTicketSnapshot";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
@@ -592,6 +593,9 @@ export const createRsvpFromApiClient = internalMutation({
         const aggregateRsvp = await ctx.db.get(existingRsvp._id);
         if (aggregateRsvp) {
           await updateRsvpInAggregate(ctx, oldRsvp, aggregateRsvp);
+          if (existingApprovalStatus !== "approved" && oldRsvp.listKey !== aggregateRsvp.listKey) {
+            await tryAutoApproveRsvp(ctx, aggregateRsvp);
+          }
         }
       }
 
@@ -665,8 +669,11 @@ export const createRsvpFromApiClient = internalMutation({
     });
 
     const insertedRsvp = await ctx.db.get(rsvpId);
+    let finalizedRsvp = insertedRsvp;
     if (insertedRsvp) {
       await insertRsvpIntoAggregate(ctx, insertedRsvp);
+      await tryAutoApproveRsvp(ctx, insertedRsvp);
+      finalizedRsvp = await ctx.db.get(rsvpId);
     }
 
     if (insertedRsvp && sanitizedSocialProfiles.length > 0) {
@@ -695,7 +702,7 @@ export const createRsvpFromApiClient = internalMutation({
       rsvp: await buildApiRsvpSummary(
         ctx,
         event,
-        insertedRsvp as Doc<"rsvps">,
+        finalizedRsvp as Doc<"rsvps">,
         !matchedRealClerkUserId,
       ),
     };

@@ -136,6 +136,183 @@ describe("guest RSVP handoff", () => {
     expect(handoff?.canAutoSendCode).toBe(false);
   });
 
+  it("auto-approves only the first configured submissions across signed-in and guest web flows", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    const listCredentialId = await testBackend.run(async (databaseContext) => {
+      const now = Date.now();
+      await databaseContext.db.insert("rsvps", {
+        eventId,
+        clerkUserId: "manually_approved_user",
+        listKey: "ga",
+        userName: "Manual Guest",
+        shareContact: false,
+        attendees: 1,
+        status: "approved",
+        approvalStatus: "approved",
+        attendanceStatus: "yes",
+        createdAt: now,
+        updatedAt: now,
+      });
+      return await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "ga",
+        autoApproveLimit: 2,
+        createdAt: now,
+      });
+    });
+
+    const firstSubmission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "First",
+      lastName: "Guest",
+      phone: "+13104996271",
+      shareContact: false,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+    const signedInBackend = testBackend.withIdentity(
+      createPhoneIdentity("signed_in_auto_approval", "+13104996272"),
+    );
+    await signedInBackend.mutation(api.rsvps.submitRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Second",
+      lastName: "Guest",
+      phone: "+13104996272",
+      shareContact: false,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+    const thirdSubmission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Third",
+      lastName: "Guest",
+      phone: "+13104996273",
+      shareContact: false,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    await testBackend.run(async (databaseContext) => {
+      const firstRsvp = await databaseContext.db.get(firstSubmission.rsvpId);
+      const thirdRsvp = await databaseContext.db.get(thirdSubmission.rsvpId);
+      const allRsvps = await databaseContext.db.query("rsvps").collect();
+      const signedInRsvp = allRsvps.find(
+        (rsvp) => rsvp.eventId === eventId && rsvp.clerkUserId === "signed_in_auto_approval",
+      );
+      const listCredential = await databaseContext.db.get(listCredentialId);
+      const automaticApprovals = (await databaseContext.db.query("approvals").collect()).filter(
+        (approval) => approval.decidedBy === "system:auto-approve",
+      );
+      const redemptions = await databaseContext.db.query("redemptions").collect();
+
+      expect(firstRsvp?.approvalStatus).toBe("approved");
+      expect(firstRsvp?.ticketStatus).toBe("issued");
+      expect(signedInRsvp?.approvalStatus).toBe("approved");
+      expect(signedInRsvp?.ticketStatus).toBe("issued");
+      expect(thirdRsvp?.approvalStatus).toBe("pending");
+      expect(thirdRsvp?.ticketStatus).toBe("not-issued");
+      expect(listCredential?.autoApprovedCount).toBe(2);
+      expect(automaticApprovals).toHaveLength(2);
+      expect(redemptions).toHaveLength(2);
+    });
+  });
+
+  it("does not reopen an automatic-approval slot when an approved RSVP is deleted", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "ga",
+        autoApproveLimit: 1,
+        createdAt: Date.now(),
+      });
+    });
+
+    const firstSubmission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "First",
+      lastName: "Guest",
+      phone: "+13104996274",
+      shareContact: false,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.delete(firstSubmission.rsvpId);
+    });
+    const secondSubmission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Later",
+      lastName: "Guest",
+      phone: "+13104996275",
+      shareContact: false,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    const secondRsvp = await getRsvp(testBackend, secondSubmission.rsvpId);
+    expect(secondRsvp?.approvalStatus).toBe("pending");
+  });
+
+  it("does not exceed the list limit when submissions arrive concurrently", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    const listCredentialId = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "ga",
+        autoApproveLimit: 1,
+        createdAt: Date.now(),
+      });
+    });
+
+    const submissionArguments = [
+      { firstName: "Concurrent", lastName: "One", phone: "+13104996276" },
+      { firstName: "Concurrent", lastName: "Two", phone: "+13104996277" },
+    ] as const;
+    const submissionResults = await Promise.all(
+      submissionArguments.map((submission) =>
+        testBackend.mutation(api.rsvps.submitGuestRequest, {
+          eventId,
+          siteKey: "club-chlorine",
+          listKey: "ga",
+          ...submission,
+          shareContact: false,
+          attendees: 1,
+          customFields: {},
+          socialProfiles: [],
+        }),
+      ),
+    );
+
+    await testBackend.run(async (databaseContext) => {
+      const submittedRsvps = await Promise.all(
+        submissionResults.map((submission) => databaseContext.db.get(submission.rsvpId)),
+      );
+      const listCredential = await databaseContext.db.get(listCredentialId);
+      expect(submittedRsvps.filter((rsvp) => rsvp?.approvalStatus === "approved")).toHaveLength(1);
+      expect(submittedRsvps.filter((rsvp) => rsvp?.approvalStatus === "pending")).toHaveLength(1);
+      expect(listCredential?.autoApprovedCount).toBe(1);
+    });
+  });
+
   it("marks known handoff phones as auto-sendable", async () => {
     const testBackend = setupTestBackend();
     const eventId = await seedActiveEvent(testBackend);

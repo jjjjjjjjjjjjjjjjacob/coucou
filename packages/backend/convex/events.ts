@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { internalMutation, mutation, query } from "./functions";
+import { validateAutoApproveLimit } from "./lib/autoApproval";
 import { generateEventShortId } from "./lib/codeGenerators";
 import { applyEventUnsetFields } from "./lib/eventPatch";
 import {
@@ -270,6 +271,7 @@ export const insertWithCreds = mutation({
         defersQrDelivery: v.optional(v.boolean()),
         sendQrOnApproval: v.optional(v.boolean()),
         approvalMessage: v.optional(v.string()),
+        autoApproveLimit: v.optional(v.number()),
       }),
     ),
   },
@@ -278,6 +280,9 @@ export const insertWithCreds = mutation({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
+    for (const credential of args.creds) {
+      validateAutoApproveLimit(credential.autoApproveLimit);
+    }
 
     const now = Date.now();
     const shortId = await generateUniqueEventShortId(ctx);
@@ -529,6 +534,7 @@ export const duplicateToDraft = mutation({
         defersQrDelivery: sourceCredential.defersQrDelivery,
         sendQrOnApproval: sourceCredential.sendQrOnApproval,
         approvalMessage: sourceCredential.approvalMessage,
+        autoApproveLimit: sourceCredential.autoApproveLimit,
         createdAt: now,
       });
     }
@@ -851,8 +857,10 @@ export const addListCredential = mutation({
     defersQrDelivery: v.optional(v.boolean()),
     sendQrOnApproval: v.optional(v.boolean()),
     approvalMessage: v.optional(v.string()),
+    autoApproveLimit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    validateAutoApproveLimit(args.autoApproveLimit);
     await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
@@ -873,6 +881,7 @@ export const addListCredential = mutation({
       defersQrDelivery: args.defersQrDelivery,
       sendQrOnApproval: args.sendQrOnApproval,
       approvalMessage: args.approvalMessage,
+      autoApproveLimit: args.autoApproveLimit,
       createdAt: now,
     });
     return { ok: true as const };
@@ -892,9 +901,11 @@ export const updateListCredential = mutation({
       defersQrDelivery: v.optional(v.boolean()),
       sendQrOnApproval: v.optional(v.boolean()),
       approvalMessage: v.optional(v.string()),
+      autoApproveLimit: v.optional(v.number()),
     }),
   },
   handler: async (ctx, { id, patch, siteKey, workspaceSlug }) => {
+    validateAutoApproveLimit(patch.autoApproveLimit);
     const credential = await ctx.db.get(id);
     if (!credential) throw new NotFoundError("List credential");
 
@@ -953,9 +964,11 @@ export const updateListCredentialWithCascade = mutation({
       defersQrDelivery: v.optional(v.boolean()),
       sendQrOnApproval: v.optional(v.boolean()),
       approvalMessage: v.optional(v.string()),
+      autoApproveLimit: v.optional(v.number()),
     }),
   },
   handler: async (ctx, { id, patch, siteKey, workspaceSlug }) => {
+    validateAutoApproveLimit(patch.autoApproveLimit);
     const credential = await ctx.db.get(id);
     if (!credential) throw new NotFoundError("List credential");
 

@@ -46,11 +46,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel, FieldSwitchRow } from "@/components/ui/field";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldSwitchRow,
+  FieldTitle,
+} from "@/components/ui/field";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { parseAutoApproveLimitInput } from "@/lib/auto-approval";
 import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
 import {
   createTimestamp,
@@ -350,7 +358,7 @@ export default function EditEventDialog({
   const [saving, setSaving] = React.useState(false);
   const update = useAction(api.eventsNode.update);
   const creds = useQuery(
-    api.credentials.getCredsForEvent,
+    api.credentials.getHostCredsForEvent,
     open && workspaceScope
       ? {
           eventId: event._id,
@@ -514,6 +522,10 @@ export default function EditEventDialog({
               ? !credential.defersQrDelivery
               : undefined,
         approvalMessage: credential.approvalMessage ?? event.approvalMessage ?? "",
+        autoApproveLimit:
+          typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
+            ? String(credential.autoApproveLimit)
+            : "",
       }));
       setLists(nextLists);
       setSavedLists(nextLists.map((list) => ({ ...list })));
@@ -549,6 +561,7 @@ export default function EditEventDialog({
         generateQR: false,
         sendQrOnApprovalOverride: undefined,
         approvalMessage: "",
+        autoApproveLimit: "",
       },
     ]);
   const setList = <Key extends keyof ListCredentialEdit>(
@@ -799,6 +812,7 @@ export default function EditEventDialog({
         } else {
           password = undefined;
         }
+        const autoApproveLimit = parseAutoApproveLimitInput(list.autoApproveLimit);
         return {
           id: list.id as Id<"listCredentials"> | undefined,
           listKey: list.listKey.trim(),
@@ -806,6 +820,7 @@ export default function EditEventDialog({
           generateQR: list.generateQR,
           sendQrOnApproval: list.sendQrOnApprovalOverride,
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
+          autoApproveLimit: autoApproveLimit ?? 0,
         };
       });
       const nextCustomFields = sanitizeCustomFieldsForSubmit(customFields);
@@ -1068,7 +1083,8 @@ export default function EditEventDialog({
                 </h3>
                 <p className="text-pretty text-sm text-[var(--text-secondary)]">
                   Leave a password blank for an open list — the first list with no password receives
-                  RSVPs that skip the password step.
+                  RSVPs that skip the password step. Auto-approval applies only to the first
+                  submissions on that list; manual approvals do not count toward the limit.
                 </p>
               </div>
               {lists.map((listPassword, index) => (
@@ -1149,6 +1165,38 @@ export default function EditEventDialog({
                           </Field>
                         </div>
                       ) : null}
+                      <Field
+                        orientation="horizontal"
+                        className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3.5"
+                      >
+                        <FieldContent>
+                          <FieldTitle>
+                            <label
+                              htmlFor={`edit-list-auto-approve-limit-${index}`}
+                              className="cursor-pointer"
+                            >
+                              Auto-approve first
+                            </label>
+                          </FieldTitle>
+                          <FieldDescription>
+                            Automatically approve this many submissions. Manual approvals do not
+                            count toward the limit.
+                          </FieldDescription>
+                        </FieldContent>
+                        <Input
+                          id={`edit-list-auto-approve-limit-${index}`}
+                          type="number"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
+                          placeholder="Off"
+                          value={listPassword.autoApproveLimit}
+                          onChange={(event) =>
+                            setList(index, "autoApproveLimit", event.target.value)
+                          }
+                          className="w-24 shrink-0 text-right tabular-nums"
+                        />
+                      </Field>
                       <FieldSwitchRow
                         title="Generate QR codes"
                         description="Approved guests on this list receive a scannable door QR code."

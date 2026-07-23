@@ -14,6 +14,8 @@ function toPublicCredential(credential: {
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
+  autoApprovedCount?: number;
   createdAt: number;
 }) {
   return {
@@ -38,11 +40,15 @@ function toHostCredential(credential: {
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
+  autoApprovedCount?: number;
   createdAt: number;
 }) {
   return {
     ...toPublicCredential(credential),
     password: credential.password,
+    autoApproveLimit: credential.autoApproveLimit,
+    autoApprovedCount: credential.autoApprovedCount,
   };
 }
 

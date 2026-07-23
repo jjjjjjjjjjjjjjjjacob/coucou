@@ -195,6 +195,8 @@ export interface ListCredential {
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
+  autoApprovedCount?: number;
   createdAt: number;
 }
 
@@ -497,6 +499,7 @@ export interface ListCredentialEdit {
    */
   sendQrOnApprovalOverride?: boolean;
   approvalMessage: string;
+  autoApproveLimit: string;
 }
 
 // Credential from API response
@@ -510,6 +513,8 @@ export interface CredentialResponse {
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
+  autoApprovedCount?: number;
 }
 
 export interface DateTimePickerProps {
@@ -582,6 +587,7 @@ export interface ListCredentialInput {
    */
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
 }
 
 // API response types

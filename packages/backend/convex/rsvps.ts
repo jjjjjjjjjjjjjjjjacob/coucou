@@ -5,7 +5,7 @@ import { api, components } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
-import { generateRedemptionCode, generateRsvpHandoffToken } from "./lib/codeGenerators";
+import { generateRsvpHandoffToken } from "./lib/codeGenerators";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
 import { hashOpaqueValue, normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
@@ -23,6 +23,7 @@ import {
   insertRsvpIntoAggregate,
   updateRsvpInAggregate,
 } from "./lib/rsvpAggregate";
+import { applyApprovalStatusTransition, tryAutoApproveRsvp } from "./lib/rsvpApproval";
 import {
   buildRsvpFuzzySearchTerms,
   collectRsvpsMatchingFilters,
@@ -771,6 +772,7 @@ export const submitRequest = mutation({
       const newRsvp = await ctx.db.get(rsvpId);
       if (newRsvp) {
         await insertRsvpIntoAggregate(ctx, newRsvp);
+        await tryAutoApproveRsvp(ctx, newRsvp);
       }
     } else {
       // Prevent re-requesting the same denied list
@@ -829,6 +831,9 @@ export const submitRequest = mutation({
       const newRsvp = await ctx.db.get(existing._id);
       if (oldRsvp && newRsvp) {
         await updateRsvpInAggregate(ctx, oldRsvp, newRsvp);
+        if (resolveApprovalStatus(oldRsvp) !== "approved" && oldRsvp.listKey !== newRsvp.listKey) {
+          await tryAutoApproveRsvp(ctx, newRsvp);
+        }
       }
 
       if (args.smsConsent !== undefined) {
@@ -987,6 +992,7 @@ export const submitGuestRequest = mutation({
       const newRsvp = await ctx.db.get(rsvpId);
       if (newRsvp) {
         await insertRsvpIntoAggregate(ctx, newRsvp);
+        await tryAutoApproveRsvp(ctx, newRsvp);
       }
     } else {
       if (resolveApprovalStatus(existing) === "denied" && existing.listKey === args.listKey) {
@@ -1037,6 +1043,9 @@ export const submitGuestRequest = mutation({
       const newRsvp = await ctx.db.get(existing._id);
       if (oldRsvp && newRsvp) {
         await updateRsvpInAggregate(ctx, oldRsvp, newRsvp);
+        if (resolveApprovalStatus(oldRsvp) !== "approved" && oldRsvp.listKey !== newRsvp.listKey) {
+          await tryAutoApproveRsvp(ctx, newRsvp);
+        }
       }
     }
 
@@ -3376,156 +3385,6 @@ export const deleteRSVP = mutation({
     return { deleted: true };
   },
 });
-
-async function getRedemptionForRsvp(ctx: MutationCtx, rsvp: Doc<"rsvps">) {
-  return ctx.db
-    .query("redemptions")
-    .withIndex("by_event_user", (query) =>
-      query.eq("eventId", rsvp.eventId).eq("clerkUserId", rsvp.clerkUserId),
-    )
-    .unique();
-}
-
-async function patchRsvpAndSyncAggregate(
-  ctx: MutationCtx,
-  rsvpId: Id<"rsvps">,
-  patch: Partial<Doc<"rsvps">>,
-) {
-  const oldRsvp = await ctx.db.get(rsvpId);
-  if (!oldRsvp) {
-    throw new Error("RSVP not found");
-  }
-
-  await ctx.db.patch(rsvpId, patch);
-
-  const newRsvp = await ctx.db.get(rsvpId);
-  if (newRsvp) {
-    await updateRsvpInAggregate(ctx, oldRsvp, newRsvp);
-  }
-
-  return newRsvp;
-}
-
-async function applyApprovalStatusTransition(
-  ctx: MutationCtx,
-  {
-    rsvp,
-    nextApprovalStatus,
-    decidedBy,
-    now,
-  }: {
-    rsvp: Doc<"rsvps">;
-    nextApprovalStatus: ApprovalStatus;
-    decidedBy: string;
-    now: number;
-  },
-) {
-  const currentApprovalStatus = resolveApprovalStatus(rsvp);
-  if (currentApprovalStatus === nextApprovalStatus) {
-    return false;
-  }
-
-  const existingRedemption = await getRedemptionForRsvp(ctx, rsvp);
-
-  if (nextApprovalStatus === "pending") {
-    if (existingRedemption?.redeemedAt) {
-      throw new Error("Cannot move an RSVP with a redeemed ticket back to pending");
-    }
-
-    if (existingRedemption) {
-      await ctx.db.delete(existingRedemption._id);
-    }
-
-    await patchRsvpAndSyncAggregate(ctx, rsvp._id, {
-      status: "pending",
-      approvalStatus: "pending",
-      ticketStatus: "not-issued",
-      updatedAt: now,
-    });
-  } else if (nextApprovalStatus === "approved") {
-    let redemption = existingRedemption;
-    let nextTicketStatus: "issued" | "redeemed" = "issued";
-    if (!redemption) {
-      let code = "";
-      for (let attempt = 0; attempt < 10; attempt += 1) {
-        const candidateCode = generateRedemptionCode();
-        const duplicate = await ctx.db
-          .query("redemptions")
-          .withIndex("by_code", (queryBuilder) => queryBuilder.eq("code", candidateCode))
-          .unique();
-        if (!duplicate) {
-          code = candidateCode;
-          break;
-        }
-      }
-      if (!code) {
-        throw new Error("Could not generate unique redemption code");
-      }
-      const redemptionId = await ctx.db.insert("redemptions", {
-        eventId: rsvp.eventId,
-        clerkUserId: rsvp.clerkUserId,
-        listKey: rsvp.listKey,
-        code,
-        createdAt: now,
-        unredeemHistory: [],
-      });
-      redemption = await ctx.db.get(redemptionId);
-    } else {
-      nextTicketStatus = redemption.redeemedAt ? "redeemed" : "issued";
-      if (redemption.disabledAt || redemption.listKey !== rsvp.listKey) {
-        await ctx.db.patch(redemption._id, {
-          disabledAt: undefined,
-          listKey: rsvp.listKey,
-        });
-        redemption = await ctx.db.get(redemption._id);
-      }
-    }
-
-    await patchRsvpAndSyncAggregate(ctx, rsvp._id, {
-      status: "approved",
-      approvalStatus: "approved",
-      ticketStatus: nextTicketStatus,
-      updatedAt: now,
-    });
-    if (redemption && rsvp.shareContact && rsvp.listKey) {
-      await ctx.scheduler.runAfter(0, api.notifications.sendApprovalSms, {
-        eventId: rsvp.eventId,
-        clerkUserId: rsvp.clerkUserId,
-        listKey: rsvp.listKey,
-        code: redemption.code,
-        shareContact: rsvp.shareContact,
-      });
-    }
-  } else {
-    let nextTicketStatus: Doc<"rsvps">["ticketStatus"] = "not-issued";
-
-    if (existingRedemption) {
-      if (!existingRedemption.disabledAt) {
-        await ctx.db.patch(existingRedemption._id, { disabledAt: now });
-      }
-      nextTicketStatus = "disabled";
-    }
-
-    await patchRsvpAndSyncAggregate(ctx, rsvp._id, {
-      status: "denied",
-      approvalStatus: "denied",
-      ticketStatus: nextTicketStatus,
-      updatedAt: now,
-    });
-  }
-
-  await ctx.db.insert("approvals", {
-    eventId: rsvp.eventId,
-    rsvpId: rsvp._id,
-    clerkUserId: rsvp.clerkUserId,
-    listKey: rsvp.listKey,
-    decision: nextApprovalStatus,
-    decidedBy,
-    decidedAt: now,
-  });
-
-  return true;
-}
 
 // Complete RSVP update with approval and ticket status
 export const updateRsvpComplete = mutation({

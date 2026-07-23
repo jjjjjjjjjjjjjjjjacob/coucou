@@ -47,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { parseAutoApproveLimitInput } from "@/lib/auto-approval";
 import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
 import {
   createTimestamp,
@@ -74,6 +75,7 @@ type ListRow = {
   shouldGenerateQrCode: boolean;
   sendQrOnApprovalOverride?: boolean;
   approvalMessage: string;
+  autoApproveLimit: string;
 };
 
 type WizardField = Path<EventFormData>;
@@ -131,6 +133,7 @@ type DraftListPayload = {
   generateQR?: boolean;
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
 };
 
 type DraftPayload = {
@@ -224,7 +227,16 @@ function validateLists(lists: ListRow[]): string[] {
   if (filtered.length === 0) {
     return ["Add at least one list before continuing"];
   }
-  return [];
+  return filtered.flatMap((list) => {
+    try {
+      parseAutoApproveLimitInput(list.autoApproveLimit);
+      return [];
+    } catch {
+      return [
+        `${list.listKey.trim() || "List"} auto-approve limit must be a positive whole number`,
+      ];
+    }
+  });
 }
 
 function validateColors(values: EventFormData): string[] {
@@ -278,6 +290,7 @@ function createListRows(listKeys: readonly string[]): ListRow[] {
     password: "",
     shouldGenerateQrCode: false,
     approvalMessage: "",
+    autoApproveLimit: "",
   }));
 }
 
@@ -289,7 +302,8 @@ function areListRowsPristine(currentLists: readonly ListRow[], defaultListKeys: 
       list.password === "" &&
       list.shouldGenerateQrCode === false &&
       list.sendQrOnApprovalOverride === undefined &&
-      list.approvalMessage === ""
+      list.approvalMessage === "" &&
+      list.autoApproveLimit === ""
     );
   });
 }
@@ -605,6 +619,10 @@ export default function EventCreateWizard() {
                 ? !credential.defersQrDelivery
                 : undefined,
           approvalMessage: credential.approvalMessage ?? "",
+          autoApproveLimit:
+            typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
+              ? String(credential.autoApproveLimit)
+              : "",
         })),
       );
     } else {
@@ -772,6 +790,7 @@ export default function EventCreateWizard() {
       .map((list) => {
         const listKey = list.listKey.trim();
         const trimmedPassword = list.password?.trim() ?? "";
+        const autoApproveLimit = parseAutoApproveLimitInput(list.autoApproveLimit);
         return {
           id: credentialIdByKey.get(listKey),
           listKey,
@@ -779,6 +798,7 @@ export default function EventCreateWizard() {
           generateQR: list.shouldGenerateQrCode,
           sendQrOnApproval: list.sendQrOnApprovalOverride,
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
+          autoApproveLimit: autoApproveLimit ?? 0,
         };
       });
 
@@ -896,13 +916,17 @@ export default function EventCreateWizard() {
         .map((name) => name.trim())
         .filter(Boolean);
       const listsFiltered = lists
-        .map((list) => ({
-          listKey: list.listKey.trim(),
-          password: list.password.trim(),
-          generateQR: list.shouldGenerateQrCode,
-          sendQrOnApproval: list.sendQrOnApprovalOverride,
-          approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
-        }))
+        .map((list) => {
+          const autoApproveLimit = parseAutoApproveLimitInput(list.autoApproveLimit);
+          return {
+            listKey: list.listKey.trim(),
+            password: list.password.trim(),
+            generateQR: list.shouldGenerateQrCode,
+            sendQrOnApproval: list.sendQrOnApprovalOverride,
+            approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
+            autoApproveLimit: autoApproveLimit ?? 0,
+          };
+        })
         .filter((list) => list.listKey);
       const themeBackground =
         normalizeHexColorInput(values.themeBackgroundColor) ??
@@ -1742,21 +1766,12 @@ function StepLists({
         shouldGenerateQrCode: false,
         sendQrOnApprovalOverride: undefined,
         approvalMessage: "",
+        autoApproveLimit: "",
       },
     ]);
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-[200px_1fr_80px_100px] items-baseline gap-4 border-b border-border/60 pb-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-        <span>List name</span>
-        <span>Password (optional)</span>
-        <span>QR</span>
-        <span className="text-right">Actions</span>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Leave password blank for an open list — the first list with no password receives RSVPs that
-        skip the password step.
-      </p>
       <label className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4">
         <Checkbox
           checked={sendQrOnApproval}
@@ -1785,9 +1800,24 @@ function StepLists({
           </span>
         </span>
       </label>
+      <div className="space-y-1">
+        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Guest lists</p>
+        <p className="text-xs text-muted-foreground">
+          Leave password blank for an open list — the first list with no password receives RSVPs
+          that skip the password step. Set an auto-approve limit to approve that list&apos;s first
+          submissions automatically; manual approvals do not count toward the limit.
+        </p>
+      </div>
+      <div className="grid grid-cols-[180px_1fr_140px_90px_90px] items-baseline gap-4 border-b border-border/60 pb-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        <span>List name</span>
+        <span>Password (optional)</span>
+        <span>Auto-approve first</span>
+        <span className="text-center">QR code</span>
+        <span className="text-right">Actions</span>
+      </div>
       {lists.map((list, index) => (
         <div key={index} className="space-y-3 border-b border-border/60 pb-6 last:border-b-0">
-          <div className="grid grid-cols-[200px_1fr_80px_100px] items-center gap-4">
+          <div className="grid grid-cols-[180px_1fr_140px_90px_90px] items-center gap-4">
             <Input
               placeholder="vip, ga, backstage"
               value={list.listKey}
@@ -1800,13 +1830,26 @@ function StepLists({
               onChange={(event) => update(index, "password", event.target.value)}
               className="h-10"
             />
-            <label className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              aria-label={`Auto-approve limit for ${list.listKey.trim() || `list ${index + 1}`}`}
+              placeholder="Off"
+              value={list.autoApproveLimit}
+              onChange={(event) => update(index, "autoApproveLimit", event.target.value)}
+              className="h-10"
+            />
+            <label className="flex cursor-pointer items-center justify-center gap-2 text-xs font-medium">
               <Checkbox
+                aria-label={`Generate QR code for ${list.listKey.trim() || `list ${index + 1}`}`}
                 checked={list.shouldGenerateQrCode}
                 onCheckedChange={(checked) =>
                   update(index, "shouldGenerateQrCode", Boolean(checked))
                 }
               />
+              <span>Generate</span>
             </label>
             <div className="flex justify-end">
               <Button
@@ -1821,12 +1864,12 @@ function StepLists({
             </div>
           </div>
           {list.shouldGenerateQrCode ? (
-            <div className="space-y-1">
+            <div className="grid gap-1 sm:grid-cols-[200px_minmax(0,1fr)] sm:items-center sm:gap-4">
               <label className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                 Send QR on approval (this list)
               </label>
               <Select
-                className="h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 w-full max-w-sm rounded-md border border-input bg-background px-3 text-sm"
                 value={overrideValueToOption(list.sendQrOnApprovalOverride)}
                 onValueChange={(value) =>
                   update(
@@ -1972,6 +2015,15 @@ function StepReview({
       stepIndex: 5,
       key: "Lists",
       value: filteredLists.length ? filteredLists.map((list) => list.listKey).join(", ") : "—",
+    },
+    {
+      stepIndex: 5,
+      key: "Auto-approval",
+      value:
+        filteredLists
+          .filter((list) => list.autoApproveLimit.trim())
+          .map((list) => `${list.listKey}: first ${list.autoApproveLimit}`)
+          .join(", ") || "Off",
     },
     {
       stepIndex: 5,

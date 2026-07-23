@@ -78,6 +78,7 @@ describe("Events Functions", () => {
           generateQR: true,
           sendQrOnApproval: true,
           approvalMessage: "Press approved.",
+          autoApproveLimit: 50,
         },
       ],
     });
@@ -101,6 +102,8 @@ describe("Events Functions", () => {
     expect(listCredentials[0]?.generateQR).toBe(true);
     expect(listCredentials[0]?.sendQrOnApproval).toBe(true);
     expect(listCredentials[0]?.approvalMessage).toBe("Press approved.");
+    expect(listCredentials[0]?.autoApproveLimit).toBe(50);
+    expect(listCredentials[0]?.autoApprovedCount).toBeUndefined();
   });
 
   it("keeps publishEvent strict for incomplete drafts", async () => {
@@ -175,6 +178,8 @@ describe("Events Functions", () => {
         generateQR: true,
         sendQrOnApproval: false,
         approvalMessage: "Press approved.",
+        autoApproveLimit: 50,
+        autoApprovedCount: 12,
         createdAt: now,
       });
       return eventId;
@@ -226,6 +231,8 @@ describe("Events Functions", () => {
     expect(duplicateCredentials[0]?.generateQR).toBe(true);
     expect(duplicateCredentials[0]?.sendQrOnApproval).toBe(false);
     expect(duplicateCredentials[0]?.approvalMessage).toBe("Press approved.");
+    expect(duplicateCredentials[0]?.autoApproveLimit).toBe(50);
+    expect(duplicateCredentials[0]?.autoApprovedCount).toBeUndefined();
   });
 
   it("should validate event record structure", () => {

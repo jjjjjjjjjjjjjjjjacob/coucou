@@ -112,6 +112,7 @@ async function seedListCredential(
     eventId: Id<"events">;
     listKey: string;
     password?: string;
+    autoApproveLimit?: number;
   },
 ) {
   return await testBackend.run(async (databaseContext) => {
@@ -120,6 +121,7 @@ async function seedListCredential(
       listKey: args.listKey,
       password: args.password,
       passwordNormalized: args.password?.trim().toLowerCase(),
+      autoApproveLimit: args.autoApproveLimit,
       createdAt: Date.now(),
     });
   });
@@ -152,6 +154,7 @@ async function seedRsvp(
     smsConsent?: boolean;
     customFieldValues?: Record<string, string>;
     createdAt?: number;
+    shareContact?: boolean;
   },
 ) {
   return await testBackend.run(async (databaseContext) => {
@@ -160,7 +163,7 @@ async function seedRsvp(
       clerkUserId: args.clerkUserId,
       listKey: args.listKey,
       userName: args.clerkUserId,
-      shareContact: true,
+      shareContact: args.shareContact ?? true,
       smsConsent: args.smsConsent ?? true,
       customFieldValues: args.customFieldValues,
       status: args.status ?? "approved",
@@ -542,6 +545,70 @@ describe("text blast recipient selection", () => {
     expect(conversationMessages.map((message) => message.direction)).toEqual(["inbound", "system"]);
     expect(conversationMessages[0]?.body).toBe("return");
     expect(conversationMessages[1]?.body).toContain("Reply action submitted");
+  });
+
+  it("auto-approves a text-reply RSVP when the target list has an available slot", async () => {
+    const testBackend = setupTestBackend();
+    const sourceEventId = await seedEvent(testBackend, "Auto Source Event");
+    const targetEventId = await seedEvent(testBackend, "Auto Target Event");
+    const targetListCredentialId = await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+      password: "auto",
+      autoApproveLimit: 1,
+    });
+    await seedUser(testBackend, "user_auto_reply", "555-555-0101", "Avery");
+    const sourceRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "user_auto_reply",
+      listKey: "vip",
+      shareContact: false,
+    });
+    const textBlastId = await seedTextBlast(testBackend, sourceEventId, "Auto reply blast");
+    await seedDelivery(testBackend, {
+      textBlastId,
+      phone: "555-555-0101",
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId: sourceRsvpId,
+      clerkUserId: "user_auto_reply",
+      listKey: "vip",
+    });
+    await seedReplyAction(testBackend, {
+      textBlastId,
+      replyCode: "AUTO",
+      targetEventId,
+      targetListKey: "ga",
+    });
+
+    const result = await testBackend.mutation(internal.textBlasts.processIncomingSmsReply, {
+      fromPhoneNumber: "555-555-0101",
+      messageBody: "AUTO",
+      messageSid: "SM_auto_reply",
+      receivedAt: Date.now(),
+    });
+
+    await testBackend.run(async (databaseContext) => {
+      const allRsvps = await databaseContext.db.query("rsvps").collect();
+      const targetRsvp = allRsvps.find(
+        (rsvp) => rsvp.eventId === targetEventId && rsvp.clerkUserId === "user_auto_reply",
+      );
+      const listCredential = await databaseContext.db.get(targetListCredentialId);
+      const allRedemptions = await databaseContext.db.query("redemptions").collect();
+      const redemption = allRedemptions.find(
+        (redemptionRecord) =>
+          redemptionRecord.eventId === targetEventId &&
+          redemptionRecord.clerkUserId === "user_auto_reply",
+      );
+
+      expect(result.status).toBe("submitted");
+      expect(result.shouldRespond).toBe(false);
+      expect(result.responseMessage).toBeUndefined();
+      expect(targetRsvp?.approvalStatus).toBe("approved");
+      expect(targetRsvp?.ticketStatus).toBe("issued");
+      expect(listCredential?.autoApprovedCount).toBe(1);
+      expect(redemption).not.toBeNull();
+    });
   });
 
   it("uses custom RSVP confirmation text for matching reply action submissions", async () => {

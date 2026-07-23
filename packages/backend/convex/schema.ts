@@ -274,6 +274,16 @@ export default defineSchema({
      */
     sendQrOnApproval: v.optional(v.boolean()),
     approvalMessage: v.optional(v.string()), // per-list approval SMS copy
+    /**
+     * Number of RSVP submissions that may be approved automatically for this list.
+     * Undefined or zero disables automatic approval.
+     */
+    autoApproveLimit: v.optional(v.number()),
+    /**
+     * Lifetime number of automatic-approval slots consumed for this list.
+     * Manual approvals and later RSVP status changes never modify this counter.
+     */
+    autoApprovedCount: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_event", ["eventId"]) // lookup for a given event

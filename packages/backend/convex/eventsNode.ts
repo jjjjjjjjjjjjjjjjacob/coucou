@@ -7,6 +7,7 @@ import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action } from "./_generated/server";
+import { validateAutoApproveLimit } from "./lib/autoApproval";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
 import {
   type EventActInput,
@@ -98,6 +99,7 @@ const listUpdateValidator = v.object({
   defersQrDelivery: v.optional(v.boolean()),
   sendQrOnApproval: v.optional(v.boolean()),
   approvalMessage: v.optional(v.string()),
+  autoApproveLimit: v.optional(v.number()),
 });
 
 const eventUpdateActionArgs = {
@@ -119,6 +121,8 @@ type HostCredentialData = {
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
+  autoApprovedCount?: number;
   createdAt: number;
 };
 
@@ -262,6 +266,7 @@ export const create = action({
         generateQR: v.optional(v.boolean()),
         sendQrOnApproval: v.optional(v.boolean()),
         approvalMessage: v.optional(v.string()),
+        autoApproveLimit: v.optional(v.number()),
       }),
     ),
     customFields: v.optional(
@@ -315,7 +320,8 @@ export const create = action({
     }
 
     const derivedCredentials: CredentialData[] = args.lists.map(
-      ({ listKey, password, generateQR, sendQrOnApproval, approvalMessage }) => {
+      ({ listKey, password, generateQR, sendQrOnApproval, approvalMessage, autoApproveLimit }) => {
+        validateAutoApproveLimit(autoApproveLimit);
         const trimmedPassword = password.trim();
         const hasPassword = trimmedPassword.length > 0;
         return {
@@ -327,6 +333,7 @@ export const create = action({
           generateQR,
           sendQrOnApproval,
           approvalMessage: sanitizeOptionalApprovalMessage(approvalMessage),
+          autoApproveLimit,
         };
       },
     );
@@ -591,6 +598,7 @@ export const update = action({
     }
 
     for (const list of lists) {
+      validateAutoApproveLimit(list.autoApproveLimit);
       const currentCredential = list.id ? existingById.get(list.id) : undefined;
       const trimmedPassword = list.password?.trim() ?? "";
       const wantsPasswordUpdate = list.password !== undefined;
@@ -598,6 +606,7 @@ export const update = action({
       const nextDefersQrDelivery = list.defersQrDelivery;
       const nextSendQrOnApproval = list.sendQrOnApproval;
       const nextApprovalMessage = sanitizeOptionalApprovalMessage(list.approvalMessage);
+      const nextAutoApproveLimit = list.autoApproveLimit;
       const credentialPatch: ListCredentialPatch = {};
 
       if (currentCredential) {
@@ -627,6 +636,9 @@ export const update = action({
         if (nextApprovalMessage !== currentCredential.approvalMessage) {
           credentialPatch.approvalMessage = nextApprovalMessage;
         }
+        if (nextAutoApproveLimit !== currentCredential.autoApproveLimit) {
+          credentialPatch.autoApproveLimit = nextAutoApproveLimit;
+        }
         if (Object.keys(credentialPatch).length > 0) {
           await ctx.runMutation(api.events.updateListCredential, {
             id: currentCredential._id,
@@ -650,6 +662,7 @@ export const update = action({
           defersQrDelivery: nextDefersQrDelivery,
           sendQrOnApproval: nextSendQrOnApproval,
           approvalMessage: nextApprovalMessage,
+          autoApproveLimit: nextAutoApproveLimit,
         });
       }
     }

@@ -49,6 +49,7 @@ import {
   statusesForFilter,
 } from "./lib/recipientFiltering";
 import { insertRsvpIntoAggregate } from "./lib/rsvpAggregate";
+import { tryAutoApproveRsvp } from "./lib/rsvpApproval";
 import {
   type ApprovalStatus,
   resolveApprovalStatus,
@@ -3038,19 +3039,23 @@ export const processIncomingSmsReply = internalMutation({
     }
 
     const destinationRsvp = await ctx.db.get(destinationRsvpId);
+    let wasAutomaticallyApproved = false;
     if (destinationRsvp) {
       try {
         await insertRsvpIntoAggregate(ctx, destinationRsvp);
       } catch (error) {
         console.error("[processIncomingSmsReply] Failed to sync RSVP aggregate", error);
       }
+      wasAutomaticallyApproved = await tryAutoApproveRsvp(ctx, destinationRsvp);
     }
 
-    const responseMessage = formatRsvpConfirmationMessage(targetEvent, {
-      firstName: user?.firstName,
-      lastName: user?.lastName,
-      fullName: userName || sourceRsvp.userName,
-    });
+    const responseMessage = wasAutomaticallyApproved
+      ? undefined
+      : formatRsvpConfirmationMessage(targetEvent, {
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          fullName: userName || sourceRsvp.userName,
+        });
     const replyAttemptId = await logReplyAttempt(ctx, {
       textBlastId: candidate.blast._id,
       textBlastRecipientId: candidate.delivery._id,

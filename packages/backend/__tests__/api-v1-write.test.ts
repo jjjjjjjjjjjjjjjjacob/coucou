@@ -14,6 +14,7 @@ const convexModules = {
   "../convex/apiV1.ts": () => import("../convex/apiV1"),
   "../convex/apiV1Data.ts": () => import("../convex/apiV1Data"),
   "../convex/http.ts": () => import("../convex/http"),
+  "../convex/notifications.ts": () => import("../convex/notifications"),
   "../convex/webhookDeliveries.ts": () => import("../convex/webhookDeliveries"),
   "../convex/webhookDispatch.ts": () => import("../convex/webhookDispatch"),
   "../convex/webhookEndpoints.ts": () => import("../convex/webhookEndpoints"),
@@ -95,7 +96,12 @@ async function seedWorkspace(testBackend: TestBackend, slug = WORKSPACE_SLUG) {
 
 async function seedEvent(
   testBackend: TestBackend,
-  options: { workspaceSlug?: string; shortId?: string; maxAttendees?: number } = {},
+  options: {
+    workspaceSlug?: string;
+    shortId?: string;
+    maxAttendees?: number;
+    autoApproveLimit?: number;
+  } = {},
 ): Promise<Id<"events">> {
   const eventId = await testBackend.run(async (databaseContext) => {
     return await databaseContext.db.insert("events", {
@@ -116,6 +122,7 @@ async function seedEvent(
     await databaseContext.db.insert("listCredentials", {
       eventId,
       listKey: "ga",
+      autoApproveLimit: options.autoApproveLimit,
       createdAt: Date.now(),
     });
   });
@@ -369,6 +376,58 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
       return await countRsvpsWithAggregate(databaseContext, storedRsvp?.eventId as Id<"events">);
     });
     expect(totalCount).toBe(1);
+  });
+
+  it("auto-approves only the configured number of partner API submissions", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend, { autoApproveLimit: 1 });
+    const plaintextKey = await issueApiKey(testBackend);
+    const originalDevTwilioEnabled = process.env.DEV_TWILIO_ENABLED;
+    process.env.DEV_TWILIO_ENABLED = "false";
+
+    try {
+      const firstResponse = await testBackend.fetch(
+        "/api/v1/events/evt-write-api/rsvps",
+        buildJsonRequest(plaintextKey, "POST", {
+          phone: "+15551230011",
+          name: "First Automatic Guest",
+          listKey: "ga",
+        }),
+      );
+      const secondResponse = await testBackend.fetch(
+        "/api/v1/events/evt-write-api/rsvps",
+        buildJsonRequest(plaintextKey, "POST", {
+          phone: "+15551230012",
+          name: "Later Pending Guest",
+          listKey: "ga",
+        }),
+      );
+      const firstBody = await firstResponse.json();
+      const secondBody = await secondResponse.json();
+
+      expect(firstResponse.status).toBe(201);
+      expect(firstBody.rsvp.approvalStatus).toBe("approved");
+      expect(firstBody.rsvp.ticket?.status).toBe("issued");
+      expect(secondResponse.status).toBe(201);
+      expect(secondBody.rsvp.approvalStatus).toBe("pending");
+      expect(secondBody.rsvp.ticket).toBeNull();
+
+      const listCredential = await testBackend.run(async (databaseContext) => {
+        const listCredentials = await databaseContext.db.query("listCredentials").collect();
+        return listCredentials.find(
+          (listCredential) => listCredential.eventId === eventId && listCredential.listKey === "ga",
+        );
+      });
+      expect(listCredential?.autoApprovedCount).toBe(1);
+      await drainScheduledFunctions(testBackend);
+    } finally {
+      if (originalDevTwilioEnabled === undefined) {
+        delete process.env.DEV_TWILIO_ENABLED;
+      } else {
+        process.env.DEV_TWILIO_ENABLED = originalDevTwilioEnabled;
+      }
+    }
   });
 
   it("attaches to an existing user matched by phone", async () => {

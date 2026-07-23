@@ -111,6 +111,7 @@ export type ListCredentialPatch = Partial<
     | "defersQrDelivery"
     | "sendQrOnApproval"
     | "approvalMessage"
+    | "autoApproveLimit"
   >
 >;
 
@@ -123,6 +124,7 @@ export type ListUpdate = {
   password?: string;
   generateQR?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
 };
 
 /**
@@ -139,4 +141,5 @@ export type CredentialData = {
    */
   sendQrOnApproval?: boolean;
   approvalMessage?: string;
+  autoApproveLimit?: number;
 };
