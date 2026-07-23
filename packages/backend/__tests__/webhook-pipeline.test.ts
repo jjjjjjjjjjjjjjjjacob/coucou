@@ -353,8 +353,6 @@ describe("webhook pipeline", () => {
     expect(capturedWebhookRequests).toHaveLength(0);
   });
 
-  // 30s timeout: the serialized drain steps ~10 timers with settling rounds
-  // between each, which can exceed bun's 5s default on slow CI runners.
   it("retries failed deliveries with backoff and marks them exhausted", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
@@ -363,7 +361,29 @@ describe("webhook pipeline", () => {
     webhookResponseStatus = 500;
 
     await submitGuestRsvp(testBackend, eventId, "(310) 499-6272");
-    await drainScheduledFunctions(testBackend);
+
+    const pendingDelivery = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("webhookDeliveries")
+        .withIndex("by_endpoint", (queryBuilder) =>
+          queryBuilder.eq("endpointId", endpoint.endpointId),
+        )
+        .unique();
+    });
+    if (!pendingDelivery) throw new Error("expected the emission to create a pending delivery");
+
+    // Drive the retry chain by invoking attemptDelivery directly instead of
+    // advancing fake timers through the drain: each recordDeliveryAttempt
+    // still schedules its follow-up via the scheduler (timers are discarded
+    // in afterEach), but direct invocation keeps the attempts serialized —
+    // timer-driven draining of this chain deadlocked convex-test's global
+    // function stack on CI. The 7th invocation must no-op because the
+    // delivery is already exhausted.
+    for (let attemptIndex = 0; attemptIndex < 7; attemptIndex++) {
+      await testBackend.action(internal.webhookDispatch.attemptDelivery, {
+        deliveryId: pendingDelivery._id,
+      });
+    }
 
     // 1 initial attempt + 5 retries
     expect(capturedWebhookRequests).toHaveLength(6);
@@ -384,7 +404,7 @@ describe("webhook pipeline", () => {
     });
     expect(endpointDocument?.consecutiveFailureCount).toBe(1);
     expect(endpointDocument?.isActive).toBe(true);
-  }, 30_000);
+  });
 
   it("auto-disables an endpoint after sustained failures", async () => {
     const testBackend = setupTestBackend();
