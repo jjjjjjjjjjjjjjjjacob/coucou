@@ -353,6 +353,8 @@ describe("webhook pipeline", () => {
     expect(capturedWebhookRequests).toHaveLength(0);
   });
 
+  // 30s timeout: the serialized drain steps ~10 timers with settling rounds
+  // between each, which can exceed bun's 5s default on slow CI runners.
   it("retries failed deliveries with backoff and marks them exhausted", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
@@ -382,7 +384,7 @@ describe("webhook pipeline", () => {
     });
     expect(endpointDocument?.consecutiveFailureCount).toBe(1);
     expect(endpointDocument?.isActive).toBe(true);
-  });
+  }, 30_000);
 
   it("auto-disables an endpoint after sustained failures", async () => {
     const testBackend = setupTestBackend();
