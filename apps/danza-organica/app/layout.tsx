@@ -4,7 +4,11 @@ import type { Metadata } from "next";
 import { Geist, Noto_Emoji } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
-import { danzaOrganicaIconPaths, siteConfiguration } from "@/lib/site";
+import {
+  danzaOrganicaIconPaths,
+  shouldUseClerkSatelliteModeForHost,
+  siteConfiguration,
+} from "@/lib/site";
 import { AppChrome } from "./app-chrome";
 import Providers from "./providers";
 
@@ -147,12 +151,20 @@ export default async function RootLayout({
     </Providers>
   );
 
+  // Production runs on a subdomain of the primary Clerk domain, where the
+  // shared .coucou.events session cookie makes satellite mode unnecessary
+  // (and broken — see shouldUseClerkSatelliteModeForHost). Satellite props
+  // are only applied for hosts that genuinely live outside the primary
+  // domain (local dev, preview hosts).
+  const clerkSatelliteProps = shouldUseClerkSatelliteModeForHost(requestSatelliteContext.host)
+    ? { isSatellite: true, domain: requestSatelliteContext.host }
+    : {};
+
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${notoEmoji.variable} antialiased`}>
         <ClerkProvider
-          isSatellite
-          domain={requestSatelliteContext.host}
+          {...clerkSatelliteProps}
           signInUrl={primaryTenantSignInUrl}
           signUpUrl={primaryTenantSignInUrl}
         >

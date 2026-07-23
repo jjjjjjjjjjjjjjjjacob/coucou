@@ -4,7 +4,7 @@ import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sd
 import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { siteConfiguration } from "@/lib/site";
+import { shouldUseClerkSatelliteModeForHost, siteConfiguration } from "@/lib/site";
 import type { AuthObject } from "@/lib/types";
 
 const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
@@ -17,6 +17,15 @@ const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
 });
 
 function buildClerkSatelliteOptions(req: NextRequest): ClerkMiddlewareOptions {
+  // On the production host (a subdomain of the primary Clerk domain) the
+  // primary session cookie is shared, so satellite mode must stay off —
+  // see shouldUseClerkSatelliteModeForHost.
+  if (!shouldUseClerkSatelliteModeForHost(req.nextUrl.host)) {
+    return {
+      signInUrl: primaryTenantSignInUrl,
+      signUpUrl: primaryTenantSignInUrl,
+    };
+  }
   return {
     isSatellite: true,
     domain: req.nextUrl.host,
