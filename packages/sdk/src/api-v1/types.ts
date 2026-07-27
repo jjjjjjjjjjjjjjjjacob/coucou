@@ -104,6 +104,20 @@ export interface ApiRsvp {
   ticket: ApiTicket | null;
 }
 
+export interface ApiSmsProgram {
+  organizerName: string;
+  consentLabel: string;
+  disclosure: string;
+  termsUrl: string;
+  privacyUrl: string;
+}
+
+export interface ApiSmsConsent {
+  smsConsent: boolean | null;
+  smsConsentTimestamp: number | null;
+  smsProgram: ApiSmsProgram;
+}
+
 export interface ApiRsvpWriteInput {
   phone: string;
   name: string;
@@ -115,6 +129,8 @@ export interface ApiRsvpWriteInput {
   customFieldValues?: Record<string, string>;
   socialProfiles?: Array<{ platformKey: string; handle: string }>;
   invitedByName?: string;
+  smsConsent?: boolean;
+  smsConsentIpAddress?: string;
 }
 
 /** The plaintext HTTP body of every webhook delivery (payload is inside, encrypted). */

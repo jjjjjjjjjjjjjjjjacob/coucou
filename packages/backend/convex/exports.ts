@@ -6,7 +6,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import type { ExportContext } from "./exportsQueries";
 import { action } from "./functions";
-import { requireWorkspaceRead } from "./lib/workspaceAuth";
+import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./lib/rsvpStatus";
+import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 type ExportRsvpRow = {
   rsvpId: Id<"rsvps">;
@@ -19,6 +20,9 @@ type ExportRsvpRow = {
   socialProfiles: Record<string, string>;
   customFieldValues: Record<string, string>;
   phoneNumber: string;
+  approvalStatus: "pending" | "approved" | "denied";
+  attendanceStatus: "yes" | "no" | "maybe";
+  ticketStatus: "not-issued" | "issued" | "disabled" | "redeemed";
 };
 
 type ExportRsvpsCsvArgs = {
@@ -27,6 +31,9 @@ type ExportRsvpsCsvArgs = {
   workspaceSlug?: string;
   listKeys?: string[];
   statusFilters?: Array<Doc<"rsvps">["status"]>;
+  attendanceFilters?: string[];
+  ticketStatusFilters?: string[];
+  search?: string;
   includeAttendees?: boolean;
   includeNote?: boolean;
   includeCustomFields?: boolean;
@@ -49,6 +56,9 @@ export const exportRsvpsCsv = action({
     workspaceSlug: v.optional(v.string()),
     listKeys: v.optional(v.array(v.string())),
     statusFilters: v.optional(v.array(v.string())),
+    attendanceFilters: v.optional(v.array(v.string())),
+    ticketStatusFilters: v.optional(v.array(v.string())),
+    search: v.optional(v.string()),
     includeAttendees: v.optional(v.boolean()),
     includeNote: v.optional(v.boolean()),
     includeCustomFields: v.optional(v.boolean()),
@@ -66,6 +76,9 @@ export const exportRsvpsCsv = action({
       workspaceSlug,
       listKeys,
       statusFilters,
+      attendanceFilters,
+      ticketStatusFilters,
+      search,
       includeAttendees = true,
       includeNote = true,
       includeCustomFields = true,
@@ -76,7 +89,7 @@ export const exportRsvpsCsv = action({
       exportTimestamp,
     }: ExportRsvpsCsvArgs,
   ): Promise<ExportRsvpsCsvResult> => {
-    await requireWorkspaceRead(ctx, { siteKey, workspaceSlug });
+    await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
     const { event, rsvps, rsvpSocialProfiles, listCredentials, usersByClerkUserId }: ExportContext =
       await ctx.runQuery(internal.exportsQueries.getRsvpsForExportInternal, {
@@ -85,6 +98,9 @@ export const exportRsvpsCsv = action({
         workspaceSlug,
         listKeys,
         statusFilters,
+        attendanceFilters,
+        ticketStatusFilters,
+        search,
       });
 
     const listKeyToName: Record<string, string> = Object.fromEntries(
@@ -168,6 +184,14 @@ export const exportRsvpsCsv = action({
         socialProfiles: socialProfilesByRsvpId.get(rsvp._id) ?? {},
         customFieldValues: rsvp.customFieldValues ?? {},
         phoneNumber,
+        approvalStatus: resolveApprovalStatus(rsvp),
+        attendanceStatus: sanitizeAttendanceStatus(rsvp.attendanceStatus),
+        ticketStatus:
+          rsvp.ticketStatus === "issued" ||
+          rsvp.ticketStatus === "disabled" ||
+          rsvp.ticketStatus === "redeemed"
+            ? rsvp.ticketStatus
+            : "not-issued",
       });
     }
 
@@ -215,7 +239,13 @@ export const exportRsvpsCsv = action({
       csvSections.push(`Export Date: ${exportTimestampText}`);
       csvSections.push("");
 
-      const headerRow: string[] = ["Name"];
+      const headerRow: string[] = [
+        "Name",
+        "Approval Status",
+        "Attendance Status",
+        "Ticket Status",
+        "Entry Status",
+      ];
       if (includePhone) headerRow.push("Phone");
       if (shouldIncludeInvitedBy) {
         headerRow.push(event.primaryFieldConfig?.invitedBy?.label ?? "Invited By");
@@ -229,7 +259,13 @@ export const exportRsvpsCsv = action({
       csvSections.push(headerRow.map(escapeCsvField).join(","));
 
       for (const rsvp of rsvps) {
-        const row: string[] = [rsvp.name];
+        const row: string[] = [
+          rsvp.name,
+          rsvp.approvalStatus,
+          rsvp.attendanceStatus,
+          rsvp.ticketStatus,
+          rsvp.ticketStatus === "redeemed" ? "checked-in" : "not-checked-in",
+        ];
         if (includePhone) row.push(rsvp.phoneNumber);
         if (shouldIncludeInvitedBy) row.push(rsvp.invitedByName);
         row.push(rsvp.referredByName);

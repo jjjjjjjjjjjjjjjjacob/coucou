@@ -2,13 +2,19 @@ export function hasWorkspaceWriteAccess(role: string | undefined): boolean {
   return role === "org:admin" || role === "admin" || role === "org:host" || role === "host";
 }
 
-export function hasWorkspaceReadAccess(role: string | undefined): boolean {
+export function hasWorkspaceDoorAccess(role: string | undefined): boolean {
   return (
     hasWorkspaceWriteAccess(role) ||
-    role === "org:member" ||
-    role === "member" ||
     role === "org:door" ||
     role === "door"
+  );
+}
+
+export function hasWorkspaceReadAccess(role: string | undefined): boolean {
+  return (
+    hasWorkspaceDoorAccess(role) ||
+    role === "org:member" ||
+    role === "member"
   );
 }
 

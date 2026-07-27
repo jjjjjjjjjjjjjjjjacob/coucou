@@ -535,6 +535,167 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
     expect(capturedWebhookRequestCount).toBe(2); // rsvp.attendance_updated
   });
 
+  it("persists organizer consent, preserves omissions, and only schedules status SMS on transitions", async () => {
+    const testBackend = setupTestBackend();
+    const workspaceId = await seedWorkspace(testBackend);
+    await seedEvent(testBackend);
+    const plaintextKey = await issueApiKey(testBackend);
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    await hostBackend.mutation(api.webhookEndpoints.create, {
+      workspaceSlug: WORKSPACE_SLUG,
+      url: ENDPOINT_URL,
+      subscribedEventTypes: ["rsvp.created", "rsvp.updated"],
+    });
+    const originalDevTwilioEnabled = process.env.DEV_TWILIO_ENABLED;
+    process.env.DEV_TWILIO_ENABLED = "false";
+    const requestBody = {
+      phone: "+15551230030",
+      name: "Consent Guest",
+      listKey: "ga",
+    };
+
+    try {
+      const enabledResponse = await testBackend.fetch(
+        "/api/v1/events/evt-write-api/rsvps",
+        buildJsonRequest(plaintextKey, "POST", {
+          ...requestBody,
+          smsConsent: true,
+          smsConsentIpAddress: "203.0.113.42",
+        }),
+      );
+      expect(enabledResponse.status).toBe(201);
+
+      await testBackend.run(async (databaseContext) => {
+        const rsvp = await databaseContext.db.query("rsvps").unique();
+        expect(rsvp?.smsConsent).toBe(true);
+        expect(rsvp?.smsConsentIpAddress).toBe("203.0.113.42");
+        const preference = await databaseContext.db.query("userSmsOrganizerPreferences").unique();
+        expect(preference).toMatchObject({
+          workspaceId,
+          smsConsent: true,
+          smsConsentIpAddress: "203.0.113.42",
+        });
+      });
+      let scheduledStatusMessages = await testBackend.run(async (databaseContext) => {
+        const scheduledFunctions = await databaseContext.db.system
+          .query("_scheduled_functions")
+          .collect();
+        return scheduledFunctions.filter(
+          (scheduledFunction) =>
+            scheduledFunction.name === "notifications:sendSmsConsentStatusMessage",
+        );
+      });
+      expect(scheduledStatusMessages).toHaveLength(1);
+      expect(scheduledStatusMessages[0]?.args).toEqual([
+        expect.objectContaining({
+          consentEnabled: true,
+          phoneNumber: "+15551230030",
+        }),
+      ]);
+      await drainScheduledFunctions(testBackend);
+      expect(capturedWebhookRequestCount).toBe(1);
+
+      const idempotentResponse = await testBackend.fetch(
+        "/api/v1/events/evt-write-api/rsvps",
+        buildJsonRequest(plaintextKey, "POST", {
+          ...requestBody,
+          smsConsent: true,
+        }),
+      );
+      expect(idempotentResponse.status).toBe(200);
+      scheduledStatusMessages = await testBackend.run(async (databaseContext) => {
+        const scheduledFunctions = await databaseContext.db.system
+          .query("_scheduled_functions")
+          .collect();
+        return scheduledFunctions.filter(
+          (scheduledFunction) =>
+            scheduledFunction.name === "notifications:sendSmsConsentStatusMessage",
+        );
+      });
+      expect(scheduledStatusMessages).toHaveLength(1);
+      await drainScheduledFunctions(testBackend);
+      expect(capturedWebhookRequestCount).toBe(1);
+
+      const omittedResponse = await testBackend.fetch(
+        "/api/v1/events/evt-write-api/rsvps",
+        buildJsonRequest(plaintextKey, "POST", requestBody),
+      );
+      expect(omittedResponse.status).toBe(200);
+      const consentAfterOmission = await testBackend.run(async (databaseContext) => {
+        const rsvp = await databaseContext.db.query("rsvps").unique();
+        return rsvp?.smsConsent;
+      });
+      expect(consentAfterOmission).toBe(true);
+
+      const disabledResponse = await testBackend.fetch(
+        "/api/v1/events/evt-write-api/rsvps",
+        buildJsonRequest(plaintextKey, "POST", {
+          ...requestBody,
+          smsConsent: false,
+        }),
+      );
+      expect(disabledResponse.status).toBe(200);
+      scheduledStatusMessages = await testBackend.run(async (databaseContext) => {
+        const scheduledFunctions = await databaseContext.db.system
+          .query("_scheduled_functions")
+          .collect();
+        return scheduledFunctions.filter(
+          (scheduledFunction) =>
+            scheduledFunction.name === "notifications:sendSmsConsentStatusMessage",
+        );
+      });
+      expect(scheduledStatusMessages).toHaveLength(2);
+      expect(scheduledStatusMessages[1]?.args).toEqual([
+        expect.objectContaining({ consentEnabled: false }),
+      ]);
+      await drainScheduledFunctions(testBackend);
+      expect(capturedWebhookRequestCount).toBe(1);
+
+      await testBackend.run(async (databaseContext) => {
+        const rsvp = await databaseContext.db.query("rsvps").unique();
+        const preference = await databaseContext.db.query("userSmsOrganizerPreferences").unique();
+        expect(rsvp?.smsConsent).toBe(false);
+        expect(preference?.smsConsent).toBe(false);
+      });
+    } finally {
+      if (originalDevTwilioEnabled === undefined) {
+        delete process.env.DEV_TWILIO_ENABLED;
+      } else {
+        process.env.DEV_TWILIO_ENABLED = originalDevTwilioEnabled;
+      }
+    }
+  });
+
+  it("validates optional SMS consent fields", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    await seedEvent(testBackend);
+    const plaintextKey = await issueApiKey(testBackend);
+
+    const invalidConsentResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551230031",
+        name: "Invalid Consent",
+        smsConsent: "yes",
+      }),
+    );
+    expect(invalidConsentResponse.status).toBe(400);
+    expect((await invalidConsentResponse.json()).error.field).toBe("smsConsent");
+
+    const invalidIpResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551230031",
+        name: "Invalid Consent",
+        smsConsent: true,
+        smsConsentIpAddress: 42,
+      }),
+    );
+    expect(invalidIpResponse.status).toBe(400);
+    expect((await invalidIpResponse.json()).error.field).toBe("smsConsentIpAddress");
+  });
+
   it("rejects unknown lists, bad attendee counts, and never touches approval status", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);

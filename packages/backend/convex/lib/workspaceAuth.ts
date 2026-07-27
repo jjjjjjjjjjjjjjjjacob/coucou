@@ -62,13 +62,19 @@ export function roleHasWorkspaceWriteAccess(role: string | null | undefined): bo
   return role === "org:admin" || role === "admin" || role === "org:host" || role === "host";
 }
 
-export function roleHasWorkspaceReadAccess(role: string | null | undefined): boolean {
+export function roleHasWorkspaceDoorAccess(role: string | null | undefined): boolean {
   return (
     roleHasWorkspaceWriteAccess(role) ||
-    role === "org:member" ||
-    role === "member" ||
     role === "org:door" ||
     role === "door"
+  );
+}
+
+export function roleHasWorkspaceReadAccess(role: string | null | undefined): boolean {
+  return (
+    roleHasWorkspaceDoorAccess(role) ||
+    role === "org:member" ||
+    role === "member"
   );
 }
 
@@ -80,7 +86,11 @@ function roleHasCapability(
     return roleHasWorkspaceWriteAccess(role);
   }
 
-  if (capability === "door" || capability === "read") {
+  if (capability === "door") {
+    return roleHasWorkspaceDoorAccess(role);
+  }
+
+  if (capability === "read") {
     return roleHasWorkspaceReadAccess(role);
   }
 

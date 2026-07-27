@@ -351,3 +351,126 @@ describe("GET /api/v1/events/{eventRouteId}/rsvps/lookup", () => {
     expect(missingResponse.status).toBe(404);
   });
 });
+
+describe("GET /api/v1/events/{eventRouteId}/rsvps/sms-consent", () => {
+  it("requires rsvps:read, stays workspace-scoped, and returns a branded program without a phone", async () => {
+    const testBackend = setupTestBackend();
+    const workspaceId = await seedWorkspace(testBackend);
+    await seedWorkspace(testBackend, OTHER_WORKSPACE_SLUG);
+    await seedEvent(testBackend, { shortId: "evt-sms-program" });
+    await seedEvent(testBackend, {
+      workspaceSlug: OTHER_WORKSPACE_SLUG,
+      shortId: "evt-sms-foreign",
+    });
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(workspaceId, {
+        name: "The Night Garden",
+        primaryDomain: "events.night-garden.example",
+      });
+    });
+
+    const wrongScopeKey = await issueApiKey(testBackend, ["events:read"]);
+    const forbiddenResponse = await testBackend.fetch(
+      "/api/v1/events/evt-sms-program/rsvps/sms-consent",
+      { method: "GET", ...buildAuthorizedRequest(wrongScopeKey) },
+    );
+    expect(forbiddenResponse.status).toBe(403);
+
+    const plaintextKey = await issueApiKey(testBackend, ["rsvps:read"]);
+    const response = await testBackend.fetch("/api/v1/events/evt-sms-program/rsvps/sms-consent", {
+      method: "GET",
+      ...buildAuthorizedRequest(plaintextKey),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      smsConsent: null,
+      smsConsentTimestamp: null,
+      smsProgram: {
+        organizerName: "The Night Garden",
+        consentLabel: "I agree to receive recurring SMS messages from The Night Garden.",
+        disclosure: expect.stringContaining("Consent is not a condition"),
+        termsUrl: "https://events.night-garden.example/terms",
+        privacyUrl: "https://events.night-garden.example/privacy",
+      },
+    });
+
+    const foreignResponse = await testBackend.fetch(
+      "/api/v1/events/evt-sms-foreign/rsvps/sms-consent",
+      { method: "GET", ...buildAuthorizedRequest(plaintextKey) },
+    );
+    expect(foreignResponse.status).toBe(404);
+  });
+
+  it("carries organizer-wide consent across events for account and guest phones", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const sourceEventId = await seedEvent(testBackend, { shortId: "evt-sms-source" });
+    await seedEvent(testBackend, { shortId: "evt-sms-target" });
+    const accountConsentTimestamp = 1_753_000_000_000;
+    const guestConsentTimestamp = accountConsentTimestamp + 1;
+    const { normalizeAndHashPhoneNumber } = await import("../convex/lib/phoneHash");
+    const { phoneHash } = await normalizeAndHashPhoneNumber("+15559876543");
+
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: "user_sms_account",
+        phone: "+15551234567",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await databaseContext.db.insert("rsvps", {
+        eventId: sourceEventId,
+        clerkUserId: "user_sms_account",
+        listKey: "ga",
+        status: "pending",
+        approvalStatus: "pending",
+        shareContact: true,
+        smsConsent: true,
+        smsConsentTimestamp: accountConsentTimestamp,
+        createdAt: Date.now(),
+        updatedAt: accountConsentTimestamp,
+      });
+      await databaseContext.db.insert("rsvps", {
+        eventId: sourceEventId,
+        clerkUserId: `guest:${phoneHash}`,
+        guestPhoneHash: phoneHash,
+        listKey: "ga",
+        status: "pending",
+        approvalStatus: "pending",
+        shareContact: true,
+        smsConsent: false,
+        smsConsentTimestamp: guestConsentTimestamp,
+        createdAt: Date.now(),
+        updatedAt: guestConsentTimestamp,
+      });
+    });
+
+    const plaintextKey = await issueApiKey(testBackend, ["rsvps:read"]);
+    const accountResponse = await testBackend.fetch(
+      "/api/v1/events/evt-sms-target/rsvps/sms-consent?phone=%2B15551234567",
+      { method: "GET", ...buildAuthorizedRequest(plaintextKey) },
+    );
+    expect(accountResponse.status).toBe(200);
+    expect(await accountResponse.json()).toMatchObject({
+      smsConsent: true,
+      smsConsentTimestamp: accountConsentTimestamp,
+    });
+
+    const guestResponse = await testBackend.fetch(
+      "/api/v1/events/evt-sms-target/rsvps/sms-consent?phone=%2B15559876543",
+      { method: "GET", ...buildAuthorizedRequest(plaintextKey) },
+    );
+    expect(guestResponse.status).toBe(200);
+    expect(await guestResponse.json()).toMatchObject({
+      smsConsent: false,
+      smsConsentTimestamp: guestConsentTimestamp,
+    });
+
+    const invalidPhoneResponse = await testBackend.fetch(
+      "/api/v1/events/evt-sms-target/rsvps/sms-consent?phone=abc",
+      { method: "GET", ...buildAuthorizedRequest(plaintextKey) },
+    );
+    expect(invalidPhoneResponse.status).toBe(400);
+    expect((await invalidPhoneResponse.json()).error.field).toBe("phone");
+  });
+});

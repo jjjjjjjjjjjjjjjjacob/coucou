@@ -15,7 +15,11 @@ import {
   getCoucouOrganizationSlug,
   isCoucouWorkspaceSlug,
 } from "@/lib/workspace-config";
-import { hasWorkspaceReadAccess, hasWorkspaceWriteAccess } from "@/lib/workspace-roles";
+import {
+  hasWorkspaceDoorAccess,
+  hasWorkspaceReadAccess,
+  hasWorkspaceWriteAccess,
+} from "@/lib/workspace-roles";
 
 type WorkspaceAccessKind = "host" | "door" | "read" | "write" | "admin";
 
@@ -63,6 +67,10 @@ function membershipHasRequiredRole(
 ): boolean {
   if (accessKind === "host" || accessKind === "write" || accessKind === "admin") {
     return hasWorkspaceWriteAccess(membershipRole);
+  }
+
+  if (accessKind === "door") {
+    return hasWorkspaceDoorAccess(membershipRole);
   }
 
   return hasWorkspaceReadAccess(membershipRole);
@@ -515,7 +523,7 @@ export function WorkspaceAccessGate({
     canRead: hasCoucouSuperadminWorkspaceAccess || hasWorkspaceReadAccess(targetMembership?.role),
     canWrite: hasCoucouSuperadminWorkspaceAccess || hasWorkspaceWriteAccess(targetMembership?.role),
     canUseDoor:
-      hasCoucouSuperadminWorkspaceAccess || hasWorkspaceReadAccess(targetMembership?.role),
+      hasCoucouSuperadminWorkspaceAccess || hasWorkspaceDoorAccess(targetMembership?.role),
   };
 
   return (

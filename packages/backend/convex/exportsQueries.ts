@@ -1,7 +1,12 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalQuery } from "./functions";
-import { type ApprovalStatus, resolveApprovalStatus } from "./lib/rsvpStatus";
+import {
+  type ApprovalStatus,
+  type AttendanceStatus,
+  resolveApprovalStatus,
+  sanitizeAttendanceStatus,
+} from "./lib/rsvpStatus";
 import { ensureEventInSiteScope } from "./lib/siteScope";
 
 export type ExportContext = {
@@ -19,10 +24,22 @@ export const getRsvpsForExportInternal = internalQuery({
     workspaceSlug: v.optional(v.string()),
     listKeys: v.optional(v.array(v.string())),
     statusFilters: v.optional(v.array(v.string())),
+    attendanceFilters: v.optional(v.array(v.string())),
+    ticketStatusFilters: v.optional(v.array(v.string())),
+    search: v.optional(v.string()),
   },
   handler: async (
     ctx,
-    { eventId, siteKey, workspaceSlug, listKeys, statusFilters },
+    {
+      eventId,
+      siteKey,
+      workspaceSlug,
+      listKeys,
+      statusFilters,
+      attendanceFilters,
+      ticketStatusFilters,
+      search,
+    },
   ): Promise<ExportContext> => {
     const event = await ensureEventInSiteScope(ctx, eventId, {
       siteKey,
@@ -51,6 +68,45 @@ export const getRsvpsForExportInternal = internalQuery({
 
     if (requestedStatuses.length !== allowedStatuses.length) {
       rsvps = rsvps.filter((rsvp) => requestedStatuses.includes(resolveApprovalStatus(rsvp)));
+    }
+
+    const allowedAttendanceStatuses: AttendanceStatus[] = ["yes", "no", "maybe"];
+    const requestedAttendanceStatuses =
+      attendanceFilters && attendanceFilters.length > 0
+        ? attendanceFilters.filter((status): status is AttendanceStatus =>
+            allowedAttendanceStatuses.includes(status as AttendanceStatus),
+          )
+        : allowedAttendanceStatuses;
+    if (requestedAttendanceStatuses.length !== allowedAttendanceStatuses.length) {
+      rsvps = rsvps.filter((rsvp) =>
+        requestedAttendanceStatuses.includes(sanitizeAttendanceStatus(rsvp.attendanceStatus)),
+      );
+    }
+
+    const allowedTicketStatuses = ["not-issued", "issued", "disabled", "redeemed"] as const;
+    const requestedTicketStatuses =
+      ticketStatusFilters && ticketStatusFilters.length > 0
+        ? ticketStatusFilters.filter((status) =>
+            allowedTicketStatuses.includes(
+              status as (typeof allowedTicketStatuses)[number],
+            ),
+          )
+        : [...allowedTicketStatuses];
+    if (requestedTicketStatuses.length !== allowedTicketStatuses.length) {
+      rsvps = rsvps.filter((rsvp) =>
+        requestedTicketStatuses.includes(
+          (rsvp.ticketStatus ?? "not-issued") as (typeof allowedTicketStatuses)[number],
+        ),
+      );
+    }
+
+    const normalizedSearch = search?.trim().toLowerCase();
+    if (normalizedSearch) {
+      rsvps = rsvps.filter((rsvp) =>
+        `${rsvp.userName ?? ""} ${rsvp.guestPhoneObfuscated ?? ""}`
+          .toLowerCase()
+          .includes(normalizedSearch),
+      );
     }
 
     const clerkUserIds = [...new Set(rsvps.map((rsvp) => rsvp.clerkUserId))];

@@ -1,7 +1,9 @@
 import { v } from "convex/values";
+import { api } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
+import { buildApiSmsProgram } from "./lib/apiSmsProgram";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
@@ -21,6 +23,10 @@ import {
 import { tryAutoApproveRsvp } from "./lib/rsvpApproval";
 import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./lib/rsvpStatus";
 import { buildRsvpTicketSnapshot } from "./lib/rsvpTicketSnapshot";
+import {
+  resolveSmsOrganizerPreference,
+  upsertSmsOrganizerPreference,
+} from "./lib/smsOrganizerPreferences";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
 
 export const API_EVENTS_DEFAULT_PAGE_SIZE = 25;
@@ -236,6 +242,61 @@ export const lookupRsvpForPhoneForApiClient = internalQuery({
   },
 });
 
+export const getSmsConsentForApiClient = internalQuery({
+  args: {
+    workspaceSlug: v.string(),
+    eventRouteId: v.string(),
+    phone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const event = await getEventInWorkspaceByRouteId(ctx, args.workspaceSlug, args.eventRouteId);
+    if (!event) {
+      return { eventFound: false as const };
+    }
+
+    const workspace = await ctx.db
+      .query("workspaces")
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", args.workspaceSlug))
+      .unique();
+    if (!workspace) {
+      return { eventFound: false as const };
+    }
+
+    const smsProgram = await buildApiSmsProgram(ctx, workspace);
+    if (!args.phone?.trim()) {
+      return {
+        eventFound: true as const,
+        smsConsent: null,
+        smsConsentTimestamp: null,
+        smsProgram,
+      };
+    }
+
+    const normalizedPhoneNumber = formatPhoneNumberForSms(args.phone);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(args.phone);
+    const matchedUser = await ctx.db
+      .query("users")
+      .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phone", normalizedPhoneNumber))
+      .first();
+    const clerkUserId =
+      matchedUser?.clerkUserId && !isGuestClerkUserId(matchedUser.clerkUserId)
+        ? matchedUser.clerkUserId
+        : buildGuestClerkUserId(phoneHash);
+    const preference = await resolveSmsOrganizerPreference(ctx, {
+      clerkUserId,
+      event,
+      siteKey: event.siteKey,
+    });
+
+    return {
+      eventFound: true as const,
+      smsConsent: preference.smsConsent,
+      smsConsentTimestamp: preference.smsConsentTimestamp ?? null,
+      smsProgram,
+    };
+  },
+});
+
 const apiAttendanceStatusValidator = v.union(v.literal("yes"), v.literal("no"), v.literal("maybe"));
 
 interface ApiWriteFailure {
@@ -419,6 +480,8 @@ export const createRsvpFromApiClient = internalMutation({
     customFieldValues: v.optional(v.record(v.string(), v.string())),
     socialProfiles: v.optional(v.array(submittedSocialProfileValidator)),
     invitedByName: v.optional(v.string()),
+    smsConsent: v.optional(v.boolean()),
+    smsConsentIpAddress: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const event = await getEventInWorkspaceByRouteId(ctx, args.workspaceSlug, args.eventRouteId);
@@ -513,6 +576,22 @@ export const createRsvpFromApiClient = internalMutation({
       matchedUser?.clerkUserId && !isGuestClerkUserId(matchedUser.clerkUserId)
         ? matchedUser.clerkUserId
         : null;
+    const clerkUserId = matchedRealClerkUserId ?? buildGuestClerkUserId(phoneHash);
+    const existingOrganizerPreference = await resolveSmsOrganizerPreference(ctx, {
+      clerkUserId,
+      event,
+      siteKey: event.siteKey,
+    });
+    const smsConsentChange =
+      args.smsConsent === undefined || args.smsConsent === existingOrganizerPreference.smsConsent
+        ? null
+        : args.smsConsent
+          ? "enabled"
+          : "disabled";
+    const sanitizedSmsConsentIpAddress =
+      args.smsConsent === true && typeof args.smsConsentIpAddress === "string"
+        ? args.smsConsentIpAddress.slice(0, 256)
+        : undefined;
 
     const now = Date.now();
 
@@ -576,6 +655,14 @@ export const createRsvpFromApiClient = internalMutation({
       if (args.customFieldValues !== undefined) {
         patch.customFieldValues = sanitizedCustomFields.values;
       }
+      if (args.smsConsent !== undefined) {
+        patch.smsConsent = args.smsConsent;
+        patch.smsConsentTimestamp = now;
+        patch.smsConsentIpAddress =
+          args.smsConsent === true
+            ? (sanitizedSmsConsentIpAddress ?? existingRsvp.smsConsentIpAddress)
+            : existingRsvp.smsConsentIpAddress;
+      }
       Object.assign(patch, invitedByPatch);
 
       if (existingRsvp.listKey !== selectedListKey) {
@@ -619,6 +706,27 @@ export const createRsvpFromApiClient = internalMutation({
         });
       }
 
+      if (args.smsConsent !== undefined) {
+        await upsertSmsOrganizerPreference(ctx, {
+          clerkUserId,
+          event,
+          siteKey: event.siteKey,
+          smsConsent: args.smsConsent,
+          smsConsentIpAddress: sanitizedSmsConsentIpAddress ?? existingRsvp.smsConsentIpAddress,
+          sourceEventId: event._id,
+          sourceRsvpId: existingRsvp._id,
+          now,
+        });
+      }
+      if (smsConsentChange) {
+        await ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
+          eventId: event._id,
+          clerkUserId,
+          consentEnabled: smsConsentChange === "enabled",
+          phoneNumber: normalizedPhoneNumber,
+        });
+      }
+
       const updatedRsvp = await ctx.db.get(existingRsvp._id);
       return {
         ok: true as const,
@@ -632,12 +740,8 @@ export const createRsvpFromApiClient = internalMutation({
       };
     }
 
-    let clerkUserId: string;
     let guestFields: Partial<Doc<"rsvps">> = {};
-    if (matchedRealClerkUserId) {
-      clerkUserId = matchedRealClerkUserId;
-    } else {
-      clerkUserId = buildGuestClerkUserId(phoneHash);
+    if (!matchedRealClerkUserId) {
       guestFields = {
         guestPhoneHash: phoneHash,
         guestPhoneObfuscated: obfuscatePhoneNumber(normalizedPhoneNumber),
@@ -658,6 +762,9 @@ export const createRsvpFromApiClient = internalMutation({
       shareContact: true,
       attendees: requestedAttendees,
       customFieldValues: sanitizedCustomFields.values,
+      smsConsent: args.smsConsent,
+      smsConsentTimestamp: args.smsConsent !== undefined ? now : undefined,
+      smsConsentIpAddress: sanitizedSmsConsentIpAddress,
       ...invitedByPatch,
       status: "pending",
       approvalStatus: "pending",
@@ -693,6 +800,27 @@ export const createRsvpFromApiClient = internalMutation({
           sanitizedSocialProfiles.map((profile) => profile.platformKey),
         ),
         submittedProfiles: sanitizedSocialProfiles,
+      });
+    }
+
+    if (args.smsConsent !== undefined) {
+      await upsertSmsOrganizerPreference(ctx, {
+        clerkUserId,
+        event,
+        siteKey: event.siteKey,
+        smsConsent: args.smsConsent,
+        smsConsentIpAddress: sanitizedSmsConsentIpAddress,
+        sourceEventId: event._id,
+        sourceRsvpId: rsvpId,
+        now,
+      });
+    }
+    if (smsConsentChange) {
+      await ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
+        eventId: event._id,
+        clerkUserId,
+        consentEnabled: smsConsentChange === "enabled",
+        phoneNumber: normalizedPhoneNumber,
       });
     }
 

@@ -6,6 +6,7 @@ import {
   buildApiErrorResponse,
   buildApiJsonResponse,
 } from "./lib/apiRequestAuth";
+import { formatPhoneNumberForSms } from "./lib/phoneUtils";
 
 const EVENTS_PATH_PREFIX = "/api/v1/events/";
 const RSVPS_PATH_PREFIX = "/api/v1/rsvps/";
@@ -103,6 +104,45 @@ export const handleEventSubresourceGet = httpAction(async (ctx, request) => {
     return buildApiJsonResponse(lookupResult.rsvp);
   }
 
+  // GET /api/v1/events/{eventRouteId}/rsvps/sms-consent?phone=E164
+  if (
+    pathSegments.length === 3 &&
+    pathSegments[1] === "rsvps" &&
+    pathSegments[2] === "sms-consent"
+  ) {
+    const authResult = await authenticateApiRequest(ctx, request, "rsvps:read");
+    if (!authResult.ok) {
+      return authResult.response;
+    }
+
+    const phone = new URL(request.url).searchParams.get("phone")?.trim() || undefined;
+    if (phone) {
+      try {
+        formatPhoneNumberForSms(phone);
+      } catch (error) {
+        return buildApiErrorResponse(
+          "invalid_request",
+          error instanceof Error ? error.message : "Invalid phone number",
+          "phone",
+        );
+      }
+    }
+
+    const consentResult = await ctx.runQuery(internal.apiV1Data.getSmsConsentForApiClient, {
+      workspaceSlug: authResult.workspaceSlug,
+      eventRouteId: pathSegments[0],
+      phone,
+    });
+    if (!consentResult.eventFound) {
+      return buildApiErrorResponse("not_found", "Event not found");
+    }
+    return buildApiJsonResponse({
+      smsConsent: consentResult.smsConsent,
+      smsConsentTimestamp: consentResult.smsConsentTimestamp,
+      smsProgram: consentResult.smsProgram,
+    });
+  }
+
   return buildApiErrorResponse("not_found", "Unknown API route");
 });
 
@@ -187,6 +227,8 @@ export const handleEventSubresourcePost = httpAction(async (ctx, request) => {
     customFieldValues,
     socialProfiles,
     invitedByName,
+    smsConsent,
+    smsConsentIpAddress,
   } = parsedBody.body;
 
   if (typeof phone !== "string" || phone.trim().length === 0) {
@@ -238,6 +280,16 @@ export const handleEventSubresourcePost = httpAction(async (ctx, request) => {
       "invitedByName",
     );
   }
+  if (smsConsent !== undefined && typeof smsConsent !== "boolean") {
+    return buildApiErrorResponse("invalid_request", "smsConsent must be a boolean", "smsConsent");
+  }
+  if (smsConsentIpAddress !== undefined && typeof smsConsentIpAddress !== "string") {
+    return buildApiErrorResponse(
+      "invalid_request",
+      "smsConsentIpAddress must be a string",
+      "smsConsentIpAddress",
+    );
+  }
 
   const writeResult = await ctx.runMutation(internal.apiV1Data.createRsvpFromApiClient, {
     apiClientId: authResult.apiClient._id,
@@ -253,6 +305,8 @@ export const handleEventSubresourcePost = httpAction(async (ctx, request) => {
     customFieldValues: customFieldValues as Record<string, string> | undefined,
     socialProfiles: socialProfiles as Array<{ platformKey: string; handle: string }> | undefined,
     invitedByName: invitedByName as string | undefined,
+    smsConsent: smsConsent as boolean | undefined,
+    smsConsentIpAddress: smsConsentIpAddress as string | undefined,
   });
   if (!writeResult.ok) {
     return buildApiErrorResponse(writeResult.errorCode, writeResult.message, writeResult.field);

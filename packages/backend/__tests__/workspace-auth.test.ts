@@ -5,6 +5,7 @@ import type { QueryCtx } from "../convex/_generated/server";
 import {
   type ResolvedWorkspaceAuthScope,
   requireWorkspaceCapabilityForResolvedScope,
+  roleHasWorkspaceDoorAccess,
   roleHasWorkspaceReadAccess,
   roleHasWorkspaceWriteAccess,
 } from "../convex/lib/workspaceAuth";
@@ -99,8 +100,9 @@ describe("workspace role capabilities", () => {
     }
   });
 
-  it("treats members and door roles as read and door roles only", async () => {
-    for (const role of ["org:member", "member", "org:door", "door"]) {
+  it("treats door roles as door and read roles without write access", async () => {
+    for (const role of ["org:door", "door"]) {
+      expect(roleHasWorkspaceDoorAccess(role)).toBe(true);
       expect(roleHasWorkspaceReadAccess(role)).toBe(true);
       expect(roleHasWorkspaceWriteAccess(role)).toBe(false);
       await expect(
@@ -134,6 +136,28 @@ describe("workspace role capabilities", () => {
     }
   });
 
+  it("keeps generic members read-only and denies mobile door operations", async () => {
+    for (const role of ["org:member", "member"]) {
+      expect(roleHasWorkspaceReadAccess(role)).toBe(true);
+      expect(roleHasWorkspaceDoorAccess(role)).toBe(false);
+      expect(roleHasWorkspaceWriteAccess(role)).toBe(false);
+      await expect(
+        requireWorkspaceCapabilityForResolvedScope(
+          createAuthContext(createIdentity(role)),
+          resolvedWorkspaceScope,
+          "read",
+        ),
+      ).resolves.toEqual(resolvedWorkspaceScope);
+      await expect(
+        requireWorkspaceCapabilityForResolvedScope(
+          createAuthContext(createIdentity(role)),
+          resolvedWorkspaceScope,
+          "door",
+        ),
+      ).rejects.toThrow("Forbidden");
+    }
+  });
+
   it("uses stored membership when the active organization token omits role", async () => {
     await expect(
       requireWorkspaceCapabilityForResolvedScope(
@@ -145,7 +169,7 @@ describe("workspace role capabilities", () => {
   });
 
   it("allows Coucou platform members to access tenant workspace capabilities", async () => {
-    for (const capability of ["read", "host", "admin"] as const) {
+    for (const capability of ["read", "door", "host", "admin"] as const) {
       await expect(
         requireWorkspaceCapabilityForResolvedScope(
           createAuthContext(createCoucouPlatformIdentity()),

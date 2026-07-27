@@ -8,6 +8,7 @@ export * from "./shared/event-routes";
 export * from "./shared/message-template";
 export * from "./shared/primary-fields";
 export * from "./shared/qr-code-colors";
+export * from "./shared/redemption-code";
 export * from "./shared/rsvp-confirmation-messages";
 export * from "./site-config";
 export * from "./theming";

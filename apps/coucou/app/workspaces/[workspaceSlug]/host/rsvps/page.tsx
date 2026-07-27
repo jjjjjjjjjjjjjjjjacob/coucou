@@ -3417,10 +3417,15 @@ export function GuestManager({
                     {currentEvent?.isFeatured ? "Already Featured" : "Set as Featured"}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => setExportOptionsOpen(true)} disabled={!eventId}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Export CSV
-                  </DropdownMenuItem>
+                  {!isReadOnly && (
+                    <DropdownMenuItem
+                      onSelect={() => setExportOptionsOpen(true)}
+                      disabled={!eventId}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export CSV
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
                     onSelect={(menuEvent) => {
                       menuEvent.preventDefault();

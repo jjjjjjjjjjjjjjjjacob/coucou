@@ -2,6 +2,12 @@
   "name": "@coucou/backend",
   "private": true,
   "version": "0.1.0",
+  "exports": {
+    "./api": {
+      "types": "./convex/_generated/api.d.ts",
+      "default": "./convex/_generated/api.js"
+    }
+  },
   "scripts": {
     "dev": "bunx convex dev",
     "deploy": "bunx convex deploy --cmd-url-env-var-name NEXT_PUBLIC_CONVEX_URL",

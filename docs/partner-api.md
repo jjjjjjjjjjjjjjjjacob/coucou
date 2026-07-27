@@ -92,6 +92,30 @@ match by phone hash). 404 if none.
   "createdAt": 0, "updatedAt": 0 }
 ```
 
+### `GET /api/v1/events/{eventRouteId}/rsvps/sms-consent?phone=+15551234567` — scope `rsvps:read`
+
+Returns the phone's organizer-wide SMS preference plus the organizer's branded consent
+program. The preference applies across every event in the event's Coucou workspace.
+Omit `phone` to retrieve the program without asserting a known preference; in that case
+`smsConsent` and `smsConsentTimestamp` are `null`.
+
+```json
+{
+  "smsConsent": true,
+  "smsConsentTimestamp": 1753000000000,
+  "smsProgram": {
+    "organizerName": "Example Events",
+    "consentLabel": "I agree to receive recurring SMS messages from Example Events.",
+    "disclosure": "Example Events may send account notifications, RSVP and guest-list updates, ...",
+    "termsUrl": "https://events.example.com/terms",
+    "privacyUrl": "https://events.example.com/privacy"
+  }
+}
+```
+
+Program URLs use the workspace's primary public domain, then its configured site domain,
+and finally `https://coucou.events`.
+
 ## Write endpoints
 
 Consumers can create RSVPs, change attendance, and update event details. **Approval/denial,
@@ -125,7 +149,8 @@ Updates an event's public details. All fields optional — send only what change
   "attendees": 2, "attendanceStatus": "yes", "note": "optional",
   "customFieldValues": { "company": "The Market" },
   "socialProfiles": [{ "platformKey": "instagram", "handle": "janedoe" }],
-  "invitedByName": "Alex" }
+  "invitedByName": "Alex", "smsConsent": true,
+  "smsConsentIpAddress": "203.0.113.42" }
 ```
 
 - Identity precedence: a coucou user with this phone → the RSVP attaches to their
@@ -142,6 +167,13 @@ Updates an event's public details. All fields optional — send only what change
 - Required custom fields, social profiles, invited-by data, attendee limits, and list
   retries use the same validation and persistence rules as coucou's native RSVP form.
   A denied RSVP may retry only on a different resolved list.
+- `smsConsent` is optional and organizer-wide. Explicit `true` or `false` updates both
+  the RSVP and the phone's workspace preference; omission preserves existing state.
+  `smsConsentIpAddress` is optional and should be sent only when the caller can reliably
+  identify the consenting end user's IP. Confirmation/opt-out SMS is sent only when the
+  organizer-wide value changes.
+- Consent-only changes remain internal and do not add fields or event types to webhook
+  deliveries.
 
 ### `PATCH /api/v1/rsvps/{rsvpId}` — scope `rsvps:write`
 

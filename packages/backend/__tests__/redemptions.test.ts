@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { roleHasWorkspaceDoorAccess } from "../convex/lib/workspaceAuth";
 
 describe("Redemptions Functions", () => {
   it("should validate redemption code format", () => {
@@ -21,22 +22,12 @@ describe("Redemptions Functions", () => {
     expect(validStatuses).toContain("redeemed");
   });
 
-  it("should validate authorization helper function logic", () => {
-    // Test the hasJwtDoorOrHost function logic
-    const mockIdentityDoor = { role: "org:member" };
-    const mockIdentityHost = { role: "org:admin" };
-    const mockIdentityUser = { role: "org:user" };
-
-    // Simulate the function logic
-    const hasJwtDoorOrHost = (identity: { role?: string } | null | undefined) => {
-      const role = identity?.role as string | null | undefined;
-      return role === "org:member" || role === "org:admin";
-    };
-
-    expect(hasJwtDoorOrHost(mockIdentityDoor)).toBe(true);
-    expect(hasJwtDoorOrHost(mockIdentityHost)).toBe(true);
-    expect(hasJwtDoorOrHost(mockIdentityUser)).toBe(false);
-    expect(hasJwtDoorOrHost(null)).toBe(false);
+  it("allows Door, Host, and Admin while denying generic members", () => {
+    expect(roleHasWorkspaceDoorAccess("org:door")).toBe(true);
+    expect(roleHasWorkspaceDoorAccess("org:host")).toBe(true);
+    expect(roleHasWorkspaceDoorAccess("org:admin")).toBe(true);
+    expect(roleHasWorkspaceDoorAccess("org:member")).toBe(false);
+    expect(roleHasWorkspaceDoorAccess(undefined)).toBe(false);
   });
 
   it("should validate redemption record structure", () => {
