@@ -84,6 +84,7 @@ type PublicListCredential = {
   generateQR?: boolean;
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
 };
 
@@ -149,8 +150,9 @@ export function formatApprovalMessage(
   code: string,
   baseUrl: string,
   listApprovalMessage?: string,
+  includeTicketLink = true,
 ): string {
-  const ticketUrl = `${baseUrl}/redeem/${code}`;
+  const ticketUrl = includeTicketLink ? `${baseUrl}/redeem/${code}` : "";
   // Get header (production company or host names)
   const header = getSmsMessageHeader(event as SmsConsentEventSummary);
   const approvalMessageTemplate = resolveApprovalMessageText({
@@ -162,9 +164,11 @@ export function formatApprovalMessage(
     approvalMessageTemplate,
     buildApprovalTemplateVariables(event, recipient, ticketUrl),
   );
-  const ticketFooter = messageContainsQrCodeUrlVariable(approvalMessageTemplate)
+  const ticketFooter = !includeTicketLink
     ? ""
-    : `\n\nView your ticket here: ${ticketUrl}`;
+    : messageContainsQrCodeUrlVariable(approvalMessageTemplate)
+      ? ""
+      : `\n\nView your ticket here: ${ticketUrl}`;
 
   return formatSmsMessageForSite(
     event.siteKey,
@@ -360,6 +364,8 @@ export const sendApprovalSms = action({
       const generateQrCode = matchingCredential?.generateQR === true;
       const sendNow = resolveSendQrOnApproval(event, matchingCredential);
       const shouldIncludeQrCode = generateQrCode && sendNow;
+      const shouldIncludeTicketLink =
+        matchingCredential?.includeTicketLinkOnApproval ?? (!generateQrCode || sendNow);
 
       let qrCodeMediaUrl: string | undefined;
       if (shouldIncludeQrCode) {
@@ -385,7 +391,7 @@ export const sendApprovalSms = action({
       // waiting to blast it later, send a copy that promises the QR
       // closer to the event so guests don't expect an immediate ticket.
       const approvalMessage =
-        generateQrCode && !sendNow
+        generateQrCode && !sendNow && !shouldIncludeTicketLink
           ? formatDeferredApprovalMessage(
               event as ApprovalEventSummary,
               userRecord as ApprovalRecipientSummary,
@@ -397,6 +403,7 @@ export const sendApprovalSms = action({
               args.code,
               validatedBaseUrl,
               matchingCredential?.approvalMessage,
+              shouldIncludeTicketLink,
             );
       const phoneResolution = await normalizeAndHashPhoneNumber(userRecord.phone);
 

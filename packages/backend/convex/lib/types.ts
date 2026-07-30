@@ -110,6 +110,7 @@ export type ListCredentialPatch = Partial<
     | "generateQR"
     | "defersQrDelivery"
     | "sendQrOnApproval"
+    | "includeTicketLinkOnApproval"
     | "approvalMessage"
     | "autoApproveLimit"
   >
@@ -123,6 +124,7 @@ export type ListUpdate = {
   listKey: string;
   password?: string;
   generateQR?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
 };
@@ -140,6 +142,7 @@ export type CredentialData = {
    * Omit to inherit the event default (which itself defaults to off).
    */
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
 };

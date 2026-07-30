@@ -14,6 +14,7 @@ type ListPayload = {
   password?: string;
   generateQR?: boolean;
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
 };
@@ -41,6 +42,7 @@ type CredentialQueryResult = Array<{
   generateQR?: boolean;
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
   autoApprovedCount?: number;
@@ -575,6 +577,10 @@ describe("event confirmation texts", () => {
     expect(
       screen.getByText("Generated QR image will be attached with this approval SMS."),
     ).toBeInTheDocument();
+    const includeTicketLinkCheckboxes = screen.getAllByLabelText("Include ticket link");
+    expect(includeTicketLinkCheckboxes[0]).toBeChecked();
+    fireEvent.click(includeTicketLinkCheckboxes[0]);
+    expect(includeTicketLinkCheckboxes[0]).not.toBeChecked();
 
     await clickContinue();
     await screen.findByRole("heading", { name: "RSVP setup" });
@@ -594,6 +600,7 @@ describe("event confirmation texts", () => {
         password: "",
         generateQR: true,
         sendQrOnApproval: true,
+        includeTicketLinkOnApproval: false,
         approvalMessage:
           "Hi {{ firstName }}, approved for {{eventName}} at {{eventLocation}} on {{eventDate}}. Ticket: {{qrCodeUrl}}",
         autoApproveLimit: 50,
@@ -611,6 +618,7 @@ describe("event confirmation texts", () => {
         hasPassword: true,
         generateQR: true,
         sendQrOnApproval: true,
+        includeTicketLinkOnApproval: false,
         approvalMessage: "Hi {{firstName}}, VIP for {{eventName}}.",
         autoApproveLimit: 40,
       },
@@ -648,8 +656,9 @@ describe("event confirmation texts", () => {
       expect(screen.getByText("No initial confirmation text will send.")).toBeInTheDocument();
       expect(screen.getByDisplayValue("Legacy {{eventLocation}} copy.")).toBeInTheDocument();
       expect(screen.getByText("Hi John, VIP for Spring Gala.")).toBeInTheDocument();
-      expect(screen.getByText("Legacy Main Room copy.")).toBeInTheDocument();
+      expect(screen.getByText(/Legacy Main Room copy\./)).toBeInTheDocument();
       expect(screen.getAllByLabelText("Attach generated QR code")[0]).toBeChecked();
+      expect(screen.getAllByLabelText("Include ticket link")[0]).not.toBeChecked();
       expect(screen.getByDisplayValue("40")).toBeInTheDocument();
     });
   });

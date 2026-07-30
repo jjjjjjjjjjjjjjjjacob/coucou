@@ -74,6 +74,7 @@ type ListRow = {
   password: string;
   shouldGenerateQrCode: boolean;
   sendQrOnApprovalOverride?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage: string;
   autoApproveLimit: string;
 };
@@ -132,6 +133,7 @@ type DraftListPayload = {
   password?: string;
   generateQR?: boolean;
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
 };
@@ -289,6 +291,7 @@ function createListRows(listKeys: readonly string[]): ListRow[] {
     listKey,
     password: "",
     shouldGenerateQrCode: false,
+    includeTicketLinkOnApproval: true,
     approvalMessage: "",
     autoApproveLimit: "",
   }));
@@ -302,6 +305,7 @@ function areListRowsPristine(currentLists: readonly ListRow[], defaultListKeys: 
       list.password === "" &&
       list.shouldGenerateQrCode === false &&
       list.sendQrOnApprovalOverride === undefined &&
+      list.includeTicketLinkOnApproval === true &&
       list.approvalMessage === "" &&
       list.autoApproveLimit === ""
     );
@@ -441,6 +445,18 @@ export default function EventCreateWizard() {
                 sendQrOnApprovalOverride: false,
               };
         }),
+      );
+    },
+    [],
+  );
+  const setListTicketLinkEnabled = React.useCallback(
+    (listIndex: number, ticketLinkEnabled: boolean) => {
+      setLists((currentLists) =>
+        currentLists.map((list, currentIndex) =>
+          currentIndex === listIndex
+            ? { ...list, includeTicketLinkOnApproval: ticketLinkEnabled }
+            : list,
+        ),
       );
     },
     [],
@@ -618,6 +634,7 @@ export default function EventCreateWizard() {
               : typeof credential.defersQrDelivery === "boolean"
                 ? !credential.defersQrDelivery
                 : undefined,
+          includeTicketLinkOnApproval: credential.includeTicketLinkOnApproval,
           approvalMessage: credential.approvalMessage ?? "",
           autoApproveLimit:
             typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
@@ -797,6 +814,7 @@ export default function EventCreateWizard() {
           password: trimmedPassword,
           generateQR: list.shouldGenerateQrCode,
           sendQrOnApproval: list.sendQrOnApprovalOverride,
+          includeTicketLinkOnApproval: list.includeTicketLinkOnApproval,
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
           autoApproveLimit: autoApproveLimit ?? 0,
         };
@@ -923,6 +941,7 @@ export default function EventCreateWizard() {
             password: list.password.trim(),
             generateQR: list.shouldGenerateQrCode,
             sendQrOnApproval: list.sendQrOnApprovalOverride,
+            includeTicketLinkOnApproval: list.includeTicketLinkOnApproval,
             approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
             autoApproveLimit: autoApproveLimit ?? 0,
           };
@@ -1074,6 +1093,11 @@ export default function EventCreateWizard() {
               list.shouldGenerateQrCode && (list.sendQrOnApprovalOverride ?? sendQrOnApproval)
             }
             onQrAttachmentChange={setListQrAttachmentEnabled}
+            resolveTicketLinkEnabled={(list) =>
+              list.includeTicketLinkOnApproval ??
+              (!list.shouldGenerateQrCode || (list.sendQrOnApprovalOverride ?? sendQrOnApproval))
+            }
+            onTicketLinkChange={setListTicketLinkEnabled}
             previewVariables={confirmationPreviewVariables}
           />
         </div>
@@ -1765,6 +1789,7 @@ function StepLists({
         password: "",
         shouldGenerateQrCode: false,
         sendQrOnApprovalOverride: undefined,
+        includeTicketLinkOnApproval: true,
         approvalMessage: "",
         autoApproveLimit: "",
       },

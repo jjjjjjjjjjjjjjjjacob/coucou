@@ -76,6 +76,34 @@ describe("approval SMS template variables", () => {
     );
   });
 
+  it("omits both the ticket variable and automatic ticket footer when disabled", () => {
+    const message = formatApprovalMessage(
+      event,
+      recipient,
+      "ticket-code",
+      "https://dojo.test",
+      "Hi {{firstName}}, you are approved. Ticket: {{qrCodeUrl}}",
+      false,
+    );
+
+    expect(message).toBe("COUCOU:\n\nHi Riley, you are approved. Ticket: ");
+    expect(message).not.toContain("/redeem/ticket-code");
+  });
+
+  it("keeps the automatic ticket footer enabled by default for legacy callers", () => {
+    const message = formatApprovalMessage(
+      event,
+      recipient,
+      "ticket-code",
+      "https://dojo.test",
+      "Hi {{firstName}}, you are approved.",
+    );
+
+    expect(message).toContain(
+      "Hi Riley, you are approved.\n\nView your ticket here: https://dojo.test/redeem/ticket-code",
+    );
+  });
+
   it("uses custom deferred confirmation copy without exposing the QR URL", () => {
     const message = formatDeferredApprovalMessage(
       event,

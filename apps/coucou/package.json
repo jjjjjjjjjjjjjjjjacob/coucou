@@ -7,7 +7,7 @@
     "build": "next build",
     "deploy": "next build",
     "start": "next start",
-    "test": "bun test",
+    "test": "bun run-tests.ts",
     "lint": "biome lint .",
     "lint:eslint": "eslint ."
   },

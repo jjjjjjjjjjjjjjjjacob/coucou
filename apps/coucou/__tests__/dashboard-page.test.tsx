@@ -65,6 +65,16 @@ function getRouterPushCalls(): string[] {
   return getDashboardTestGlobal().__getRouterPushCalls?.() ?? [];
 }
 
+function getExpectedWorkspaceDashboardHref(pathname = ""): string {
+  const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? window.location.origin).replace(
+    /\/+$/,
+    "",
+  );
+  const normalizedPathname = pathname.replace(/^\/+/, "");
+  const pathnameSuffix = normalizedPathname ? `/${normalizedPathname}` : "";
+  return `${coucouBaseUrl}/workspaces/dojo-pomodoro/dashboard${pathnameSuffix}`;
+}
+
 describe("DashboardClient", () => {
   beforeEach(() => {
     getDashboardTestGlobal().__clearConvexMutationCalls?.();
@@ -153,9 +163,8 @@ describe("DashboardClient", () => {
 
     expect(screen.getAllByText("Dojo Pomodoro").length).toBeGreaterThan(0);
     expect(screen.getByText("dojopomodoro.club")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Open dashboard/ })).toHaveAttribute(
-      "href",
-      "http://localhost:3000/workspaces/dojo-pomodoro/dashboard",
+    expect(screen.getByRole("link", { name: /Open dashboard/ }).getAttribute("href")).toBe(
+      getExpectedWorkspaceDashboardHref(),
     );
     expect(screen.queryByRole("button", { name: /Host/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Door/ })).toBeNull();
@@ -197,10 +206,7 @@ describe("DashboardClient", () => {
     renderDashboardClient();
 
     const openDashboardLink = screen.getByRole("link", { name: /Open dashboard/ });
-    expect(openDashboardLink).toHaveAttribute(
-      "href",
-      "http://localhost:3000/workspaces/dojo-pomodoro/dashboard",
-    );
+    expect(openDashboardLink.getAttribute("href")).toBe(getExpectedWorkspaceDashboardHref());
     fireEvent.click(openDashboardLink);
 
     expect(getClerkSetActiveCalls()).toEqual([]);
@@ -239,10 +245,7 @@ describe("DashboardClient", () => {
     renderDashboardClient();
 
     const openDashboardLink = screen.getByRole("link", { name: /Open dashboard/ });
-    expect(openDashboardLink).toHaveAttribute(
-      "href",
-      "http://localhost:3000/workspaces/dojo-pomodoro/dashboard",
-    );
+    expect(openDashboardLink.getAttribute("href")).toBe(getExpectedWorkspaceDashboardHref());
     fireEvent.click(openDashboardLink);
 
     expect(getClerkSetActiveCalls()).toEqual([]);
@@ -280,9 +283,8 @@ describe("DashboardClient", () => {
 
     renderDashboardClient();
 
-    expect(screen.getByRole("link", { name: /Open dashboard/ })).toHaveAttribute(
-      "href",
-      "http://localhost:3000/workspaces/dojo-pomodoro/dashboard/rsvps",
+    expect(screen.getByRole("link", { name: /Open dashboard/ }).getAttribute("href")).toBe(
+      getExpectedWorkspaceDashboardHref("rsvps"),
     );
     expect(screen.queryByLabelText("Primary URL")).toBeNull();
     expect(screen.queryByRole("button", { name: "Edit primary URL for Dojo Pomodoro" })).toBeNull();

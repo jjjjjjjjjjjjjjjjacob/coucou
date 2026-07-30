@@ -40,6 +40,7 @@ type ListRow = {
   password: string;
   requirePassword: boolean;
   shouldGenerateQrCode: boolean;
+  includeTicketLinkOnApproval: boolean;
   approvalMessage: string;
 };
 
@@ -134,6 +135,7 @@ export default function NewEventClient() {
       password: "",
       requirePassword: true,
       shouldGenerateQrCode: false,
+      includeTicketLinkOnApproval: true,
       approvalMessage: "",
     },
     {
@@ -141,6 +143,7 @@ export default function NewEventClient() {
       password: "",
       requirePassword: true,
       shouldGenerateQrCode: false,
+      includeTicketLinkOnApproval: true,
       approvalMessage: "",
     },
   ]);
@@ -155,6 +158,7 @@ export default function NewEventClient() {
         password: "",
         requirePassword: true,
         shouldGenerateQrCode: false,
+        includeTicketLinkOnApproval: true,
         approvalMessage: "",
       },
     ]);
@@ -196,6 +200,7 @@ export default function NewEventClient() {
           listKey: list.listKey.trim(),
           password: list.requirePassword ? list.password.trim() : "",
           generateQR: list.shouldGenerateQrCode,
+          includeTicketLinkOnApproval: list.includeTicketLinkOnApproval,
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
         }))
         .filter((list) => list.listKey);
@@ -427,6 +432,21 @@ export default function NewEventClient() {
                           value={list.approvalMessage}
                           onChange={(event) => setList(idx, "approvalMessage", event.target.value)}
                         />
+                        <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                          <Checkbox
+                            id={`include-ticket-link-${idx}`}
+                            checked={list.includeTicketLinkOnApproval}
+                            onCheckedChange={(checked) =>
+                              setList(idx, "includeTicketLinkOnApproval", Boolean(checked))
+                            }
+                          />
+                          <label
+                            htmlFor={`include-ticket-link-${idx}`}
+                            className="text-sm leading-tight text-muted-foreground"
+                          >
+                            Include the guest&apos;s ticket link in the approval response
+                          </label>
+                        </div>
                       </div>
                     </div>
                   ))}

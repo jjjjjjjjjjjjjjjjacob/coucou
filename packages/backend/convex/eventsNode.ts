@@ -98,6 +98,7 @@ const listUpdateValidator = v.object({
   generateQR: v.optional(v.boolean()),
   defersQrDelivery: v.optional(v.boolean()),
   sendQrOnApproval: v.optional(v.boolean()),
+  includeTicketLinkOnApproval: v.optional(v.boolean()),
   approvalMessage: v.optional(v.string()),
   autoApproveLimit: v.optional(v.number()),
 });
@@ -120,6 +121,7 @@ type HostCredentialData = {
   generateQR?: boolean;
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
   autoApprovedCount?: number;
@@ -265,6 +267,7 @@ export const create = action({
         password: v.string(),
         generateQR: v.optional(v.boolean()),
         sendQrOnApproval: v.optional(v.boolean()),
+        includeTicketLinkOnApproval: v.optional(v.boolean()),
         approvalMessage: v.optional(v.string()),
         autoApproveLimit: v.optional(v.number()),
       }),
@@ -320,7 +323,15 @@ export const create = action({
     }
 
     const derivedCredentials: CredentialData[] = args.lists.map(
-      ({ listKey, password, generateQR, sendQrOnApproval, approvalMessage, autoApproveLimit }) => {
+      ({
+        listKey,
+        password,
+        generateQR,
+        sendQrOnApproval,
+        includeTicketLinkOnApproval,
+        approvalMessage,
+        autoApproveLimit,
+      }) => {
         validateAutoApproveLimit(autoApproveLimit);
         const trimmedPassword = password.trim();
         const hasPassword = trimmedPassword.length > 0;
@@ -332,6 +343,7 @@ export const create = action({
             : undefined,
           generateQR,
           sendQrOnApproval,
+          includeTicketLinkOnApproval,
           approvalMessage: sanitizeOptionalApprovalMessage(approvalMessage),
           autoApproveLimit,
         };
@@ -605,6 +617,7 @@ export const update = action({
       const nextGenerateQrCodeEnabled = list.generateQR ?? false;
       const nextDefersQrDelivery = list.defersQrDelivery;
       const nextSendQrOnApproval = list.sendQrOnApproval;
+      const nextIncludeTicketLinkOnApproval = list.includeTicketLinkOnApproval;
       const nextApprovalMessage = sanitizeOptionalApprovalMessage(list.approvalMessage);
       const nextAutoApproveLimit = list.autoApproveLimit;
       const credentialPatch: ListCredentialPatch = {};
@@ -632,6 +645,9 @@ export const update = action({
         }
         if (nextSendQrOnApproval !== currentCredential.sendQrOnApproval) {
           credentialPatch.sendQrOnApproval = nextSendQrOnApproval;
+        }
+        if (nextIncludeTicketLinkOnApproval !== currentCredential.includeTicketLinkOnApproval) {
+          credentialPatch.includeTicketLinkOnApproval = nextIncludeTicketLinkOnApproval;
         }
         if (nextApprovalMessage !== currentCredential.approvalMessage) {
           credentialPatch.approvalMessage = nextApprovalMessage;
@@ -661,6 +677,7 @@ export const update = action({
           generateQR: nextGenerateQrCodeEnabled,
           defersQrDelivery: nextDefersQrDelivery,
           sendQrOnApproval: nextSendQrOnApproval,
+          includeTicketLinkOnApproval: nextIncludeTicketLinkOnApproval,
           approvalMessage: nextApprovalMessage,
           autoApproveLimit: nextAutoApproveLimit,
         });

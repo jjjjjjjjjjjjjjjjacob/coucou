@@ -275,6 +275,11 @@ export default defineSchema({
      * `false` always defers to a host-driven blast.
      */
     sendQrOnApproval: v.optional(v.boolean()),
+    /**
+     * Whether the approval SMS should contain the guest's ticket URL.
+     * Undefined preserves the legacy behavior derived from QR delivery timing.
+     */
+    includeTicketLinkOnApproval: v.optional(v.boolean()),
     approvalMessage: v.optional(v.string()), // per-list approval SMS copy
     /**
      * Number of RSVP submissions that may be approved automatically for this list.

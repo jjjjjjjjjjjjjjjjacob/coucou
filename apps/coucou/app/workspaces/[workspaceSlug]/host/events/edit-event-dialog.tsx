@@ -521,6 +521,7 @@ export default function EditEventDialog({
             : typeof credential.defersQrDelivery === "boolean"
               ? !credential.defersQrDelivery
               : undefined,
+        includeTicketLinkOnApproval: credential.includeTicketLinkOnApproval,
         approvalMessage: credential.approvalMessage ?? event.approvalMessage ?? "",
         autoApproveLimit:
           typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
@@ -560,6 +561,7 @@ export default function EditEventDialog({
         requirePassword: false,
         generateQR: false,
         sendQrOnApprovalOverride: undefined,
+        includeTicketLinkOnApproval: true,
         approvalMessage: "",
         autoApproveLimit: "",
       },
@@ -601,6 +603,18 @@ export default function EditEventDialog({
                 sendQrOnApprovalOverride: false,
               };
         }),
+      );
+    },
+    [],
+  );
+  const setListTicketLinkEnabled = React.useCallback(
+    (listIndex: number, ticketLinkEnabled: boolean) => {
+      setLists((currentLists) =>
+        currentLists.map((list, currentIndex) =>
+          currentIndex === listIndex
+            ? { ...list, includeTicketLinkOnApproval: ticketLinkEnabled }
+            : list,
+        ),
       );
     },
     [],
@@ -819,6 +833,7 @@ export default function EditEventDialog({
           password,
           generateQR: list.generateQR,
           sendQrOnApproval: list.sendQrOnApprovalOverride,
+          includeTicketLinkOnApproval: list.includeTicketLinkOnApproval,
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
           autoApproveLimit: autoApproveLimit ?? 0,
         };
@@ -1071,6 +1086,11 @@ export default function EditEventDialog({
                     list.generateQR && (list.sendQrOnApprovalOverride ?? currentSendQrOnApproval)
                   }
                   onQrAttachmentChange={setListQrAttachmentEnabled}
+                  resolveTicketLinkEnabled={(list) =>
+                    list.includeTicketLinkOnApproval ??
+                    (!list.generateQR || (list.sendQrOnApprovalOverride ?? currentSendQrOnApproval))
+                  }
+                  onTicketLinkChange={setListTicketLinkEnabled}
                   previewVariables={confirmationPreviewVariables}
                 />
               </div>

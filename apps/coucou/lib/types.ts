@@ -194,6 +194,7 @@ export interface ListCredential {
   /** @deprecated Use `sendQrOnApproval`. */
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
   autoApprovedCount?: number;
@@ -498,6 +499,7 @@ export interface ListCredentialEdit {
    * Tri-state: undefined inherits, true forces immediate, false forces defer.
    */
   sendQrOnApprovalOverride?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage: string;
   autoApproveLimit: string;
 }
@@ -512,6 +514,7 @@ export interface CredentialResponse {
   /** @deprecated Use `sendQrOnApproval`. */
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
   autoApprovedCount?: number;
@@ -586,6 +589,7 @@ export interface ListCredentialInput {
    * Tri-state: undefined inherits, true forces immediate, false forces defer.
    */
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
 }

@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   applyMessageTemplateVariables,
   type MessageTemplateVariables,
+  messageContainsQrCodeUrlVariable,
 } from "@/lib/text-blast-message";
 
 export interface ListConfirmationTextRow {
@@ -19,6 +20,8 @@ export interface ListConfirmationTextsSectionProps<ListRow extends ListConfirmat
   onApprovalMessageChange: (listIndex: number, approvalMessage: string) => void;
   resolveQrAttachmentEnabled?: (list: ListRow, listIndex: number) => boolean;
   onQrAttachmentChange?: (listIndex: number, qrAttachmentEnabled: boolean) => void;
+  resolveTicketLinkEnabled?: (list: ListRow, listIndex: number) => boolean;
+  onTicketLinkChange?: (listIndex: number, ticketLinkEnabled: boolean) => void;
   previewVariables?: MessageTemplateVariables;
   className?: string;
 }
@@ -37,6 +40,8 @@ export function ListConfirmationTextsSection<ListRow extends ListConfirmationTex
   onApprovalMessageChange,
   resolveQrAttachmentEnabled,
   onQrAttachmentChange,
+  resolveTicketLinkEnabled,
+  onTicketLinkChange,
   previewVariables = DEFAULT_PREVIEW_VARIABLES,
   className,
 }: ListConfirmationTextsSectionProps<ListRow>) {
@@ -58,6 +63,23 @@ export function ListConfirmationTextsSection<ListRow extends ListConfirmationTex
               resolveQrAttachmentEnabled && onQrAttachmentChange,
             );
             const qrAttachmentEnabled = resolveQrAttachmentEnabled?.(list, listIndex) ?? false;
+            const ticketLinkControlsEnabled = Boolean(
+              resolveTicketLinkEnabled && onTicketLinkChange,
+            );
+            const ticketLinkEnabled = resolveTicketLinkEnabled?.(list, listIndex) ?? false;
+            const approvalMessageTemplate = list.approvalMessage.trim()
+              ? list.approvalMessage
+              : defaultApprovalMessage;
+            const approvalMessagePreview = applyMessageTemplateVariables(approvalMessageTemplate, {
+              ...previewVariables,
+              qrCodeUrl: ticketLinkEnabled ? previewVariables.qrCodeUrl : "",
+            });
+            const ticketLinkPreviewFooter =
+              ticketLinkControlsEnabled &&
+              ticketLinkEnabled &&
+              !messageContainsQrCodeUrlVariable(approvalMessageTemplate)
+                ? `\n\nView your ticket here: ${previewVariables.qrCodeUrl ?? ""}`
+                : "";
             return (
               <div
                 key={`${trimmedListKey}-${listIndex}`}
@@ -104,13 +126,21 @@ export function ListConfirmationTextsSection<ListRow extends ListConfirmationTex
                     switchId={`list-confirmation-qr-attachment-${listIndex}`}
                   />
                 ) : null}
+                {ticketLinkControlsEnabled ? (
+                  <FieldSwitchRow
+                    compact
+                    title="Include ticket link"
+                    description="Adds the guest's ticket URL to this approval SMS. Turn this off to send approval copy without a ticket link."
+                    checked={ticketLinkEnabled}
+                    onCheckedChange={(checked) => onTicketLinkChange?.(listIndex, checked)}
+                    switchId={`list-confirmation-ticket-link-${listIndex}`}
+                  />
+                ) : null}
                 <div className="space-y-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-3)]/40 p-3">
                   <div className="text-xs font-medium text-[var(--text-tertiary)]">Preview</div>
                   <div className="whitespace-pre-wrap text-sm text-[var(--text-primary)]">
-                    {applyMessageTemplateVariables(
-                      list.approvalMessage.trim() ? list.approvalMessage : defaultApprovalMessage,
-                      previewVariables,
-                    )}
+                    {approvalMessagePreview}
+                    {ticketLinkPreviewFooter}
                   </div>
                   {qrAttachmentControlsEnabled && qrAttachmentEnabled ? (
                     <div className="mt-2 border-t border-[var(--border-subtle)] pt-2 text-xs text-[var(--text-secondary)]">

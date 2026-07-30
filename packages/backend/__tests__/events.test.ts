@@ -77,6 +77,7 @@ describe("Events Functions", () => {
           password: "blue-door",
           generateQR: true,
           sendQrOnApproval: true,
+          includeTicketLinkOnApproval: false,
           approvalMessage: "Press approved.",
           autoApproveLimit: 50,
         },
@@ -101,6 +102,7 @@ describe("Events Functions", () => {
     expect(listCredentials[0]?.password).toBe("blue-door");
     expect(listCredentials[0]?.generateQR).toBe(true);
     expect(listCredentials[0]?.sendQrOnApproval).toBe(true);
+    expect(listCredentials[0]?.includeTicketLinkOnApproval).toBe(false);
     expect(listCredentials[0]?.approvalMessage).toBe("Press approved.");
     expect(listCredentials[0]?.autoApproveLimit).toBe(50);
     expect(listCredentials[0]?.autoApprovedCount).toBeUndefined();
@@ -177,6 +179,7 @@ describe("Events Functions", () => {
         passwordNormalized: "blue-door",
         generateQR: true,
         sendQrOnApproval: false,
+        includeTicketLinkOnApproval: false,
         approvalMessage: "Press approved.",
         autoApproveLimit: 50,
         autoApprovedCount: 12,
@@ -230,6 +233,7 @@ describe("Events Functions", () => {
     expect(duplicateCredentials[0]?.passwordNormalized).toBe("blue-door");
     expect(duplicateCredentials[0]?.generateQR).toBe(true);
     expect(duplicateCredentials[0]?.sendQrOnApproval).toBe(false);
+    expect(duplicateCredentials[0]?.includeTicketLinkOnApproval).toBe(false);
     expect(duplicateCredentials[0]?.approvalMessage).toBe("Press approved.");
     expect(duplicateCredentials[0]?.autoApproveLimit).toBe(50);
     expect(duplicateCredentials[0]?.autoApprovedCount).toBeUndefined();

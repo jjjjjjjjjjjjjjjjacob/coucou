@@ -13,6 +13,7 @@ function toPublicCredential(credential: {
   generateQR?: boolean;
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
   autoApprovedCount?: number;
@@ -26,6 +27,7 @@ function toPublicCredential(credential: {
     generateQR: credential.generateQR,
     defersQrDelivery: credential.defersQrDelivery,
     sendQrOnApproval: credential.sendQrOnApproval,
+    includeTicketLinkOnApproval: credential.includeTicketLinkOnApproval,
     approvalMessage: credential.approvalMessage,
     createdAt: credential.createdAt,
   };
@@ -39,6 +41,7 @@ function toHostCredential(credential: {
   generateQR?: boolean;
   defersQrDelivery?: boolean;
   sendQrOnApproval?: boolean;
+  includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
   autoApprovedCount?: number;
