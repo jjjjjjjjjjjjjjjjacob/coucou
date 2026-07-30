@@ -15,22 +15,20 @@ export function createGuestSnapshot(
   guests: StaffGuestSummary[],
   storedAt: number = Date.now(),
 ): CachedGuestSnapshot {
-  const compactGuests = guests
-    .slice(0, GUEST_CACHE_MAXIMUM_ROWS)
-    .map(
-      (guest): StaffGuestSummary => ({
-        rsvpId: guest.rsvpId,
-        name: guest.name,
-        listKey: guest.listKey,
-        approvalStatus: guest.approvalStatus,
-        attendanceStatus: guest.attendanceStatus,
-        attendees: guest.attendees,
-        ticketStatus: guest.ticketStatus,
-        entryStatus: guest.entryStatus,
-        createdAt: guest.createdAt,
-        updatedAt: guest.updatedAt,
-      }),
-    );
+  const compactGuests = guests.slice(0, GUEST_CACHE_MAXIMUM_ROWS).map(
+    (guest): StaffGuestSummary => ({
+      rsvpId: guest.rsvpId,
+      name: guest.name,
+      listKey: guest.listKey,
+      approvalStatus: guest.approvalStatus,
+      attendanceStatus: guest.attendanceStatus,
+      attendees: guest.attendees,
+      ticketStatus: guest.ticketStatus,
+      entryStatus: guest.entryStatus,
+      createdAt: guest.createdAt,
+      updatedAt: guest.updatedAt,
+    }),
+  );
 
   return {
     version: 1,
@@ -42,9 +40,7 @@ export function createGuestSnapshot(
   };
 }
 
-export async function writeGuestSnapshot(
-  snapshot: CachedGuestSnapshot,
-): Promise<void> {
+export async function writeGuestSnapshot(snapshot: CachedGuestSnapshot): Promise<void> {
   await AsyncStorage.setItem(cacheKey(snapshot.eventId), JSON.stringify(snapshot));
 }
 
@@ -77,9 +73,7 @@ export async function readGuestSnapshot(
 
 export async function purgeAllGuestSnapshots(): Promise<void> {
   const keys = await AsyncStorage.getAllKeys();
-  const guestSnapshotKeys = keys.filter((key) =>
-    key.startsWith(CACHE_KEY_PREFIX),
-  );
+  const guestSnapshotKeys = keys.filter((key) => key.startsWith(CACHE_KEY_PREFIX));
   if (guestSnapshotKeys.length > 0) {
     await AsyncStorage.multiRemove(guestSnapshotKeys);
   }
@@ -89,9 +83,7 @@ export async function purgeWorkspaceGuestSnapshots(
   accessibleWorkspaceIds: Set<string>,
   now: number = Date.now(),
 ): Promise<void> {
-  const keys = (await AsyncStorage.getAllKeys()).filter((key) =>
-    key.startsWith(CACHE_KEY_PREFIX),
-  );
+  const keys = (await AsyncStorage.getAllKeys()).filter((key) => key.startsWith(CACHE_KEY_PREFIX));
   const snapshots = await AsyncStorage.multiGet(keys);
   const inaccessibleKeys = snapshots.flatMap(([key, serializedSnapshot]) => {
     if (!serializedSnapshot) {
@@ -99,8 +91,7 @@ export async function purgeWorkspaceGuestSnapshots(
     }
     try {
       const snapshot = JSON.parse(serializedSnapshot) as CachedGuestSnapshot;
-      return accessibleWorkspaceIds.has(snapshot.workspaceId) &&
-        snapshot.expiresAt > now
+      return accessibleWorkspaceIds.has(snapshot.workspaceId) && snapshot.expiresAt > now
         ? []
         : [key];
     } catch {

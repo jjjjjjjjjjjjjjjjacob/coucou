@@ -240,6 +240,8 @@ export default defineSchema({
     rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
     rsvpConfirmationMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()), // legacy QR code color field retained for compatibility
+    webhookOriginApiClientId: v.optional(v.id("apiClients")),
+    webhookOriginMutationId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -332,6 +334,8 @@ export default defineSchema({
     attendanceStatus: v.optional(v.string()), // 'yes' | 'no' | 'maybe'
     ticketViewedAt: v.optional(v.number()),
     apiClientId: v.optional(v.id("apiClients")), // set when created/updated via the partner API
+    webhookOriginApiClientId: v.optional(v.id("apiClients")),
+    webhookOriginMutationId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -505,7 +509,7 @@ export default defineSchema({
     recipientClerkUserId: v.string(),
     recipientPhoneObfuscated: v.string(), // ***-***-1234 format for display
     recipientPhoneHash: v.optional(v.string()),
-    type: v.string(), // 'approval' | 'blast' | 'reminder' | 'sms_consent_enabled' | 'sms_consent_disabled'
+    type: v.string(), // 'approval' | 'blast' | 'reminder' | 'rsvp_confirmation' | 'sms_consent_enabled' | 'sms_consent_disabled'
     message: v.string(),
     status: v.string(), // 'pending' | 'sent' | 'failed'
     messageId: v.optional(v.string()), // AWS SNS MessageId
@@ -775,6 +779,8 @@ export default defineSchema({
         v.literal("rsvps:write"),
       ),
     ),
+    eventAccessMode: v.optional(v.union(v.literal("all"), v.literal("selected"))),
+    allowedEventIds: v.optional(v.array(v.id("events"))),
     createdByClerkUserId: v.string(),
     createdAt: v.number(),
     lastUsedAt: v.optional(v.number()),
@@ -795,6 +801,8 @@ export default defineSchema({
     signingSecretBase64: v.string(), // 32 random bytes, base64url — independent HMAC-SHA256 key
     secretGeneration: v.number(), // starts at 1, bumped on rotate; sent as keyGeneration
     subscribedEventTypes: v.array(v.string()), // validated against WEBHOOK_EVENT_TYPES at write time
+    eventAccessMode: v.optional(v.union(v.literal("all"), v.literal("selected"))),
+    allowedEventIds: v.optional(v.array(v.id("events"))),
     isActive: v.boolean(),
     disabledReason: v.optional(v.union(v.literal("manual"), v.literal("auto_failure"))),
     consecutiveFailureCount: v.number(),

@@ -3,6 +3,7 @@
 import { API_VERSION, type CoucouWebhookEventType, WEBHOOK_EVENT_TYPES } from "@coucou/sdk/api-v1";
 import { ArrowLeft, Copy } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { DashboardTitleBar } from "@/components/dashboard-title-bar";
@@ -143,6 +144,31 @@ const EXAMPLE_RSVP_LOOKUP_RESPONSE = `{
   "createdAt": 1752500000000, "updatedAt": 1752600000000
 }`;
 
+const EXAMPLE_RSVP_LIST_RESPONSE = `{
+  "data": [
+    {
+      "rsvpId": "k97d…", "approvalStatus": "approved", "attendanceStatus": "yes",
+      "listKey": "ga", "attendees": 2, "name": "Jane Doe", "isGuest": false,
+      "phone": "+15551234567", "phoneHash": "<sha256 hex of E.164>",
+      "createdAt": 1752500000000, "updatedAt": 1752600000000,
+      "ticket": null
+    }
+  ],
+  "nextCursor": null
+}`;
+
+const EXAMPLE_SMS_CONSENT_RESPONSE = `{
+  "smsConsent": false,
+  "smsConsentTimestamp": null,
+  "smsProgram": {
+    "organizerName": "Example Events",
+    "consentLabel": "I agree to receive recurring SMS messages from Example Events.",
+    "disclosure": "Example Events may send RSVP, guest-list, ticket, and event updates…",
+    "termsUrl": "https://events.example.com/terms",
+    "privacyUrl": "https://events.example.com/privacy"
+  }
+}`;
+
 const EXAMPLE_CREATE_RSVP_REQUEST = `POST /api/v1/events/abc123/rsvps
 Authorization: Bearer coucou_sk_…
 Content-Type: application/json
@@ -153,7 +179,9 @@ Content-Type: application/json
   "listKey": "ga",
   "attendees": 2,
   "attendanceStatus": "yes",
-  "note": "optional"
+  "note": "optional",
+  "smsConsent": true,
+  "smsConsentIpAddress": "203.0.113.42"
 }`;
 
 const EXAMPLE_UPDATE_EVENT_REQUEST = `PATCH /api/v1/events/abc123
@@ -201,7 +229,7 @@ const EXAMPLE_WEBHOOK_PAYLOAD = `{
     "identity": { "phone": "+15551234567",
                   "phoneHash": "<sha256 hex of E.164>",
                   "name": "Jane Doe", "isGuest": false },
-    "origin": { "type": "app" },
+    "origin": { "type": "api", "apiClientId": "api_client_id" },
     "changes": { "previousApprovalStatus": "pending",
                  "previousAttendanceStatus": null }
   }
@@ -262,32 +290,29 @@ const EXAMPLE_ERROR_RESPONSE = `{
   "error": { "code": "invalid_request", "message": "listKey is required" }
 }`;
 
-export default function DevelopersDocsPage() {
-  const workspaceScope = useWorkspaceScope();
+function PartnerApiDocumentation({
+  brandName,
+  backHref,
+}: {
+  brandName: string;
+  backHref?: string;
+}) {
   const apiBaseUrl = resolveApiBaseUrl();
-
-  if (!workspaceScope) {
-    return <p className="text-sm text-[var(--text-secondary)]">Loading workspace…</p>;
-  }
-
-  const developersPagePath = buildWorkspaceOperationPath(
-    workspaceScope.workspaceSlug,
-    "host",
-    "developers",
-  );
 
   return (
     <div className="space-y-4">
       <DashboardTitleBar
         title="Partner API documentation"
-        subtitle={`Integrate ${workspaceScope.brandName} events, RSVPs, and webhooks into your own app. API version ${API_VERSION}.`}
-        breadcrumb={[{ label: "Workspace" }, { label: "Developers" }]}
+        subtitle={`Integrate ${brandName} events, RSVPs, and webhooks into your own app. API version ${API_VERSION}.`}
+        breadcrumb={[{ label: "Developers" }, { label: "Partner API" }]}
         action={
-          <Button variant="outline" size="sm" asChild>
-            <Link href={developersPagePath}>
-              <ArrowLeft className="mr-1 h-4 w-4" /> Back to Developers
-            </Link>
-          </Button>
+          backHref ? (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={backHref}>
+                <ArrowLeft className="mr-1 h-4 w-4" /> Back to Developers
+              </Link>
+            </Button>
+          ) : undefined
         }
       />
 
@@ -314,8 +339,9 @@ export default function DevelopersDocsPage() {
                 <InlineCode>rsvps:write</InlineCode>. Requests missing the needed scope get a 403.
               </>,
               <>
-                Everything is scoped to this workspace. Objects in other workspaces read as 404 —
-                existence is never leaked.
+                Every key is also granted either selected events or all current and future events.
+                Objects outside the key&apos;s workspace or event grants read as 404 — existence is
+                never leaked.
               </>,
               <>
                 Users are matched across systems by <strong>phone number</strong> (normalized
@@ -323,6 +349,92 @@ export default function DevelopersDocsPage() {
               </>,
             ]}
           />
+        </div>
+      </PageCard>
+
+      <PageCard
+        title="Configuration guides"
+        description="Choose the data and SMS ownership model before provisioning credentials."
+      >
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="space-y-2 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+            <h3 className="text-sm font-medium text-[var(--text-primary)]">
+              Coucou-managed RSVP and SMS
+            </h3>
+            <DocList
+              items={[
+                <>
+                  A hosted page such as Danza Organica needs no API key; assign its event to a
+                  webhook endpoint for downstream RSVP and event updates.
+                </>,
+                <>
+                  A delegated form such as The Market uses <InlineCode>events:read</InlineCode>,{" "}
+                  <InlineCode>rsvps:read</InlineCode>, and <InlineCode>rsvps:write</InlineCode> for
+                  its assigned event.
+                </>,
+                <>
+                  Fetch the SMS program, render its separate unchecked consent control, and send{" "}
+                  <InlineCode>smsConsent</InlineCode> plus the end user&apos;s IP only after an
+                  explicit choice.
+                </>,
+                <>
+                  Mirror host approval and denial decisions from the webhook endpoint assigned to
+                  the same event.
+                </>,
+              ]}
+            />
+          </div>
+          <div className="space-y-2 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+            <h3 className="text-sm font-medium text-[var(--text-primary)]">
+              Partner-managed RSVP and SMS
+            </h3>
+            <DocList
+              items={[
+                <>
+                  Grant <InlineCode>rsvps:write</InlineCode> and only the Coucou event receiving the
+                  mirrored list.
+                </>,
+                <>
+                  POST each RSVP idempotently by phone and store the returned Coucou{" "}
+                  <InlineCode>rsvpId</InlineCode>.
+                </>,
+                <>
+                  Omit both <InlineCode>smsConsent</InlineCode> and{" "}
+                  <InlineCode>smsConsentIpAddress</InlineCode>. Do not send false: false is an
+                  explicit Coucou opt-out and can send a status message.
+                </>,
+                <>
+                  Replay the current roster through the idempotent POST, reconcile with the
+                  paginated RSVP endpoint, then consume approval and status webhooks.
+                </>,
+                <>
+                  Compare <InlineCode>origin.apiClientId</InlineCode> with the provisioned client ID
+                  and ignore only that client&apos;s own writes.
+                </>,
+              ]}
+            />
+          </div>
+          <div className="space-y-2 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+            <h3 className="text-sm font-medium text-[var(--text-primary)]">
+              Coucou list shared outward
+            </h3>
+            <DocList
+              items={[
+                <>
+                  Use the paginated RSVP endpoint once for existing contacts, then consume webhooks
+                  for changes.
+                </>,
+                <>
+                  Assign the same event to the read key and endpoint; subscribe to every RSVP
+                  lifecycle event needed by the destination.
+                </>,
+                <>
+                  For Partiful, Posh, Luma, or similar tools, your server-side adapter remains
+                  responsible for their API and consent requirements.
+                </>,
+              ]}
+            />
+          </div>
         </div>
       </PageCard>
 
@@ -351,6 +463,17 @@ export default function DevelopersDocsPage() {
           </div>
 
           <div className="space-y-2">
+            <EndpointHeading method="GET" path="/events/{eventRouteId}/rsvps" scope="rsvps:read" />
+            <DocParagraph>
+              Enumerates the event&apos;s existing RSVP/contact list for initial backfill and
+              reconciliation. Query params: <InlineCode>limit</InlineCode> (1–100, default 25) and{" "}
+              <InlineCode>cursor</InlineCode>. Phone numbers are normalized E.164 when available;
+              phone hashes remain available for matching legacy contacts.
+            </DocParagraph>
+            <CodeBlock code={EXAMPLE_RSVP_LIST_RESPONSE} />
+          </div>
+
+          <div className="space-y-2">
             <EndpointHeading
               method="GET"
               path="/events/{eventRouteId}/rsvps/lookup?phone=+15551234567"
@@ -361,6 +484,19 @@ export default function DevelopersDocsPage() {
               then a guest match by phone hash. 404 if none exists.
             </DocParagraph>
             <CodeBlock code={EXAMPLE_RSVP_LOOKUP_RESPONSE} />
+          </div>
+
+          <div className="space-y-2">
+            <EndpointHeading
+              method="GET"
+              path="/events/{eventRouteId}/rsvps/sms-consent?phone=+15551234567"
+              scope="rsvps:read"
+            />
+            <DocParagraph>
+              Returns the organizer-wide Coucou SMS preference and the exact branded program copy.
+              Omit <InlineCode>phone</InlineCode> to retrieve only the disclosure program.
+            </DocParagraph>
+            <CodeBlock code={EXAMPLE_SMS_CONSENT_RESPONSE} />
           </div>
         </div>
       </PageCard>
@@ -429,14 +565,23 @@ export default function DevelopersDocsPage() {
                   webhook, so mirroring loops can&apos;t echo.
                 </>,
                 <>
-                  List passwords are bypassed by design (the host installed your key), but{" "}
-                  <InlineCode>listKey</InlineCode> must exist on the event.{" "}
-                  <InlineCode>attendees</InlineCode> is capped by the event&apos;s per-RSVP maximum.
+                  List resolution is deterministic: a valid <InlineCode>listPassword</InlineCode>,
+                  then an explicit <InlineCode>listKey</InlineCode>, then the key&apos;s configured
+                  default, then the event fallback. Invalid passwords never fall back.
                 </>,
                 <>
                   New RSVPs start as <InlineCode>approvalStatus: "pending"</InlineCode> unless the
                   selected list still has automatic approvals available. Automatic approvals return
                   the issued ticket in the same response.
+                </>,
+                <>
+                  <InlineCode>smsConsent: true</InlineCode> enrolls in Coucou SMS; false revokes
+                  Coucou consent and may send an opt-out confirmation. Omission leaves prior consent
+                  unchanged and creates no Coucou SMS permission on a new imported RSVP.
+                </>,
+                <>
+                  <InlineCode>smsConsentIpAddress</InlineCode> should accompany true only when your
+                  server can reliably forward the consenting end user&apos;s IP address.
                 </>,
               ]}
             />
@@ -501,7 +646,8 @@ export default function DevelopersDocsPage() {
             </DocParagraph>
             <CodeBlock code={EXAMPLE_WEBHOOK_ENVELOPE} />
             <DocParagraph>
-              Decrypted payload (RSVP events; event.* payloads omit rsvp/identity/origin):
+              Decrypted payload. Event deliveries retain event and origin, but omit the
+              RSVP-specific rsvp, identity, and ticket fields:
             </DocParagraph>
             <CodeBlock code={EXAMPLE_WEBHOOK_PAYLOAD} />
           </div>
@@ -574,7 +720,9 @@ export default function DevelopersDocsPage() {
             </>,
             <>
               <InlineCode>origin.type</InlineCode> is <InlineCode>"api"</InlineCode> when the change
-              came through the partner API — skip mirroring your own writes to avoid loops.
+              came through the partner API. Compare <InlineCode>origin.apiClientId</InlineCode> with
+              your provisioned client ID and skip only your own writes; changes from other API
+              clients still need processing.
             </>,
           ]}
         />
@@ -598,5 +746,26 @@ export default function DevelopersDocsPage() {
         </div>
       </PageCard>
     </div>
+  );
+}
+
+export default function DevelopersDocsPage() {
+  const workspaceScope = useWorkspaceScope();
+  const pathname = usePathname();
+  const isPublicDocumentationRoute = pathname === "/docs/partner-api";
+
+  if (!workspaceScope && !isPublicDocumentationRoute) {
+    return <p className="text-sm text-[var(--text-secondary)]">Loading workspace…</p>;
+  }
+
+  const developersPagePath = workspaceScope
+    ? buildWorkspaceOperationPath(workspaceScope.workspaceSlug, "host", "developers")
+    : undefined;
+
+  return (
+    <PartnerApiDocumentation
+      brandName={workspaceScope?.brandName ?? "Coucou"}
+      backHref={developersPagePath}
+    />
   );
 }

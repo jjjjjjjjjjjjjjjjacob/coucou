@@ -1,5 +1,5 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useClerk, useUser } from "@clerk/expo";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LogOut, ShieldCheck } from "lucide-react-native";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -24,9 +24,7 @@ export default function AccountScreen(): React.JSX.Element {
     setIsSigningOut(true);
     try {
       await purgeAllGuestSnapshots();
-      await AsyncStorage.multiRemove([
-        "coucou-staff:last-workspace",
-      ]);
+      await AsyncStorage.multiRemove(["coucou-staff:last-workspace"]);
       await signOut();
     } finally {
       setIsSigningOut(false);
@@ -62,9 +60,7 @@ export default function AccountScreen(): React.JSX.Element {
           <Text style={styles.sectionLabel}>ACTIVE ASSIGNMENT</Text>
           <WorkspaceEventControls />
           <View style={styles.assignment}>
-            <Text style={styles.assignmentTitle}>
-              {selectedEvent?.name ?? "No event selected"}
-            </Text>
+            <Text style={styles.assignmentTitle}>{selectedEvent?.name ?? "No event selected"}</Text>
             <Text style={styles.assignmentMeta}>
               {selectedEvent
                 ? `${new Intl.DateTimeFormat(undefined, {
@@ -82,8 +78,7 @@ export default function AccountScreen(): React.JSX.Element {
             <View style={styles.capabilityHeader}>
               <ShieldCheck color={colors.admit} size={21} />
               <Text style={styles.capabilityRole}>
-                {selectedWorkspace?.membershipRole.replace("org:", "") ??
-                  "No role"}
+                {selectedWorkspace?.membershipRole.replace("org:", "") ?? "No role"}
               </Text>
             </View>
             <CapabilityRow
@@ -108,9 +103,8 @@ export default function AccountScreen(): React.JSX.Element {
         <View style={styles.privacy}>
           <Text style={styles.privacyTitle}>Protected on this device</Text>
           <Text style={styles.privacyBody}>
-            Clerk tokens use SecureStore. Offline snapshots expire after 24
-            hours and omit contact data, notes, custom fields, and ticket codes.
-            Check-ins and edits are never queued.
+            Clerk tokens use SecureStore. Offline snapshots expire after 24 hours and omit contact
+            data, notes, custom fields, and ticket codes. Check-ins and edits are never queued.
           </Text>
         </View>
 
@@ -130,32 +124,14 @@ export default function AccountScreen(): React.JSX.Element {
   );
 }
 
-function CapabilityRow({
-  enabled,
-  label,
-}: {
-  enabled: boolean;
-  label: string;
-}): React.JSX.Element {
+function CapabilityRow({ enabled, label }: { enabled: boolean; label: string }): React.JSX.Element {
   return (
     <View style={styles.capabilityRow}>
       <View
-        style={[
-          styles.capabilityDot,
-          { backgroundColor: enabled ? colors.success : colors.rule },
-        ]}
+        style={[styles.capabilityDot, { backgroundColor: enabled ? colors.success : colors.rule }]}
       />
-      <Text
-        style={[
-          styles.capabilityLabel,
-          !enabled && styles.capabilityDisabled,
-        ]}
-      >
-        {label}
-      </Text>
-      <Text style={styles.capabilityValue}>
-        {enabled ? "ALLOWED" : "BLOCKED"}
-      </Text>
+      <Text style={[styles.capabilityLabel, !enabled && styles.capabilityDisabled]}>{label}</Text>
+      <Text style={styles.capabilityValue}>{enabled ? "ALLOWED" : "BLOCKED"}</Text>
     </View>
   );
 }

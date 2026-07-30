@@ -1,6 +1,6 @@
 import {
-  scanMachineReducer,
   SCAN_DUPLICATE_COOLDOWN_MILLISECONDS,
+  scanMachineReducer,
   shouldSuppressDuplicateScan,
 } from "../scan-machine";
 
@@ -34,13 +34,6 @@ describe("scan machine", () => {
         100 + SCAN_DUPLICATE_COOLDOWN_MILLISECONDS - 1,
       ),
     ).toBe(true);
-    expect(
-      shouldSuppressDuplicateScan(
-        "AB12CD34",
-        100,
-        "ZX98YU76",
-        101,
-      ),
-    ).toBe(false);
+    expect(shouldSuppressDuplicateScan("AB12CD34", 100, "ZX98YU76", 101)).toBe(false);
   });
 });

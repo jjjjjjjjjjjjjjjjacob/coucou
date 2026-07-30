@@ -1,12 +1,5 @@
 import { Check, ChevronDown, X } from "lucide-react-native";
-import {
-  FlatList,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, minimumTargetStyle, radii, spacing, typography } from "@/theme";
 
 export interface SelectionOption {
@@ -66,10 +59,7 @@ export function SelectionSheet({
               accessibilityLabel="Close"
               accessibilityRole="button"
               onPress={onClose}
-              style={({ pressed }) => [
-                styles.closeButton,
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
             >
               <X color={colors.paper} size={22} />
             </Pressable>
@@ -83,22 +73,15 @@ export function SelectionSheet({
                 accessibilityRole="button"
                 accessibilityState={{ selected: item.key === selectedKey }}
                 onPress={() => onSelect(item)}
-                style={({ pressed }) => [
-                  styles.option,
-                  pressed && styles.pressed,
-                ]}
+                style={({ pressed }) => [styles.option, pressed && styles.pressed]}
               >
                 <View style={styles.optionText}>
                   <Text style={styles.optionLabel}>{item.label}</Text>
                   {item.description ? (
-                    <Text style={styles.optionDescription}>
-                      {item.description}
-                    </Text>
+                    <Text style={styles.optionDescription}>{item.description}</Text>
                   ) : null}
                 </View>
-                {item.key === selectedKey ? (
-                  <Check color={colors.admit} size={22} />
-                ) : null}
+                {item.key === selectedKey ? <Check color={colors.admit} size={22} /> : null}
               </Pressable>
             )}
           />

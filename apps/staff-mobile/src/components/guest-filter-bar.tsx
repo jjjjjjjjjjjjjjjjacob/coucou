@@ -1,13 +1,8 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet } from "react-native";
-import { SelectionSheet, type SelectionOption } from "@/components/selection-sheet";
+import { type SelectionOption, SelectionSheet } from "@/components/selection-sheet";
 import { spacing } from "@/theme";
-import type {
-  ApprovalFilter,
-  AttendanceFilter,
-  StaffGuestFilters,
-  TicketFilter,
-} from "@/types";
+import type { ApprovalFilter, AttendanceFilter, StaffGuestFilters, TicketFilter } from "@/types";
 
 interface GuestFilterBarProps {
   filters: StaffGuestFilters;
@@ -37,14 +32,8 @@ const ticketOptions: SelectionOption[] = [
   { key: "disabled", label: "Disabled" },
 ];
 
-function selectedLabel(
-  options: SelectionOption[],
-  selectedKey: string,
-): string {
-  return (
-    options.find((option) => option.key === selectedKey)?.label ??
-    selectedKey
-  );
+function selectedLabel(options: SelectionOption[], selectedKey: string): string {
+  return options.find((option) => option.key === selectedKey)?.label ?? selectedKey;
 }
 
 export function GuestFilterBar({

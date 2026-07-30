@@ -9,6 +9,7 @@
     "ignoreUnknown": true,
     "includes": [
       "**",
+      "!**/.agents",
       "!**/.next",
       "!**/.turbo",
       "!**/coverage",

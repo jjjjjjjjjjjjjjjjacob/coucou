@@ -20,6 +20,13 @@ export interface ApiErrorBody {
 export type ApiApprovalStatus = "pending" | "approved" | "denied";
 export type ApiAttendanceStatus = "yes" | "no" | "maybe";
 export type ApiTicketStatus = "issued" | "disabled" | "redeemed";
+export type PartnerEventAccessMode = "all" | "selected";
+
+export interface PartnerEventAccess {
+  eventAccessMode: PartnerEventAccessMode;
+  allowedEventIds: string[];
+  isLegacyAllEventsAccess: boolean;
+}
 
 export interface ApiTicket {
   status: ApiTicketStatus;
@@ -102,6 +109,18 @@ export interface ApiRsvp {
   createdAt: number;
   updatedAt: number;
   ticket: ApiTicket | null;
+}
+
+export interface ApiRsvpContact extends ApiRsvp {
+  /** Normalized E.164, or null when plaintext contact data is unavailable. */
+  phone: string | null;
+  /** SHA-256 hex of the normalized E.164 phone number, or null when unknown. */
+  phoneHash: string | null;
+}
+
+export interface ApiRsvpContactList {
+  data: ApiRsvpContact[];
+  nextCursor: string | null;
 }
 
 export interface ApiSmsProgram {
@@ -188,8 +207,8 @@ export interface CoucouWebhookPayload {
     rsvp?: CoucouWebhookRsvpSnapshot;
     identity?: CoucouWebhookIdentity;
     ticket?: CoucouWebhookTicketSnapshot;
-    /** "api" when the change came through the partner API (skip mirroring your own writes). */
-    origin?: { type: "api" | "app" };
+    /** API deliveries identify the exact client so consumers skip only their own writes. */
+    origin: { type: "api"; apiClientId: string } | { type: "app" };
     changes?: Record<string, unknown>;
   };
 }

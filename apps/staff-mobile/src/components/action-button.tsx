@@ -1,10 +1,10 @@
 import {
   ActivityIndicator,
   Pressable,
-  StyleSheet,
-  Text,
   type PressableProps,
   type StyleProp,
+  StyleSheet,
+  Text,
   type ViewStyle,
 } from "react-native";
 import { colors, minimumTargetStyle, radii, spacing, typography } from "@/theme";
@@ -39,9 +39,7 @@ export function ActionButton({
       {...pressableProps}
     >
       {isLoading ? (
-        <ActivityIndicator
-          color={variant === "primary" ? colors.night : colors.paper}
-        />
+        <ActivityIndicator color={variant === "primary" ? colors.night : colors.paper} />
       ) : (
         <Text
           allowFontScaling

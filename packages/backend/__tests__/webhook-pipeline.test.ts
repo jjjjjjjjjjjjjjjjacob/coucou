@@ -169,6 +169,10 @@ async function seedEvent(
 async function createEndpoint(
   testBackend: TestBackend,
   subscribedEventTypes: string[],
+  eventAccess: {
+    eventAccessMode: "all" | "selected";
+    allowedEventIds?: Id<"events">[];
+  } = { eventAccessMode: "all" },
 ): Promise<{
   endpointId: Id<"webhookEndpoints">;
   encryptionSecretBase64: string;
@@ -179,6 +183,8 @@ async function createEndpoint(
     workspaceSlug: WORKSPACE_SLUG,
     url: ENDPOINT_URL,
     subscribedEventTypes,
+    eventAccessMode: eventAccess.eventAccessMode,
+    allowedEventIds: eventAccess.allowedEventIds,
   });
   return {
     endpointId: created.endpointId,
@@ -351,6 +357,76 @@ describe("webhook pipeline", () => {
     await submitGuestRsvp(testBackend, eventId, "(310) 499-6272");
     await drainScheduledFunctions(testBackend);
     expect(capturedWebhookRequests).toHaveLength(0);
+  });
+
+  it("delivers only granted events and preserves event.deleted for a granted event", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const grantedEventId = await seedEvent(testBackend, { shortId: "evt-webhook-granted" });
+    const ungrantedEventId = await seedEvent(testBackend, {
+      shortId: "evt-webhook-ungranted",
+    });
+    const endpoint = await createEndpoint(testBackend, ["rsvp.created", "event.deleted"], {
+      eventAccessMode: "selected",
+      allowedEventIds: [grantedEventId],
+    });
+
+    await submitGuestRsvp(testBackend, grantedEventId, "+15551238881");
+    await submitGuestRsvp(testBackend, ungrantedEventId, "+15551238882");
+    await drainScheduledFunctions(testBackend);
+    expect(capturedWebhookRequests).toHaveLength(1);
+
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    await hostBackend.mutation(api.events.remove, {
+      eventId: grantedEventId,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    await drainScheduledFunctions(testBackend);
+    expect(capturedWebhookRequests).toHaveLength(2);
+    const { payload } = await decryptCapturedRequest(
+      capturedWebhookRequests[1],
+      endpoint.encryptionSecretBase64,
+    );
+    expect(payload.eventType).toBe("event.deleted");
+    expect(payload.data.event.id).toBe(grantedEventId);
+  });
+
+  it("re-checks event access before delivering a queued attempt", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const initiallyGrantedEventId = await seedEvent(testBackend, {
+      shortId: "evt-webhook-revoked",
+    });
+    const replacementEventId = await seedEvent(testBackend, {
+      shortId: "evt-webhook-replacement",
+    });
+    const endpoint = await createEndpoint(testBackend, ["rsvp.created"], {
+      eventAccessMode: "selected",
+      allowedEventIds: [initiallyGrantedEventId],
+    });
+    await submitGuestRsvp(testBackend, initiallyGrantedEventId, "+15551238883");
+
+    const pendingDelivery = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.query("webhookDeliveries").unique();
+    });
+    if (!pendingDelivery) throw new Error("Expected a pending webhook delivery");
+
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    await hostBackend.mutation(api.webhookEndpoints.updateEventAccess, {
+      workspaceSlug: WORKSPACE_SLUG,
+      endpointId: endpoint.endpointId,
+      eventAccessMode: "selected",
+      allowedEventIds: [replacementEventId],
+    });
+    await testBackend.action(internal.webhookDispatch.attemptDelivery, {
+      deliveryId: pendingDelivery._id,
+    });
+
+    expect(capturedWebhookRequests).toHaveLength(0);
+    const skippedDelivery = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.get(pendingDelivery._id);
+    });
+    expect(skippedDelivery?.status).toBe("skipped_inactive");
   });
 
   it("retries failed deliveries with backoff and marks them exhausted", async () => {

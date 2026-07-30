@@ -165,7 +165,8 @@ mock.module("convex/react", () => ({
 }));
 
 mock.module("@/lib/use-workspace-scope", () => ({
-  useWorkspaceOperationPath: (_surface: string, pathname = "") => `/host/${pathname}`,
+  useWorkspaceOperationPath: (_surface: string, pathname = "") =>
+    pathname ? `/host/${pathname}` : "/host",
   useWorkspaceScope: () => workspaceScope,
 }));
 

@@ -2,6 +2,7 @@ import { api } from "@coucou/backend/api";
 import { useAction, useQuery } from "convex/react";
 import { useRouter } from "expo-router";
 import { Download, Search, UsersRound } from "lucide-react-native";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -11,7 +12,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppScreen } from "@/components/app-screen";
 import { GuestFilterBar } from "@/components/guest-filter-bar";
@@ -19,18 +19,10 @@ import { OperationalEmptyState } from "@/components/operational-empty-state";
 import { StatusPill } from "@/components/status-pill";
 import { ThresholdMark } from "@/components/threshold-mark";
 import { WorkspaceEventControls } from "@/components/workspace-event-controls";
-import {
-  createGuestSnapshot,
-  readGuestSnapshot,
-  writeGuestSnapshot,
-} from "@/lib/cache";
+import { createGuestSnapshot, readGuestSnapshot, writeGuestSnapshot } from "@/lib/cache";
 import { useConvexConnection } from "@/lib/connectivity";
 import { shareTemporaryCsv } from "@/lib/csv";
-import {
-  DEFAULT_GUEST_FILTERS,
-  guestMatchesFilters,
-  serializeGuestFilters,
-} from "@/lib/filters";
+import { DEFAULT_GUEST_FILTERS, guestMatchesFilters, serializeGuestFilters } from "@/lib/filters";
 import { useStaffSession } from "@/providers/staff-session-provider";
 import { colors, radii, spacing, typography } from "@/theme";
 import type { StaffGuestFilters, StaffGuestSummary } from "@/types";
@@ -48,9 +40,7 @@ function mergeGuestPages(
   existingGuests: StaffGuestSummary[],
   incomingGuests: StaffGuestSummary[],
 ): StaffGuestSummary[] {
-  const guestsById = new Map(
-    existingGuests.map((guest) => [guest.rsvpId, guest]),
-  );
+  const guestsById = new Map(existingGuests.map((guest) => [guest.rsvpId, guest]));
   for (const guest of incomingGuests) {
     guestsById.set(guest.rsvpId, guest);
   }
@@ -59,19 +49,12 @@ function mergeGuestPages(
 
 export default function GuestsScreen(): React.JSX.Element {
   const router = useRouter();
-  const {
-    selectedWorkspace,
-    selectedEvent,
-    workspaces,
-    isLoading,
-  } = useStaffSession();
+  const { selectedWorkspace, selectedEvent, workspaces, isLoading } = useStaffSession();
   const isConnected = useConvexConnection();
   const exportGuestList = useAction(api.exports.exportRsvpsCsv);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [filters, setFilters] = useState<StaffGuestFilters>(
-    DEFAULT_GUEST_FILTERS,
-  );
+  const [filters, setFilters] = useState<StaffGuestFilters>(DEFAULT_GUEST_FILTERS);
   const [requestedCursor, setRequestedCursor] = useState<string | undefined>();
   const [guests, setGuests] = useState<StaffGuestSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -111,19 +94,9 @@ export default function GuestsScreen(): React.JSX.Element {
             workspaceSlug: selectedWorkspace.workspaceSlug,
           }
         : undefined,
-    [
-      debouncedSearch,
-      filters,
-      isConnected,
-      requestedCursor,
-      selectedEvent,
-      selectedWorkspace,
-    ],
+    [debouncedSearch, filters, isConnected, requestedCursor, selectedEvent, selectedWorkspace],
   );
-  const guestPage = useQuery(
-    api.mobileStaff.listGuests,
-    queryArguments ?? "skip",
-  );
+  const guestPage = useQuery(api.mobileStaff.listGuests, queryArguments ?? "skip");
 
   useEffect(() => {
     if (!guestPage || !selectedEvent || !selectedWorkspace) {
@@ -137,11 +110,7 @@ export default function GuestsScreen(): React.JSX.Element {
         ? mergeGuestPages(existingGuests, guestPage.page)
         : guestPage.page;
       void writeGuestSnapshot(
-        createGuestSnapshot(
-          selectedWorkspace.workspaceId,
-          selectedEvent.eventId,
-          nextGuests,
-        ),
+        createGuestSnapshot(selectedWorkspace.workspaceId, selectedEvent.eventId, nextGuests),
       );
       return nextGuests;
     });
@@ -165,9 +134,7 @@ export default function GuestsScreen(): React.JSX.Element {
   }, [isConnected, selectedEvent]);
 
   const displayedGuests = isUsingOfflineSnapshot
-    ? guests.filter((guest) =>
-        guestMatchesFilters(guest, debouncedSearch, filters),
-      )
+    ? guests.filter((guest) => guestMatchesFilters(guest, debouncedSearch, filters))
     : guests;
 
   const exportCsv = async (): Promise<void> => {
@@ -183,8 +150,7 @@ export default function GuestsScreen(): React.JSX.Element {
     setIsExporting(true);
     try {
       const result = await exportGuestList({
-        attendanceFilters:
-          filters.attendance === "all" ? undefined : [filters.attendance],
+        attendanceFilters: filters.attendance === "all" ? undefined : [filters.attendance],
         eventId: selectedEvent.eventId,
         includeAttendees: true,
         includeCustomFields: true,
@@ -195,17 +161,13 @@ export default function GuestsScreen(): React.JSX.Element {
         listKeys: filters.list === "all" ? undefined : [filters.list],
         search: debouncedSearch || undefined,
         siteKey: selectedWorkspace.siteKey,
-        statusFilters:
-          filters.approval === "all" ? undefined : [filters.approval],
-        ticketStatusFilters:
-          filters.ticket === "all" ? undefined : [filters.ticket],
+        statusFilters: filters.approval === "all" ? undefined : [filters.approval],
+        ticketStatusFilters: filters.ticket === "all" ? undefined : [filters.ticket],
         workspaceSlug: selectedWorkspace.workspaceSlug,
       });
       await shareTemporaryCsv(result.filename, result.csvContent);
     } catch (error) {
-      setExportError(
-        error instanceof Error ? error.message : "Export failed. Try again.",
-      );
+      setExportError(error instanceof Error ? error.message : "Export failed. Try again.");
     } finally {
       setIsExporting(false);
     }
@@ -224,9 +186,7 @@ export default function GuestsScreen(): React.JSX.Element {
 
   return (
     <AppScreen
-      eyebrow={
-        isUsingOfflineSnapshot ? "Offline snapshot · read only" : "Live guest list"
-      }
+      eyebrow={isUsingOfflineSnapshot ? "Offline snapshot · read only" : "Live guest list"}
       headerAccessory={
         selectedWorkspace?.capabilities.canExportGuests ? (
           <Pressable
@@ -275,9 +235,7 @@ export default function GuestsScreen(): React.JSX.Element {
         />
         {!isConnected ? (
           <View style={styles.offlineBanner}>
-            <Text style={styles.offlineText}>
-              OFFLINE · CHANGES AND EXPORTS ARE BLOCKED
-            </Text>
+            <Text style={styles.offlineText}>OFFLINE · CHANGES AND EXPORTS ARE BLOCKED</Text>
           </View>
         ) : null}
         {exportError ? (
@@ -292,18 +250,14 @@ export default function GuestsScreen(): React.JSX.Element {
           message="Choose an event above to load its guest list."
           title="Select an event"
         />
-      ) : guestPage === undefined &&
-        isConnected &&
-        displayedGuests.length === 0 ? (
+      ) : guestPage === undefined && isConnected && displayedGuests.length === 0 ? (
         <View style={styles.loading}>
           <ActivityIndicator color={colors.admit} size="large" />
         </View>
       ) : (
         <FlatList
           contentContainerStyle={
-            displayedGuests.length === 0
-              ? styles.emptyList
-              : styles.listContent
+            displayedGuests.length === 0 ? styles.emptyList : styles.listContent
           }
           data={displayedGuests}
           getItemLayout={(_data, index) => ({
@@ -317,9 +271,7 @@ export default function GuestsScreen(): React.JSX.Element {
             <View style={styles.empty}>
               <UsersRound color={colors.rule} size={36} strokeWidth={1.4} />
               <Text style={styles.emptyTitle}>No guests found</Text>
-              <Text style={styles.emptyMessage}>
-                Try a different search or filter.
-              </Text>
+              <Text style={styles.emptyMessage}>Try a different search or filter.</Text>
             </View>
           }
           ListFooterComponent={
@@ -352,17 +304,10 @@ export default function GuestsScreen(): React.JSX.Element {
                   params: { rsvpId: item.rsvpId },
                 })
               }
-              style={({ pressed }) => [
-                styles.guestRow,
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => [styles.guestRow, pressed && styles.pressed]}
             >
               <ThresholdMark
-                color={
-                  item.entryStatus === "checked_in"
-                    ? colors.success
-                    : colors.rule
-                }
+                color={item.entryStatus === "checked_in" ? colors.success : colors.rule}
                 height={44}
               />
               <View style={styles.guestText}>
@@ -370,24 +315,14 @@ export default function GuestsScreen(): React.JSX.Element {
                   {item.name}
                 </Text>
                 <Text numberOfLines={1} style={styles.guestMeta}>
-                  {item.listKey} · {item.attendees}{" "}
-                  {item.attendees === 1 ? "guest" : "guests"}
+                  {item.listKey} · {item.attendees} {item.attendees === 1 ? "guest" : "guests"}
                 </Text>
               </View>
               <View style={styles.guestStatuses}>
+                <StatusPill label={item.approvalStatus} tone={approvalTone(item.approvalStatus)} />
                 <StatusPill
-                  label={item.approvalStatus}
-                  tone={approvalTone(item.approvalStatus)}
-                />
-                <StatusPill
-                  label={
-                    item.entryStatus === "checked_in"
-                      ? "inside"
-                      : item.ticketStatus
-                  }
-                  tone={
-                    item.entryStatus === "checked_in" ? "admit" : "neutral"
-                  }
+                  label={item.entryStatus === "checked_in" ? "inside" : item.ticketStatus}
+                  tone={item.entryStatus === "checked_in" ? "admit" : "neutral"}
                 />
               </View>
             </Pressable>

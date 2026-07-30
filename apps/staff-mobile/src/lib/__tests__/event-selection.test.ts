@@ -1,11 +1,7 @@
 import type { StaffEventSummary } from "@/types";
 import { chooseDefaultEvent } from "../event-selection";
 
-function event(
-  eventId: string,
-  eventDate: number,
-  eventEndDate?: number,
-): StaffEventSummary {
+function event(eventId: string, eventDate: number, eventEndDate?: number): StaffEventSummary {
   return {
     eventId,
     eventDate,
@@ -22,24 +18,18 @@ describe("chooseDefaultEvent", () => {
   it("prefers a currently running event", () => {
     const currentEvent = event("current", now - 1_000, now + 1_000);
     const upcomingEvent = event("upcoming", now + 5_000);
-    expect(chooseDefaultEvent([upcomingEvent, currentEvent], now)?.eventId).toBe(
-      "current",
-    );
+    expect(chooseDefaultEvent([upcomingEvent, currentEvent], now)?.eventId).toBe("current");
   });
 
   it("prefers the next upcoming event when none is running", () => {
     const nextEvent = event("next", now + 1_000);
     const laterEvent = event("later", now + 10_000);
-    expect(chooseDefaultEvent([laterEvent, nextEvent], now)?.eventId).toBe(
-      "next",
-    );
+    expect(chooseDefaultEvent([laterEvent, nextEvent], now)?.eventId).toBe("next");
   });
 
   it("falls back to the most recent past event", () => {
     const olderEvent = event("older", now - 20_000, now - 15_000);
     const recentEvent = event("recent", now - 10_000, now - 5_000);
-    expect(chooseDefaultEvent([olderEvent, recentEvent], now)?.eventId).toBe(
-      "recent",
-    );
+    expect(chooseDefaultEvent([olderEvent, recentEvent], now)?.eventId).toBe("recent");
   });
 });

@@ -1,18 +1,7 @@
 import type { PropsWithChildren, ReactNode } from "react";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  type ScrollViewProps,
-} from "react-native";
+import { ScrollView, type ScrollViewProps, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  colors,
-  eyebrowStyle,
-  screenTitleStyle,
-  spacing,
-} from "@/theme";
+import { colors, eyebrowStyle, screenTitleStyle, spacing } from "@/theme";
 
 interface AppScreenProps extends PropsWithChildren {
   title: string;

@@ -29,9 +29,7 @@ export function scanMachineReducer(
 ): ScanMachineState {
   switch (action.type) {
     case "SUBMIT":
-      return state.status === "ready"
-        ? { status: "submitting", code: action.code }
-        : state;
+      return state.status === "ready" ? { status: "submitting", code: action.code } : state;
     case "RESOLVE":
       return state.status === "submitting" && state.code === action.code
         ? {

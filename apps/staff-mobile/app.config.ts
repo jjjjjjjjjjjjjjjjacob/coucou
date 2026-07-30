@@ -2,8 +2,7 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
 
 type AppEnvironment = "development" | "preview" | "production";
 
-const applicationEnvironment =
-  (process.env.APP_ENV as AppEnvironment | undefined) ?? "development";
+const applicationEnvironment = (process.env.APP_ENV as AppEnvironment | undefined) ?? "development";
 
 const applicationNames: Record<AppEnvironment, string> = {
   development: "Coucou Staff Dev",
@@ -32,19 +31,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       "expo-build-properties",
       {
-        "android": {
-          "minSdkVersion": 29
+        android: {
+          minSdkVersion: 29,
         },
-        "ios": {
-          "deploymentTarget": "16.4"
-        }
-      }
+        ios: {
+          deploymentTarget: "16.4",
+        },
+      },
     ],
     [
       "expo-camera",
       {
-        cameraPermission:
-          "Allow Coucou Staff to scan guest tickets at the door.",
+        cameraPermission: "Allow Coucou Staff to scan guest tickets at the door.",
       },
     ],
   ],

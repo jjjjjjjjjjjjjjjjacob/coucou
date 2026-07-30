@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
+import { partnerResourceCanAccessEvent } from "./lib/partnerEventAccess";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 const MAX_DELIVERY_ATTEMPTS = 6;
@@ -29,7 +30,9 @@ export const getDeliveryForDispatch = internalQuery({
     if (!endpoint) {
       return null;
     }
-    return { delivery, endpoint };
+    const eventAccessAllowed =
+      !delivery.eventId || partnerResourceCanAccessEvent(endpoint, delivery.eventId);
+    return { delivery, endpoint, eventAccessAllowed };
   },
 });
 

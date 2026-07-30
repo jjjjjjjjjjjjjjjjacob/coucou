@@ -23,8 +23,14 @@ interface MockUserDocument {
   lastName?: string;
 }
 
+interface MockOrganizerSmsPreference {
+  smsConsent: boolean;
+  source: "organizer" | "none";
+}
+
 let clerkIsSignedIn = false;
 let currentRsvpStatus: MockRsvpStatus | null = null;
+let currentOrganizerSmsPreference: MockOrganizerSmsPreference | null = null;
 let currentUserDocument: MockUserDocument | undefined;
 let currentUserSocialProfiles: Array<{ platformKey: string; handle: string }> | undefined;
 
@@ -149,6 +155,9 @@ mock.module("convex/react", () => ({
     if (queryArgs === "skip") return undefined;
     const queryFunctionName = getConvexFunctionName(queryReference);
     if (queryFunctionName === "rsvps:statusForUserEvent") return currentRsvpStatus;
+    if (queryFunctionName === "rsvps:smsPreferenceForUserEvent") {
+      return currentOrganizerSmsPreference;
+    }
     if (queryFunctionName === "users:getByClerkUser") return currentUserDocument;
     if (queryFunctionName === "socialProfiles:listForCurrentUser") {
       return currentUserSocialProfiles ?? emptySocialProfiles;
@@ -209,6 +218,7 @@ describe("RsvpAcceptedForm draft persistence", () => {
   beforeEach(() => {
     clerkIsSignedIn = false;
     currentRsvpStatus = null;
+    currentOrganizerSmsPreference = null;
     currentUserDocument = undefined;
     currentUserSocialProfiles = undefined;
     routerReplaceCalls.length = 0;
@@ -459,5 +469,27 @@ describe("RsvpAcceptedForm draft persistence", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Get Event Updates by SMS/i)).not.toBeInTheDocument();
+  });
+
+  it("defaults a future-event RSVP to an existing organizer SMS opt-in", async () => {
+    clerkIsSignedIn = true;
+    currentOrganizerSmsPreference = {
+      smsConsent: true,
+      source: "organizer",
+    };
+
+    render(
+      <RsvpAcceptedForm
+        eventId={createEvent()._id}
+        eventRouteId="chlorine-night"
+        event={createEvent()}
+        hasPasswordList={false}
+        isSignedIn
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/recurring sms messages from club chlorine/i)).toBeChecked();
+    });
   });
 });

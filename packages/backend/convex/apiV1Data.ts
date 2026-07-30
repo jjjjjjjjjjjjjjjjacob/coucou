@@ -6,6 +6,7 @@ import { internalMutation, internalQuery } from "./functions";
 import { buildApiSmsProgram } from "./lib/apiSmsProgram";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
+import { partnerResourceCanAccessEvent } from "./lib/partnerEventAccess";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { formatPhoneNumberForSms, obfuscatePhoneNumber } from "./lib/phoneUtils";
 import {
@@ -94,14 +95,53 @@ async function getEventInWorkspaceByRouteId(
   return event;
 }
 
+async function getApiClientInWorkspace(
+  ctx: QueryCtx | MutationCtx,
+  apiClientId: Doc<"apiClients">["_id"],
+  workspaceSlug: string,
+): Promise<Doc<"apiClients"> | null> {
+  const [apiClient, workspace] = await Promise.all([
+    ctx.db.get(apiClientId),
+    ctx.db
+      .query("workspaces")
+      .withIndex("by_slug", (queryBuilder) => queryBuilder.eq("slug", workspaceSlug))
+      .unique(),
+  ]);
+  if (!apiClient || !workspace || apiClient.workspaceId !== workspace._id) {
+    return null;
+  }
+  return apiClient;
+}
+
+async function getAuthorizedEventForApiClient(
+  ctx: QueryCtx | MutationCtx,
+  apiClientId: Doc<"apiClients">["_id"],
+  workspaceSlug: string,
+  eventRouteId: string,
+): Promise<Doc<"events"> | null> {
+  const [apiClient, event] = await Promise.all([
+    getApiClientInWorkspace(ctx, apiClientId, workspaceSlug),
+    getEventInWorkspaceByRouteId(ctx, workspaceSlug, eventRouteId),
+  ]);
+  if (!apiClient || !event || !partnerResourceCanAccessEvent(apiClient, event._id)) {
+    return null;
+  }
+  return event;
+}
+
 export const listEventsForApiClient = internalQuery({
   args: {
+    apiClientId: v.id("apiClients"),
     workspaceSlug: v.string(),
     statusFilter: v.union(v.literal("published"), v.literal("all")),
     cursor: v.optional(v.string()),
     limit: v.number(),
   },
   handler: async (ctx, args) => {
+    const apiClient = await getApiClientInWorkspace(ctx, args.apiClientId, args.workspaceSlug);
+    if (!apiClient) {
+      return { data: [], nextCursor: null };
+    }
     const paginationResult = await ctx.db
       .query("events")
       .withIndex("by_workspaceSlug", (queryBuilder) =>
@@ -110,10 +150,13 @@ export const listEventsForApiClient = internalQuery({
       .order("desc")
       .paginate({ numItems: args.limit, cursor: args.cursor ?? null });
 
+    const authorizedEvents = paginationResult.page.filter((event) =>
+      partnerResourceCanAccessEvent(apiClient, event._id),
+    );
     const visibleEvents =
       args.statusFilter === "published"
-        ? paginationResult.page.filter(isPublishedEvent)
-        : paginationResult.page;
+        ? authorizedEvents.filter(isPublishedEvent)
+        : authorizedEvents;
 
     return {
       data: await Promise.all(visibleEvents.map((event) => buildApiEventSummary(ctx, event))),
@@ -124,11 +167,17 @@ export const listEventsForApiClient = internalQuery({
 
 export const getEventForApiClient = internalQuery({
   args: {
+    apiClientId: v.id("apiClients"),
     workspaceSlug: v.string(),
     eventRouteId: v.string(),
   },
   handler: async (ctx, args) => {
-    const event = await getEventInWorkspaceByRouteId(ctx, args.workspaceSlug, args.eventRouteId);
+    const event = await getAuthorizedEventForApiClient(
+      ctx,
+      args.apiClientId,
+      args.workspaceSlug,
+      args.eventRouteId,
+    );
     if (!event) {
       return null;
     }
@@ -192,12 +241,18 @@ export const getEventForApiClient = internalQuery({
 
 export const lookupRsvpForPhoneForApiClient = internalQuery({
   args: {
+    apiClientId: v.id("apiClients"),
     workspaceSlug: v.string(),
     eventRouteId: v.string(),
     phone: v.string(),
   },
   handler: async (ctx, args) => {
-    const event = await getEventInWorkspaceByRouteId(ctx, args.workspaceSlug, args.eventRouteId);
+    const event = await getAuthorizedEventForApiClient(
+      ctx,
+      args.apiClientId,
+      args.workspaceSlug,
+      args.eventRouteId,
+    );
     if (!event) {
       return { eventFound: false as const };
     }
@@ -244,12 +299,18 @@ export const lookupRsvpForPhoneForApiClient = internalQuery({
 
 export const getSmsConsentForApiClient = internalQuery({
   args: {
+    apiClientId: v.id("apiClients"),
     workspaceSlug: v.string(),
     eventRouteId: v.string(),
     phone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const event = await getEventInWorkspaceByRouteId(ctx, args.workspaceSlug, args.eventRouteId);
+    const event = await getAuthorizedEventForApiClient(
+      ctx,
+      args.apiClientId,
+      args.workspaceSlug,
+      args.eventRouteId,
+    );
     if (!event) {
       return { eventFound: false as const };
     }
@@ -325,6 +386,79 @@ async function buildApiRsvpSummary(
     ticket: await buildRsvpTicketSnapshot(ctx, event, rsvp),
   };
 }
+
+async function buildApiRsvpContactSummary(
+  ctx: QueryCtx | MutationCtx,
+  event: Doc<"events">,
+  rsvp: Doc<"rsvps">,
+) {
+  const isGuest = isGuestClerkUserId(rsvp.clerkUserId);
+  let phone: string | null = null;
+  let phoneHash: string | null = rsvp.guestPhoneHash ?? null;
+
+  if (isGuest && rsvp.guestPhoneHash) {
+    const guestContact = await ctx.db
+      .query("guestContacts")
+      .withIndex("by_phoneHash", (queryBuilder) =>
+        queryBuilder.eq("phoneHash", rsvp.guestPhoneHash ?? ""),
+      )
+      .unique();
+    phone = guestContact?.phoneNumber ?? null;
+  } else if (!isGuest) {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", rsvp.clerkUserId),
+      )
+      .first();
+    phone = user?.phone ?? null;
+    phoneHash = phone ? (await normalizeAndHashPhoneNumber(phone)).phoneHash : null;
+  }
+
+  return {
+    ...(await buildApiRsvpSummary(ctx, event, rsvp, isGuest)),
+    phone,
+    phoneHash,
+  };
+}
+
+export const listRsvpsForApiClient = internalQuery({
+  args: {
+    apiClientId: v.id("apiClients"),
+    workspaceSlug: v.string(),
+    eventRouteId: v.string(),
+    cursor: v.optional(v.string()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const event = await getAuthorizedEventForApiClient(
+      ctx,
+      args.apiClientId,
+      args.workspaceSlug,
+      args.eventRouteId,
+    );
+    if (!event) {
+      return { eventFound: false as const };
+    }
+
+    const paginationResult = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
+      .order("desc")
+      .paginate({
+        numItems: args.limit,
+        cursor: args.cursor ?? null,
+      });
+
+    return {
+      eventFound: true as const,
+      data: await Promise.all(
+        paginationResult.page.map((rsvp) => buildApiRsvpContactSummary(ctx, event, rsvp)),
+      ),
+      nextCursor: paginationResult.isDone ? null : paginationResult.continueCursor,
+    };
+  },
+});
 
 async function upsertGuestContact(
   ctx: MutationCtx,
@@ -484,7 +618,12 @@ export const createRsvpFromApiClient = internalMutation({
     smsConsentIpAddress: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const event = await getEventInWorkspaceByRouteId(ctx, args.workspaceSlug, args.eventRouteId);
+    const event = await getAuthorizedEventForApiClient(
+      ctx,
+      args.apiClientId,
+      args.workspaceSlug,
+      args.eventRouteId,
+    );
     if (!event) {
       return {
         ok: false,
@@ -675,6 +814,8 @@ export const createRsvpFromApiClient = internalMutation({
       if (Object.keys(patch).length > 0) {
         const oldRsvp = existingRsvp;
         patch.apiClientId = args.apiClientId;
+        patch.webhookOriginApiClientId = args.apiClientId;
+        patch.webhookOriginMutationId = crypto.randomUUID();
         patch.updatedAt = now;
         await ctx.db.patch(existingRsvp._id, patch);
         const aggregateRsvp = await ctx.db.get(existingRsvp._id);
@@ -770,6 +911,8 @@ export const createRsvpFromApiClient = internalMutation({
       approvalStatus: "pending",
       attendanceStatus: sanitizeAttendanceStatus(args.attendanceStatus),
       apiClientId: args.apiClientId,
+      webhookOriginApiClientId: args.apiClientId,
+      webhookOriginMutationId: crypto.randomUUID(),
       createdAt: now,
       updatedAt: now,
       ...guestFields,
@@ -862,7 +1005,13 @@ export const updateAttendanceFromApiClient = internalMutation({
 
     // Cross-workspace access reads as not-found — do not leak existence.
     const event = await ctx.db.get(rsvp.eventId);
-    if (!event || event.workspaceSlug !== args.workspaceSlug) {
+    const apiClient = await getApiClientInWorkspace(ctx, args.apiClientId, args.workspaceSlug);
+    if (
+      !event ||
+      event.workspaceSlug !== args.workspaceSlug ||
+      !apiClient ||
+      !partnerResourceCanAccessEvent(apiClient, event._id)
+    ) {
       return notFoundFailure;
     }
 
@@ -870,6 +1019,8 @@ export const updateAttendanceFromApiClient = internalMutation({
       await ctx.db.patch(normalizedRsvpId, {
         attendanceStatus: args.attendanceStatus,
         apiClientId: args.apiClientId,
+        webhookOriginApiClientId: args.apiClientId,
+        webhookOriginMutationId: crypto.randomUUID(),
         updatedAt: Date.now(),
       });
     }
@@ -905,7 +1056,12 @@ export const updateEventFromApiClient = internalMutation({
     flyerUrl: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
-    const event = await getEventInWorkspaceByRouteId(ctx, args.workspaceSlug, args.eventRouteId);
+    const event = await getAuthorizedEventForApiClient(
+      ctx,
+      args.apiClientId,
+      args.workspaceSlug,
+      args.eventRouteId,
+    );
     if (!event) {
       return {
         ok: false,
@@ -1018,6 +1174,8 @@ export const updateEventFromApiClient = internalMutation({
     // A no-op update patches nothing and therefore emits no webhook,
     // so consumers mirroring event.updated can't echo their own writes.
     if (Object.keys(patch).length > 0) {
+      patch.webhookOriginApiClientId = args.apiClientId;
+      patch.webhookOriginMutationId = crypto.randomUUID();
       patch.updatedAt = Date.now();
       await ctx.db.patch(event._id, patch);
     }

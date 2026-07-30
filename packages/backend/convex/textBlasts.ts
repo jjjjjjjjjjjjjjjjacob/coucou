@@ -12,7 +12,6 @@ import {
   messageContainsQrCodeUrlVariable,
   resolveMessageTemplateFirstName,
 } from "@coucou/sdk/shared/message-template";
-import { resolveRsvpConfirmationMessageText } from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import type { UserIdentity } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -50,6 +49,7 @@ import {
 } from "./lib/recipientFiltering";
 import { insertRsvpIntoAggregate } from "./lib/rsvpAggregate";
 import { tryAutoApproveRsvp } from "./lib/rsvpApproval";
+import { formatRsvpConfirmationMessage } from "./lib/rsvpConfirmationMessages";
 import {
   type ApprovalStatus,
   resolveApprovalStatus,
@@ -2649,40 +2649,6 @@ function buildMissingFieldsResponse(missingFields: string[]): string {
 
 function formatReplyActionEventName(event: Doc<"events">): string {
   return formatEventTitleForMessageTemplate(event);
-}
-
-function formatRsvpConfirmationMessage(
-  event: Doc<"events">,
-  recipient: {
-    firstName?: string | null;
-    lastName?: string | null;
-    fullName?: string | null;
-  },
-): string | undefined {
-  const messageTemplate = resolveRsvpConfirmationMessageText({
-    eventName: event.name,
-    eventSecondaryTitle: event.secondaryTitle,
-    rsvpConfirmationMessage: event.rsvpConfirmationMessage,
-    rsvpConfirmationMessageEnabled: event.rsvpConfirmationMessageEnabled,
-  });
-  if (!messageTemplate) return undefined;
-
-  const recipientFullName =
-    recipient.fullName ?? [recipient.firstName, recipient.lastName].filter(Boolean).join(" ");
-
-  return formatSmsMessageForSite(
-    event.siteKey,
-    applyMessageTemplateVariables(messageTemplate, {
-      firstName: resolveMessageTemplateFirstName({
-        firstName: recipient.firstName,
-        fullName: recipientFullName,
-      }),
-      eventName: formatEventTitleForMessageTemplate(event),
-      eventDate: formatEventDateForMessageTemplate(event.eventDate, event.eventTimezone),
-      eventLocation: event.location?.trim() ?? "",
-      qrCodeUrl: "",
-    }),
-  );
 }
 
 export const processIncomingSmsReply = internalMutation({

@@ -3,6 +3,7 @@ import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { isGuestClerkUserId } from "./guestIdentity";
+import { partnerResourceCanAccessEvent } from "./partnerEventAccess";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
 import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./rsvpStatus";
 import { buildRsvpTicketSnapshot } from "./rsvpTicketSnapshot";
@@ -176,6 +177,7 @@ async function resolveRsvpIdentity(ctx: MutationCtx, rsvp: Doc<"rsvps">) {
 async function findActiveEndpointsForEventType(
   ctx: MutationCtx,
   workspaceSlug: string,
+  eventId: Doc<"events">["_id"],
   eventType: CoucouWebhookEventType,
 ): Promise<{ workspace: Doc<"workspaces">; endpoints: Doc<"webhookEndpoints">[] } | null> {
   const workspace = await ctx.db
@@ -193,10 +195,48 @@ async function findActiveEndpointsForEventType(
     )
     .collect();
 
-  const endpoints = activeEndpoints.filter((endpoint) =>
-    endpoint.subscribedEventTypes.includes(eventType),
+  const endpoints = activeEndpoints.filter(
+    (endpoint) =>
+      endpoint.subscribedEventTypes.includes(eventType) &&
+      partnerResourceCanAccessEvent(endpoint, eventId),
   );
   return { workspace, endpoints };
+}
+
+function resolveRsvpWebhookOrigin(
+  change: RsvpChange,
+): { type: "api"; apiClientId: string } | { type: "app" } {
+  const rsvp = change.newDoc ?? change.oldDoc;
+  if (!rsvp || change.operation === "delete") {
+    return { type: "app" };
+  }
+
+  const hasNewApiMutation =
+    change.operation === "insert"
+      ? Boolean(rsvp.webhookOriginMutationId)
+      : change.oldDoc?.webhookOriginMutationId !== change.newDoc?.webhookOriginMutationId;
+  if (hasNewApiMutation && rsvp.webhookOriginApiClientId) {
+    return { type: "api", apiClientId: rsvp.webhookOriginApiClientId };
+  }
+  return { type: "app" };
+}
+
+function resolveEventWebhookOrigin(
+  change: EventChange,
+): { type: "api"; apiClientId: string } | { type: "app" } {
+  const event = change.newDoc ?? change.oldDoc;
+  if (!event || change.operation === "delete") {
+    return { type: "app" };
+  }
+
+  const hasNewApiMutation =
+    change.operation === "insert"
+      ? Boolean(event.webhookOriginMutationId)
+      : change.oldDoc?.webhookOriginMutationId !== change.newDoc?.webhookOriginMutationId;
+  if (hasNewApiMutation && event.webhookOriginApiClientId) {
+    return { type: "api", apiClientId: event.webhookOriginApiClientId };
+  }
+  return { type: "app" };
 }
 
 async function enqueueDeliveries(
@@ -256,7 +296,12 @@ export async function enqueueRsvpWebhookDeliveries(
     return;
   }
 
-  const endpointMatch = await findActiveEndpointsForEventType(ctx, event.workspaceSlug, eventType);
+  const endpointMatch = await findActiveEndpointsForEventType(
+    ctx,
+    event.workspaceSlug,
+    event._id,
+    eventType,
+  );
   if (!endpointMatch || endpointMatch.endpoints.length === 0) {
     return;
   }
@@ -283,16 +328,7 @@ export async function enqueueRsvpWebhookDeliveries(
       },
       identity,
       ...(ticket ? { ticket } : {}),
-      // Approval decisions are host actions even when the RSVP was originally
-      // created through an API client.
-      origin: {
-        type:
-          eventType === "rsvp.approved" || eventType === "rsvp.denied"
-            ? "app"
-            : rsvp.apiClientId
-              ? "api"
-              : "app",
-      },
+      origin: resolveRsvpWebhookOrigin(change),
       ...(previousRsvp
         ? {
             changes: {
@@ -328,7 +364,12 @@ export async function enqueueEventWebhookDeliveries(
     return;
   }
 
-  const endpointMatch = await findActiveEndpointsForEventType(ctx, event.workspaceSlug, eventType);
+  const endpointMatch = await findActiveEndpointsForEventType(
+    ctx,
+    event.workspaceSlug,
+    event._id,
+    eventType,
+  );
   if (!endpointMatch || endpointMatch.endpoints.length === 0) {
     return;
   }
@@ -347,6 +388,7 @@ export async function enqueueEventWebhookDeliveries(
     workspaceSlug: event.workspaceSlug,
     data: {
       event: buildEventSnapshot(event),
+      origin: resolveEventWebhookOrigin(change),
       ...(previousEvent
         ? {
             changes: {

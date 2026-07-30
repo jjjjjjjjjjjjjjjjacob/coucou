@@ -142,6 +142,8 @@ function notificationKindForType(type: string): SmsConversationKind {
     case "sms_consent_enabled":
     case "sms_consent_disabled":
       return "consent";
+    case "rsvp_confirmation":
+      return "reply_action";
     default:
       return "system";
   }

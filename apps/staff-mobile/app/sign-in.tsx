@@ -1,14 +1,7 @@
 import { isClerkAPIResponseError, useAuth, useSignIn } from "@clerk/expo";
 import { Redirect } from "expo-router";
 import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ActionButton } from "@/components/action-button";
 import { ThresholdMark } from "@/components/threshold-mark";
@@ -20,14 +13,10 @@ type VerificationStage = "identifier" | "first_factor" | "second_factor";
 function resolveErrorMessage(error: unknown): string {
   if (isClerkAPIResponseError(error)) {
     return (
-      error.errors[0]?.longMessage ??
-      error.errors[0]?.message ??
-      "We could not complete sign-in."
+      error.errors[0]?.longMessage ?? error.errors[0]?.message ?? "We could not complete sign-in."
     );
   }
-  return error instanceof Error
-    ? error.message
-    : "We could not complete sign-in.";
+  return error instanceof Error ? error.message : "We could not complete sign-in.";
 }
 
 export default function SignInScreen(): React.JSX.Element {
@@ -35,8 +24,7 @@ export default function SignInScreen(): React.JSX.Element {
   const { signIn } = useSignIn();
   const [identifier, setIdentifier] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
-  const [verificationStage, setVerificationStage] =
-    useState<VerificationStage>("identifier");
+  const [verificationStage, setVerificationStage] = useState<VerificationStage>("identifier");
   const [verificationStrategy, setVerificationStrategy] =
     useState<VerificationStrategy>("email_code");
   const [safeIdentifier, setSafeIdentifier] = useState("");
@@ -62,14 +50,10 @@ export default function SignInScreen(): React.JSX.Element {
         throw createResult.error;
       }
       const codeFactor = signIn.supportedFirstFactors.find(
-        (factor) =>
-          factor.strategy === "email_code" ||
-          factor.strategy === "phone_code",
+        (factor) => factor.strategy === "email_code" || factor.strategy === "phone_code",
       );
       if (!codeFactor) {
-        throw new Error(
-          "This account does not have email or phone verification enabled.",
-        );
+        throw new Error("This account does not have email or phone verification enabled.");
       }
 
       if (codeFactor.strategy === "email_code") {
@@ -177,9 +161,7 @@ export default function SignInScreen(): React.JSX.Element {
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.title}>
-            {isEnteringCode ? "Enter your code" : "Ready the door"}
-          </Text>
+          <Text style={styles.title}>{isEnteringCode ? "Enter your code" : "Ready the door"}</Text>
           <Text style={styles.subtitle}>
             {isEnteringCode
               ? `We sent a verification code to ${safeIdentifier}.`
@@ -192,31 +174,17 @@ export default function SignInScreen(): React.JSX.Element {
             autoComplete={isEnteringCode ? "one-time-code" : "email"}
             autoCorrect={false}
             editable={!isSubmitting}
-            inputMode={
-              isEnteringCode
-                ? "numeric"
-                : identifier.includes("@")
-                  ? "email"
-                  : "text"
-            }
+            inputMode={isEnteringCode ? "numeric" : identifier.includes("@") ? "email" : "text"}
             keyboardType={isEnteringCode ? "number-pad" : "email-address"}
-            onChangeText={
-              isEnteringCode ? setVerificationCode : setIdentifier
-            }
+            onChangeText={isEnteringCode ? setVerificationCode : setIdentifier}
             onSubmitEditing={() => {
-              void (isEnteringCode
-                ? attemptVerification()
-                : prepareVerification());
+              void (isEnteringCode ? attemptVerification() : prepareVerification());
             }}
-            placeholder={
-              isEnteringCode ? "000000" : "name@example.com or +1…"
-            }
+            placeholder={isEnteringCode ? "000000" : "name@example.com or +1…"}
             placeholderTextColor={colors.steel}
             returnKeyType="done"
             style={[styles.input, isEnteringCode && styles.codeInput]}
-            textContentType={
-              isEnteringCode ? "oneTimeCode" : "username"
-            }
+            textContentType={isEnteringCode ? "oneTimeCode" : "username"}
             value={isEnteringCode ? verificationCode : identifier}
           />
 
@@ -227,17 +195,11 @@ export default function SignInScreen(): React.JSX.Element {
           ) : null}
 
           <ActionButton
-            disabled={
-              isEnteringCode
-                ? verificationCode.trim().length < 4
-                : !identifier.trim()
-            }
+            disabled={isEnteringCode ? verificationCode.trim().length < 4 : !identifier.trim()}
             isLoading={isSubmitting}
             label={isEnteringCode ? "Verify and continue" : "Send code"}
             onPress={() => {
-              void (isEnteringCode
-                ? attemptVerification()
-                : prepareVerification());
+              void (isEnteringCode ? attemptVerification() : prepareVerification());
             }}
           />
           {isEnteringCode ? (
@@ -253,9 +215,7 @@ export default function SignInScreen(): React.JSX.Element {
           ) : null}
         </View>
 
-        <Text style={styles.footer}>
-          Access is limited to invited Door, Host, and Admin staff.
-        </Text>
+        <Text style={styles.footer}>Access is limited to invited Door, Host, and Admin staff.</Text>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

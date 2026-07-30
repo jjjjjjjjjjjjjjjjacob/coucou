@@ -8,9 +8,7 @@ export function normalizeRedemptionCode(value: string): string {
   return value.trim().toUpperCase();
 }
 
-export function parseRedemptionPayload(
-  payload: string,
-): ParsedRedemptionPayload {
+export function parseRedemptionPayload(payload: string): ParsedRedemptionPayload {
   const normalizedPayload = payload.trim();
   if (!normalizedPayload) {
     return { valid: false, reason: "empty" };

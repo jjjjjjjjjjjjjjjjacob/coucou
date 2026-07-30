@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { SelectionSheet, type SelectionOption } from "@/components/selection-sheet";
+import { type SelectionOption, SelectionSheet } from "@/components/selection-sheet";
 import { useStaffSession } from "@/providers/staff-session-provider";
 import { spacing } from "@/theme";
 
@@ -14,14 +14,8 @@ function formatEventDate(eventDate: number): string {
 }
 
 export function WorkspaceEventControls(): React.JSX.Element {
-  const {
-    workspaces,
-    events,
-    selectedWorkspace,
-    selectedEvent,
-    selectWorkspace,
-    selectEvent,
-  } = useStaffSession();
+  const { workspaces, events, selectedWorkspace, selectedEvent, selectWorkspace, selectEvent } =
+    useStaffSession();
   const [workspaceSheetVisible, setWorkspaceSheetVisible] = useState(false);
   const [eventSheetVisible, setEventSheetVisible] = useState(false);
 
@@ -44,9 +38,7 @@ export function WorkspaceEventControls(): React.JSX.Element {
         onClose={() => setWorkspaceSheetVisible(false)}
         onOpen={() => setWorkspaceSheetVisible(true)}
         onSelect={(option) => {
-          const workspace = workspaces.find(
-            (candidate) => candidate.workspaceId === option.key,
-          );
+          const workspace = workspaces.find((candidate) => candidate.workspaceId === option.key);
           setWorkspaceSheetVisible(false);
           if (workspace) {
             void selectWorkspace(workspace);
@@ -62,9 +54,7 @@ export function WorkspaceEventControls(): React.JSX.Element {
         onClose={() => setEventSheetVisible(false)}
         onOpen={() => setEventSheetVisible(true)}
         onSelect={(option) => {
-          const event = events.find(
-            (candidate) => candidate.eventId === option.key,
-          );
+          const event = events.find((candidate) => candidate.eventId === option.key);
           setEventSheetVisible(false);
           if (event) {
             void selectEvent(event);

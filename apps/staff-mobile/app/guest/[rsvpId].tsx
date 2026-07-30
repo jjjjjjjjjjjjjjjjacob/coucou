@@ -1,19 +1,13 @@
 import { api } from "@coucou/backend/api";
-import type { FunctionArgs } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
+import type { FunctionArgs } from "convex/server";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Minus, Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ActionButton } from "@/components/action-button";
-import { SelectionSheet, type SelectionOption } from "@/components/selection-sheet";
+import { type SelectionOption, SelectionSheet } from "@/components/selection-sheet";
 import { StatusPill } from "@/components/status-pill";
 import { ThresholdMark } from "@/components/threshold-mark";
 import { readGuestSnapshot } from "@/lib/cache";
@@ -46,9 +40,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
   const { rsvpId } = useLocalSearchParams<{ rsvpId: string }>();
   const { selectedWorkspace, selectedEvent } = useStaffSession();
   const isConnected = useConvexConnection();
-  const [offlineGuest, setOfflineGuest] = useState<
-    StaffGuestSummary | undefined
-  >();
+  const [offlineGuest, setOfflineGuest] = useState<StaffGuestSummary | undefined>();
   const [editingField, setEditingField] = useState<EditingField>(null);
   const [mutationError, setMutationError] = useState("");
   const [isMutating, setIsMutating] = useState(false);
@@ -75,17 +67,13 @@ export default function GuestDetailScreen(): React.JSX.Element {
       return;
     }
     void readGuestSnapshot(selectedEvent.eventId).then((snapshot) => {
-      setOfflineGuest(
-        snapshot?.guests.find((guest) => guest.rsvpId === rsvpId),
-      );
+      setOfflineGuest(snapshot?.guests.find((guest) => guest.rsvpId === rsvpId));
     });
   }, [isConnected, rsvpId, selectedEvent]);
 
   const guest = liveGuest ?? offlineGuest;
   const canEdit =
-    isConnected &&
-    selectedWorkspace?.capabilities.canEditGuests === true &&
-    Boolean(guest);
+    isConnected && selectedWorkspace?.capabilities.canEditGuests === true && Boolean(guest);
 
   const runMutation = async (operation: () => Promise<unknown>): Promise<void> => {
     setMutationError("");
@@ -93,9 +81,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
     try {
       await operation();
     } catch (error) {
-      setMutationError(
-        error instanceof Error ? error.message : "The guest update failed.",
-      );
+      setMutationError(error instanceof Error ? error.message : "The guest update failed.");
     } finally {
       setIsMutating(false);
     }
@@ -130,9 +116,9 @@ export default function GuestDetailScreen(): React.JSX.Element {
     );
   }
 
-  const listOptions: SelectionOption[] = (
-    selectedEvent?.listKeys ?? [guest.listKey]
-  ).map((listKey) => ({ key: listKey, label: listKey }));
+  const listOptions: SelectionOption[] = (selectedEvent?.listKeys ?? [guest.listKey]).map(
+    (listKey) => ({ key: listKey, label: listKey }),
+  );
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -140,11 +126,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
       <View style={styles.content}>
         <View style={styles.identity}>
           <ThresholdMark
-            color={
-              guest.entryStatus === "checked_in"
-                ? colors.success
-                : colors.admit
-            }
+            color={guest.entryStatus === "checked_in" ? colors.success : colors.admit}
             height={72}
           />
           <View style={styles.identityText}>
@@ -155,9 +137,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
             <View style={styles.pills}>
               <StatusPill
                 label={guest.entryStatus}
-                tone={
-                  guest.entryStatus === "checked_in" ? "success" : "neutral"
-                }
+                tone={guest.entryStatus === "checked_in" ? "success" : "neutral"}
               />
               <StatusPill label={`${guest.attendees} in party`} />
             </View>
@@ -166,9 +146,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
 
         {!isConnected ? (
           <View style={styles.offlineBanner}>
-            <Text style={styles.offlineText}>
-              OFFLINE SNAPSHOT · READ ONLY
-            </Text>
+            <Text style={styles.offlineText}>OFFLINE SNAPSHOT · READ ONLY</Text>
           </View>
         ) : !selectedWorkspace.capabilities.canEditGuests ? (
           <View style={styles.readOnlyBanner}>
@@ -213,11 +191,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
           <ActionButton
             disabled={!canEdit}
             isLoading={isMutating}
-            label={
-              guest.entryStatus === "checked_in"
-                ? "Check guest out"
-                : "Check guest in"
-            }
+            label={guest.entryStatus === "checked_in" ? "Check guest out" : "Check guest in"}
             onPress={() => {
               void runMutation(() =>
                 setEntryStatus({
@@ -228,9 +202,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
                 }),
               );
             }}
-            variant={
-              guest.entryStatus === "checked_in" ? "secondary" : "primary"
-            }
+            variant={guest.entryStatus === "checked_in" ? "secondary" : "primary"}
           />
         ) : null}
       </View>
@@ -244,10 +216,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
           setEditingField(null);
           void runMutation(() =>
             updateRsvpComplete({
-              approvalStatus: option.key as
-                | "pending"
-                | "approved"
-                | "denied",
+              approvalStatus: option.key as "pending" | "approved" | "denied",
               rsvpId: guest.rsvpId,
               ...commonScope,
             }),
@@ -308,10 +277,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
           void runMutation(() =>
             updateRsvpComplete({
               rsvpId: guest.rsvpId,
-              ticketStatus: option.key as
-                | "not-issued"
-                | "issued"
-                | "disabled",
+              ticketStatus: option.key as "not-issued" | "issued" | "disabled",
               ...commonScope,
             }),
           );
@@ -332,10 +298,7 @@ function Header({ onBack }: { onBack: () => void }): React.JSX.Element {
         accessibilityLabel="Back to guests"
         accessibilityRole="button"
         onPress={onBack}
-        style={({ pressed }) => [
-          styles.backButton,
-          pressed && styles.pressed,
-        ]}
+        style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
       >
         <ArrowLeft color={colors.paper} size={23} />
       </Pressable>
@@ -361,10 +324,7 @@ function EditableField({
       accessibilityRole={canEdit ? "button" : "text"}
       disabled={!canEdit}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.field,
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => [styles.field, pressed && styles.pressed]}
     >
       <View>
         <Text style={styles.fieldLabel}>{label}</Text>

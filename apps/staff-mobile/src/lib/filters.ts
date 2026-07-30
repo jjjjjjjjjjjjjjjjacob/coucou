@@ -24,16 +24,12 @@ export function guestMatchesFilters(
   const normalizedSearch = search.trim().toLocaleLowerCase();
   const matchesSearch =
     !normalizedSearch ||
-    `${guest.name} ${guest.contact ?? ""}`
-      .toLocaleLowerCase()
-      .includes(normalizedSearch);
+    `${guest.name} ${guest.contact ?? ""}`.toLocaleLowerCase().includes(normalizedSearch);
 
   return (
     matchesSearch &&
-    (filters.approval === "all" ||
-      guest.approvalStatus === filters.approval) &&
-    (filters.attendance === "all" ||
-      guest.attendanceStatus === filters.attendance) &&
+    (filters.approval === "all" || guest.approvalStatus === filters.approval) &&
+    (filters.attendance === "all" || guest.attendanceStatus === filters.attendance) &&
     (filters.list === "all" || guest.listKey === filters.list) &&
     (filters.ticket === "all" || guest.ticketStatus === filters.ticket)
   );

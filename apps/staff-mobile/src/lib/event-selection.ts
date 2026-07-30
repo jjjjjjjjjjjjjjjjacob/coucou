@@ -10,20 +10,14 @@ export function chooseDefaultEvent(
 ): StaffEventSummary | undefined {
   const runningEvents = events
     .filter((event) => event.eventDate <= now && eventEnd(event) >= now)
-    .sort(
-      (firstEvent, secondEvent) =>
-        firstEvent.eventDate - secondEvent.eventDate,
-    );
+    .sort((firstEvent, secondEvent) => firstEvent.eventDate - secondEvent.eventDate);
   if (runningEvents[0]) {
     return runningEvents[0];
   }
 
   const upcomingEvents = events
     .filter((event) => event.eventDate > now)
-    .sort(
-      (firstEvent, secondEvent) =>
-        firstEvent.eventDate - secondEvent.eventDate,
-    );
+    .sort((firstEvent, secondEvent) => firstEvent.eventDate - secondEvent.eventDate);
   if (upcomingEvents[0]) {
     return upcomingEvents[0];
   }

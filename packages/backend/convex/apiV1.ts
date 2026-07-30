@@ -49,6 +49,7 @@ export const listEvents = httpAction(async (ctx, request) => {
   }
 
   const result = await ctx.runQuery(internal.apiV1Data.listEventsForApiClient, {
+    apiClientId: authResult.apiClient._id,
     workspaceSlug: authResult.workspaceSlug,
     statusFilter: statusParam,
     cursor: url.searchParams.get("cursor") ?? undefined,
@@ -69,6 +70,7 @@ export const handleEventSubresourceGet = httpAction(async (ctx, request) => {
     }
 
     const event = await ctx.runQuery(internal.apiV1Data.getEventForApiClient, {
+      apiClientId: authResult.apiClient._id,
       workspaceSlug: authResult.workspaceSlug,
       eventRouteId: pathSegments[0],
     });
@@ -91,6 +93,7 @@ export const handleEventSubresourceGet = httpAction(async (ctx, request) => {
     }
 
     const lookupResult = await ctx.runQuery(internal.apiV1Data.lookupRsvpForPhoneForApiClient, {
+      apiClientId: authResult.apiClient._id,
       workspaceSlug: authResult.workspaceSlug,
       eventRouteId: pathSegments[0],
       phone,
@@ -129,6 +132,7 @@ export const handleEventSubresourceGet = httpAction(async (ctx, request) => {
     }
 
     const consentResult = await ctx.runQuery(internal.apiV1Data.getSmsConsentForApiClient, {
+      apiClientId: authResult.apiClient._id,
       workspaceSlug: authResult.workspaceSlug,
       eventRouteId: pathSegments[0],
       phone,
@@ -140,6 +144,43 @@ export const handleEventSubresourceGet = httpAction(async (ctx, request) => {
       smsConsent: consentResult.smsConsent,
       smsConsentTimestamp: consentResult.smsConsentTimestamp,
       smsProgram: consentResult.smsProgram,
+    });
+  }
+
+  // GET /api/v1/events/{eventRouteId}/rsvps
+  if (pathSegments.length === 2 && pathSegments[1] === "rsvps") {
+    const authResult = await authenticateApiRequest(ctx, request, "rsvps:read");
+    if (!authResult.ok) {
+      return authResult.response;
+    }
+
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get("limit");
+    let limit = API_EVENTS_DEFAULT_PAGE_SIZE;
+    if (limitParam !== null) {
+      const parsedLimit = Number.parseInt(limitParam, 10);
+      if (Number.isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > API_EVENTS_MAX_PAGE_SIZE) {
+        return buildApiErrorResponse(
+          "invalid_request",
+          `limit must be an integer between 1 and ${API_EVENTS_MAX_PAGE_SIZE}`,
+        );
+      }
+      limit = parsedLimit;
+    }
+
+    const listResult = await ctx.runQuery(internal.apiV1Data.listRsvpsForApiClient, {
+      apiClientId: authResult.apiClient._id,
+      workspaceSlug: authResult.workspaceSlug,
+      eventRouteId: pathSegments[0],
+      cursor: url.searchParams.get("cursor") ?? undefined,
+      limit,
+    });
+    if (!listResult.eventFound) {
+      return buildApiErrorResponse("not_found", "Event not found");
+    }
+    return buildApiJsonResponse({
+      data: listResult.data,
+      nextCursor: listResult.nextCursor,
     });
   }
 

@@ -1,8 +1,5 @@
 import type { StaffGuestSummary } from "@/types";
-import {
-  guestMatchesFilters,
-  serializeGuestFilters,
-} from "../filters";
+import { guestMatchesFilters, serializeGuestFilters } from "../filters";
 
 const guest = {
   approvalStatus: "approved",
@@ -27,9 +24,7 @@ describe("guest filters", () => {
         list: "friends & family",
         ticket: "issued",
       }),
-    ).toBe(
-      "approval=approved&attendance=yes&list=friends%20%26%20family&ticket=issued",
-    );
+    ).toBe("approval=approved&attendance=yes&list=friends%20%26%20family&ticket=issued");
   });
 
   it("searches names and authorized obfuscated contact values", () => {

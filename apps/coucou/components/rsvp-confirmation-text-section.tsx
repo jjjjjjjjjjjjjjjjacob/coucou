@@ -42,13 +42,13 @@ export function RsvpConfirmationTextSection({
   return (
     <SectionCard
       title="Initial RSVP confirmation"
-      description="Sent after a guest submits an RSVP by replying to a text blast."
+      description="Sent after a guest submits a pending RSVP and has permission to receive texts."
       className={className}
       contentClassName="space-y-4"
     >
       <FieldSwitchRow
         title="Send initial confirmation text"
-        description="Turn this off when the text blast copy already tells guests what will happen next."
+        description="Turn this off when guests already know what will happen next."
         checked={rsvpConfirmationMessageEnabled}
         onCheckedChange={onEnabledChange}
         switchId="rsvp-confirmation-message-enabled"

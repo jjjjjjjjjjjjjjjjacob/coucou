@@ -11,11 +11,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     const reactModulePath =
       moduleName === "react"
         ? path.resolve(projectRoot, "node_modules/react")
-        : path.resolve(
-            projectRoot,
-            "node_modules/react",
-            moduleName.slice("react/".length),
-          );
+        : path.resolve(projectRoot, "node_modules/react", moduleName.slice("react/".length));
     return context.resolveRequest(context, reactModulePath, platform);
   }
 

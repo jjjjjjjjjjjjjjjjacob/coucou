@@ -14,11 +14,7 @@ export default function IndexScreen(): React.JSX.Element {
     );
   }
 
-  return isSignedIn ? (
-    <Redirect href="/(tabs)/scan" />
-  ) : (
-    <Redirect href="/sign-in" />
-  );
+  return isSignedIn ? <Redirect href="/(tabs)/scan" /> : <Redirect href="/sign-in" />;
 }
 
 const styles = StyleSheet.create({

@@ -1,6 +1,6 @@
+import { normalizeRedemptionCode } from "@coucou/sdk/shared/redemption-code";
 import type { UserIdentity } from "convex/server";
 import { v } from "convex/values";
-import { normalizeRedemptionCode } from "@coucou/sdk/shared/redemption-code";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./functions";
@@ -10,10 +10,10 @@ import {
   requireCoucouPlatformMember,
 } from "./lib/platformAuth";
 import {
-  resolveApprovalStatus,
-  sanitizeAttendanceStatus,
   type ApprovalStatus,
   type AttendanceStatus,
+  resolveApprovalStatus,
+  sanitizeAttendanceStatus,
 } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope, eventMatchesSiteScope } from "./lib/siteScope";
 import {
@@ -144,17 +144,12 @@ function normalizeTicketStatus(value: string | undefined): StaffTicketStatus {
   return "not-issued";
 }
 
-function resolveUserDisplayName(
-  user: Doc<"users"> | null,
-  rsvp: Doc<"rsvps">,
-): string {
+function resolveUserDisplayName(user: Doc<"users"> | null, rsvp: Doc<"rsvps">): string {
   const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
   return fullName || user?.metadata?.name || rsvp.userName || "Unknown guest";
 }
 
-function buildStaffGuestSummaryFromRsvp(
-  rsvp: Doc<"rsvps">,
-): StaffGuestSummary {
+function buildStaffGuestSummaryFromRsvp(rsvp: Doc<"rsvps">): StaffGuestSummary {
   const ticketStatus = normalizeTicketStatus(rsvp.ticketStatus);
   return {
     rsvpId: rsvp._id,
@@ -165,8 +160,7 @@ function buildStaffGuestSummaryFromRsvp(
     attendanceStatus: sanitizeAttendanceStatus(rsvp.attendanceStatus),
     attendees: rsvp.attendees ?? 1,
     ticketStatus,
-    entryStatus:
-      ticketStatus === "redeemed" ? "checked_in" : "not_checked_in",
+    entryStatus: ticketStatus === "redeemed" ? "checked_in" : "not_checked_in",
     createdAt: rsvp.createdAt,
     updatedAt: rsvp.updatedAt,
   };
@@ -223,9 +217,7 @@ async function getRedemptionByCode(
 ): Promise<Doc<"redemptions"> | null> {
   return await ctx.db
     .query("redemptions")
-    .withIndex("by_code", (queryBuilder) =>
-      queryBuilder.eq("code", normalizeRedemptionCode(code)),
-    )
+    .withIndex("by_code", (queryBuilder) => queryBuilder.eq("code", normalizeRedemptionCode(code)))
     .unique();
 }
 
@@ -236,17 +228,12 @@ async function getRsvpForRedemption(
   return await ctx.db
     .query("rsvps")
     .withIndex("by_event_user", (queryBuilder) =>
-      queryBuilder
-        .eq("eventId", redemption.eventId)
-        .eq("clerkUserId", redemption.clerkUserId),
+      queryBuilder.eq("eventId", redemption.eventId).eq("clerkUserId", redemption.clerkUserId),
     )
     .unique();
 }
 
-async function hasPlatformAccess(
-  ctx: QueryCtx,
-  identity: UserIdentity,
-): Promise<boolean> {
+async function hasPlatformAccess(ctx: QueryCtx, identity: UserIdentity): Promise<boolean> {
   try {
     const platformIdentity = await requireCoucouPlatformMember(ctx);
     return platformIdentity.subject === identity.subject;
@@ -257,9 +244,7 @@ async function hasPlatformAccess(
 
 export const getBootstrap = query({
   args: {},
-  handler: async (
-    ctx,
-  ): Promise<{ workspaces: StaffWorkspace[]; platformOverride: boolean }> => {
+  handler: async (ctx): Promise<{ workspaces: StaffWorkspace[]; platformOverride: boolean }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       return { workspaces: [], platformOverride: false };
@@ -269,18 +254,13 @@ export const getBootstrap = query({
       ctx.db.query("workspaces").collect(),
       ctx.db
         .query("orgMemberships")
-        .withIndex("by_user", (queryBuilder) =>
-          queryBuilder.eq("clerkUserId", identity.subject),
-        )
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
         .collect(),
       hasPlatformAccess(ctx, identity),
     ]);
 
     const roleByOrganizationId = new Map(
-      storedMemberships.map((membership) => [
-        membership.organizationId,
-        membership.role,
-      ]),
+      storedMemberships.map((membership) => [membership.organizationId, membership.role]),
     );
     const activeOrganizationId = getIdentityOrganizationId(identity);
     const activeOrganizationRole = getIdentityOrganizationRole(identity);
@@ -290,10 +270,7 @@ export const getBootstrap = query({
 
     const accessibleWorkspaces: StaffWorkspace[] = [];
     for (const workspace of workspaces) {
-      if (
-        workspace.kind === "admin" ||
-        !workspace.clerkOrganizationId
-      ) {
+      if (workspace.kind === "admin" || !workspace.clerkOrganizationId) {
         continue;
       }
 
@@ -306,9 +283,7 @@ export const getBootstrap = query({
 
       const workspaceSites = await ctx.db
         .query("workspaceSites")
-        .withIndex("by_workspace", (queryBuilder) =>
-          queryBuilder.eq("workspaceId", workspace._id),
-        )
+        .withIndex("by_workspace", (queryBuilder) => queryBuilder.eq("workspaceId", workspace._id))
         .collect();
       const canWrite = roleHasWorkspaceWriteAccess(membershipRole);
       accessibleWorkspaces.push({
@@ -354,9 +329,7 @@ export const listEvents = query({
       scopedEvents.map(async (event): Promise<StaffEventSummary> => {
         const credentials = await ctx.db
           .query("listCredentials")
-          .withIndex("by_event", (queryBuilder) =>
-            queryBuilder.eq("eventId", event._id),
-          )
+          .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
           .collect();
         return {
           eventId: event._id,
@@ -370,9 +343,7 @@ export const listEvents = query({
           lifecycle: event.lifecycle,
           listKeys: credentials
             .map((credential) => credential.listKey)
-            .sort((firstListKey, secondListKey) =>
-              firstListKey.localeCompare(secondListKey),
-            ),
+            .sort((firstListKey, secondListKey) => firstListKey.localeCompare(secondListKey)),
         };
       }),
     );
@@ -421,10 +392,7 @@ export const listGuests = query({
 
     const roleSafeSummaries = rsvps
       .filter((rsvp) => {
-        if (
-          approvalFilter !== "all" &&
-          resolveApprovalStatus(rsvp) !== approvalFilter
-        ) {
+        if (approvalFilter !== "all" && resolveApprovalStatus(rsvp) !== approvalFilter) {
           return false;
         }
         if (
@@ -444,20 +412,16 @@ export const listGuests = query({
       .filter((guest) => {
         if (
           normalizedSearch &&
-          !`${guest.name} ${guest.contact ?? ""}`
-            .toLowerCase()
-            .includes(normalizedSearch)
+          !`${guest.name} ${guest.contact ?? ""}`.toLowerCase().includes(normalizedSearch)
         ) {
           return false;
         }
         return ticketFilter === "all" || guest.ticketStatus === ticketFilter;
       })
       .sort((firstGuest, secondGuest) => {
-        const nameComparison = firstGuest.name.localeCompare(
-          secondGuest.name,
-          undefined,
-          { sensitivity: "base" },
-        );
+        const nameComparison = firstGuest.name.localeCompare(secondGuest.name, undefined, {
+          sensitivity: "base",
+        });
         return nameComparison !== 0
           ? nameComparison
           : firstGuest.rsvpId.localeCompare(secondGuest.rsvpId);
@@ -484,10 +448,7 @@ export const getGuest = query({
     siteKey: v.string(),
     workspaceSlug: v.string(),
   },
-  handler: async (
-    ctx,
-    { rsvpId, siteKey, workspaceSlug },
-  ): Promise<StaffGuestSummary | null> => {
+  handler: async (ctx, { rsvpId, siteKey, workspaceSlug }): Promise<StaffGuestSummary | null> => {
     await requireWorkspaceDoor(ctx, { siteKey, workspaceSlug });
     const rsvp = await ctx.db.get(rsvpId);
     if (!rsvp) {
@@ -508,10 +469,7 @@ export const scanTicket = mutation({
     siteKey: v.string(),
     workspaceSlug: v.string(),
   },
-  handler: async (
-    ctx,
-    { eventId, code, siteKey, workspaceSlug },
-  ): Promise<StaffScanOutcome> => {
+  handler: async (ctx, { eventId, code, siteKey, workspaceSlug }): Promise<StaffScanOutcome> => {
     await requireWorkspaceDoor(ctx, { siteKey, workspaceSlug });
     await ensureEventInSiteScope(ctx, eventId, { siteKey, workspaceSlug });
     const identity = await ctx.auth.getUserIdentity();
@@ -525,9 +483,7 @@ export const scanTicket = mutation({
     }
 
     const redemptionEvent = await ctx.db.get(redemption.eventId);
-    if (
-      !eventMatchesSiteScope(redemptionEvent, { siteKey, workspaceSlug })
-    ) {
+    if (!eventMatchesSiteScope(redemptionEvent, { siteKey, workspaceSlug })) {
       return { outcome: "invalid", message: "Ticket not recognized." };
     }
     if (redemption.eventId !== eventId && redemptionEvent) {
@@ -584,11 +540,15 @@ export const scanTicket = mutation({
 
     return {
       outcome: "redeemed",
-      guest: await buildStaffGuestSummary(ctx, {
-        ...rsvp,
-        ticketStatus: "redeemed",
-        updatedAt: redeemedAt,
-      }, updatedRedemption),
+      guest: await buildStaffGuestSummary(
+        ctx,
+        {
+          ...rsvp,
+          ticketStatus: "redeemed",
+          updatedAt: redeemedAt,
+        },
+        updatedRedemption,
+      ),
       redeemedAt,
     };
   },
@@ -625,8 +585,7 @@ export const undoScan = mutation({
     const updatedAt = Date.now();
     if (
       redemption.redeemedByClerkUserId !== identity.subject ||
-      updatedAt - redemption.redeemedAt >
-        IMMEDIATE_SCAN_UNDO_WINDOW_MILLISECONDS
+      updatedAt - redemption.redeemedAt > IMMEDIATE_SCAN_UNDO_WINDOW_MILLISECONDS
     ) {
       return {
         outcome: "invalid",

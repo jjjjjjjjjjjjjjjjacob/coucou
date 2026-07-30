@@ -87,9 +87,7 @@ export const getRsvpsForExportInternal = internalQuery({
     const requestedTicketStatuses =
       ticketStatusFilters && ticketStatusFilters.length > 0
         ? ticketStatusFilters.filter((status) =>
-            allowedTicketStatuses.includes(
-              status as (typeof allowedTicketStatuses)[number],
-            ),
+            allowedTicketStatuses.includes(status as (typeof allowedTicketStatuses)[number]),
           )
         : [...allowedTicketStatuses];
     if (requestedTicketStatuses.length !== allowedTicketStatuses.length) {

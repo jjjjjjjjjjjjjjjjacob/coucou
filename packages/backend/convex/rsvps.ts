@@ -24,6 +24,7 @@ import {
   updateRsvpInAggregate,
 } from "./lib/rsvpAggregate";
 import { applyApprovalStatusTransition, tryAutoApproveRsvp } from "./lib/rsvpApproval";
+import { formatRsvpConfirmationMessage } from "./lib/rsvpConfirmationMessages";
 import {
   buildRsvpFuzzySearchTerms,
   collectRsvpsMatchingFilters,
@@ -317,6 +318,61 @@ type PreparedRsvpSubmission = {
   sanitizedSmsConsentIpAddress: string | undefined;
 };
 
+type ResolvedRsvpSubmissionSmsConsent = {
+  smsConsent: boolean;
+  smsConsentTimestamp: number | undefined;
+  smsConsentIpAddress: string | undefined;
+  smsConsentChange: "enabled" | "disabled" | null;
+  shouldUpdateOrganizerPreference: boolean;
+};
+
+function resolveRsvpSubmissionSmsConsent({
+  submittedSmsConsent,
+  submittedSmsConsentIpAddress,
+  existingRsvp,
+  organizerPreference,
+  now,
+}: {
+  submittedSmsConsent: boolean | undefined;
+  submittedSmsConsentIpAddress: string | undefined;
+  existingRsvp: Pick<
+    Doc<"rsvps">,
+    "smsConsent" | "smsConsentTimestamp" | "smsConsentIpAddress"
+  > | null;
+  organizerPreference: {
+    smsConsent: boolean;
+    smsConsentTimestamp?: number;
+    smsConsentIpAddress?: string;
+  };
+  now: number;
+}): ResolvedRsvpSubmissionSmsConsent {
+  const shouldUpdateOrganizerPreference = submittedSmsConsent !== undefined;
+  const smsConsent =
+    submittedSmsConsent ?? existingRsvp?.smsConsent ?? organizerPreference.smsConsent;
+  const smsConsentTimestamp = shouldUpdateOrganizerPreference
+    ? now
+    : (existingRsvp?.smsConsentTimestamp ?? organizerPreference.smsConsentTimestamp);
+  const priorSmsConsentIpAddress =
+    existingRsvp?.smsConsentIpAddress ?? organizerPreference.smsConsentIpAddress;
+  const smsConsentIpAddress = smsConsent
+    ? (submittedSmsConsentIpAddress ?? priorSmsConsentIpAddress)
+    : priorSmsConsentIpAddress;
+  const smsConsentChange =
+    !shouldUpdateOrganizerPreference || smsConsent === organizerPreference.smsConsent
+      ? null
+      : smsConsent
+        ? "enabled"
+        : "disabled";
+
+  return {
+    smsConsent,
+    smsConsentTimestamp,
+    smsConsentIpAddress,
+    smsConsentChange,
+    shouldUpdateOrganizerPreference,
+  };
+}
+
 async function prepareRsvpSubmission(
   ctx: MutationCtx,
   args: RsvpSubmissionInput,
@@ -464,18 +520,19 @@ export const submitRequest = mutation({
       .filter((q) => q.eq(q.field("clerkUserId"), clerkUserId))
       .unique();
 
-    let smsConsentChange: "enabled" | "disabled" | null = null;
-    if (!existing) {
-      if (args.smsConsent === true) {
-        smsConsentChange = "enabled";
-      }
-    } else {
-      if (args.smsConsent === true && existing.smsConsent !== true) {
-        smsConsentChange = "enabled";
-      } else if (args.smsConsent === false && existing.smsConsent === true) {
-        smsConsentChange = "disabled";
-      }
-    }
+    const existingOrganizerSmsPreference = await resolveSmsOrganizerPreference(ctx, {
+      clerkUserId,
+      event,
+      siteKey: args.siteKey,
+    });
+    const resolvedSmsConsent = resolveRsvpSubmissionSmsConsent({
+      submittedSmsConsent: args.smsConsent,
+      submittedSmsConsentIpAddress: sanitizedSmsConsentIpAddress,
+      existingRsvp: existing,
+      organizerPreference: existingOrganizerSmsPreference,
+      now,
+    });
+    let wasAutomaticallyApproved = false;
 
     if (!existing) {
       const rsvpId = await ctx.db.insert("rsvps", {
@@ -487,9 +544,9 @@ export const submitRequest = mutation({
         note: args.note,
         shareContact: args.shareContact,
         attendees: requestedAttendees,
-        smsConsent: args.smsConsent,
-        smsConsentTimestamp: args.smsConsent !== undefined ? now : undefined,
-        smsConsentIpAddress: args.smsConsent === true ? sanitizedSmsConsentIpAddress : undefined,
+        smsConsent: resolvedSmsConsent.smsConsent,
+        smsConsentTimestamp: resolvedSmsConsent.smsConsentTimestamp,
+        smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
         customFieldValues:
           sanitizedCustomFieldValues && Object.keys(sanitizedCustomFieldValues).length > 0
             ? sanitizedCustomFieldValues
@@ -521,13 +578,13 @@ export const submitRequest = mutation({
         });
       }
 
-      if (args.smsConsent !== undefined) {
+      if (resolvedSmsConsent.shouldUpdateOrganizerPreference) {
         await upsertSmsOrganizerPreference(ctx, {
           clerkUserId,
           event,
           siteKey: args.siteKey,
-          smsConsent: args.smsConsent,
-          smsConsentIpAddress: sanitizedSmsConsentIpAddress,
+          smsConsent: resolvedSmsConsent.smsConsent,
+          smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
           sourceEventId: args.eventId,
           sourceRsvpId: rsvpId,
           now,
@@ -538,7 +595,7 @@ export const submitRequest = mutation({
       const newRsvp = await ctx.db.get(rsvpId);
       if (newRsvp) {
         await insertRsvpIntoAggregate(ctx, newRsvp);
-        await tryAutoApproveRsvp(ctx, newRsvp);
+        wasAutomaticallyApproved = await tryAutoApproveRsvp(ctx, newRsvp);
       }
     } else {
       // Prevent re-requesting the same denied list
@@ -554,12 +611,9 @@ export const submitRequest = mutation({
         note: args.note,
         shareContact: args.shareContact,
         attendees: requestedAttendees,
-        smsConsent: args.smsConsent,
-        smsConsentTimestamp: args.smsConsent !== undefined ? now : existing.smsConsentTimestamp,
-        smsConsentIpAddress:
-          args.smsConsent === true
-            ? (sanitizedSmsConsentIpAddress ?? existing.smsConsentIpAddress)
-            : existing.smsConsentIpAddress,
+        smsConsent: resolvedSmsConsent.smsConsent,
+        smsConsentTimestamp: resolvedSmsConsent.smsConsentTimestamp,
+        smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
         customFieldValues:
           sanitizedCustomFieldValues !== undefined
             ? Object.keys(sanitizedCustomFieldValues).length > 0
@@ -602,13 +656,13 @@ export const submitRequest = mutation({
         }
       }
 
-      if (args.smsConsent !== undefined) {
+      if (resolvedSmsConsent.shouldUpdateOrganizerPreference) {
         await upsertSmsOrganizerPreference(ctx, {
           clerkUserId,
           event,
           siteKey: args.siteKey,
-          smsConsent: args.smsConsent,
-          smsConsentIpAddress: sanitizedSmsConsentIpAddress ?? existing.smsConsentIpAddress,
+          smsConsent: resolvedSmsConsent.smsConsent,
+          smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
           sourceEventId: args.eventId,
           sourceRsvpId: existing._id,
           now,
@@ -616,12 +670,32 @@ export const submitRequest = mutation({
       }
     }
 
-    if (smsConsentChange) {
+    if (resolvedSmsConsent.smsConsentChange) {
       await ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
         eventId: args.eventId,
         clerkUserId,
-        consentEnabled: smsConsentChange === "enabled",
+        consentEnabled: resolvedSmsConsent.smsConsentChange === "enabled",
       });
+    }
+
+    const rsvpConfirmationMessage =
+      !existing && resolvedSmsConsent.smsConsent && !wasAutomaticallyApproved
+        ? formatRsvpConfirmationMessage(event, {
+            firstName: user?.firstName ?? submittedFirstName,
+            lastName: user?.lastName ?? submittedLastName,
+            fullName: userName,
+          })
+        : undefined;
+    if (rsvpConfirmationMessage) {
+      await ctx.scheduler.runAfter(
+        resolvedSmsConsent.smsConsentChange === "enabled" ? 1000 : 0,
+        api.notifications.sendRsvpConfirmationSms,
+        {
+          eventId: args.eventId,
+          clerkUserId,
+          message: rsvpConfirmationMessage,
+        },
+      );
     }
 
     return { ok: true as const };
@@ -704,16 +778,19 @@ export const submitGuestRequest = mutation({
       )
       .collect();
     const existing = existingGuestRsvps.find((rsvp) => isGuestClerkUserId(rsvp.clerkUserId));
-    let smsConsentChange: "enabled" | "disabled" | null = null;
-    if (!existing) {
-      if (args.smsConsent === true) {
-        smsConsentChange = "enabled";
-      }
-    } else if (args.smsConsent === true && existing.smsConsent !== true) {
-      smsConsentChange = "enabled";
-    } else if (args.smsConsent === false && existing.smsConsent === true) {
-      smsConsentChange = "disabled";
-    }
+    const existingOrganizerSmsPreference = await resolveSmsOrganizerPreference(ctx, {
+      clerkUserId: guestClerkUserId,
+      event,
+      siteKey: args.siteKey,
+    });
+    const resolvedSmsConsent = resolveRsvpSubmissionSmsConsent({
+      submittedSmsConsent: args.smsConsent,
+      submittedSmsConsentIpAddress: sanitizedSmsConsentIpAddress,
+      existingRsvp: existing ?? null,
+      organizerPreference: existingOrganizerSmsPreference,
+      now,
+    });
+    let wasAutomaticallyApproved = false;
 
     let rsvpId: Id<"rsvps">;
     if (!existing) {
@@ -728,9 +805,9 @@ export const submitGuestRequest = mutation({
         note: args.note,
         shareContact: args.shareContact,
         attendees: requestedAttendees,
-        smsConsent: args.smsConsent,
-        smsConsentTimestamp: args.smsConsent !== undefined ? now : undefined,
-        smsConsentIpAddress: args.smsConsent === true ? sanitizedSmsConsentIpAddress : undefined,
+        smsConsent: resolvedSmsConsent.smsConsent,
+        smsConsentTimestamp: resolvedSmsConsent.smsConsentTimestamp,
+        smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
         customFieldValues:
           sanitizedCustomFieldValues && Object.keys(sanitizedCustomFieldValues).length > 0
             ? sanitizedCustomFieldValues
@@ -758,7 +835,7 @@ export const submitGuestRequest = mutation({
       const newRsvp = await ctx.db.get(rsvpId);
       if (newRsvp) {
         await insertRsvpIntoAggregate(ctx, newRsvp);
-        await tryAutoApproveRsvp(ctx, newRsvp);
+        wasAutomaticallyApproved = await tryAutoApproveRsvp(ctx, newRsvp);
       }
     } else {
       if (resolveApprovalStatus(existing) === "denied" && existing.listKey === args.listKey) {
@@ -775,12 +852,9 @@ export const submitGuestRequest = mutation({
         note: args.note,
         shareContact: args.shareContact,
         attendees: requestedAttendees,
-        smsConsent: args.smsConsent,
-        smsConsentTimestamp: args.smsConsent !== undefined ? now : existing.smsConsentTimestamp,
-        smsConsentIpAddress:
-          args.smsConsent === true
-            ? (sanitizedSmsConsentIpAddress ?? existing.smsConsentIpAddress)
-            : existing.smsConsentIpAddress,
+        smsConsent: resolvedSmsConsent.smsConsent,
+        smsConsentTimestamp: resolvedSmsConsent.smsConsentTimestamp,
+        smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
         customFieldValues:
           sanitizedCustomFieldValues !== undefined
             ? Object.keys(sanitizedCustomFieldValues).length > 0
@@ -827,13 +901,34 @@ export const submitGuestRequest = mutation({
       createdAt: now,
     });
 
-    if (smsConsentChange) {
+    if (resolvedSmsConsent.smsConsentChange) {
       await ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
         eventId: args.eventId,
         clerkUserId: guestClerkUserId,
-        consentEnabled: smsConsentChange === "enabled",
+        consentEnabled: resolvedSmsConsent.smsConsentChange === "enabled",
         phoneNumber: normalizedPhoneNumber,
       });
+    }
+
+    const rsvpConfirmationMessage =
+      !existing && resolvedSmsConsent.smsConsent && !wasAutomaticallyApproved
+        ? formatRsvpConfirmationMessage(event, {
+            firstName: submittedFirstName,
+            lastName: submittedLastName,
+            fullName: guestName,
+          })
+        : undefined;
+    if (rsvpConfirmationMessage) {
+      await ctx.scheduler.runAfter(
+        resolvedSmsConsent.smsConsentChange === "enabled" ? 1000 : 0,
+        api.notifications.sendRsvpConfirmationSms,
+        {
+          eventId: args.eventId,
+          clerkUserId: guestClerkUserId,
+          message: rsvpConfirmationMessage,
+          phoneNumber: normalizedPhoneNumber,
+        },
+      );
     }
 
     return {
@@ -1234,7 +1329,8 @@ export const claimGuestRsvpsForClerkPhoneInternal = internalMutation({
 /**
  * Internal query to check if a user has consented to SMS for a specific event.
  * Used by SMS infrastructure to verify consent before sending messages.
- * NOTE: Consent is recorded per RSVP when the guest explicitly opts in.
+ * Consent is copied onto an RSVP from the guest's explicit selection or their
+ * existing organizer-level preference when they submit that event's RSVP.
  */
 export const checkSmsConsentForUserEvent = internalQuery({
   args: {

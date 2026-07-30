@@ -4,8 +4,10 @@ REST API + encrypted webhooks for integrating third-party apps ("consumers") wit
 read event data, mirror RSVPs as they happen, and write RSVPs on behalf of users that exist
 in both systems.
 
-- API version: `2026-07-22` (sent as `apiVersion` in webhook payloads; source of truth is
+- API version: `2026-07-29` (sent as `apiVersion` in webhook payloads; source of truth is
   `@coucou/sdk/api-v1` → `API_VERSION`)
+- Public reference: `https://coucou.events/docs/partner-api` (no Coucou workspace login
+  required).
 - Identity matching is **phone-only** (normalized E.164). Email is not part of v1.
 - All management (API keys, webhook endpoints) lives in the coucou host dashboard under
   **Workspace → Developers**.
@@ -33,8 +35,49 @@ Authorization: Bearer coucou_sk_...
   hashed (SHA-256). Treat them like passwords; never ship them to a browser (the API
   sends no CORS headers, deliberately).
 - Keys carry scopes: `events:read`, `events:write`, `rsvps:read`, `rsvps:write`.
-- All data access is scoped to the key's workspace. Objects in other workspaces read as
-  404 — existence is not leaked.
+- Keys also carry event access: `selected` for one or more assigned events, or explicit
+  `all` access for every current and future workspace event.
+- All data access is scoped to the key's workspace and event grants. Objects outside
+  either boundary read as 404 — existence is not leaked.
+- Existing keys created before event grants retain legacy all-event access until a host
+  narrows them.
+
+## Configuration quick guides
+
+### Coucou-managed RSVP and SMS
+
+For a Coucou-hosted page such as Danza Organica, configure the event and SMS program in
+Coucou, then assign that event to a webhook endpoint. The hosted form collects consent;
+no API key is required unless the partner also needs reads or writes.
+
+For a delegated form such as The Market:
+
+1. Provision an event-scoped key with `events:read`, `rsvps:read`, and `rsvps:write`.
+2. Fetch the event form and `GET .../rsvps/sms-consent` program.
+3. Render the returned, separate SMS checkbox unchecked unless the returned phone
+   preference is already true.
+4. Send `smsConsent` only as the user's explicit choice. Send `smsConsentIpAddress` with
+   true only when the end user's IP can be forwarded reliably.
+5. Subscribe an endpoint assigned to the same event to the RSVP and event lifecycle
+   events the partner mirrors, including approval and denial decisions.
+
+### Partner-managed RSVP and SMS
+
+1. Provision a key with `rsvps:write` and only the destination Coucou event.
+2. POST each partner RSVP by E.164 phone and store the returned Coucou `rsvpId`.
+3. **Omit both `smsConsent` and `smsConsentIpAddress`.** Do not send false: false is an
+   explicit Coucou opt-out and may send an opt-out status message.
+4. Replay the partner's current roster through the idempotent POST, then use the
+   paginated Coucou RSVP endpoint to reconcile the resulting IDs and state.
+5. Assign a webhook endpoint to the same event for Coucou approval, ticket, attendance,
+   and deletion updates. Compare `origin.apiClientId` with the provisioned client ID and
+   ignore only that client's own writes.
+
+### Coucou list shared outward
+
+Use the paginated RSVP endpoint once to backfill the existing event list, then consume
+webhooks for changes. A server-side adapter is responsible for any Partiful, Posh, Luma,
+or other destination API and its own privacy/consent requirements.
 
 ## Errors
 
@@ -80,6 +123,25 @@ Query params: `status` (`published` default | `all`), `limit` (1–100, default 
 
 Counts are approval-status buckets. Attendance-answer (yes/no/maybe) breakdowns are not
 included in v1.
+
+### `GET /api/v1/events/{eventRouteId}/rsvps` — scope `rsvps:read`
+
+Enumerates an assigned event's existing RSVP/contact list for initial backfill and
+reconciliation. Query params: `limit` (1–100, default 25) and `cursor`.
+
+```json
+{
+  "data": [
+    {
+      "rsvpId": "...", "approvalStatus": "approved", "attendanceStatus": "yes",
+      "listKey": "ga", "attendees": 2, "name": "Jane Doe", "isGuest": false,
+      "phone": "+15551234567", "phoneHash": "<sha256 hex of E.164>",
+      "createdAt": 0, "updatedAt": 0, "ticket": null
+    }
+  ],
+  "nextCursor": null
+}
+```
 
 ### `GET /api/v1/events/{eventRouteId}/rsvps/lookup?phone=+15551234567` — scope `rsvps:read`
 
@@ -169,6 +231,8 @@ Updates an event's public details. All fields optional — send only what change
   A denied RSVP may retry only on a different resolved list.
 - `smsConsent` is optional and organizer-wide. Explicit `true` or `false` updates both
   the RSVP and the phone's workspace preference; omission preserves existing state.
+  For a newly imported RSVP, omission creates no Coucou SMS permission. On an existing
+  RSVP, omission does not revoke consent previously collected by Coucou.
   `smsConsentIpAddress` is optional and should be sent only when the caller can reliably
   identify the consenting end user's IP. Confirmation/opt-out SMS is sent only when the
   organizer-wide value changes.
@@ -186,7 +250,10 @@ attendance counts stay consistent); there is no hard delete via the API.
 
 ## Webhooks
 
-Register HTTPS endpoints per workspace on the Developers page, choosing event types:
+Register HTTPS endpoints per workspace on the Developers page, choosing event types and
+either selected-event or explicit all-event access. Event grants are checked when a
+delivery is queued and immediately before every attempt, so removing a grant blocks
+pending retries that contain event contact data.
 
 Integrations that mirror RSVP state must subscribe to both `rsvp.approved` and
 `rsvp.denied`; creation/update deliveries are not substitutes for approval decisions.
@@ -221,14 +288,15 @@ X-Coucou-Signature: t=1752700000,v1=<hex HMAC-SHA256(signingSecret, "<t>.<rawBod
 Body (the envelope — payload is encrypted inside):
 
 ```json
-{ "apiVersion": "2026-07-22", "encryption": "aes-256-gcm", "keyGeneration": 1,
+{ "apiVersion": "2026-07-29", "encryption": "aes-256-gcm", "keyGeneration": 1,
   "iv": "<base64url, 12 bytes>", "ciphertext": "<base64url, ciphertext || 16-byte GCM tag>" }
 ```
 
-Decrypted payload (RSVP events; `event.*` events omit `rsvp`/`identity`/`origin`):
+Decrypted payload (event deliveries retain `event` and `origin` but omit the
+RSVP-specific `rsvp`, `identity`, and `ticket` fields):
 
 ```json
-{ "apiVersion": "2026-07-22", "eventType": "rsvp.approved", "deliveryId": "...",
+{ "apiVersion": "2026-07-29", "eventType": "rsvp.approved", "deliveryId": "...",
   "occurredAt": 1752700000000, "workspaceSlug": "club-chlorine",
   "data": {
     "event": { "id": "...", "shortId": "abc123", "name": "...", "eventDate": 1753000000000,
@@ -240,7 +308,7 @@ Decrypted payload (RSVP events; `event.*` events omit `rsvp`/`identity`/`origin`
                   "name": "Jane Doe", "isGuest": false },
     "ticket": { "status": "issued", "qrEnabled": true,
                  "redemptionCode": "abc123", "redeemUrl": "https://…/redeem/abc123" },
-    "origin": { "type": "app" },
+    "origin": { "type": "api", "apiClientId": "api_client_id" },
     "changes": { "previousApprovalStatus": "pending", "previousAttendanceStatus": null }
   } }
 ```
@@ -250,8 +318,9 @@ Notes:
 - `identity.phone` can be `null` for guests who RSVP'd before phone persistence shipped —
   fall back to matching `identity.phoneHash` against `SHA-256(normalized E.164)` of your
   own users' phones.
-- `origin.type` is `"api"` when the change was made through the partner API. If you
-  mirror webhook events into your backend, skip your own writes to avoid loops.
+- `origin.type` is `"api"` when the change was made through the partner API. Compare
+  `origin.apiClientId` with the client ID shown during provisioning and skip only your
+  own writes; API changes from other clients still need processing.
 - `event.flyerUrl` in webhook payloads is the stored URL only; fetch
   `GET /api/v1/events/{id}` for a resolved storage URL.
 

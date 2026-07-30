@@ -2,7 +2,7 @@
  * Version string for the coucou partner API. Sent in every webhook envelope and
  * decrypted payload; bump when the payload or endpoint shapes change.
  */
-export const API_VERSION = "2026-07-22";
+export const API_VERSION = "2026-07-29";
 
 export const WEBHOOK_EVENT_TYPES = [
   "rsvp.created",

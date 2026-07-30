@@ -136,6 +136,79 @@ describe("guest RSVP handoff", () => {
     expect(handoff?.canAutoSendCode).toBe(false);
   });
 
+  it("sends configured RSVP confirmations without repeating organizer opt-in confirmation", async () => {
+    const testBackend = setupTestBackend();
+    const firstEventId = await seedActiveEvent(testBackend);
+    const secondEventId = await seedActiveEvent(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(firstEventId, {
+        name: "First Guest Night",
+        rsvpConfirmationMessage: "Hi {{firstName}}, we received your RSVP for {{eventName}}.",
+      });
+      await databaseContext.db.patch(secondEventId, {
+        name: "Second Guest Night",
+        rsvpConfirmationMessage: "Welcome back, {{firstName}}. Your {{eventName}} RSVP is pending.",
+      });
+    });
+
+    const submissionArgs = {
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Ava",
+      lastName: "Green",
+      phone: "(310) 499-6272",
+      shareContact: true,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    };
+    await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      ...submissionArgs,
+      eventId: firstEventId,
+      smsConsent: true,
+    });
+    await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      ...submissionArgs,
+      eventId: secondEventId,
+    });
+
+    const scheduledFunctions = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.system.query("_scheduled_functions").collect();
+    });
+    const consentStatusMessages = scheduledFunctions.filter(
+      (scheduledFunction) => scheduledFunction.name === "notifications:sendSmsConsentStatusMessage",
+    );
+    const rsvpConfirmationMessages = scheduledFunctions.filter(
+      (scheduledFunction) => scheduledFunction.name === "notifications:sendRsvpConfirmationSms",
+    );
+
+    expect(consentStatusMessages).toHaveLength(1);
+    expect(rsvpConfirmationMessages).toHaveLength(2);
+    const secondEventRsvp = await testBackend.run(async (databaseContext) => {
+      const rsvps = await databaseContext.db.query("rsvps").collect();
+      return rsvps.find((rsvp) => rsvp.eventId === secondEventId) ?? null;
+    });
+    expect(secondEventRsvp?.smsConsent).toBe(true);
+    expect(rsvpConfirmationMessages.map((scheduledFunction) => scheduledFunction.args)).toEqual(
+      expect.arrayContaining([
+        [
+          expect.objectContaining({
+            eventId: firstEventId,
+            message:
+              "CLUB CHLORINE: Hi Ava, we received your RSVP for First Guest Night.\n\nReply STOP to opt out.",
+          }),
+        ],
+        [
+          expect.objectContaining({
+            eventId: secondEventId,
+            message:
+              "CLUB CHLORINE: Welcome back, Ava. Your Second Guest Night RSVP is pending.\n\nReply STOP to opt out.",
+          }),
+        ],
+      ]),
+    );
+  });
+
   it("auto-approves only the first configured submissions across signed-in and guest web flows", async () => {
     const testBackend = setupTestBackend();
     const eventId = await seedActiveEvent(testBackend);
@@ -555,6 +628,68 @@ describe("guest RSVP handoff", () => {
       expect(userPreference?.smsConsent).toBe(false);
       expect(userPreference?.sourceRsvpId).toBe(submittedRsvp._id);
     });
+  });
+
+  it("inherits organizer SMS consent only when a future-event RSVP is submitted", async () => {
+    const testBackend = setupTestBackend();
+    const firstEventId = await seedActiveEvent(testBackend);
+    const futureEventId = await seedActiveEvent(testBackend);
+    const optedOutEventId = await seedActiveEvent(testBackend);
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_future_sms_preference", "+13104996272"),
+    );
+    const submissionArgs = {
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Mina",
+      lastName: "Park",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    };
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      ...submissionArgs,
+      eventId: firstEventId,
+      smsConsent: true,
+      smsConsentIpAddress: "203.0.113.10",
+    });
+
+    const futureRsvpBeforeSubmission = await testBackend.run(async (databaseContext) => {
+      const rsvps = await databaseContext.db.query("rsvps").collect();
+      return rsvps.find((rsvp) => rsvp.eventId === futureEventId) ?? null;
+    });
+    expect(futureRsvpBeforeSubmission).toBeNull();
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      ...submissionArgs,
+      eventId: futureEventId,
+    });
+    const inheritedFutureRsvp = await testBackend.run(async (databaseContext) => {
+      const rsvps = await databaseContext.db.query("rsvps").collect();
+      return rsvps.find((rsvp) => rsvp.eventId === futureEventId) ?? null;
+    });
+    expect(inheritedFutureRsvp?.smsConsent).toBe(true);
+    expect(inheritedFutureRsvp?.smsConsentIpAddress).toBe("203.0.113.10");
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      ...submissionArgs,
+      eventId: optedOutEventId,
+      smsConsent: false,
+    });
+    const explicitlyOptedOutRsvp = await testBackend.run(async (databaseContext) => {
+      const rsvps = await databaseContext.db.query("rsvps").collect();
+      return rsvps.find((rsvp) => rsvp.eventId === optedOutEventId) ?? null;
+    });
+    const organizerPreference = await authedBackend.query(api.rsvps.smsPreferenceForUserEvent, {
+      eventId: futureEventId,
+      siteKey: "club-chlorine",
+    });
+
+    expect(explicitlyOptedOutRsvp?.smsConsent).toBe(false);
+    expect(organizerPreference?.smsConsent).toBe(false);
   });
 
   it("rejects RSVP submissions without both first and last names", async () => {

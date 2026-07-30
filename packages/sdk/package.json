@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "bun test",
     "lint": "biome lint ."
   },
   "main": "./src/index.ts",

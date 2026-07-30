@@ -4,8 +4,15 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { mutation, query } from "./functions";
+import {
+  buildPartnerEventAccessSummary,
+  type PartnerEventAccessMode,
+  validatePartnerEventAccess,
+} from "./lib/partnerEventAccess";
 import { generateWebhookEndpointSecrets } from "./lib/webhookCrypto";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
+
+const partnerEventAccessModeValidator = v.union(v.literal("all"), v.literal("selected"));
 
 function validateEndpointUrl(url: string): string {
   const trimmedUrl = url.trim();
@@ -47,6 +54,7 @@ function buildEndpointSummary(endpoint: Doc<"webhookEndpoints">) {
     consecutiveFailureCount: endpoint.consecutiveFailureCount,
     createdAt: endpoint.createdAt,
     updatedAt: endpoint.updatedAt,
+    ...buildPartnerEventAccessSummary(endpoint),
   };
 }
 
@@ -69,6 +77,8 @@ export const create = mutation({
     url: v.string(),
     description: v.optional(v.string()),
     subscribedEventTypes: v.array(v.string()),
+    eventAccessMode: v.optional(partnerEventAccessModeValidator),
+    allowedEventIds: v.optional(v.array(v.id("events"))),
   },
   handler: async (ctx, args) => {
     const resolvedScope = await requireWorkspaceHost(ctx, { workspaceSlug: args.workspaceSlug });
@@ -76,6 +86,12 @@ export const create = mutation({
     const validatedUrl = validateEndpointUrl(args.url);
     const validatedEventTypes = validateSubscribedEventTypes(args.subscribedEventTypes);
     const { encryptionSecretBase64, signingSecretBase64 } = generateWebhookEndpointSecrets();
+    const eventAccessMode: PartnerEventAccessMode = args.eventAccessMode ?? "selected";
+    const allowedEventIds = await validatePartnerEventAccess(ctx, {
+      workspaceId: resolvedScope.workspaceId,
+      eventAccessMode,
+      allowedEventIds: args.allowedEventIds,
+    });
 
     const now = Date.now();
     const endpointId = await ctx.db.insert("webhookEndpoints", {
@@ -86,6 +102,8 @@ export const create = mutation({
       signingSecretBase64,
       secretGeneration: 1,
       subscribedEventTypes: validatedEventTypes,
+      eventAccessMode,
+      allowedEventIds,
       isActive: true,
       consecutiveFailureCount: 0,
       createdAt: now,
@@ -97,6 +115,33 @@ export const create = mutation({
       encryptionSecretBase64,
       signingSecretBase64,
       secretGeneration: 1,
+    };
+  },
+});
+
+export const updateEventAccess = mutation({
+  args: {
+    workspaceSlug: v.string(),
+    endpointId: v.id("webhookEndpoints"),
+    eventAccessMode: partnerEventAccessModeValidator,
+    allowedEventIds: v.optional(v.array(v.id("events"))),
+  },
+  handler: async (ctx, args) => {
+    const endpoint = await requireEndpointInWorkspace(ctx, args.workspaceSlug, args.endpointId);
+    const allowedEventIds = await validatePartnerEventAccess(ctx, {
+      workspaceId: endpoint.workspaceId,
+      eventAccessMode: args.eventAccessMode,
+      allowedEventIds: args.allowedEventIds,
+    });
+    await ctx.db.patch(endpoint._id, {
+      eventAccessMode: args.eventAccessMode,
+      allowedEventIds,
+      updatedAt: Date.now(),
+    });
+    return {
+      eventAccessMode: args.eventAccessMode,
+      allowedEventIds,
+      isLegacyAllEventsAccess: false,
     };
   },
 });

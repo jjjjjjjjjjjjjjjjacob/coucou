@@ -24,7 +24,7 @@ export const attemptDelivery = internalAction({
     }
 
     const { delivery, endpoint } = dispatchTarget;
-    if (!endpoint.isActive) {
+    if (!endpoint.isActive || !dispatchTarget.eventAccessAllowed) {
       await ctx.runMutation(internal.webhookDeliveries.markDeliverySkippedInactive, {
         deliveryId: args.deliveryId,
       });

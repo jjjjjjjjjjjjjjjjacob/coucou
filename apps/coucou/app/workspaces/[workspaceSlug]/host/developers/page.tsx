@@ -57,6 +57,102 @@ const API_KEY_SCOPES = [
 ];
 
 type ApiClientScope = (typeof API_KEY_SCOPES)[number]["scope"];
+type PartnerEventAccessMode = "all" | "selected";
+
+interface PartnerEventOption {
+  eventId: Id<"events">;
+  label: string;
+}
+
+function EventAccessFields({
+  eventAccessMode,
+  allowedEventIds,
+  eventOptions,
+  onEventAccessModeChange,
+  onAllowedEventIdsChange,
+}: {
+  eventAccessMode: PartnerEventAccessMode;
+  allowedEventIds: Id<"events">[];
+  eventOptions: PartnerEventOption[];
+  onEventAccessModeChange: (eventAccessMode: PartnerEventAccessMode) => void;
+  onAllowedEventIdsChange: (allowedEventIds: Id<"events">[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>Event access</Label>
+      <label className="flex items-start gap-2 text-sm text-[var(--text-primary)]">
+        <Checkbox
+          checked={eventAccessMode === "all"}
+          onCheckedChange={(checked) =>
+            onEventAccessModeChange(checked === true ? "all" : "selected")
+          }
+        />
+        <span>
+          All current and future events
+          <span className="block text-xs text-[var(--text-secondary)]">
+            Use only for trusted integrations that need workspace-wide access.
+          </span>
+        </span>
+      </label>
+      {eventAccessMode === "selected" && (
+        <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] p-2">
+          {eventOptions.length === 0 ? (
+            <p className="text-xs text-[var(--text-secondary)]">
+              Create an event before provisioning selected-event access.
+            </p>
+          ) : (
+            eventOptions.map((eventOption) => (
+              <label
+                key={eventOption.eventId}
+                className="flex items-center gap-2 rounded px-1 py-1 text-sm text-[var(--text-primary)]"
+              >
+                <Checkbox
+                  checked={allowedEventIds.includes(eventOption.eventId)}
+                  onCheckedChange={(checked) =>
+                    onAllowedEventIdsChange(
+                      checked === true
+                        ? [...new Set([...allowedEventIds, eventOption.eventId])]
+                        : allowedEventIds.filter(
+                            (allowedEventId) => allowedEventId !== eventOption.eventId,
+                          ),
+                    )
+                  }
+                />
+                <span className="truncate">{eventOption.label}</span>
+              </label>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function describeEventAccess({
+  eventAccessMode,
+  allowedEventIds,
+  isLegacyAllEventsAccess,
+  eventOptions,
+}: {
+  eventAccessMode: PartnerEventAccessMode;
+  allowedEventIds: Id<"events">[];
+  isLegacyAllEventsAccess: boolean;
+  eventOptions: PartnerEventOption[];
+}): string {
+  if (eventAccessMode === "all") {
+    return isLegacyAllEventsAccess ? "All events (legacy)" : "All events";
+  }
+  const allowedEventNames = allowedEventIds
+    .map(
+      (allowedEventId) =>
+        eventOptions.find((eventOption) => eventOption.eventId === allowedEventId)?.label,
+    )
+    .filter((eventName): eventName is string => Boolean(eventName));
+  if (allowedEventNames.length === 0) {
+    return `${allowedEventIds.length} selected event${allowedEventIds.length === 1 ? "" : "s"}`;
+  }
+  return allowedEventNames.join(", ");
+}
 
 function resolveApiBaseUrl(): string | null {
   const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
@@ -116,21 +212,41 @@ function ApiBaseUrlCard() {
   );
 }
 
-function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
+function ApiKeysCard({
+  workspaceSlug,
+  eventOptions,
+}: {
+  workspaceSlug: string;
+  eventOptions: PartnerEventOption[];
+}) {
   const apiClients = useQuery(api.apiClients.listForWorkspace, { workspaceSlug });
   const createApiClient = useMutation(api.apiClients.create);
   const revokeApiClient = useMutation(api.apiClients.revoke);
   const updateDefaultRsvpListKey = useMutation(api.apiClients.updateDefaultRsvpListKey);
+  const updateApiClientEventAccess = useMutation(api.apiClients.updateEventAccess);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyScopes, setNewKeyScopes] = useState<ApiClientScope[]>(["events:read"]);
   const [newKeyDefaultRsvpListKey, setNewKeyDefaultRsvpListKey] = useState("");
+  const [newKeyEventAccessMode, setNewKeyEventAccessMode] =
+    useState<PartnerEventAccessMode>("selected");
+  const [newKeyAllowedEventIds, setNewKeyAllowedEventIds] = useState<Id<"events">[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [createdPlaintextKey, setCreatedPlaintextKey] = useState<string | null>(null);
+  const [createdApiClientId, setCreatedApiClientId] = useState<Id<"apiClients"> | null>(null);
   const [editingApiClientId, setEditingApiClientId] = useState<Id<"apiClients"> | null>(null);
   const [editingDefaultRsvpListKey, setEditingDefaultRsvpListKey] = useState("");
   const [isSavingDefaultList, setIsSavingDefaultList] = useState(false);
+  const [editingApiClientAccessId, setEditingApiClientAccessId] = useState<Id<"apiClients"> | null>(
+    null,
+  );
+  const [editingApiClientAccessMode, setEditingApiClientAccessMode] =
+    useState<PartnerEventAccessMode>("selected");
+  const [editingApiClientAllowedEventIds, setEditingApiClientAllowedEventIds] = useState<
+    Id<"events">[]
+  >([]);
+  const [isSavingApiClientAccess, setIsSavingApiClientAccess] = useState(false);
 
   const handleCreate = async () => {
     if (!newKeyName.trim()) {
@@ -141,6 +257,10 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
       toast.error("Select at least one scope");
       return;
     }
+    if (newKeyEventAccessMode === "selected" && newKeyAllowedEventIds.length === 0) {
+      toast.error("Select at least one event or grant all events");
+      return;
+    }
     setIsCreating(true);
     try {
       const created = await createApiClient({
@@ -148,16 +268,45 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
         displayName: newKeyName.trim(),
         scopes: newKeyScopes,
         defaultRsvpListKey: newKeyDefaultRsvpListKey.trim() || undefined,
+        eventAccessMode: newKeyEventAccessMode,
+        allowedEventIds: newKeyEventAccessMode === "selected" ? newKeyAllowedEventIds : undefined,
       });
       setCreatedPlaintextKey(created.plaintextKey);
+      setCreatedApiClientId(created.apiClientId);
       setIsCreateDialogOpen(false);
       setNewKeyName("");
       setNewKeyScopes(["events:read"]);
       setNewKeyDefaultRsvpListKey("");
+      setNewKeyEventAccessMode("selected");
+      setNewKeyAllowedEventIds([]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create the API key");
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleSaveApiClientAccess = async () => {
+    if (!editingApiClientAccessId) return;
+    if (editingApiClientAccessMode === "selected" && editingApiClientAllowedEventIds.length === 0) {
+      toast.error("Select at least one event or grant all events");
+      return;
+    }
+    setIsSavingApiClientAccess(true);
+    try {
+      await updateApiClientEventAccess({
+        workspaceSlug,
+        apiClientId: editingApiClientAccessId,
+        eventAccessMode: editingApiClientAccessMode,
+        allowedEventIds:
+          editingApiClientAccessMode === "selected" ? editingApiClientAllowedEventIds : undefined,
+      });
+      setEditingApiClientAccessId(null);
+      toast.success("API key event access updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update event access");
+    } finally {
+      setIsSavingApiClientAccess(false);
     }
   };
 
@@ -223,6 +372,7 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
                   <code className="text-xs text-[var(--text-secondary)]">
                     {apiClient.keyPrefix}…
                   </code>
+                  <CopyButton value={apiClient.apiClientId} label="API client ID" />
                   {apiClient.revokedAt !== null && (
                     <StatusBadge variant="disabled" label="Revoked" />
                   )}
@@ -242,10 +392,30 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
                   <span>
                     · Default RSVP list {apiClient.defaultRsvpListKey ?? "event fallback"}
                   </span>
+                  <span>
+                    · Events{" "}
+                    {describeEventAccess({
+                      eventAccessMode: apiClient.eventAccessMode,
+                      allowedEventIds: apiClient.allowedEventIds,
+                      isLegacyAllEventsAccess: apiClient.isLegacyAllEventsAccess,
+                      eventOptions,
+                    })}
+                  </span>
                 </div>
               </div>
               {apiClient.revokedAt === null && (
                 <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setEditingApiClientAccessId(apiClient.apiClientId);
+                      setEditingApiClientAccessMode(apiClient.eventAccessMode);
+                      setEditingApiClientAllowedEventIds(apiClient.allowedEventIds);
+                    }}
+                  >
+                    <Pencil className="mr-1 h-3.5 w-3.5" /> Event access
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -312,6 +482,13 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
                 </label>
               ))}
             </div>
+            <EventAccessFields
+              eventAccessMode={newKeyEventAccessMode}
+              allowedEventIds={newKeyAllowedEventIds}
+              eventOptions={eventOptions}
+              onEventAccessModeChange={setNewKeyEventAccessMode}
+              onAllowedEventIdsChange={setNewKeyAllowedEventIds}
+            />
             <div className="space-y-2">
               <Label htmlFor="api-key-default-rsvp-list">Default RSVP list (optional)</Label>
               <Input
@@ -377,9 +554,48 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
       </Dialog>
 
       <Dialog
+        open={editingApiClientAccessId !== null}
+        onOpenChange={(open) => {
+          if (!open && !isSavingApiClientAccess) setEditingApiClientAccessId(null);
+        }}
+      >
+        <DialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
+          <DialogHeader>
+            <DialogTitle>Edit API key event access</DialogTitle>
+            <DialogDescription className="text-[var(--text-secondary)]">
+              Requests for events outside this grant return 404 without revealing that the event
+              exists.
+            </DialogDescription>
+          </DialogHeader>
+          <EventAccessFields
+            eventAccessMode={editingApiClientAccessMode}
+            allowedEventIds={editingApiClientAllowedEventIds}
+            eventOptions={eventOptions}
+            onEventAccessModeChange={setEditingApiClientAccessMode}
+            onAllowedEventIdsChange={setEditingApiClientAllowedEventIds}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditingApiClientAccessId(null)}
+              disabled={isSavingApiClientAccess}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveApiClientAccess} disabled={isSavingApiClientAccess}>
+              {isSavingApiClientAccess ? "Saving…" : "Save event access"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={createdPlaintextKey !== null}
         onOpenChange={(open) => {
-          if (!open) setCreatedPlaintextKey(null);
+          if (!open) {
+            setCreatedPlaintextKey(null);
+            setCreatedApiClientId(null);
+          }
         }}
       >
         <DialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
@@ -396,8 +612,22 @@ function ApiKeysCard({ workspaceSlug }: { workspaceSlug: string }) {
               <CopyButton value={createdPlaintextKey} label="API key" />
             </div>
           )}
+          {createdApiClientId && (
+            <div className="flex items-center gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-2 font-mono text-sm text-[var(--text-primary)]">
+              <span className="w-24 shrink-0 font-sans text-xs text-[var(--text-secondary)]">
+                Client ID
+              </span>
+              <span className="truncate">{createdApiClientId}</span>
+              <CopyButton value={createdApiClientId} label="API client ID" />
+            </div>
+          )}
           <DialogFooter>
-            <Button onClick={() => setCreatedPlaintextKey(null)}>
+            <Button
+              onClick={() => {
+                setCreatedPlaintextKey(null);
+                setCreatedApiClientId(null);
+              }}
+            >
               <Check className="mr-1 h-4 w-4" /> I saved it
             </Button>
           </DialogFooter>
@@ -510,10 +740,17 @@ function EndpointDeliveries({
   );
 }
 
-function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
+function WebhookEndpointsCard({
+  workspaceSlug,
+  eventOptions,
+}: {
+  workspaceSlug: string;
+  eventOptions: PartnerEventOption[];
+}) {
   const endpoints = useQuery(api.webhookEndpoints.listForWorkspace, { workspaceSlug });
   const createEndpoint = useMutation(api.webhookEndpoints.create);
   const updateEndpoint = useMutation(api.webhookEndpoints.update);
+  const updateEndpointEventAccess = useMutation(api.webhookEndpoints.updateEventAccess);
   const rotateSecrets = useMutation(api.webhookEndpoints.rotateSecrets);
   const removeEndpoint = useMutation(api.webhookEndpoints.remove);
   const sendTestDelivery = useMutation(api.webhookEndpoints.sendTestDelivery);
@@ -530,12 +767,23 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
     "rsvp.denied",
     "rsvp.attendance_updated",
   ]);
+  const [newEndpointEventAccessMode, setNewEndpointEventAccessMode] =
+    useState<PartnerEventAccessMode>("selected");
+  const [newEndpointAllowedEventIds, setNewEndpointAllowedEventIds] = useState<Id<"events">[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [revealedSecretsByEndpointId, setRevealedSecretsByEndpointId] = useState<
     Record<string, RevealedEndpointSecrets>
   >({});
 
   const [expandedEndpointId, setExpandedEndpointId] = useState<Id<"webhookEndpoints"> | null>(null);
+  const [editingEndpointAccessId, setEditingEndpointAccessId] =
+    useState<Id<"webhookEndpoints"> | null>(null);
+  const [editingEndpointAccessMode, setEditingEndpointAccessMode] =
+    useState<PartnerEventAccessMode>("selected");
+  const [editingEndpointAllowedEventIds, setEditingEndpointAllowedEventIds] = useState<
+    Id<"events">[]
+  >([]);
+  const [isSavingEndpointAccess, setIsSavingEndpointAccess] = useState(false);
 
   const [revealingEndpointId, setRevealingEndpointId] = useState<Id<"webhookEndpoints"> | null>(
     null,
@@ -565,6 +813,10 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
       toast.error("Subscribe to at least one event type");
       return;
     }
+    if (newEndpointEventAccessMode === "selected" && newEndpointAllowedEventIds.length === 0) {
+      toast.error("Select at least one event or grant all events");
+      return;
+    }
     setIsCreating(true);
     try {
       const created = await createEndpoint({
@@ -572,6 +824,9 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
         url: newEndpointUrl.trim(),
         description: newEndpointDescription.trim() || undefined,
         subscribedEventTypes: newEndpointEventTypes,
+        eventAccessMode: newEndpointEventAccessMode,
+        allowedEventIds:
+          newEndpointEventAccessMode === "selected" ? newEndpointAllowedEventIds : undefined,
       });
       setRevealedSecretsByEndpointId((currentSecrets) => ({
         ...currentSecrets,
@@ -584,11 +839,37 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
       setIsCreateDialogOpen(false);
       setNewEndpointUrl("");
       setNewEndpointDescription("");
+      setNewEndpointEventAccessMode("selected");
+      setNewEndpointAllowedEventIds([]);
       toast.success("Webhook endpoint created — copy its secrets below");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create the endpoint");
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleSaveEndpointAccess = async () => {
+    if (!editingEndpointAccessId) return;
+    if (editingEndpointAccessMode === "selected" && editingEndpointAllowedEventIds.length === 0) {
+      toast.error("Select at least one event or grant all events");
+      return;
+    }
+    setIsSavingEndpointAccess(true);
+    try {
+      await updateEndpointEventAccess({
+        workspaceSlug,
+        endpointId: editingEndpointAccessId,
+        eventAccessMode: editingEndpointAccessMode,
+        allowedEventIds:
+          editingEndpointAccessMode === "selected" ? editingEndpointAllowedEventIds : undefined,
+      });
+      setEditingEndpointAccessId(null);
+      toast.success("Webhook event access updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update event access");
+    } finally {
+      setIsSavingEndpointAccess(false);
     }
   };
 
@@ -738,6 +1019,15 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
                     {endpoint.description && (
                       <p className="text-xs text-[var(--text-secondary)]">{endpoint.description}</p>
                     )}
+                    <p className="text-xs text-[var(--text-secondary)]">
+                      Events:{" "}
+                      {describeEventAccess({
+                        eventAccessMode: endpoint.eventAccessMode,
+                        allowedEventIds: endpoint.allowedEventIds,
+                        isLegacyAllEventsAccess: endpoint.isLegacyAllEventsAccess,
+                        eventOptions,
+                      })}
+                    </p>
                     <div className="flex flex-wrap gap-1">
                       {endpoint.subscribedEventTypes.map((eventType) => (
                         <Badge
@@ -751,6 +1041,18 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-[var(--text-secondary)]"
+                      onClick={() => {
+                        setEditingEndpointAccessId(endpoint.endpointId);
+                        setEditingEndpointAccessMode(endpoint.eventAccessMode);
+                        setEditingEndpointAllowedEventIds(endpoint.allowedEventIds);
+                      }}
+                    >
+                      <Pencil className="mr-1 h-3 w-3" /> Event access
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -876,6 +1178,13 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
                 className="border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]"
               />
             </div>
+            <EventAccessFields
+              eventAccessMode={newEndpointEventAccessMode}
+              allowedEventIds={newEndpointAllowedEventIds}
+              eventOptions={eventOptions}
+              onEventAccessModeChange={setNewEndpointEventAccessMode}
+              onAllowedEventIdsChange={setNewEndpointAllowedEventIds}
+            />
             <div className="space-y-2">
               <Label>Subscribed events</Label>
               <div className="grid grid-cols-2 gap-1.5">
@@ -912,6 +1221,41 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
             </Button>
             <Button onClick={handleCreate} disabled={isCreating}>
               {isCreating ? "Creating…" : "Add endpoint"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editingEndpointAccessId !== null}
+        onOpenChange={(open) => {
+          if (!open && !isSavingEndpointAccess) setEditingEndpointAccessId(null);
+        }}
+      >
+        <DialogContent className="border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-primary)]">
+          <DialogHeader>
+            <DialogTitle>Edit webhook event access</DialogTitle>
+            <DialogDescription className="text-[var(--text-secondary)]">
+              Removing an event also prevents pending retries for that event from delivering.
+            </DialogDescription>
+          </DialogHeader>
+          <EventAccessFields
+            eventAccessMode={editingEndpointAccessMode}
+            allowedEventIds={editingEndpointAllowedEventIds}
+            eventOptions={eventOptions}
+            onEventAccessModeChange={setEditingEndpointAccessMode}
+            onAllowedEventIdsChange={setEditingEndpointAllowedEventIds}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditingEndpointAccessId(null)}
+              disabled={isSavingEndpointAccess}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEndpointAccess} disabled={isSavingEndpointAccess}>
+              {isSavingEndpointAccess ? "Saving…" : "Save event access"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -961,10 +1305,22 @@ function WebhookEndpointsCard({ workspaceSlug }: { workspaceSlug: string }) {
 
 export default function DevelopersPage() {
   const workspaceScope = useWorkspaceScope();
+  const workspaceEvents = useQuery(
+    api.events.listAll,
+    workspaceScope ? { workspaceSlug: workspaceScope.workspaceSlug } : "skip",
+  );
 
   if (!workspaceScope) {
     return <p className="text-sm text-[var(--text-secondary)]">Loading workspace…</p>;
   }
+
+  const eventOptions: PartnerEventOption[] = (workspaceEvents ?? [])
+    .slice()
+    .sort((firstEvent, secondEvent) => secondEvent.eventDate - firstEvent.eventDate)
+    .map((event) => ({
+      eventId: event._id,
+      label: `${event.name} · ${formatTimestamp(event.eventDate)}`,
+    }));
 
   return (
     <div className="space-y-5">
@@ -987,8 +1343,11 @@ export default function DevelopersPage() {
         breadcrumb={[{ label: "Workspace" }]}
       />
       <ApiBaseUrlCard />
-      <ApiKeysCard workspaceSlug={workspaceScope.workspaceSlug} />
-      <WebhookEndpointsCard workspaceSlug={workspaceScope.workspaceSlug} />
+      <ApiKeysCard workspaceSlug={workspaceScope.workspaceSlug} eventOptions={eventOptions} />
+      <WebhookEndpointsCard
+        workspaceSlug={workspaceScope.workspaceSlug}
+        eventOptions={eventOptions}
+      />
     </div>
   );
 }

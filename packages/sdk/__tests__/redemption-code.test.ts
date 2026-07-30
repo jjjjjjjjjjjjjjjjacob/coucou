@@ -1,8 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  normalizeRedemptionCode,
-  parseRedemptionPayload,
-} from "../src/shared/redemption-code";
+import { normalizeRedemptionCode, parseRedemptionPayload } from "../src/shared/redemption-code";
 
 describe("redemption code helpers", () => {
   it("normalizes manually entered codes", () => {
@@ -14,11 +11,7 @@ describe("redemption code helpers", () => {
       valid: true,
       code: "AB12CD34",
     });
-    expect(
-      parseRedemptionPayload(
-        "https://events.coucou.events/redeem/ab12cd34",
-      ),
-    ).toEqual({
+    expect(parseRedemptionPayload("https://events.coucou.events/redeem/ab12cd34")).toEqual({
       valid: true,
       code: "AB12CD34",
     });

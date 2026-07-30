@@ -443,6 +443,92 @@ export const sendApprovalSms = action({
   },
 });
 
+export const sendRsvpConfirmationSms = action({
+  args: {
+    eventId: v.id("events"),
+    clerkUserId: v.string(),
+    message: v.string(),
+    phoneNumber: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<SmsActionResult> => {
+    if (process.env.DEV_TWILIO_ENABLED === "false") {
+      console.warn(
+        "⚠️  SMS disabled in development (DEV_TWILIO_ENABLED=false). Skipping RSVP confirmation.",
+      );
+      return { skipped: "missing_env" };
+    }
+
+    const missingEnvironmentVariables = [
+      ["TWILIO_ACCOUNT_SID", process.env.TWILIO_ACCOUNT_SID],
+      ["TWILIO_AUTH_TOKEN", process.env.TWILIO_AUTH_TOKEN],
+      ["TWILIO_PHONE_NUMBER", process.env.TWILIO_PHONE_NUMBER],
+    ]
+      .filter(([, value]) => !value)
+      .map(([environmentVariableName]) => environmentVariableName);
+    if (missingEnvironmentVariables.length > 0) {
+      const errorMessage = `Missing required environment variables: ${missingEnvironmentVariables.join(", ")}`;
+      console.error(`❌ ${errorMessage}`);
+      throw new Error(errorMessage);
+    }
+
+    const event = await ctx.runQuery(api.events.get, {
+      eventId: args.eventId,
+    });
+    if (!event) {
+      return { skipped: "no_event" };
+    }
+
+    const consentCheck = await ctx.runQuery(internal.rsvps.checkSmsConsentForUserEvent, {
+      eventId: args.eventId,
+      clerkUserId: args.clerkUserId,
+    });
+    if (!consentCheck.hasConsented) {
+      return { skipped: "no_consent" };
+    }
+
+    const userRecord = await ctx.runQuery(api.users.getByClerkUser, {
+      clerkUserId: args.clerkUserId,
+    });
+    const recipientPhoneNumber = args.phoneNumber?.trim() || userRecord?.phone;
+    if (!recipientPhoneNumber) {
+      return { skipped: "no_phone" };
+    }
+
+    try {
+      const phoneResolution = await normalizeAndHashPhoneNumber(recipientPhoneNumber);
+      const notificationId = await ctx.runMutation(internal.sms.createNotification, {
+        eventId: args.eventId,
+        recipientClerkUserId: args.clerkUserId,
+        recipientPhoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
+        recipientPhoneHash: phoneResolution.phoneHash,
+        type: "rsvp_confirmation",
+        message: args.message,
+      });
+      const result = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
+        phoneNumber: recipientPhoneNumber,
+        message: args.message,
+        notificationId,
+        messageType: "Transactional",
+      })) as TwilioSendResult;
+
+      return {
+        success: true,
+        messageId: result.messageId,
+        phone: result.phone,
+        notificationId,
+      };
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error sending RSVP confirmation";
+      console.error("Failed to send RSVP confirmation:", error);
+      return {
+        skipped: "send_failed",
+        error: errorMessage,
+      };
+    }
+  },
+});
+
 export const sendSmsConsentStatusMessage = action({
   args: {
     eventId: v.id("events"),

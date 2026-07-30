@@ -22,10 +22,7 @@ interface SeededMobileFixture {
   rsvpId: Id<"rsvps">;
 }
 
-function workspaceIdentity(
-  role: string,
-  subject: string = "staff_1",
-): Partial<UserIdentity> {
+function workspaceIdentity(role: string, subject: string = "staff_1"): Partial<UserIdentity> {
   return {
     org_id: "org_venue",
     role,
@@ -33,9 +30,7 @@ function workspaceIdentity(
   } as unknown as Partial<UserIdentity>;
 }
 
-async function seedMobileFixture(
-  testBackend: TestBackend,
-): Promise<SeededMobileFixture> {
+async function seedMobileFixture(testBackend: TestBackend): Promise<SeededMobileFixture> {
   return await testBackend.run(async (databaseContext) => {
     const now = Date.now();
     const workspaceId = await databaseContext.db.insert("workspaces", {
@@ -124,9 +119,7 @@ describe("mobile staff façade", () => {
   it("denies generic members from scanning", async () => {
     const testBackend = convexTest(schema, convexModules);
     const fixture = await seedMobileFixture(testBackend);
-    const memberBackend = testBackend.withIdentity(
-      workspaceIdentity("org:member"),
-    );
+    const memberBackend = testBackend.withIdentity(workspaceIdentity("org:member"));
 
     await expect(
       memberBackend.mutation(api.mobileStaff.scanTicket, {
@@ -141,12 +134,8 @@ describe("mobile staff façade", () => {
   it("redeems once, remains idempotent, and preserves the first operator", async () => {
     const testBackend = convexTest(schema, convexModules);
     const fixture = await seedMobileFixture(testBackend);
-    const firstDoorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door", "door_1"),
-    );
-    const secondDoorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door", "door_2"),
-    );
+    const firstDoorBackend = testBackend.withIdentity(workspaceIdentity("org:door", "door_1"));
+    const secondDoorBackend = testBackend.withIdentity(workspaceIdentity("org:door", "door_2"));
 
     const [firstResult, secondResult] = await Promise.all([
       firstDoorBackend.mutation(api.mobileStaff.scanTicket, {
@@ -163,29 +152,24 @@ describe("mobile staff façade", () => {
       }),
     ]);
 
-    expect(
-      [firstResult.outcome, secondResult.outcome].sort(),
-    ).toEqual(["already_redeemed", "redeemed"]);
+    expect([firstResult.outcome, secondResult.outcome].sort()).toEqual([
+      "already_redeemed",
+      "redeemed",
+    ]);
     const redemption = await testBackend.run(async (databaseContext) => {
       return await databaseContext.db
         .query("redemptions")
-        .withIndex("by_code", (queryBuilder) =>
-          queryBuilder.eq("code", "AB12CD34"),
-        )
+        .withIndex("by_code", (queryBuilder) => queryBuilder.eq("code", "AB12CD34"))
         .unique();
     });
-    expect(["door_1", "door_2"]).toContain(
-      redemption?.redeemedByClerkUserId,
-    );
+    expect(["door_1", "door_2"]).toContain(redemption?.redeemedByClerkUserId);
     expect(redemption?.redeemedAt).toBeDefined();
   });
 
   it("returns wrong_event for another event in the same workspace", async () => {
     const testBackend = convexTest(schema, convexModules);
     const fixture = await seedMobileFixture(testBackend);
-    const doorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door"),
-    );
+    const doorBackend = testBackend.withIdentity(workspaceIdentity("org:door"));
 
     const result = await doorBackend.mutation(api.mobileStaff.scanTicket, {
       code: "ZX98YU76",
@@ -203,9 +187,7 @@ describe("mobile staff façade", () => {
   it("appends undo history and restores an issued ticket", async () => {
     const testBackend = convexTest(schema, convexModules);
     const fixture = await seedMobileFixture(testBackend);
-    const doorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door"),
-    );
+    const doorBackend = testBackend.withIdentity(workspaceIdentity("org:door"));
     await doorBackend.mutation(api.mobileStaff.scanTicket, {
       code: "AB12CD34",
       eventId: fixture.currentEventId,
@@ -225,30 +207,22 @@ describe("mobile staff façade", () => {
     const records = await testBackend.run(async (databaseContext) => {
       const redemption = await databaseContext.db
         .query("redemptions")
-        .withIndex("by_code", (queryBuilder) =>
-          queryBuilder.eq("code", "AB12CD34"),
-        )
+        .withIndex("by_code", (queryBuilder) => queryBuilder.eq("code", "AB12CD34"))
         .unique();
       const rsvp = await databaseContext.db.get(fixture.rsvpId);
       return { redemption, rsvp };
     });
     expect(records.redemption?.redeemedAt).toBeUndefined();
     expect(records.redemption?.unredeemHistory).toHaveLength(1);
-    expect(records.redemption?.unredeemHistory[0]?.reason).toBe(
-      "Accidental scan",
-    );
+    expect(records.redemption?.unredeemHistory[0]?.reason).toBe("Accidental scan");
     expect(records.rsvp?.ticketStatus).toBe("issued");
   });
 
   it("limits immediate undo to the operator who performed the scan", async () => {
     const testBackend = convexTest(schema, convexModules);
     const fixture = await seedMobileFixture(testBackend);
-    const scanningDoorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door", "door_1"),
-    );
-    const otherDoorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door", "door_2"),
-    );
+    const scanningDoorBackend = testBackend.withIdentity(workspaceIdentity("org:door", "door_1"));
+    const otherDoorBackend = testBackend.withIdentity(workspaceIdentity("org:door", "door_2"));
     await scanningDoorBackend.mutation(api.mobileStaff.scanTicket, {
       code: "AB12CD34",
       eventId: fixture.currentEventId,
@@ -256,24 +230,19 @@ describe("mobile staff façade", () => {
       workspaceSlug: "venue",
     });
 
-    const result = await otherDoorBackend.mutation(
-      api.mobileStaff.undoScan,
-      {
-        code: "AB12CD34",
-        eventId: fixture.currentEventId,
-        siteKey: "venue",
-        workspaceSlug: "venue",
-      },
-    );
+    const result = await otherDoorBackend.mutation(api.mobileStaff.undoScan, {
+      code: "AB12CD34",
+      eventId: fixture.currentEventId,
+      siteKey: "venue",
+      workspaceSlug: "venue",
+    });
     expect(result.outcome).toBe("invalid");
   });
 
   it("rejects pending and disabled tickets without mutating them", async () => {
     const testBackend = convexTest(schema, convexModules);
     const fixture = await seedMobileFixture(testBackend);
-    const doorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door"),
-    );
+    const doorBackend = testBackend.withIdentity(workspaceIdentity("org:door"));
 
     await testBackend.run(async (databaseContext) => {
       await databaseContext.db.patch(fixture.rsvpId, {
@@ -281,15 +250,12 @@ describe("mobile staff façade", () => {
         status: "pending",
       });
     });
-    const pendingResult = await doorBackend.mutation(
-      api.mobileStaff.scanTicket,
-      {
-        code: "AB12CD34",
-        eventId: fixture.currentEventId,
-        siteKey: "venue",
-        workspaceSlug: "venue",
-      },
-    );
+    const pendingResult = await doorBackend.mutation(api.mobileStaff.scanTicket, {
+      code: "AB12CD34",
+      eventId: fixture.currentEventId,
+      siteKey: "venue",
+      workspaceSlug: "venue",
+    });
     expect(pendingResult.outcome).toBe("not_eligible");
 
     await testBackend.run(async (databaseContext) => {
@@ -299,9 +265,7 @@ describe("mobile staff façade", () => {
       });
       const redemption = await databaseContext.db
         .query("redemptions")
-        .withIndex("by_code", (queryBuilder) =>
-          queryBuilder.eq("code", "AB12CD34"),
-        )
+        .withIndex("by_code", (queryBuilder) => queryBuilder.eq("code", "AB12CD34"))
         .unique();
       if (redemption) {
         await databaseContext.db.patch(redemption._id, {
@@ -309,15 +273,12 @@ describe("mobile staff façade", () => {
         });
       }
     });
-    const disabledResult = await doorBackend.mutation(
-      api.mobileStaff.scanTicket,
-      {
-        code: "AB12CD34",
-        eventId: fixture.currentEventId,
-        siteKey: "venue",
-        workspaceSlug: "venue",
-      },
-    );
+    const disabledResult = await doorBackend.mutation(api.mobileStaff.scanTicket, {
+      code: "AB12CD34",
+      eventId: fixture.currentEventId,
+      siteKey: "venue",
+      workspaceSlug: "venue",
+    });
     expect(disabledResult.outcome).toBe("disabled");
   });
 
@@ -336,9 +297,7 @@ describe("mobile staff façade", () => {
         workspaceSlug: "outside",
       });
     });
-    const doorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door"),
-    );
+    const doorBackend = testBackend.withIdentity(workspaceIdentity("org:door"));
     await expect(
       doorBackend.mutation(api.mobileStaff.scanTicket, {
         code: "AB12CD34",
@@ -352,9 +311,7 @@ describe("mobile staff façade", () => {
   it("allows Host and Admin manual entry changes while denying Door", async () => {
     const testBackend = convexTest(schema, convexModules);
     const fixture = await seedMobileFixture(testBackend);
-    const doorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door"),
-    );
+    const doorBackend = testBackend.withIdentity(workspaceIdentity("org:door"));
     await expect(
       doorBackend.mutation(api.mobileStaff.setEntryStatus, {
         checkedIn: true,
@@ -364,32 +321,22 @@ describe("mobile staff façade", () => {
       }),
     ).rejects.toThrow("Forbidden");
 
-    const hostBackend = testBackend.withIdentity(
-      workspaceIdentity("org:host", "host_1"),
-    );
-    const checkedIn = await hostBackend.mutation(
-      api.mobileStaff.setEntryStatus,
-      {
-        checkedIn: true,
-        rsvpId: fixture.rsvpId,
-        siteKey: "venue",
-        workspaceSlug: "venue",
-      },
-    );
+    const hostBackend = testBackend.withIdentity(workspaceIdentity("org:host", "host_1"));
+    const checkedIn = await hostBackend.mutation(api.mobileStaff.setEntryStatus, {
+      checkedIn: true,
+      rsvpId: fixture.rsvpId,
+      siteKey: "venue",
+      workspaceSlug: "venue",
+    });
     expect(checkedIn.outcome).toBe("redeemed");
 
-    const adminBackend = testBackend.withIdentity(
-      workspaceIdentity("org:admin", "admin_1"),
-    );
-    const checkedOut = await adminBackend.mutation(
-      api.mobileStaff.setEntryStatus,
-      {
-        checkedIn: false,
-        rsvpId: fixture.rsvpId,
-        siteKey: "venue",
-        workspaceSlug: "venue",
-      },
-    );
+    const adminBackend = testBackend.withIdentity(workspaceIdentity("org:admin", "admin_1"));
+    const checkedOut = await adminBackend.mutation(api.mobileStaff.setEntryStatus, {
+      checkedIn: false,
+      rsvpId: fixture.rsvpId,
+      siteKey: "venue",
+      workspaceSlug: "venue",
+    });
     expect(checkedOut.outcome).toBe("undone");
   });
 
@@ -412,25 +359,16 @@ describe("mobile staff façade", () => {
       siteKey: "venue",
       workspaceSlug: "venue",
     };
-    const doorBackend = testBackend.withIdentity(
-      workspaceIdentity("org:door"),
+    const doorBackend = testBackend.withIdentity(workspaceIdentity("org:door"));
+    await expect(doorBackend.action(api.exports.exportRsvpsCsv, exportArguments)).rejects.toThrow(
+      "Forbidden",
     );
-    await expect(
-      doorBackend.action(api.exports.exportRsvpsCsv, exportArguments),
-    ).rejects.toThrow("Forbidden");
 
-    const hostBackend = testBackend.withIdentity(
-      workspaceIdentity("org:host"),
-    );
-    const exportResult = await hostBackend.action(
-      api.exports.exportRsvpsCsv,
-      exportArguments,
-    );
+    const hostBackend = testBackend.withIdentity(workspaceIdentity("org:host"));
+    const exportResult = await hostBackend.action(api.exports.exportRsvpsCsv, exportArguments);
     expect(exportResult.csvContent).toContain(
       "Name,Approval Status,Attendance Status,Ticket Status,Entry Status",
     );
-    expect(exportResult.csvContent).toContain(
-      '"Chen, Avery",approved,yes,issued,not-checked-in',
-    );
+    expect(exportResult.csvContent).toContain('"Chen, Avery",approved,yes,issued,not-checked-in');
   });
 });

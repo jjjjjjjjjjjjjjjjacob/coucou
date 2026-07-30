@@ -1,17 +1,12 @@
 import { api } from "@coucou/backend/api";
-import type { BarcodeScanningResult } from "expo-camera";
-import {
-  CameraView,
-  useCameraPermissions,
-} from "expo-camera";
-import * as Haptics from "expo-haptics";
-import {
-  activateKeepAwakeAsync,
-  deactivateKeepAwake,
-} from "expo-keep-awake";
-import { useFocusEffect } from "expo-router";
 import { useMutation } from "convex/react";
+import type { BarcodeScanningResult } from "expo-camera";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Haptics from "expo-haptics";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import { useFocusEffect } from "expo-router";
 import { Flashlight, Keyboard, X } from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -23,14 +18,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from "react";
 import { ActionButton } from "@/components/action-button";
 import { OperationalEmptyState } from "@/components/operational-empty-state";
 import { ThresholdMark } from "@/components/threshold-mark";
@@ -38,8 +25,8 @@ import { WorkspaceEventControls } from "@/components/workspace-event-controls";
 import { useConvexConnection } from "@/lib/connectivity";
 import { parseRedemptionPayload } from "@/lib/qr";
 import {
-  scanMachineReducer,
   SCAN_UNDO_WINDOW_MILLISECONDS,
+  scanMachineReducer,
   shouldSuppressDuplicateScan,
 } from "@/lib/scan-machine";
 import { useStaffSession } from "@/providers/staff-session-provider";
@@ -61,9 +48,7 @@ interface UndoNotice {
 
 const SCANNER_KEEP_AWAKE_TAG = "coucou-staff-scanner";
 
-function outcomePresentation(
-  outcome: StaffScanOutcome,
-): OutcomePresentation {
+function outcomePresentation(outcome: StaffScanOutcome): OutcomePresentation {
   switch (outcome.outcome) {
     case "redeemed":
       return {
@@ -133,18 +118,11 @@ async function announceOutcome(outcome: StaffScanOutcome): Promise<void> {
         ? Haptics.NotificationFeedbackType.Warning
         : Haptics.NotificationFeedbackType.Error;
   await Haptics.notificationAsync(notificationType);
-  AccessibilityInfo.announceForAccessibility(
-    `${presentation.title}. ${presentation.message}`,
-  );
+  AccessibilityInfo.announceForAccessibility(`${presentation.title}. ${presentation.message}`);
 }
 
 export default function ScanScreen(): React.JSX.Element {
-  const {
-    selectedWorkspace,
-    selectedEvent,
-    workspaces,
-    isLoading,
-  } = useStaffSession();
+  const { selectedWorkspace, selectedEvent, workspaces, isLoading } = useStaffSession();
   const isConnected = useConvexConnection();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const scanTicket = useMutation(api.mobileStaff.scanTicket);
@@ -157,9 +135,7 @@ export default function ScanScreen(): React.JSX.Element {
   const [manualCode, setManualCode] = useState("");
   const [undoNotice, setUndoNotice] = useState<UndoNotice | null>(null);
   const [isUndoing, setIsUndoing] = useState(false);
-  const lastReadRef = useRef<{ code: string; readAt: number } | undefined>(
-    undefined,
-  );
+  const lastReadRef = useRef<{ code: string; readAt: number } | undefined>(undefined);
   const thresholdAnimation = useRef(new Animated.Value(0)).current;
   const [reducedMotionEnabled, setReducedMotionEnabled] = useState(false);
 
@@ -173,9 +149,7 @@ export default function ScanScreen(): React.JSX.Element {
   );
 
   useEffect(() => {
-    void AccessibilityInfo.isReduceMotionEnabled().then(
-      setReducedMotionEnabled,
-    );
+    void AccessibilityInfo.isReduceMotionEnabled().then(setReducedMotionEnabled);
     const subscription = AccessibilityInfo.addEventListener(
       "reduceMotionChanged",
       setReducedMotionEnabled,
@@ -187,22 +161,13 @@ export default function ScanScreen(): React.JSX.Element {
     if (!undoNotice) {
       return;
     }
-    const remainingMilliseconds = Math.max(
-      0,
-      undoNotice.expiresAt - Date.now(),
-    );
-    const timeout = setTimeout(
-      () => setUndoNotice(null),
-      remainingMilliseconds,
-    );
+    const remainingMilliseconds = Math.max(0, undoNotice.expiresAt - Date.now());
+    const timeout = setTimeout(() => setUndoNotice(null), remainingMilliseconds);
     return () => clearTimeout(timeout);
   }, [undoNotice]);
 
   const feedbackPresentation = useMemo(
-    () =>
-      scanState.status === "feedback"
-        ? outcomePresentation(scanState.outcome)
-        : undefined,
+    () => (scanState.status === "feedback" ? outcomePresentation(scanState.outcome) : undefined),
     [scanState],
   );
 
@@ -223,11 +188,7 @@ export default function ScanScreen(): React.JSX.Element {
   };
 
   const resolveCode = async (code: string): Promise<void> => {
-    if (
-      !selectedWorkspace ||
-      !selectedEvent ||
-      scanState.status !== "ready"
-    ) {
+    if (!selectedWorkspace || !selectedEvent || scanState.status !== "ready") {
       return;
     }
 
@@ -320,19 +281,12 @@ export default function ScanScreen(): React.JSX.Element {
     void resolveCode(parsedPayload.code);
   };
 
-  const handleBarcodeScanned = (
-    barcodeResult: BarcodeScanningResult,
-  ): void => {
+  const handleBarcodeScanned = (barcodeResult: BarcodeScanningResult): void => {
     acceptPayload(barcodeResult.data);
   };
 
   const undoMostRecentScan = async (): Promise<void> => {
-    if (
-      !undoNotice ||
-      !selectedEvent ||
-      !selectedWorkspace ||
-      !isConnected
-    ) {
+    if (!undoNotice || !selectedEvent || !selectedWorkspace || !isConnected) {
       return;
     }
     setIsUndoing(true);
@@ -390,8 +344,7 @@ export default function ScanScreen(): React.JSX.Element {
         <ThresholdMark color={colors.warning} height={64} />
         <Text style={styles.permissionTitle}>Camera access is off</Text>
         <Text style={styles.permissionMessage}>
-          Camera access is used only to read ticket QR codes. Manual code entry
-          remains available.
+          Camera access is used only to read ticket QR codes. Manual code entry remains available.
         </Text>
         <ActionButton
           label="Allow camera"
@@ -441,9 +394,7 @@ export default function ScanScreen(): React.JSX.Element {
         enableTorch={torchEnabled}
         facing="back"
         onBarcodeScanned={
-          scanState.status === "ready" && isConnected
-            ? handleBarcodeScanned
-            : undefined
+          scanState.status === "ready" && isConnected ? handleBarcodeScanned : undefined
         }
         style={StyleSheet.absoluteFill}
       />
@@ -461,19 +412,13 @@ export default function ScanScreen(): React.JSX.Element {
                 pressed && styles.pressed,
               ]}
             >
-              <Flashlight
-                color={torchEnabled ? colors.night : colors.paper}
-                size={22}
-              />
+              <Flashlight color={torchEnabled ? colors.night : colors.paper} size={22} />
             </Pressable>
             <Pressable
               accessibilityLabel="Enter ticket code"
               accessibilityRole="button"
               onPress={() => setManualEntryVisible(true)}
-              style={({ pressed }) => [
-                styles.roundButton,
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]}
             >
               <Keyboard color={colors.paper} size={22} />
             </Pressable>
@@ -497,8 +442,7 @@ export default function ScanScreen(): React.JSX.Element {
             style={[
               styles.successWash,
               {
-                backgroundColor:
-                  feedbackPresentation?.color ?? colors.success,
+                backgroundColor: feedbackPresentation?.color ?? colors.success,
                 opacity: feedbackOpacity,
               },
             ]}
@@ -517,32 +461,17 @@ export default function ScanScreen(): React.JSX.Element {
               <Text style={styles.outcomeTitle}>Checking ticket</Text>
             </View>
           ) : feedbackPresentation ? (
-            <View
-              accessibilityLiveRegion="assertive"
-              style={styles.outcome}
-            >
-              <ThresholdMark
-                color={feedbackPresentation.color}
-                height={42}
-              />
+            <View accessibilityLiveRegion="assertive" style={styles.outcome}>
+              <ThresholdMark color={feedbackPresentation.color} height={42} />
               <View style={styles.outcomeText}>
-                <Text
-                  style={[
-                    styles.outcomeTitle,
-                    { color: feedbackPresentation.color },
-                  ]}
-                >
+                <Text style={[styles.outcomeTitle, { color: feedbackPresentation.color }]}>
                   {feedbackPresentation.title}
                 </Text>
-                <Text style={styles.outcomeMessage}>
-                  {feedbackPresentation.message}
-                </Text>
+                <Text style={styles.outcomeMessage}>{feedbackPresentation.message}</Text>
               </View>
             </View>
           ) : (
-            <Text style={styles.scanInstruction}>
-              Hold the guest ticket inside the threshold.
-            </Text>
+            <Text style={styles.scanInstruction}>Hold the guest ticket inside the threshold.</Text>
           )}
 
           {undoNotice ? (
@@ -597,12 +526,7 @@ function ManualEntryModal({
   visible: boolean;
 }): React.JSX.Element {
   return (
-    <Modal
-      animationType="fade"
-      onRequestClose={onClose}
-      transparent
-      visible={visible}
-    >
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalScrim}>
         <View style={styles.manualPanel}>
           <View style={styles.manualHeader}>

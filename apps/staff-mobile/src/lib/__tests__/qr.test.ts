@@ -9,11 +9,7 @@ describe("parseRedemptionPayload", () => {
   });
 
   it("accepts a Coucou redemption URL", () => {
-    expect(
-      parseRedemptionPayload(
-        "https://events.coucou.events/dojo/redeem/ab12cd34",
-      ),
-    ).toEqual({
+    expect(parseRedemptionPayload("https://events.coucou.events/dojo/redeem/ab12cd34")).toEqual({
       valid: true,
       code: "AB12CD34",
     });

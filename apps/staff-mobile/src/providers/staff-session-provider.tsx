@@ -1,9 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  useAuth,
-  useOrganizationList,
-} from "@clerk/expo";
+import { useAuth, useOrganizationList } from "@clerk/expo";
 import { api } from "@coucou/backend/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useConvexAuth, useQuery } from "convex/react";
 import {
   createContext,
@@ -14,8 +11,8 @@ import {
   useMemo,
   useState,
 } from "react";
-import { chooseDefaultEvent } from "@/lib/event-selection";
 import { purgeAllGuestSnapshots, purgeWorkspaceGuestSnapshots } from "@/lib/cache";
+import { chooseDefaultEvent } from "@/lib/event-selection";
 import type { StaffEventSummary, StaffWorkspace } from "@/types";
 
 const LAST_WORKSPACE_KEY = "coucou-staff:last-workspace";
@@ -34,27 +31,17 @@ interface StaffSessionContextValue {
 
 const StaffSessionContext = createContext<StaffSessionContextValue | null>(null);
 
-export function StaffSessionProvider({
-  children,
-}: PropsWithChildren): React.JSX.Element {
+export function StaffSessionProvider({ children }: PropsWithChildren): React.JSX.Element {
   const { isSignedIn, orgId } = useAuth();
   const { isAuthenticated, isLoading: isConvexAuthLoading } = useConvexAuth();
   const organizationList = useOrganizationList();
-  const bootstrap = useQuery(
-    api.mobileStaff.getBootstrap,
-    isAuthenticated ? {} : "skip",
-  );
-  const [selectedWorkspace, setSelectedWorkspace] = useState<
-    StaffWorkspace | undefined
-  >();
-  const [selectedEvent, setSelectedEvent] = useState<
-    StaffEventSummary | undefined
-  >();
+  const bootstrap = useQuery(api.mobileStaff.getBootstrap, isAuthenticated ? {} : "skip");
+  const [selectedWorkspace, setSelectedWorkspace] = useState<StaffWorkspace | undefined>();
+  const [selectedEvent, setSelectedEvent] = useState<StaffEventSummary | undefined>();
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
 
   const workspaceTokenIsActive =
-    bootstrap?.platformOverride === true ||
-    selectedWorkspace?.clerkOrganizationId === orgId;
+    bootstrap?.platformOverride === true || selectedWorkspace?.clerkOrganizationId === orgId;
   const eventsResult = useQuery(
     api.mobileStaff.listEvents,
     selectedWorkspace && workspaceTokenIsActive
@@ -70,10 +57,7 @@ export function StaffSessionProvider({
     async (workspace: StaffWorkspace): Promise<void> => {
       setIsSwitchingWorkspace(true);
       try {
-        if (
-          bootstrap?.platformOverride !== true &&
-          orgId !== workspace.clerkOrganizationId
-        ) {
+        if (bootstrap?.platformOverride !== true && orgId !== workspace.clerkOrganizationId) {
           if (!organizationList.isLoaded) {
             throw new Error("Organizations are still loading.");
           }
@@ -126,9 +110,8 @@ export function StaffSessionProvider({
       await purgeWorkspaceGuestSnapshots(accessibleWorkspaceIds);
       const lastWorkspaceId = await AsyncStorage.getItem(LAST_WORKSPACE_KEY);
       const initialWorkspace =
-        bootstrap.workspaces.find(
-          (workspace) => workspace.workspaceId === lastWorkspaceId,
-        ) ?? bootstrap.workspaces[0];
+        bootstrap.workspaces.find((workspace) => workspace.workspaceId === lastWorkspaceId) ??
+        bootstrap.workspaces[0];
       if (!isCancelled && initialWorkspace) {
         await selectWorkspace(initialWorkspace);
       }
@@ -152,9 +135,7 @@ export function StaffSessionProvider({
     setSelectedWorkspace(undefined);
     setSelectedEvent(undefined);
     void purgeWorkspaceGuestSnapshots(
-      new Set(
-        bootstrap.workspaces.map((workspace) => workspace.workspaceId),
-      ),
+      new Set(bootstrap.workspaces.map((workspace) => workspace.workspaceId)),
     );
   }, [bootstrap, selectedWorkspace]);
 
@@ -180,8 +161,7 @@ export function StaffSessionProvider({
         `${LAST_EVENT_KEY_PREFIX}${selectedWorkspace.workspaceId}`,
       );
       const initialEvent =
-        events.find((event) => event.eventId === lastEventId) ??
-        chooseDefaultEvent(events);
+        events.find((event) => event.eventId === lastEventId) ?? chooseDefaultEvent(events);
       if (!isCancelled && initialEvent) {
         await selectEvent(initialEvent);
       }
@@ -201,11 +181,7 @@ export function StaffSessionProvider({
       isLoading:
         isConvexAuthLoading ||
         (isAuthenticated && bootstrap === undefined) ||
-        Boolean(
-          selectedWorkspace &&
-            workspaceTokenIsActive &&
-            eventsResult === undefined,
-        ),
+        Boolean(selectedWorkspace && workspaceTokenIsActive && eventsResult === undefined),
       isSwitchingWorkspace,
       selectWorkspace,
       selectEvent,
@@ -226,9 +202,7 @@ export function StaffSessionProvider({
   );
 
   return (
-    <StaffSessionContext.Provider value={contextValue}>
-      {children}
-    </StaffSessionContext.Provider>
+    <StaffSessionContext.Provider value={contextValue}>{children}</StaffSessionContext.Provider>
   );
 }
 

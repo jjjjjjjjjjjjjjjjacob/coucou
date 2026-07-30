@@ -30,35 +30,17 @@ describe("guest snapshot cache", () => {
   });
 
   it("strips contact values from persisted rows", () => {
-    const snapshot = createGuestSnapshot(
-      "workspace_1",
-      "event_1",
-      [fullGuest],
-      100,
-    );
+    const snapshot = createGuestSnapshot("workspace_1", "event_1", [fullGuest], 100);
     expect(snapshot.guests[0]?.contact).toBeUndefined();
   });
 
   it("expires and purges snapshots after 24 hours", async () => {
-    const snapshot = createGuestSnapshot(
-      "workspace_1",
-      "event_1",
-      [fullGuest],
-      100,
-    );
+    const snapshot = createGuestSnapshot("workspace_1", "event_1", [fullGuest], 100);
     await writeGuestSnapshot(snapshot);
     expect(
-      await readGuestSnapshot(
-        "event_1",
-        100 + GUEST_CACHE_LIFETIME_MILLISECONDS - 1,
-      ),
+      await readGuestSnapshot("event_1", 100 + GUEST_CACHE_LIFETIME_MILLISECONDS - 1),
     ).not.toBeNull();
-    expect(
-      await readGuestSnapshot(
-        "event_1",
-        100 + GUEST_CACHE_LIFETIME_MILLISECONDS,
-      ),
-    ).toBeNull();
+    expect(await readGuestSnapshot("event_1", 100 + GUEST_CACHE_LIFETIME_MILLISECONDS)).toBeNull();
   });
 
   it("caps snapshots at 5,000 compact guest rows", () => {
@@ -72,22 +54,13 @@ describe("guest snapshot cache", () => {
         }) as StaffGuestSummary,
     );
 
-    const snapshot = createGuestSnapshot(
-      "workspace_1",
-      "event_1",
-      guests,
-      100,
-    );
+    const snapshot = createGuestSnapshot("workspace_1", "event_1", guests, 100);
     expect(snapshot.guests).toHaveLength(GUEST_CACHE_MAXIMUM_ROWS);
   });
 
   it("purges inaccessible workspaces and all snapshots on sign-out", async () => {
-    await writeGuestSnapshot(
-      createGuestSnapshot("workspace_1", "event_1", [fullGuest], 100),
-    );
-    await writeGuestSnapshot(
-      createGuestSnapshot("workspace_2", "event_2", [fullGuest], 100),
-    );
+    await writeGuestSnapshot(createGuestSnapshot("workspace_1", "event_1", [fullGuest], 100));
+    await writeGuestSnapshot(createGuestSnapshot("workspace_2", "event_2", [fullGuest], 100));
 
     await purgeWorkspaceGuestSnapshots(new Set(["workspace_1"]), 101);
     expect(await readGuestSnapshot("event_1", 101)).not.toBeNull();

@@ -41,6 +41,20 @@ async function seedWorkspace(testBackend: TestBackend) {
   });
 }
 
+async function seedEvent(testBackend: TestBackend, workspaceSlug = WORKSPACE_SLUG) {
+  return await testBackend.run(async (databaseContext) => {
+    return await databaseContext.db.insert("events", {
+      workspaceSlug,
+      name: "Scoped Event",
+      location: "Main Room",
+      eventDate: Date.now() + 86_400_000,
+      lifecycle: "published",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
 describe("apiClients.create", () => {
   it("issues a key once and stores only its hash", async () => {
     const testBackend = setupTestBackend();
@@ -52,6 +66,7 @@ describe("apiClients.create", () => {
       displayName: "Partner integration",
       scopes: ["events:read", "rsvps:write"],
       defaultRsvpListKey: " ga ",
+      eventAccessMode: "all",
     });
 
     expect(created.plaintextKey.startsWith("coucou_sk_")).toBe(true);
@@ -74,8 +89,38 @@ describe("apiClients.create", () => {
         workspaceSlug: WORKSPACE_SLUG,
         displayName: "No auth",
         scopes: ["events:read"],
+        eventAccessMode: "all",
       }),
     ).rejects.toThrow();
+  });
+
+  it("defaults new keys to selected access and requires a workspace event grant", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+
+    await expect(
+      hostBackend.mutation(api.apiClients.create, {
+        workspaceSlug: WORKSPACE_SLUG,
+        displayName: "Missing event",
+        scopes: ["events:read"],
+      }),
+    ).rejects.toThrow("Select at least one event");
+
+    const created = await hostBackend.mutation(api.apiClients.create, {
+      workspaceSlug: WORKSPACE_SLUG,
+      displayName: "Selected event",
+      scopes: ["events:read"],
+      allowedEventIds: [eventId],
+    });
+    const storedApiClient = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.get(created.apiClientId);
+    });
+    expect(storedApiClient).toMatchObject({
+      eventAccessMode: "selected",
+      allowedEventIds: [eventId],
+    });
   });
 });
 
@@ -89,6 +134,7 @@ describe("apiClients.resolveByKeyHash", () => {
       workspaceSlug: WORKSPACE_SLUG,
       displayName: "Partner integration",
       scopes: ["events:read"],
+      eventAccessMode: "all",
     });
 
     const keyHash = await hashApiClientKey(created.plaintextKey);
@@ -127,6 +173,7 @@ describe("apiClients.listForWorkspace", () => {
       workspaceSlug: WORKSPACE_SLUG,
       displayName: "Partner integration",
       scopes: ["events:read"],
+      eventAccessMode: "all",
     });
 
     const listedApiClients = await hostBackend.query(api.apiClients.listForWorkspace, {
@@ -146,6 +193,7 @@ describe("apiClients.listForWorkspace", () => {
       displayName: "Partner integration",
       scopes: ["rsvps:write"],
       defaultRsvpListKey: "ga",
+      eventAccessMode: "all",
     });
 
     await hostBackend.mutation(api.apiClients.updateDefaultRsvpListKey, {
@@ -166,5 +214,48 @@ describe("apiClients.listForWorkspace", () => {
       workspaceSlug: WORKSPACE_SLUG,
     });
     expect(listedApiClients[0].defaultRsvpListKey).toBeNull();
+  });
+
+  it("edits selected-event access and identifies legacy all-event keys", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    const created = await hostBackend.mutation(api.apiClients.create, {
+      workspaceSlug: WORKSPACE_SLUG,
+      displayName: "Partner integration",
+      scopes: ["events:read"],
+      eventAccessMode: "all",
+    });
+
+    await hostBackend.mutation(api.apiClients.updateEventAccess, {
+      workspaceSlug: WORKSPACE_SLUG,
+      apiClientId: created.apiClientId,
+      eventAccessMode: "selected",
+      allowedEventIds: [eventId],
+    });
+    let listedApiClients = await hostBackend.query(api.apiClients.listForWorkspace, {
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    expect(listedApiClients[0]).toMatchObject({
+      eventAccessMode: "selected",
+      allowedEventIds: [eventId],
+      isLegacyAllEventsAccess: false,
+    });
+
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(created.apiClientId, {
+        eventAccessMode: undefined,
+        allowedEventIds: undefined,
+      });
+    });
+    listedApiClients = await hostBackend.query(api.apiClients.listForWorkspace, {
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    expect(listedApiClients[0]).toMatchObject({
+      eventAccessMode: "all",
+      allowedEventIds: [],
+      isLegacyAllEventsAccess: true,
+    });
   });
 });

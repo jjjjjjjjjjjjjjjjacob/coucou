@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import type { UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
-import { api } from "../convex/_generated/api";
+import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { normalizeAndHashPhoneNumber } from "../convex/lib/phoneHash";
 import { countRsvpsWithAggregate, updateRsvpInAggregate } from "../convex/lib/rsvpAggregate";
@@ -13,8 +13,10 @@ const convexModules = {
   "../convex/apiClients.ts": () => import("../convex/apiClients"),
   "../convex/apiV1.ts": () => import("../convex/apiV1"),
   "../convex/apiV1Data.ts": () => import("../convex/apiV1Data"),
+  "../convex/events.ts": () => import("../convex/events"),
   "../convex/http.ts": () => import("../convex/http"),
   "../convex/notifications.ts": () => import("../convex/notifications"),
+  "../convex/rsvps.ts": () => import("../convex/rsvps"),
   "../convex/webhookDeliveries.ts": () => import("../convex/webhookDeliveries"),
   "../convex/webhookDispatch.ts": () => import("../convex/webhookDispatch"),
   "../convex/webhookEndpoints.ts": () => import("../convex/webhookEndpoints"),
@@ -136,6 +138,10 @@ async function issueApiKey(
     "rsvps:write",
   ],
   defaultRsvpListKey?: string,
+  eventAccess: {
+    eventAccessMode: "all" | "selected";
+    allowedEventIds?: Id<"events">[];
+  } = { eventAccessMode: "all" },
 ): Promise<string> {
   const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
   const created = await hostBackend.mutation(api.apiClients.create, {
@@ -143,6 +149,8 @@ async function issueApiKey(
     displayName: "Write key",
     scopes,
     defaultRsvpListKey,
+    eventAccessMode: eventAccess.eventAccessMode,
+    allowedEventIds: eventAccess.allowedEventIds,
   });
   await testBackend.run(async (databaseContext) => {
     await databaseContext.db.patch(created.apiClientId, { lastUsedAt: Date.now() });
@@ -378,6 +386,38 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
     expect(totalCount).toBe(1);
   });
 
+  it("creates no Coucou SMS permission when consent fields are omitted", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const plaintextKey = await issueApiKey(testBackend);
+
+    const response = await testBackend.fetch(
+      "/api/v1/events/evt-write-api/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551230032",
+        name: "Partner SMS Guest",
+      }),
+    );
+    expect(response.status).toBe(201);
+
+    const storedState = await testBackend.run(async (databaseContext) => {
+      const rsvp = await databaseContext.db.query("rsvps").unique();
+      const organizerPreference = await databaseContext.db
+        .query("userSmsOrganizerPreferences")
+        .unique();
+      return { rsvp, organizerPreference };
+    });
+    expect(storedState.rsvp?.smsConsent).toBeUndefined();
+    expect(storedState.organizerPreference).toBeNull();
+
+    const consentCheck = await testBackend.query(internal.rsvps.checkSmsConsentForUserEvent, {
+      eventId,
+      clerkUserId: storedState.rsvp?.clerkUserId ?? "",
+    });
+    expect(consentCheck.hasConsented).toBe(false);
+  });
+
   it("auto-approves only the configured number of partner API submissions", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
@@ -480,6 +520,7 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
       workspaceSlug: WORKSPACE_SLUG,
       url: ENDPOINT_URL,
       subscribedEventTypes: ["rsvp.created", "rsvp.updated", "rsvp.attendance_updated"],
+      eventAccessMode: "all",
     });
 
     const firstResponse = await testBackend.fetch(
@@ -545,6 +586,7 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
       workspaceSlug: WORKSPACE_SLUG,
       url: ENDPOINT_URL,
       subscribedEventTypes: ["rsvp.created", "rsvp.updated"],
+      eventAccessMode: "all",
     });
     const originalDevTwilioEnabled = process.env.DEV_TWILIO_ENABLED;
     process.env.DEV_TWILIO_ENABLED = "false";
@@ -852,7 +894,7 @@ describe("PATCH /api/v1/events/{eventRouteId}", () => {
   it("updates public event fields and emits event.updated", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
-    await seedEvent(testBackend);
+    const eventId = await seedEvent(testBackend);
     const plaintextKey = await issueApiKey(testBackend, ["events:write"]);
 
     const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
@@ -860,6 +902,7 @@ describe("PATCH /api/v1/events/{eventRouteId}", () => {
       workspaceSlug: WORKSPACE_SLUG,
       url: ENDPOINT_URL,
       subscribedEventTypes: ["event.updated"],
+      eventAccessMode: "all",
     });
 
     const newEventDate = Date.now() + 3 * 86_400_000;
@@ -883,6 +926,20 @@ describe("PATCH /api/v1/events/{eventRouteId}", () => {
 
     await drainScheduledFunctions(testBackend);
     expect(capturedWebhookRequestCount).toBe(1); // event.updated
+    const apiClientId = await testBackend.run(async (databaseContext) => {
+      return (await databaseContext.db.query("apiClients").order("desc").first())?._id;
+    });
+    const apiEventOrigin = await testBackend.run(async (databaseContext) => {
+      const delivery = await databaseContext.db.query("webhookDeliveries").order("asc").first();
+      return delivery
+        ? (
+            JSON.parse(delivery.payloadJson) as {
+              data: { origin: { type: string; apiClientId?: string } };
+            }
+          ).data.origin
+        : null;
+    });
+    expect(apiEventOrigin).toEqual({ type: "api", apiClientId });
 
     // An identical re-PATCH is a no-op: no webhook echo.
     const noOpResponse = await testBackend.fetch(
@@ -897,6 +954,26 @@ describe("PATCH /api/v1/events/{eventRouteId}", () => {
     expect(noOpBody.changed).toBe(false);
     await drainScheduledFunctions(testBackend);
     expect(capturedWebhookRequestCount).toBe(1); // unchanged
+
+    await hostBackend.mutation(api.events.update, {
+      eventId,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "Native Event Rename",
+    });
+    await drainScheduledFunctions(testBackend);
+    expect(capturedWebhookRequestCount).toBe(2);
+    const eventOrigins = await testBackend.run(async (databaseContext) => {
+      const deliveries = await databaseContext.db.query("webhookDeliveries").order("asc").collect();
+      return deliveries.map(
+        (delivery) =>
+          (
+            JSON.parse(delivery.payloadJson) as {
+              data: { origin: { type: string; apiClientId?: string } };
+            }
+          ).data.origin,
+      );
+    });
+    expect(eventOrigins).toEqual([{ type: "api", apiClientId }, { type: "app" }]);
   });
 
   it("clears nullable fields with null and validates values", async () => {
@@ -972,5 +1049,114 @@ describe("PATCH /api/v1/events/{eventRouteId}", () => {
     const sneakyBody = await sneakyResponse.json();
     expect(sneakyBody.changed).toBe(false);
     expect(sneakyBody.event.lifecycle).toBe("published");
+  });
+});
+
+describe("selected-event API writes and webhook origins", () => {
+  it("returns 404 for every ungranted write path", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const grantedEventId = await seedEvent(testBackend, { shortId: "evt-write-granted" });
+    const ungrantedEventId = await seedEvent(testBackend, { shortId: "evt-write-ungranted" });
+
+    const allEventsKey = await issueApiKey(testBackend, ["rsvps:write"]);
+    const createUngrantRsvpResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-ungranted/rsvps",
+      buildJsonRequest(allEventsKey, "POST", {
+        phone: "+15551239990",
+        name: "Existing Ungranted Guest",
+      }),
+    );
+    const ungrantedRsvpId = (await createUngrantRsvpResponse.json()).rsvp.rsvpId;
+
+    const selectedEventKey = await issueApiKey(
+      testBackend,
+      ["events:write", "rsvps:write"],
+      undefined,
+      {
+        eventAccessMode: "selected",
+        allowedEventIds: [grantedEventId],
+      },
+    );
+
+    const createResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-ungranted/rsvps",
+      buildJsonRequest(selectedEventKey, "POST", {
+        phone: "+15551239991",
+        name: "Blocked Guest",
+      }),
+    );
+    expect(createResponse.status).toBe(404);
+
+    const patchRsvpResponse = await testBackend.fetch(
+      `/api/v1/rsvps/${ungrantedRsvpId}`,
+      buildJsonRequest(selectedEventKey, "PATCH", { attendanceStatus: "maybe" }),
+    );
+    expect(patchRsvpResponse.status).toBe(404);
+
+    const deleteRsvpResponse = await testBackend.fetch(
+      `/api/v1/rsvps/${ungrantedRsvpId}`,
+      buildJsonRequest(selectedEventKey, "DELETE"),
+    );
+    expect(deleteRsvpResponse.status).toBe(404);
+
+    const patchEventResponse = await testBackend.fetch(
+      "/api/v1/events/evt-write-ungranted",
+      buildJsonRequest(selectedEventKey, "PATCH", { name: "Blocked rename" }),
+    );
+    expect(patchEventResponse.status).toBe(404);
+
+    expect(ungrantedEventId).not.toBe(grantedEventId);
+  });
+
+  it("identifies the exact API client and labels a later native change as app-origin", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend, { shortId: "evt-origin" });
+    const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
+    await hostBackend.mutation(api.webhookEndpoints.create, {
+      workspaceSlug: WORKSPACE_SLUG,
+      url: ENDPOINT_URL,
+      subscribedEventTypes: ["rsvp.created", "rsvp.attendance_updated"],
+      eventAccessMode: "selected",
+      allowedEventIds: [eventId],
+    });
+    const plaintextKey = await issueApiKey(testBackend, ["rsvps:write"], undefined, {
+      eventAccessMode: "selected",
+      allowedEventIds: [eventId],
+    });
+
+    const createResponse = await testBackend.fetch(
+      "/api/v1/events/evt-origin/rsvps",
+      buildJsonRequest(plaintextKey, "POST", {
+        phone: "+15551239992",
+        name: "Origin Guest",
+        attendanceStatus: "yes",
+      }),
+    );
+    expect(createResponse.status).toBe(201);
+    const rsvpId = (await createResponse.json()).rsvp.rsvpId as Id<"rsvps">;
+    const apiClientId = await testBackend.run(async (databaseContext) => {
+      return (await databaseContext.db.query("apiClients").order("desc").first())?._id;
+    });
+
+    await hostBackend.mutation(api.rsvps.updateAttendanceStatus, {
+      rsvpId,
+      attendanceStatus: "maybe",
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    const webhookOrigins = await testBackend.run(async (databaseContext) => {
+      const deliveries = await databaseContext.db.query("webhookDeliveries").order("asc").collect();
+      return deliveries.map(
+        (delivery) =>
+          (
+            JSON.parse(delivery.payloadJson) as {
+              data: { origin: { type: string; apiClientId?: string } };
+            }
+          ).data.origin,
+      );
+    });
+    expect(webhookOrigins).toEqual([{ type: "api", apiClientId }, { type: "app" }]);
   });
 });

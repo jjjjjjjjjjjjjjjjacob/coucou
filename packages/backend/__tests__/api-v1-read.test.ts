@@ -85,12 +85,18 @@ async function seedEvent(
 async function issueApiKey(
   testBackend: TestBackend,
   scopes: ("events:read" | "rsvps:read" | "rsvps:write")[],
+  eventAccess: {
+    eventAccessMode: "all" | "selected";
+    allowedEventIds?: Id<"events">[];
+  } = { eventAccessMode: "all" },
 ): Promise<string> {
   const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
   const created = await hostBackend.mutation(api.apiClients.create, {
     workspaceSlug: WORKSPACE_SLUG,
     displayName: "Test key",
     scopes,
+    eventAccessMode: eventAccess.eventAccessMode,
+    allowedEventIds: eventAccess.allowedEventIds,
   });
   // Keep lastUsedAt fresh so authenticateApiRequest never schedules its
   // fire-and-forget refresh — scheduled functions would leak across tests.
@@ -472,5 +478,130 @@ describe("GET /api/v1/events/{eventRouteId}/rsvps/sms-consent", () => {
     );
     expect(invalidPhoneResponse.status).toBe(400);
     expect((await invalidPhoneResponse.json()).error.field).toBe("phone");
+  });
+});
+
+describe("event-scoped API reads and RSVP reconciliation", () => {
+  it("lists only granted events and returns 404 for direct reads outside the grant", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const grantedEventId = await seedEvent(testBackend, {
+      shortId: "evt-granted",
+      lifecycle: "published",
+    });
+    await seedEvent(testBackend, {
+      shortId: "evt-not-granted",
+      lifecycle: "published",
+    });
+    const plaintextKey = await issueApiKey(testBackend, ["events:read", "rsvps:read"], {
+      eventAccessMode: "selected",
+      allowedEventIds: [grantedEventId],
+    });
+
+    const listResponse = await testBackend.fetch("/api/v1/events", {
+      method: "GET",
+      ...buildAuthorizedRequest(plaintextKey),
+    });
+    expect(listResponse.status).toBe(200);
+    expect(
+      (await listResponse.json()).data.map((event: { shortId: string }) => event.shortId),
+    ).toEqual(["evt-granted"]);
+
+    const directResponse = await testBackend.fetch("/api/v1/events/evt-not-granted", {
+      method: "GET",
+      ...buildAuthorizedRequest(plaintextKey),
+    });
+    expect(directResponse.status).toBe(404);
+
+    const reconciliationResponse = await testBackend.fetch("/api/v1/events/evt-not-granted/rsvps", {
+      method: "GET",
+      ...buildAuthorizedRequest(plaintextKey),
+    });
+    expect(reconciliationResponse.status).toBe(404);
+  });
+
+  it("paginates account and guest contacts for an assigned event", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend, {
+      shortId: "evt-reconcile",
+      lifecycle: "published",
+    });
+    const { normalizeAndHashPhoneNumber } = await import("../convex/lib/phoneHash");
+    const guestPhone = "+15559870002";
+    const { phoneHash: guestPhoneHash } = await normalizeAndHashPhoneNumber(guestPhone);
+
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: "user_reconcile",
+        phone: "+15559870001",
+        firstName: "Account",
+        lastName: "Guest",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await databaseContext.db.insert("rsvps", {
+        eventId,
+        clerkUserId: "user_reconcile",
+        listKey: "ga",
+        userName: "Account Guest",
+        status: "approved",
+        approvalStatus: "approved",
+        attendanceStatus: "yes",
+        shareContact: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await databaseContext.db.insert("guestContacts", {
+        phoneHash: guestPhoneHash,
+        phoneNumber: guestPhone,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await databaseContext.db.insert("rsvps", {
+        eventId,
+        clerkUserId: `guest:${guestPhoneHash}`,
+        guestPhoneHash,
+        listKey: "vip",
+        userName: "Imported Guest",
+        status: "pending",
+        approvalStatus: "pending",
+        attendanceStatus: "maybe",
+        shareContact: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const plaintextKey = await issueApiKey(testBackend, ["rsvps:read"], {
+      eventAccessMode: "selected",
+      allowedEventIds: [eventId],
+    });
+    const firstResponse = await testBackend.fetch("/api/v1/events/evt-reconcile/rsvps?limit=1", {
+      method: "GET",
+      ...buildAuthorizedRequest(plaintextKey),
+    });
+    expect(firstResponse.status).toBe(200);
+    const firstPage = await firstResponse.json();
+    expect(firstPage.data).toHaveLength(1);
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const secondResponse = await testBackend.fetch(
+      `/api/v1/events/evt-reconcile/rsvps?limit=1&cursor=${encodeURIComponent(firstPage.nextCursor)}`,
+      { method: "GET", ...buildAuthorizedRequest(plaintextKey) },
+    );
+    expect(secondResponse.status).toBe(200);
+    const secondPage = await secondResponse.json();
+    const contacts = [...firstPage.data, ...secondPage.data];
+    expect(contacts.map((contact: { phone: string }) => contact.phone).sort()).toEqual([
+      "+15559870001",
+      guestPhone,
+    ]);
+    expect(contacts.find((contact: { isGuest: boolean }) => contact.isGuest)).toMatchObject({
+      name: "Imported Guest",
+      phone: guestPhone,
+      phoneHash: guestPhoneHash,
+      listKey: "vip",
+    });
   });
 });

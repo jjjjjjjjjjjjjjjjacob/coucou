@@ -1,7 +1,4 @@
-import {
-  type CsvSharingDependencies,
-  shareTemporaryCsv,
-} from "../csv";
+import { type CsvSharingDependencies, shareTemporaryCsv } from "../csv";
 
 describe("temporary CSV sharing", () => {
   const mockCreate = jest.fn();
@@ -41,18 +38,18 @@ describe("temporary CSV sharing", () => {
   it("deletes the temporary file when the native share sheet fails", async () => {
     mockShare.mockRejectedValue(new Error("Share failed"));
 
-    await expect(
-      shareTemporaryCsv("guest-list.csv", "Name\nAvery", dependencies),
-    ).rejects.toThrow("Share failed");
+    await expect(shareTemporaryCsv("guest-list.csv", "Name\nAvery", dependencies)).rejects.toThrow(
+      "Share failed",
+    );
     expect(mockDelete).toHaveBeenCalledTimes(1);
   });
 
   it("does not write a file when sharing is unavailable", async () => {
     mockIsSharingAvailable.mockResolvedValue(false);
 
-    await expect(
-      shareTemporaryCsv("guest-list.csv", "Name\nAvery", dependencies),
-    ).rejects.toThrow("Sharing is not available");
+    await expect(shareTemporaryCsv("guest-list.csv", "Name\nAvery", dependencies)).rejects.toThrow(
+      "Sharing is not available",
+    );
     expect(mockCreateTemporaryFile).not.toHaveBeenCalled();
   });
 });

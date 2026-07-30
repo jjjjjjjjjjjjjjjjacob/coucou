@@ -386,6 +386,15 @@ export function RsvpAcceptedForm({
     eventId,
     siteKey: siteConfiguration.siteKey,
   }) as CurrentUserRsvpFormStatus | null | undefined;
+  const organizerSmsPreference = useQuery(
+    api.rsvps.smsPreferenceForUserEvent,
+    isSignedIn
+      ? {
+          eventId,
+          siteKey: siteConfiguration.siteKey,
+        }
+      : "skip",
+  );
   const userDoc = useQuery(
     api.users.getByClerkUser,
     user?.id ? { clerkUserId: user.id } : "skip",
@@ -1008,14 +1017,15 @@ export function RsvpAcceptedForm({
     const statusHasLoaded = status !== undefined;
     const statusSmsConsent = status?.smsConsent;
     const shouldPreserveSmsConsentDraft = shouldPreserveSmsConsentDraftRef.current;
+    const organizerSmsPreferenceHasLoaded = !isSignedIn || organizerSmsPreference !== undefined;
 
     if (!hasInitializedSmsConsent && statusSmsConsent !== undefined) {
       setSmsConsentEnabled(statusSmsConsent);
       setHasInitializedSmsConsent(true);
     } else if (!hasInitializedSmsConsent && statusHasLoaded && shouldPreserveSmsConsentDraft) {
       setHasInitializedSmsConsent(true);
-    } else if (!hasInitializedSmsConsent && statusHasLoaded) {
-      setSmsConsentEnabled(false);
+    } else if (!hasInitializedSmsConsent && statusHasLoaded && organizerSmsPreferenceHasLoaded) {
+      setSmsConsentEnabled(organizerSmsPreference?.smsConsent ?? false);
       setHasInitializedSmsConsent(true);
     }
 
@@ -1026,7 +1036,7 @@ export function RsvpAcceptedForm({
     ) {
       setSmsConsentIpAddress(effectiveSmsConsentIpAddress);
     }
-  }, [status, hasInitializedSmsConsent]);
+  }, [hasInitializedSmsConsent, isSignedIn, organizerSmsPreference, status]);
 
   const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1209,6 +1219,7 @@ export function RsvpAcceptedForm({
               style={ghostButtonStyle}
               disabled={
                 submitting ||
+                !hasInitializedSmsConsent ||
                 !effectivePhone ||
                 deniedForThisList ||
                 searchStatus === "searching" ||

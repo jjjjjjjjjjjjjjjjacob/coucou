@@ -36,11 +36,8 @@ export async function shareTemporaryCsv(
     throw new Error("Sharing is not available on this device.");
   }
 
-  const sanitizedFilename = filename.endsWith(".csv")
-    ? filename
-    : `${filename}.csv`;
-  const temporaryFile =
-    dependencies.createTemporaryFile(sanitizedFilename);
+  const sanitizedFilename = filename.endsWith(".csv") ? filename : `${filename}.csv`;
+  const temporaryFile = dependencies.createTemporaryFile(sanitizedFilename);
   temporaryFile.create({ overwrite: true });
   try {
     temporaryFile.write(csvContent);

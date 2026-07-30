@@ -21,6 +21,7 @@ const SAMPLE_PAYLOAD = {
   data: {
     event: { id: "evt_1", name: "Test Event" },
     identity: { phone: "+15551234567", isGuest: true },
+    origin: { type: "app" },
   },
 };
 

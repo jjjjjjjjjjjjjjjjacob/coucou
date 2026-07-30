@@ -14,18 +14,11 @@ const toneColors: Record<NonNullable<StatusPillProps["tone"]>, string> = {
   admit: colors.admit,
 };
 
-export function StatusPill({
-  label,
-  tone = "neutral",
-}: StatusPillProps): React.JSX.Element {
+export function StatusPill({ label, tone = "neutral" }: StatusPillProps): React.JSX.Element {
   const toneColor = toneColors[tone];
   return (
     <View style={[styles.container, { borderColor: toneColor }]}>
-      <Text
-        allowFontScaling
-        numberOfLines={1}
-        style={[styles.label, { color: toneColor }]}
-      >
+      <Text allowFontScaling numberOfLines={1} style={[styles.label, { color: toneColor }]}>
         {label.replaceAll("_", " ")}
       </Text>
     </View>

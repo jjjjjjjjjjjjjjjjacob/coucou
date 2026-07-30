@@ -1,6 +1,11 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { generateApiClientKey, hashApiClientKey, isApiClientScope } from "./lib/apiKeys";
+import {
+  buildPartnerEventAccessSummary,
+  type PartnerEventAccessMode,
+  validatePartnerEventAccess,
+} from "./lib/partnerEventAccess";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 const apiClientScopeValidator = v.union(
@@ -10,12 +15,16 @@ const apiClientScopeValidator = v.union(
   v.literal("rsvps:write"),
 );
 
+const partnerEventAccessModeValidator = v.union(v.literal("all"), v.literal("selected"));
+
 export const create = mutation({
   args: {
     workspaceSlug: v.string(),
     displayName: v.string(),
     scopes: v.array(apiClientScopeValidator),
     defaultRsvpListKey: v.optional(v.string()),
+    eventAccessMode: v.optional(partnerEventAccessModeValidator),
+    allowedEventIds: v.optional(v.array(v.id("events"))),
   },
   handler: async (ctx, args) => {
     const resolvedScope = await requireWorkspaceHost(ctx, { workspaceSlug: args.workspaceSlug });
@@ -43,6 +52,12 @@ export const create = mutation({
     const { plaintextKey, keyPrefix } = generateApiClientKey();
     const keyHash = await hashApiClientKey(plaintextKey);
     const defaultRsvpListKey = args.defaultRsvpListKey?.trim() || undefined;
+    const eventAccessMode: PartnerEventAccessMode = args.eventAccessMode ?? "selected";
+    const allowedEventIds = await validatePartnerEventAccess(ctx, {
+      workspaceId: resolvedScope.workspaceId,
+      eventAccessMode,
+      allowedEventIds: args.allowedEventIds,
+    });
 
     const apiClientId = await ctx.db.insert("apiClients", {
       workspaceId: resolvedScope.workspaceId,
@@ -51,12 +66,45 @@ export const create = mutation({
       keyPrefix,
       keyHash,
       scopes: requestedScopes,
+      eventAccessMode,
+      allowedEventIds,
       createdByClerkUserId: identity.subject,
       createdAt: Date.now(),
     });
 
     // The plaintext key is returned exactly once and never stored.
     return { apiClientId, plaintextKey, keyPrefix };
+  },
+});
+
+export const updateEventAccess = mutation({
+  args: {
+    workspaceSlug: v.string(),
+    apiClientId: v.id("apiClients"),
+    eventAccessMode: partnerEventAccessModeValidator,
+    allowedEventIds: v.optional(v.array(v.id("events"))),
+  },
+  handler: async (ctx, args) => {
+    const resolvedScope = await requireWorkspaceHost(ctx, { workspaceSlug: args.workspaceSlug });
+    const apiClient = await ctx.db.get(args.apiClientId);
+    if (!apiClient || apiClient.workspaceId !== resolvedScope.workspaceId) {
+      throw new Error("API key not found");
+    }
+
+    const allowedEventIds = await validatePartnerEventAccess(ctx, {
+      workspaceId: resolvedScope.workspaceId,
+      eventAccessMode: args.eventAccessMode,
+      allowedEventIds: args.allowedEventIds,
+    });
+    await ctx.db.patch(args.apiClientId, {
+      eventAccessMode: args.eventAccessMode,
+      allowedEventIds,
+    });
+    return {
+      eventAccessMode: args.eventAccessMode,
+      allowedEventIds,
+      isLegacyAllEventsAccess: false,
+    };
   },
 });
 
@@ -129,6 +177,7 @@ export const listForWorkspace = query({
       createdAt: apiClient.createdAt,
       lastUsedAt: apiClient.lastUsedAt ?? null,
       revokedAt: apiClient.revokedAt ?? null,
+      ...buildPartnerEventAccessSummary(apiClient),
     }));
   },
 });
