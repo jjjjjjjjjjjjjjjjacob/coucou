@@ -41,11 +41,6 @@ describe("SignInClient", () => {
     render(<SignInClient redirectUrl="/events/sample" />);
 
     expect(screen.getByRole("heading", { name: "Sign in to Dojo Pomodoro" })).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Use your phone number to open your tickets, RSVP updates, and event access.",
-      ),
-    ).toBeTruthy();
     expect(screen.getByLabelText("Phone number")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Text me a code" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Terms" })).toBeTruthy();

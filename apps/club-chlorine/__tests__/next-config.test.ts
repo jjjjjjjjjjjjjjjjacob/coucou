@@ -5,26 +5,26 @@ const expectedCoucouBaseUrl = (
   process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680"
 ).replace(/\/+$/, "");
 
-describe("Dojo Next.js redirects", () => {
-  it("routes legacy admin entrypoints to the migrated Coucou workspace", async () => {
+describe("Club Chlorine Next.js redirects", () => {
+  it("routes legacy organizer entrypoints to the migrated Coucou workspace", async () => {
     const redirects = await nextConfig.redirects?.();
 
     expect(redirects).toContainEqual(
       expect.objectContaining({
         source: "/admin",
-        destination: `${expectedCoucouBaseUrl}/workspaces/dojo-pomodoro/dashboard`,
+        destination: `${expectedCoucouBaseUrl}/workspaces/club-chlorine/dashboard`,
       }),
     );
     expect(redirects).toContainEqual(
       expect.objectContaining({
         source: "/host",
-        destination: `${expectedCoucouBaseUrl}/workspaces/dojo-pomodoro/dashboard`,
+        destination: `${expectedCoucouBaseUrl}/workspaces/club-chlorine/dashboard`,
       }),
     );
     expect(redirects).toContainEqual(
       expect.objectContaining({
         source: "/door",
-        destination: `${expectedCoucouBaseUrl}/workspaces/dojo-pomodoro/dashboard/door`,
+        destination: `${expectedCoucouBaseUrl}/workspaces/club-chlorine/dashboard/door`,
       }),
     );
   });

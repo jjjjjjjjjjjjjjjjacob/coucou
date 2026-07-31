@@ -304,17 +304,16 @@ describe("ChlorineRippleMark", () => {
     expect(canvasGetContext.mock.calls.some(([contextId]) => contextId === "webgl")).toBe(false);
   });
 
-  it("queues the TNM click ripple pass after a click", async () => {
+  it("queues the TNM click ripple pass after a tap", async () => {
     render(<ChlorineRippleMark size={120} />);
     await settleImageLoading();
 
-    window.dispatchEvent(
-      new MouseEvent("click", {
-        bubbles: true,
-        clientX: 120,
-        clientY: 80,
-      }),
-    );
+    const touchStartEvent = new Event("touchstart", { bubbles: true });
+    Object.defineProperty(touchStartEvent, "touches", {
+      value: [{ clientX: 120, clientY: 80 }],
+    });
+    window.dispatchEvent(touchStartEvent);
+    window.dispatchEvent(new Event("touchend", { bubbles: true }));
     await advanceAnimationFrameBy(1000 / 60);
 
     expect(getUniform1iCalls("u_clickOnly").some(([, value]) => value === 1)).toBe(true);
@@ -337,7 +336,7 @@ describe("ChlorineRippleMark", () => {
       />,
     );
 
-    const rsvpLink = getByRole("link", { name: "RSVP" });
+    const rsvpLink = getByRole("link", { name: /Pool Night RSVP/ });
     expect(rsvpLink.getAttribute("href")).toBe("/events/event-1/rsvp");
 
     const rippleCanvas = container.querySelector<HTMLCanvasElement>(

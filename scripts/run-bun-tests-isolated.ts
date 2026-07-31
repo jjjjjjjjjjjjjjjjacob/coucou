@@ -1,10 +1,24 @@
-const testFilePatterns = ["__tests__/**/*.test.ts", "__tests__/**/*.test.tsx"];
+const workspaceDirectory = process.cwd();
+const testFilePatterns = [
+  "**/*.test.js",
+  "**/*.test.jsx",
+  "**/*.test.mjs",
+  "**/*.test.ts",
+  "**/*.test.tsx",
+];
+const ignoredDirectoryPrefixes = [".next/", "dist/", "node_modules/"];
 const discoveredTestFilePaths = new Set<string>();
 
 for (const testFilePattern of testFilePatterns) {
   const testFileGlob = new Bun.Glob(testFilePattern);
-  for await (const testFilePath of testFileGlob.scan({ cwd: import.meta.dir })) {
-    discoveredTestFilePaths.add(testFilePath);
+  for await (const testFilePath of testFileGlob.scan({ cwd: workspaceDirectory })) {
+    if (
+      !ignoredDirectoryPrefixes.some((ignoredDirectoryPrefix) =>
+        testFilePath.startsWith(ignoredDirectoryPrefix),
+      )
+    ) {
+      discoveredTestFilePaths.add(testFilePath);
+    }
   }
 }
 
@@ -12,10 +26,10 @@ const standardTestFilePaths: string[] = [];
 const moduleMockTestFilePaths: string[] = [];
 
 for (const testFilePath of [...discoveredTestFilePaths].sort()) {
-  const testFileContents = await Bun.file(`${import.meta.dir}/${testFilePath}`).text();
+  const testFileContents = await Bun.file(`${workspaceDirectory}/${testFilePath}`).text();
 
-  // Bun module mocks are process-wide. Run files that install their own module
-  // mocks separately so parallel file loading cannot leak mocks between suites.
+  // Bun module mocks are process-wide. Isolate files that install their own
+  // mocks so parallel file loading cannot leak replacements between suites.
   if (testFileContents.includes("mock.module(")) {
     moduleMockTestFilePaths.push(testFilePath);
   } else {
@@ -29,7 +43,7 @@ async function runTestFiles(testFilePaths: string[]): Promise<void> {
   }
 
   const testProcess = Bun.spawn([process.execPath, "test", ...testFilePaths], {
-    cwd: import.meta.dir,
+    cwd: workspaceDirectory,
     env: process.env,
     stdin: "inherit",
     stdout: "inherit",
