@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 const repositoryRootUrl = new URL("../../", import.meta.url);
 const repositoryPackage = JSON.parse(
