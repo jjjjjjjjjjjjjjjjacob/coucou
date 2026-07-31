@@ -13,8 +13,294 @@ import {
   primaryFieldConfigValidator,
 } from "./lib/primaryFields";
 import { ensureEventInSiteScope, eventMatchesSiteScope } from "./lib/siteScope";
-import { type EventPatch, NotFoundError, ValidationError } from "./lib/types";
+import { isSmsExecutableEvent, normalizeSmsCode } from "./lib/smsCodeRouting";
+import { ConvexError, type EventPatch, NotFoundError, ValidationError } from "./lib/types";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
+
+type EventCodeCredential = Pick<
+  Doc<"listCredentials">,
+  "_id" | "eventId" | "listKey" | "password" | "passwordNormalized"
+>;
+
+type EventCredentialCodePatch = {
+  listKey?: string;
+  password?: string;
+  passwordNormalized?: string;
+};
+
+function applyCredentialCodePatch<TCredential extends EventCodeCredential>(
+  credential: TCredential,
+  patch: EventCredentialCodePatch,
+): TCredential {
+  const passwordNormalized =
+    patch.passwordNormalized !== undefined
+      ? normalizeSmsCode(patch.passwordNormalized)
+      : patch.password !== undefined
+        ? normalizeSmsCode(patch.password)
+        : credential.passwordNormalized;
+  return {
+    ...credential,
+    ...patch,
+    passwordNormalized,
+  };
+}
+
+function normalizedCredentialPatch<TPatch extends EventCredentialCodePatch>(
+  patch: TPatch,
+): TPatch & { passwordNormalized?: string } {
+  if (patch.password === undefined && patch.passwordNormalized === undefined) {
+    return patch;
+  }
+  return {
+    ...patch,
+    passwordNormalized:
+      patch.passwordNormalized !== undefined
+        ? normalizeSmsCode(patch.passwordNormalized)
+        : normalizeSmsCode(patch.password ?? ""),
+  };
+}
+
+function throwEventSmsCodeConflict(): never {
+  throw new ConvexError(
+    "A list password is unavailable as an SMS code. Choose another password and try again.",
+    "SMS_CODE_CONFLICT",
+  );
+}
+
+async function syncExecutableEventCodeClaims(
+  ctx: MutationCtx,
+  event: Doc<"events">,
+  credentials: readonly EventCodeCredential[],
+  now: number,
+): Promise<void> {
+  const existingEventClaims = await ctx.db
+    .query("smsCodeClaims")
+    .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
+    .collect();
+  const targetedReplyActions = await ctx.db
+    .query("textBlastReplyActions")
+    .withIndex("by_target_event", (queryBuilder) => queryBuilder.eq("targetEventId", event._id))
+    .collect();
+  if (!isSmsExecutableEvent(event, now)) {
+    for (const claim of existingEventClaims) {
+      if (claim.kind === "event_list") await ctx.db.delete(claim._id);
+    }
+    for (const replyAction of targetedReplyActions) {
+      const claims = await ctx.db
+        .query("smsCodeClaims")
+        .withIndex("by_reply_action", (queryBuilder) =>
+          queryBuilder.eq("replyActionId", replyAction._id),
+        )
+        .collect();
+      for (const claim of claims) {
+        await ctx.db.delete(claim._id);
+      }
+    }
+    return;
+  }
+
+  const executableCredentials = credentials
+    .map((credential) => ({
+      credential,
+      normalizedCode: normalizeSmsCode(credential.passwordNormalized ?? credential.password ?? ""),
+    }))
+    .filter(({ normalizedCode }) => normalizedCode.length > 0);
+  const localCodes = new Set<string>();
+  for (const { normalizedCode } of executableCredentials) {
+    if (localCodes.has(normalizedCode)) throwEventSmsCodeConflict();
+    localCodes.add(normalizedCode);
+  }
+
+  for (const { credential, normalizedCode } of executableCredentials) {
+    if (credential.passwordNormalized !== normalizedCode) {
+      await ctx.db.patch(credential._id, { passwordNormalized: normalizedCode });
+    }
+    const matchingCredentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_passwordNormalized", (queryBuilder) =>
+        queryBuilder.eq("passwordNormalized", normalizedCode),
+      )
+      .collect();
+    for (const matchingCredential of matchingCredentials) {
+      if (matchingCredential._id === credential._id) continue;
+      const matchingEvent = await ctx.db.get(matchingCredential.eventId);
+      if (matchingEvent && isSmsExecutableEvent(matchingEvent, now)) {
+        throwEventSmsCodeConflict();
+      }
+    }
+
+    const replyActions = await ctx.db
+      .query("textBlastReplyActions")
+      .withIndex("by_code", (queryBuilder) =>
+        queryBuilder.eq("replyCodeNormalized", normalizedCode),
+      )
+      .collect();
+    for (const replyAction of replyActions) {
+      if (!replyAction.isEnabled) continue;
+      const targetEvent = await ctx.db.get(replyAction.targetEventId);
+      if (!targetEvent || !isSmsExecutableEvent(targetEvent, now)) continue;
+      const successfulDelivery = await ctx.db
+        .query("textBlastRecipients")
+        .withIndex("by_text_blast_status", (queryBuilder) =>
+          queryBuilder.eq("textBlastId", replyAction.textBlastId).eq("status", "sent"),
+        )
+        .first();
+      if (successfulDelivery) throwEventSmsCodeConflict();
+    }
+
+    const matchingClaims = await ctx.db
+      .query("smsCodeClaims")
+      .withIndex("by_code", (queryBuilder) => queryBuilder.eq("normalizedCode", normalizedCode))
+      .collect();
+    let hasOwnClaim = false;
+    for (const claim of matchingClaims) {
+      if (claim.kind === "event_list" && claim.listCredentialId === credential._id) {
+        hasOwnClaim = true;
+        await ctx.db.patch(claim._id, {
+          status: "active",
+          reservationExpiresAt: undefined,
+          updatedAt: now,
+        });
+        continue;
+      }
+      if (claim.status === "reserved" && (claim.reservationExpiresAt ?? 0) <= now) {
+        await ctx.db.delete(claim._id);
+        continue;
+      }
+      throwEventSmsCodeConflict();
+    }
+    if (!hasOwnClaim) {
+      await ctx.db.insert("smsCodeClaims", {
+        normalizedCode,
+        kind: "event_list",
+        eventId: event._id,
+        listCredentialId: credential._id,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+
+  const executableCredentialIds = new Set(
+    executableCredentials.map(({ credential }) => credential._id),
+  );
+  for (const claim of existingEventClaims) {
+    if (
+      claim.kind === "event_list" &&
+      (!claim.listCredentialId || !executableCredentialIds.has(claim.listCredentialId))
+    ) {
+      await ctx.db.delete(claim._id);
+    }
+  }
+
+  for (const replyAction of targetedReplyActions) {
+    const targetListExists = credentials.some(
+      (credential) => credential.listKey === replyAction.targetListKey,
+    );
+    if (!targetListExists) {
+      const claims = await ctx.db
+        .query("smsCodeClaims")
+        .withIndex("by_reply_action", (queryBuilder) =>
+          queryBuilder.eq("replyActionId", replyAction._id),
+        )
+        .collect();
+      for (const claim of claims) {
+        await ctx.db.delete(claim._id);
+      }
+      continue;
+    }
+    if (!replyAction.isEnabled) continue;
+    const successfulDeliveries = await ctx.db
+      .query("textBlastRecipients")
+      .withIndex("by_text_blast_status", (queryBuilder) =>
+        queryBuilder.eq("textBlastId", replyAction.textBlastId).eq("status", "sent"),
+      )
+      .collect();
+    if (successfulDeliveries.length === 0) continue;
+
+    const matchingCredentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_passwordNormalized", (queryBuilder) =>
+        queryBuilder.eq("passwordNormalized", replyAction.replyCodeNormalized),
+      )
+      .collect();
+    for (const matchingCredential of matchingCredentials) {
+      const matchingEvent = await ctx.db.get(matchingCredential.eventId);
+      if (matchingEvent && isSmsExecutableEvent(matchingEvent, now)) {
+        throwEventSmsCodeConflict();
+      }
+    }
+
+    const sameCodeActions = await ctx.db
+      .query("textBlastReplyActions")
+      .withIndex("by_code", (queryBuilder) =>
+        queryBuilder.eq("replyCodeNormalized", replyAction.replyCodeNormalized),
+      )
+      .collect();
+    const conflictingPhoneHashes = new Set<string>();
+    for (const otherAction of sameCodeActions) {
+      if (!otherAction.isEnabled || otherAction._id === replyAction._id) {
+        continue;
+      }
+      const otherTargetEvent = await ctx.db.get(otherAction.targetEventId);
+      if (!otherTargetEvent || !isSmsExecutableEvent(otherTargetEvent, now)) {
+        continue;
+      }
+      const otherSuccessfulDeliveries = await ctx.db
+        .query("textBlastRecipients")
+        .withIndex("by_text_blast_status", (queryBuilder) =>
+          queryBuilder.eq("textBlastId", otherAction.textBlastId).eq("status", "sent"),
+        )
+        .collect();
+      for (const otherDelivery of otherSuccessfulDeliveries) {
+        conflictingPhoneHashes.add(otherDelivery.phoneHash);
+      }
+    }
+    for (const delivery of successfulDeliveries) {
+      if (conflictingPhoneHashes.has(delivery.phoneHash)) {
+        throwEventSmsCodeConflict();
+      }
+
+      const matchingClaims = await ctx.db
+        .query("smsCodeClaims")
+        .withIndex("by_code_phone", (queryBuilder) =>
+          queryBuilder
+            .eq("normalizedCode", replyAction.replyCodeNormalized)
+            .eq("phoneHash", delivery.phoneHash),
+        )
+        .collect();
+      const ownClaim = matchingClaims.find((claim) => claim.replyActionId === replyAction._id);
+      for (const claim of matchingClaims) {
+        if (claim._id === ownClaim?._id) continue;
+        if (claim.status === "reserved" && (claim.reservationExpiresAt ?? 0) <= now) {
+          await ctx.db.delete(claim._id);
+          continue;
+        }
+        throwEventSmsCodeConflict();
+      }
+      if (ownClaim) {
+        await ctx.db.patch(ownClaim._id, {
+          status: "active",
+          reservationExpiresAt: undefined,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.insert("smsCodeClaims", {
+          normalizedCode: replyAction.replyCodeNormalized,
+          kind: "blast_action",
+          eventId: event._id,
+          replyActionId: replyAction._id,
+          textBlastId: replyAction.textBlastId,
+          phoneHash: delivery.phoneHash,
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+  }
+}
 
 async function applyWorkspaceEventDefaults<TEvent extends Doc<"events"> | null>(
   ctx: QueryCtx,
@@ -331,8 +617,18 @@ export const insertWithCreds = mutation({
       await ctx.db.insert("listCredentials", {
         eventId,
         ...credential,
+        passwordNormalized:
+          normalizeSmsCode(credential.passwordNormalized ?? credential.password ?? "") || undefined,
         createdAt: now,
       });
+    }
+    const insertedEvent = await ctx.db.get(eventId);
+    const insertedCredentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
+      .collect();
+    if (insertedEvent) {
+      await syncExecutableEventCodeClaims(ctx, insertedEvent, insertedCredentials, now);
     }
     return { eventId };
   },
@@ -377,8 +673,17 @@ export const insertPublicInstagramDevSeedEvent = internalMutation({
       await ctx.db.insert("listCredentials", {
         eventId,
         ...credential,
+        passwordNormalized: normalizeSmsCode(credential.password ?? "") || undefined,
         createdAt: now,
       });
+    }
+    const insertedEvent = await ctx.db.get(eventId);
+    const insertedCredentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
+      .collect();
+    if (insertedEvent) {
+      await syncExecutableEventCodeClaims(ctx, insertedEvent, insertedCredentials, now);
     }
 
     return { eventId };
@@ -602,6 +907,12 @@ export const publishEvent = mutation({
     }
 
     const now = Date.now();
+    await syncExecutableEventCodeClaims(
+      ctx,
+      { ...event, lifecycle: "published" },
+      credentials,
+      now,
+    );
     await ctx.db.patch(args.eventId, {
       lifecycle: "published",
       publishedAt: event.publishedAt ?? now,
@@ -637,9 +948,15 @@ export const unpublishEvent = mutation({
     });
     if (!event) throw new NotFoundError("Event");
 
+    const now = Date.now();
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", args.eventId))
+      .collect();
+    await syncExecutableEventCodeClaims(ctx, { ...event, lifecycle: "draft" }, credentials, now);
     await ctx.db.patch(args.eventId, {
       lifecycle: "draft",
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
 
     await writeAuditEntry(ctx, {
@@ -792,7 +1109,18 @@ export const update = mutation({
         (patch as Record<string, unknown>)[fieldKey] = args[fieldKey];
       }
     }
-    await ctx.db.patch(args.eventId, applyEventUnsetFields(patch, args.unsetFields));
+    const finalPatch = applyEventUnsetFields(patch, args.unsetFields);
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", args.eventId))
+      .collect();
+    await syncExecutableEventCodeClaims(
+      ctx,
+      { ...event, ...finalPatch },
+      credentials,
+      patch.updatedAt,
+    );
+    await ctx.db.patch(args.eventId, finalPatch);
 
     // If custom field keys were renamed, update all RSVPs for this event
     if (keyMappings && Object.keys(keyMappings).length > 0) {
@@ -830,6 +1158,14 @@ export const remove = mutation({
       siteKey,
       workspaceSlug,
     });
+
+    const codeClaims = await ctx.db
+      .query("smsCodeClaims")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
+      .collect();
+    for (const codeClaim of codeClaims) {
+      await ctx.db.delete(codeClaim._id);
+    }
 
     // Simply delete the event - trigger handles all cascading automatically!
     await ctx.db.delete(eventId);
@@ -869,7 +1205,7 @@ export const addListCredential = mutation({
       workspaceSlug: args.workspaceSlug,
     });
 
-    await ensureEventInSiteScope(ctx, args.eventId, {
+    const event = await ensureEventInSiteScope(ctx, args.eventId, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
@@ -879,7 +1215,8 @@ export const addListCredential = mutation({
       eventId: args.eventId,
       listKey: args.listKey,
       password: args.password,
-      passwordNormalized: args.passwordNormalized,
+      passwordNormalized:
+        normalizeSmsCode(args.passwordNormalized ?? args.password ?? "") || undefined,
       generateQR: args.generateQR,
       defersQrDelivery: args.defersQrDelivery,
       sendQrOnApproval: args.sendQrOnApproval,
@@ -888,6 +1225,11 @@ export const addListCredential = mutation({
       autoApproveLimit: args.autoApproveLimit,
       createdAt: now,
     });
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", args.eventId))
+      .collect();
+    await syncExecutableEventCodeClaims(ctx, event, credentials, now);
     return { ok: true as const };
   },
 });
@@ -916,12 +1258,28 @@ export const updateListCredential = mutation({
 
     await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
-    await ensureEventInSiteScope(ctx, credential.eventId, {
+    const event = await ensureEventInSiteScope(ctx, credential.eventId, {
       siteKey,
       workspaceSlug,
     });
 
-    await ctx.db.patch(id, patch);
+    const now = Date.now();
+    const effectivePatch = normalizedCredentialPatch(patch);
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", credential.eventId))
+      .collect();
+    await syncExecutableEventCodeClaims(
+      ctx,
+      event,
+      credentials.map((candidateCredential) =>
+        candidateCredential._id === id
+          ? applyCredentialCodePatch(candidateCredential, effectivePatch)
+          : candidateCredential,
+      ),
+      now,
+    );
+    await ctx.db.patch(id, effectivePatch);
     return { ok: true as const };
   },
 });
@@ -939,13 +1297,24 @@ export const removeListCredential = mutation({
 
     await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
-    await ensureEventInSiteScope(ctx, credential.eventId, {
+    const event = await ensureEventInSiteScope(ctx, credential.eventId, {
       siteKey,
       workspaceSlug,
     });
 
     console.log(
       `[DELETE] Removing list credential ${id} (${credential.listKey}) for event ${credential.eventId}`,
+    );
+
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", credential.eventId))
+      .collect();
+    await syncExecutableEventCodeClaims(
+      ctx,
+      event,
+      credentials.filter((candidateCredential) => candidateCredential._id !== id),
+      Date.now(),
     );
 
     // Simply delete the credential - trigger handles cascading automatically!
@@ -980,15 +1349,31 @@ export const updateListCredentialWithCascade = mutation({
 
     await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
-    await ensureEventInSiteScope(ctx, credential.eventId, {
+    const event = await ensureEventInSiteScope(ctx, credential.eventId, {
       siteKey,
       workspaceSlug,
     });
+    const now = Date.now();
+    const effectivePatch = normalizedCredentialPatch(patch);
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", credential.eventId))
+      .collect();
+    await syncExecutableEventCodeClaims(
+      ctx,
+      event,
+      credentials.map((candidateCredential) =>
+        candidateCredential._id === id
+          ? applyCredentialCodePatch(candidateCredential, effectivePatch)
+          : candidateCredential,
+      ),
+      now,
+    );
 
     // Check if listKey is changing
-    if (patch.listKey && patch.listKey !== credential.listKey) {
+    if (effectivePatch.listKey && effectivePatch.listKey !== credential.listKey) {
       console.log(
-        `[UPDATE] ListKey changing: ${credential.listKey} → ${patch.listKey} for credential ${id}`,
+        `[UPDATE] ListKey changing: ${credential.listKey} → ${effectivePatch.listKey} for credential ${id}`,
       );
 
       // Count affected records to determine if we should batch
@@ -1020,14 +1405,14 @@ export const updateListCredentialWithCascade = mutation({
         console.log(`[UPDATE] ${totalAffected} records affected, using batched update`);
 
         // Update the credential first
-        await ctx.db.patch(id, patch);
+        await ctx.db.patch(id, effectivePatch);
 
         // Schedule batched listKey update
         await ctx.scheduler.runAfter(0, internal.cascades.batchUpdateListKey, {
           eventId: credential.eventId,
           credentialId: id,
           oldListKey: credential.listKey,
-          newListKey: patch.listKey,
+          newListKey: effectivePatch.listKey,
           cursor: undefined,
           batchSize: 500,
           phase: "rsvps",
@@ -1040,12 +1425,12 @@ export const updateListCredentialWithCascade = mutation({
           `[UPDATE] ${totalAffected} records affected, using inline update with triggers`,
         );
 
-        await ctx.db.patch(id, patch);
+        await ctx.db.patch(id, effectivePatch);
         return { ok: true, batched: false, affectedRecords: totalAffected };
       }
     } else {
       // No listKey change, simple update
-      await ctx.db.patch(id, patch);
+      await ctx.db.patch(id, effectivePatch);
       return { ok: true, batched: false, affectedRecords: 0 };
     }
   },

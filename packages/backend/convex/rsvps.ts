@@ -23,7 +23,7 @@ import {
   insertRsvpIntoAggregate,
   updateRsvpInAggregate,
 } from "./lib/rsvpAggregate";
-import { applyApprovalStatusTransition, tryAutoApproveRsvp } from "./lib/rsvpApproval";
+import { applyApprovalStatusTransition } from "./lib/rsvpApproval";
 import { formatRsvpConfirmationMessage } from "./lib/rsvpConfirmationMessages";
 import {
   buildRsvpFuzzySearchTerms,
@@ -41,6 +41,7 @@ import {
   resolveApprovalStatus,
   sanitizeAttendanceStatus,
 } from "./lib/rsvpStatus";
+import { finalizeRsvpSubmissionThroughSharedService } from "./lib/rsvpSubmissionService";
 import { isPhoneNumberLikeDisplayName, resolveStoredUserDisplayName } from "./lib/rsvpUserName";
 import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";
 import {
@@ -560,43 +561,22 @@ export const submitRequest = mutation({
         updatedAt: now,
       });
 
-      if (configuredSocialPlatformKeys.size > 0) {
-        await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
-          event,
-          rsvpId,
-          clerkUserId,
-          userId: user?._id,
-          submittedProfiles: sanitizedSocialProfiles,
-        });
-        await replaceRsvpSocialProfileSnapshots(ctx, {
-          eventId: args.eventId,
-          rsvpId,
-          clerkUserId,
-          userId: user?._id,
-          configuredPlatformKeys: configuredSocialPlatformKeys,
-          submittedProfiles: sanitizedSocialProfiles,
-        });
-      }
-
-      if (resolvedSmsConsent.shouldUpdateOrganizerPreference) {
-        await upsertSmsOrganizerPreference(ctx, {
-          clerkUserId,
-          event,
-          siteKey: args.siteKey,
-          smsConsent: resolvedSmsConsent.smsConsent,
-          smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
-          sourceEventId: args.eventId,
-          sourceRsvpId: rsvpId,
-          now,
-        });
-      }
-
-      // Sync with aggregate
-      const newRsvp = await ctx.db.get(rsvpId);
-      if (newRsvp) {
-        await insertRsvpIntoAggregate(ctx, newRsvp);
-        wasAutomaticallyApproved = await tryAutoApproveRsvp(ctx, newRsvp);
-      }
+      const finalizationResult = await finalizeRsvpSubmissionThroughSharedService(ctx, {
+        event,
+        rsvpId,
+        clerkUserId,
+        registeredUser: user ?? undefined,
+        sanitizedSocialProfiles,
+        configuredSocialPlatformKeys,
+        persistUserProfiles: true,
+        updateOrganizerPreference: resolvedSmsConsent.shouldUpdateOrganizerPreference,
+        organizerSiteKey: args.siteKey,
+        smsConsent: resolvedSmsConsent.smsConsent,
+        smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
+        tryAutomaticApproval: true,
+        now,
+      });
+      wasAutomaticallyApproved = finalizationResult.wasAutomaticallyApproved;
     } else {
       // Prevent re-requesting the same denied list
       if (resolveApprovalStatus(existing) === "denied" && existing.listKey === args.listKey) {
@@ -629,44 +609,25 @@ export const submitRequest = mutation({
         updatedAt: now,
       });
 
-      if (configuredSocialPlatformKeys.size > 0) {
-        await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
+      if (oldRsvp) {
+        const finalizationResult = await finalizeRsvpSubmissionThroughSharedService(ctx, {
           event,
           rsvpId: existing._id,
+          previousRsvp: oldRsvp,
           clerkUserId,
-          userId: user?._id,
-          submittedProfiles: sanitizedSocialProfiles,
-        });
-        await replaceRsvpSocialProfileSnapshots(ctx, {
-          eventId: args.eventId,
-          rsvpId: existing._id,
-          clerkUserId,
-          userId: user?._id,
-          configuredPlatformKeys: configuredSocialPlatformKeys,
-          submittedProfiles: sanitizedSocialProfiles,
-        });
-      }
-
-      // Sync with aggregate
-      const newRsvp = await ctx.db.get(existing._id);
-      if (oldRsvp && newRsvp) {
-        await updateRsvpInAggregate(ctx, oldRsvp, newRsvp);
-        if (resolveApprovalStatus(oldRsvp) !== "approved" && oldRsvp.listKey !== newRsvp.listKey) {
-          await tryAutoApproveRsvp(ctx, newRsvp);
-        }
-      }
-
-      if (resolvedSmsConsent.shouldUpdateOrganizerPreference) {
-        await upsertSmsOrganizerPreference(ctx, {
-          clerkUserId,
-          event,
-          siteKey: args.siteKey,
+          registeredUser: user ?? undefined,
+          sanitizedSocialProfiles,
+          configuredSocialPlatformKeys,
+          persistUserProfiles: true,
+          updateOrganizerPreference: resolvedSmsConsent.shouldUpdateOrganizerPreference,
+          organizerSiteKey: args.siteKey,
           smsConsent: resolvedSmsConsent.smsConsent,
           smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
-          sourceEventId: args.eventId,
-          sourceRsvpId: existing._id,
+          tryAutomaticApproval:
+            resolveApprovalStatus(oldRsvp) !== "approved" && oldRsvp.listKey !== args.listKey,
           now,
         });
+        wasAutomaticallyApproved = finalizationResult.wasAutomaticallyApproved;
       }
     }
 
@@ -793,6 +754,7 @@ export const submitGuestRequest = mutation({
     let wasAutomaticallyApproved = false;
 
     let rsvpId: Id<"rsvps">;
+    let previousRsvpForFinalization: Doc<"rsvps"> | undefined;
     if (!existing) {
       rsvpId = await ctx.db.insert("rsvps", {
         eventId: args.eventId,
@@ -820,23 +782,6 @@ export const submitGuestRequest = mutation({
         createdAt: now,
         updatedAt: now,
       });
-
-      if (configuredSocialPlatformKeys.size > 0) {
-        await replaceRsvpSocialProfileSnapshots(ctx, {
-          eventId: args.eventId,
-          rsvpId,
-          clerkUserId: guestClerkUserId,
-          configuredPlatformKeys: configuredSocialPlatformKeys,
-          submittedProfiles: sanitizedSocialProfiles,
-          persistUserProfiles: false,
-        });
-      }
-
-      const newRsvp = await ctx.db.get(rsvpId);
-      if (newRsvp) {
-        await insertRsvpIntoAggregate(ctx, newRsvp);
-        wasAutomaticallyApproved = await tryAutoApproveRsvp(ctx, newRsvp);
-      }
     } else {
       if (resolveApprovalStatus(existing) === "denied" && existing.listKey === args.listKey) {
         throw new Error("Denied for this list; try a different password");
@@ -844,6 +789,7 @@ export const submitGuestRequest = mutation({
 
       rsvpId = existing._id;
       const oldRsvp = await ctx.db.get(existing._id);
+      previousRsvpForFinalization = oldRsvp ?? undefined;
       await ctx.db.patch(existing._id, {
         listKey: args.listKey,
         userName: guestName,
@@ -868,26 +814,27 @@ export const submitGuestRequest = mutation({
         attendanceStatus: event.attendanceQuestionEnabled ? submittedAttendanceStatus : "yes",
         updatedAt: now,
       });
-
-      if (configuredSocialPlatformKeys.size > 0) {
-        await replaceRsvpSocialProfileSnapshots(ctx, {
-          eventId: args.eventId,
-          rsvpId: existing._id,
-          clerkUserId: guestClerkUserId,
-          configuredPlatformKeys: configuredSocialPlatformKeys,
-          submittedProfiles: sanitizedSocialProfiles,
-          persistUserProfiles: false,
-        });
-      }
-
-      const newRsvp = await ctx.db.get(existing._id);
-      if (oldRsvp && newRsvp) {
-        await updateRsvpInAggregate(ctx, oldRsvp, newRsvp);
-        if (resolveApprovalStatus(oldRsvp) !== "approved" && oldRsvp.listKey !== newRsvp.listKey) {
-          await tryAutoApproveRsvp(ctx, newRsvp);
-        }
-      }
     }
+
+    const finalizationResult = await finalizeRsvpSubmissionThroughSharedService(ctx, {
+      event,
+      rsvpId,
+      previousRsvp: previousRsvpForFinalization,
+      clerkUserId: guestClerkUserId,
+      sanitizedSocialProfiles,
+      configuredSocialPlatformKeys,
+      persistUserProfiles: false,
+      updateOrganizerPreference: resolvedSmsConsent.shouldUpdateOrganizerPreference,
+      organizerSiteKey: args.siteKey,
+      smsConsent: resolvedSmsConsent.smsConsent,
+      smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
+      tryAutomaticApproval:
+        !previousRsvpForFinalization ||
+        (resolveApprovalStatus(previousRsvpForFinalization) !== "approved" &&
+          previousRsvpForFinalization.listKey !== args.listKey),
+      now,
+    });
+    wasAutomaticallyApproved = finalizationResult.wasAutomaticallyApproved;
 
     const rsvpHandoffToken = generateRsvpHandoffToken();
     const rsvpHandoffTokenHash = await hashOpaqueValue(rsvpHandoffToken);

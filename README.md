@@ -58,6 +58,10 @@ TWILIO_AUTH_TOKEN
 TWILIO_PHONE_NUMBER
 ```
 
+`SMS_CODE_ROUTER_ENABLED` is an optional rollout flag and defaults to disabled.
+Set it to `true` only after the production SMS code collision audit reports zero
+conflicts and executable claims have been backfilled.
+
 `APP_BASE_URL` must be `https://coucou.events` in production. Known event
 sites resolve to their own configured domains first, so this value is only the
 generic fallback. For Clerk satellite domains, production CD generates

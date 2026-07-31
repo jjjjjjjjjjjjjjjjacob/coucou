@@ -6,6 +6,7 @@
 
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
+import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 
 function base64FromArrayBuffer(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -45,6 +46,50 @@ function twilioParamsToRecord(params: URLSearchParams): Record<string, string> {
     record[key] = value;
   }
   return record;
+}
+
+function emptyTwimlResponse(): Response {
+  return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+    status: 200,
+    headers: { "Content-Type": "text/xml; charset=utf-8" },
+  });
+}
+
+function normalizePhoneForComparison(phoneNumber: string): string {
+  return `+${phoneNumber.replace(/\D/g, "")}`;
+}
+
+export function twilioDestinationMatchesConfiguredNumber(
+  receivedPhoneNumber: string,
+  configuredPhoneNumber: string | undefined,
+): boolean {
+  return Boolean(
+    configuredPhoneNumber &&
+      normalizePhoneForComparison(receivedPhoneNumber) ===
+        normalizePhoneForComparison(configuredPhoneNumber),
+  );
+}
+
+type TwilioComplianceOutcome = "opt_out" | "opt_in" | "help";
+
+export function classifyTwilioComplianceMessage(
+  normalizedMessageBody: string,
+  optOutType: string | undefined,
+): TwilioComplianceOutcome | null {
+  const optOutKeywords = ["stop", "stopall", "unsubscribe", "cancel", "end", "quit"];
+  const optInKeywords = ["start", "yes", "unstop"];
+  const helpKeywords = ["help", "info"];
+  const normalizedOptOutType = optOutType?.trim().toLowerCase();
+  return normalizedOptOutType === "stop" ||
+    (!normalizedOptOutType && optOutKeywords.includes(normalizedMessageBody))
+    ? "opt_out"
+    : normalizedOptOutType === "start" ||
+        (!normalizedOptOutType && optInKeywords.includes(normalizedMessageBody))
+      ? "opt_in"
+      : normalizedOptOutType === "help" ||
+          (!normalizedOptOutType && helpKeywords.includes(normalizedMessageBody))
+        ? "help"
+        : null;
 }
 
 export async function verifyTwilioRequestSignature(
@@ -132,6 +177,7 @@ export const handleOptOut = httpAction(async (ctx, request) => {
   if (!from) {
     return new Response("Missing phone number", { status: 400 });
   }
+  const fromPhoneObfuscated = obfuscatePhoneNumber(from);
 
   try {
     // Check if this is an opt-out keyword
@@ -153,7 +199,7 @@ export const handleOptOut = httpAction(async (ctx, request) => {
         rawPayload: twilioParamsToRecord(params),
       });
 
-      console.log(`SMS opt-out recorded for ${from}`);
+      console.log(`SMS opt-out recorded for ${fromPhoneObfuscated}`);
     } else if (bodyText && optInKeywords.includes(bodyText)) {
       // Handle opt-in (remove from opt-out list)
       await ctx.runAction(internal.smsMonitoringActions.removeOptOutAction, {
@@ -168,7 +214,7 @@ export const handleOptOut = httpAction(async (ctx, request) => {
         rawPayload: twilioParamsToRecord(params),
       });
 
-      console.log(`SMS opt-in recorded for ${from}`);
+      console.log(`SMS opt-in recorded for ${fromPhoneObfuscated}`);
     }
 
     return new Response("OK", { status: 200 });
@@ -191,81 +237,105 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
   const from = params.get("From");
   const rawMessageBody = params.get("Body")?.trim();
   const messageBody = rawMessageBody?.toLowerCase();
-  const to = params.get("To"); // Your Twilio phone number
-  const messageSid = params.get("MessageSid") ?? undefined;
+  const to = params.get("To");
+  const messageSid = params.get("MessageSid");
+  const configuredPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
-  if (!from || !rawMessageBody || !messageBody) {
+  if (!from || !to || !rawMessageBody || !messageBody || !messageSid) {
     return new Response("Missing required parameters", { status: 400 });
+  }
+  if (!twilioDestinationMatchesConfiguredNumber(to, configuredPhoneNumber)) {
+    return new Response("Unexpected destination number", { status: 400 });
   }
 
   try {
-    // Handle common SMS keywords
-    const optOutKeywords = ["stop", "stopall", "unsubscribe", "cancel", "end", "quit"];
-    const optInKeywords = ["start", "yes", "unstop"];
-    const helpKeywords = ["help", "info"];
+    const fromPhoneObfuscated = obfuscatePhoneNumber(from);
+    const toPhoneObfuscated = obfuscatePhoneNumber(to);
+    const complianceOutcome = classifyTwilioComplianceMessage(
+      messageBody,
+      params.get("OptOutType") ?? undefined,
+    );
+    const receiptResult = await ctx.runMutation(internal.smsCodeRouter.beginInboundReceipt, {
+      providerMessageId: messageSid,
+      fromPhoneNumber: from,
+      toPhoneNumber: to,
+      body: rawMessageBody,
+    });
+    if (!receiptResult.accepted) {
+      return emptyTwimlResponse();
+    }
+    const rawPayload = twilioParamsToRecord(params);
 
-    if (optOutKeywords.includes(messageBody)) {
+    if (complianceOutcome === "opt_out") {
       await ctx.runAction(internal.smsMonitoringActions.recordOptOutAction, {
         phoneNumber: from,
         reason: "user_request_sms",
       });
-      await ctx.runMutation(internal.smsConversations.recordInboundForExistingThreads, {
+      await ctx.runMutation(internal.smsCodeRouter.completeComplianceInbound, {
+        providerMessageId: messageSid,
         fromPhoneNumber: from,
         body: rawMessageBody,
+        outcome: "opt_out",
         kind: "opt_out",
-        providerMessageId: messageSid,
-        providerStatus: "received",
-        rawPayload: twilioParamsToRecord(params),
+        rawPayload,
       });
-
-      // Send automatic confirmation (Twilio handles this automatically)
-      console.log(`Opt-out processed for ${from}`);
-    } else if (optInKeywords.includes(messageBody)) {
+      console.log(`Opt-out processed for ${fromPhoneObfuscated}`);
+    } else if (complianceOutcome === "opt_in") {
       await ctx.runAction(internal.smsMonitoringActions.removeOptOutAction, {
         phoneNumber: from,
       });
-      await ctx.runMutation(internal.smsConversations.recordInboundForExistingThreads, {
+      await ctx.runMutation(internal.smsCodeRouter.completeComplianceInbound, {
+        providerMessageId: messageSid,
         fromPhoneNumber: from,
         body: rawMessageBody,
+        outcome: "opt_in",
         kind: "opt_out",
-        providerMessageId: messageSid,
-        providerStatus: "received",
-        rawPayload: twilioParamsToRecord(params),
+        rawPayload,
       });
-
-      console.log(`Opt-in processed for ${from}`);
-    } else if (helpKeywords.includes(messageBody)) {
-      await ctx.runMutation(internal.smsConversations.recordInboundForExistingThreads, {
+      console.log(`Opt-in processed for ${fromPhoneObfuscated}`);
+    } else if (complianceOutcome === "help") {
+      await ctx.runMutation(internal.smsCodeRouter.completeComplianceInbound, {
+        providerMessageId: messageSid,
         fromPhoneNumber: from,
         body: rawMessageBody,
+        outcome: "help",
         kind: "help",
-        providerMessageId: messageSid,
-        providerStatus: "received",
-        rawPayload: twilioParamsToRecord(params),
+        rawPayload,
       });
-      // Twilio Advanced Opt-Out owns the branded HELP response for each
-      // Messaging Service. Sending another application-level response here
-      // would duplicate the reply and can identify the wrong client Brand.
-      console.log(`SMS help request recorded for ${from} to ${to ?? "unknown number"}`);
+      console.log(
+        `SMS help request recorded for ${fromPhoneObfuscated} to ${toPhoneObfuscated || "unknown number"}`,
+      );
+    } else if (process.env.SMS_CODE_ROUTER_ENABLED !== "true") {
+      await ctx.runMutation(internal.smsCodeRouter.completeInboundWithoutRouting, {
+        providerMessageId: messageSid,
+      });
     } else {
-      const replyResult = await ctx.runMutation(internal.textBlasts.processIncomingSmsReply, {
+      const replyResult = await ctx.runMutation(internal.smsCodeRouter.processReservedInbound, {
+        providerMessageId: messageSid,
         fromPhoneNumber: from,
         messageBody: rawMessageBody,
-        messageSid,
+        rawPayload,
       });
       if (replyResult.shouldRespond && replyResult.responseMessage) {
         try {
-          await ctx.runAction(internal.smsActions.sendSmsInternal, {
+          const sendResult = await ctx.runAction(internal.smsActions.sendSmsInternal, {
             phoneNumber: from,
             message: replyResult.responseMessage,
             messageType: "Transactional",
           });
-          await ctx.runMutation(internal.smsConversations.recordOutboundForExistingThreads, {
-            toPhoneNumber: from,
-            body: replyResult.responseMessage,
-            kind: "reply_action",
-            providerStatus: "sent",
-          });
+          if (replyResult.targetEventId && replyResult.phoneHash && replyResult.phoneObfuscated) {
+            await ctx.runMutation(internal.smsConversations.recordMessage, {
+              eventId: replyResult.targetEventId,
+              phoneHash: replyResult.phoneHash,
+              phoneObfuscated: replyResult.phoneObfuscated,
+              participantClerkUserIds: replyResult.participantClerkUserIds ?? [],
+              direction: "outbound",
+              kind: "reply_action",
+              body: replyResult.responseMessage,
+              providerMessageId: sendResult.messageId,
+              providerStatus: sendResult.success === true ? "sent" : "failed",
+            });
+          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error("Failed to send reply action response:", errorMessage);
@@ -273,9 +343,15 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
       }
     }
 
-    return new Response("OK", { status: 200 });
+    return emptyTwimlResponse();
   } catch (error) {
     console.error("Failed to process incoming SMS:", error);
+    if (messageSid) {
+      await ctx.runMutation(internal.smsCodeRouter.failInboundReceipt, {
+        providerMessageId: messageSid,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
     return new Response("Internal Server Error", { status: 500 });
   }
 });

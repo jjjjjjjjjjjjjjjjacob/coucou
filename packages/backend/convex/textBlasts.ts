@@ -63,11 +63,17 @@ import {
   getTextBlastInSiteScope,
 } from "./lib/siteScope";
 import {
+  isSmsExecutableEvent,
+  normalizeSmsCode,
+  SMS_CODE_RESERVATION_DURATION_MS,
+} from "./lib/smsCodeRouting";
+import {
   recordSmsConversationMessage,
   type SmsConversationKind,
 } from "./lib/smsConversationRecords";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
+import { ConvexError } from "./lib/types";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 function getErrorMessage(error: unknown): string {
@@ -117,7 +123,7 @@ type ReplyActionAttemptStatus =
   | "invalid_code"
   | "missing_required_fields"
   | "target_unavailable"
-  | "unknown_sender"
+  | "unmatched_message"
   | "error";
 
 const RESERVED_REPLY_CODES = new Set([
@@ -133,11 +139,13 @@ const RESERVED_REPLY_CODES = new Set([
   "help",
   "info",
 ]);
+const SMS_CODE_CLAIM_RESERVATION_BATCH_SIZE = 200;
+const QUEUED_BLAST_RESULT_FINALIZATION_MAX_ATTEMPTS = 3;
 
 const getUniqueIds = <T extends string>(ids: T[]): T[] => Array.from(new Set(ids));
 
 function normalizeReplyCode(value: string): string {
-  return value.trim().toLowerCase();
+  return normalizeSmsCode(value);
 }
 
 function sanitizeReplyCode(value: string): { replyCode: string; replyCodeNormalized: string } {
@@ -251,6 +259,32 @@ async function ensureListExistsForEvent(
   return listCredential;
 }
 
+function throwSmsCodeConflict(): never {
+  throw new ConvexError(
+    "This SMS code is unavailable. Choose another code and try again.",
+    "SMS_CODE_CONFLICT",
+  );
+}
+
+async function assertNoExecutableEventCodeCollision(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  normalizedCode: string,
+  now: number,
+): Promise<void> {
+  const matchingCredentials = await ctx.db
+    .query("listCredentials")
+    .withIndex("by_passwordNormalized", (queryBuilder) =>
+      queryBuilder.eq("passwordNormalized", normalizedCode),
+    )
+    .collect();
+  for (const matchingCredential of matchingCredentials) {
+    const event = await ctx.db.get(matchingCredential.eventId);
+    if (event && isSmsExecutableEvent(event, now)) {
+      throwSmsCodeConflict();
+    }
+  }
+}
+
 async function normalizeReplyActionsForStorage(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   replyActions: ReplyActionInput[] | undefined,
@@ -258,6 +292,7 @@ async function normalizeReplyActionsForStorage(
 ): Promise<StoredReplyActionInput[]> {
   const normalizedReplyCodeSet = new Set<string>();
   const storedReplyActions: StoredReplyActionInput[] = [];
+  const now = Date.now();
 
   for (const replyAction of replyActions ?? []) {
     const { replyCode, replyCodeNormalized } = sanitizeReplyCode(replyAction.replyCode);
@@ -267,8 +302,11 @@ async function normalizeReplyActionsForStorage(
     normalizedReplyCodeSet.add(replyCodeNormalized);
 
     const targetEvent = await ensureEventInSiteScope(ctx, replyAction.targetEventId, scope);
-    if (!isEventOpenForRsvp(targetEvent, Date.now())) {
-      throw new Error(`Destination event "${targetEvent.name}" is not open for RSVPs`);
+    if (replyAction.isEnabled !== false) {
+      if (!isSmsExecutableEvent(targetEvent, now)) {
+        throw new Error(`Destination event "${targetEvent.name}" is not open for RSVPs`);
+      }
+      await assertNoExecutableEventCodeCollision(ctx, replyCodeNormalized, now);
     }
 
     const targetListKey = replyAction.targetListKey.trim();
@@ -289,6 +327,30 @@ async function normalizeReplyActionsForStorage(
   return storedReplyActions;
 }
 
+function normalizeFrozenReplyActionsForComparison(
+  replyActions: ReplyActionInput[],
+): StoredReplyActionInput[] {
+  const normalizedReplyCodeSet = new Set<string>();
+  return replyActions.map((replyAction) => {
+    const { replyCode, replyCodeNormalized } = sanitizeReplyCode(replyAction.replyCode);
+    if (normalizedReplyCodeSet.has(replyCodeNormalized)) {
+      throw new Error(`Duplicate reply action code "${replyCode}"`);
+    }
+    normalizedReplyCodeSet.add(replyCodeNormalized);
+    const targetListKey = replyAction.targetListKey.trim();
+    if (!targetListKey) {
+      throw new Error("Reply action destination list is required");
+    }
+    return {
+      replyCode,
+      replyCodeNormalized,
+      targetEventId: replyAction.targetEventId,
+      targetListKey,
+      isEnabled: replyAction.isEnabled !== false,
+    };
+  });
+}
+
 async function listReplyActionsForBlast(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   textBlastId: Id<"textBlasts">,
@@ -297,6 +359,140 @@ async function listReplyActionsForBlast(
     .query("textBlastReplyActions")
     .withIndex("by_text_blast", (queryBuilder) => queryBuilder.eq("textBlastId", textBlastId))
     .collect();
+}
+
+async function reserveReplyActionClaims(
+  ctx: MutationCtx,
+  args: {
+    textBlastId: Id<"textBlasts">;
+    phoneHashes: readonly string[];
+    replyActionIds?: ReadonlySet<Id<"textBlastReplyActions">>;
+    now: number;
+  },
+): Promise<void> {
+  const replyActions = (await listReplyActionsForBlast(ctx, args.textBlastId)).filter(
+    (replyAction) =>
+      replyAction.isEnabled && (!args.replyActionIds || args.replyActionIds.has(replyAction._id)),
+  );
+  const uniquePhoneHashes = Array.from(new Set(args.phoneHashes));
+
+  for (const replyAction of replyActions) {
+    await assertNoExecutableEventCodeCollision(ctx, replyAction.replyCodeNormalized, args.now);
+    const targetEvent = await ctx.db.get(replyAction.targetEventId);
+    if (!targetEvent || !isSmsExecutableEvent(targetEvent, args.now)) {
+      throw new ConvexError(
+        "A reply action destination is no longer accepting RSVPs.",
+        "SMS_TARGET_UNAVAILABLE",
+      );
+    }
+    await ensureListExistsForEvent(ctx, targetEvent._id, replyAction.targetListKey);
+
+    for (const phoneHash of uniquePhoneHashes) {
+      const existingClaims = await ctx.db
+        .query("smsCodeClaims")
+        .withIndex("by_code_phone", (queryBuilder) =>
+          queryBuilder
+            .eq("normalizedCode", replyAction.replyCodeNormalized)
+            .eq("phoneHash", phoneHash),
+        )
+        .collect();
+      let ownsClaim = false;
+      for (const existingClaim of existingClaims) {
+        const isExpiredReservation =
+          existingClaim.status === "reserved" &&
+          (existingClaim.reservationExpiresAt ?? 0) <= args.now;
+        if (isExpiredReservation) {
+          await ctx.db.delete(existingClaim._id);
+          continue;
+        }
+        if (
+          existingClaim.kind === "blast_action" &&
+          existingClaim.replyActionId !== replyAction._id
+        ) {
+          const claimedReplyAction = existingClaim.replyActionId
+            ? await ctx.db.get(existingClaim.replyActionId)
+            : null;
+          const claimedTargetEvent = claimedReplyAction
+            ? await ctx.db.get(claimedReplyAction.targetEventId)
+            : null;
+          if (
+            !claimedReplyAction?.isEnabled ||
+            !claimedTargetEvent ||
+            !isSmsExecutableEvent(claimedTargetEvent, args.now)
+          ) {
+            await ctx.db.delete(existingClaim._id);
+            continue;
+          }
+        }
+        if (
+          existingClaim.kind === "blast_action" &&
+          existingClaim.replyActionId === replyAction._id
+        ) {
+          ownsClaim = true;
+          if (existingClaim.status === "reserved") {
+            await ctx.db.patch(existingClaim._id, {
+              reservationExpiresAt: args.now + SMS_CODE_RESERVATION_DURATION_MS,
+              updatedAt: args.now,
+            });
+          }
+          continue;
+        }
+        throwSmsCodeConflict();
+      }
+      if (!ownsClaim) {
+        await ctx.db.insert("smsCodeClaims", {
+          normalizedCode: replyAction.replyCodeNormalized,
+          kind: "blast_action",
+          eventId: replyAction.targetEventId,
+          replyActionId: replyAction._id,
+          textBlastId: args.textBlastId,
+          phoneHash,
+          status: "reserved",
+          reservationExpiresAt: args.now + SMS_CODE_RESERVATION_DURATION_MS,
+          createdAt: args.now,
+          updatedAt: args.now,
+        });
+      }
+    }
+  }
+}
+
+async function finalizeReplyActionClaims(
+  ctx: MutationCtx,
+  args: {
+    textBlastId: Id<"textBlasts">;
+    results: readonly { phoneHash: string; success: boolean }[];
+    replyActionIds?: ReadonlySet<Id<"textBlastReplyActions">>;
+    now: number;
+  },
+): Promise<void> {
+  const replyActions = (await listReplyActionsForBlast(ctx, args.textBlastId)).filter(
+    (replyAction) => !args.replyActionIds || args.replyActionIds.has(replyAction._id),
+  );
+  for (const replyAction of replyActions) {
+    for (const result of args.results) {
+      const claims = await ctx.db
+        .query("smsCodeClaims")
+        .withIndex("by_code_phone", (queryBuilder) =>
+          queryBuilder
+            .eq("normalizedCode", replyAction.replyCodeNormalized)
+            .eq("phoneHash", result.phoneHash),
+        )
+        .collect();
+      for (const claim of claims) {
+        if (claim.replyActionId !== replyAction._id) continue;
+        if (result.success) {
+          await ctx.db.patch(claim._id, {
+            status: "active",
+            reservationExpiresAt: undefined,
+            updatedAt: args.now,
+          });
+        } else if (claim.status === "reserved") {
+          await ctx.db.delete(claim._id);
+        }
+      }
+    }
+  }
 }
 
 async function replaceReplyActionsForBlast(
@@ -627,6 +823,20 @@ type BulkSmsSendResult = {
     sentAt?: number;
   }>;
 };
+
+const queuedBlastSendResultValidator = v.object({
+  notificationId: v.id("smsNotifications"),
+  textBlastRecipientId: v.id("textBlastRecipients"),
+  clerkUserId: v.string(),
+  phoneHash: v.string(),
+  success: v.boolean(),
+  messageId: v.optional(v.string()),
+  error: v.optional(v.string()),
+  messageLength: v.optional(v.number()),
+  messageType: v.optional(v.string()),
+  estimatedCost: v.optional(v.number()),
+  sentAt: v.optional(v.number()),
+});
 
 type ApprovedRsvpForList = Doc<"rsvps">;
 
@@ -1244,6 +1454,7 @@ export const processQueuedBlastSend = internalAction({
     selectedRsvpIds: v.optional(v.array(v.id("rsvps"))),
   },
   handler: async (ctx, args) => {
+    const reservedPhoneHashes: string[] = [];
     try {
       const blast = await ctx.runQuery(internal.textBlasts.getBlastInternal, {
         blastId: args.blastId,
@@ -1307,6 +1518,24 @@ export const processQueuedBlastSend = internalAction({
           phoneHashes: recipients.map((recipient) => recipient.phoneHash),
         })) as string[],
       );
+      const claimEligiblePhoneHashes = recipients
+        .filter((recipient) => !optedOutPhoneHashes.has(recipient.phoneHash))
+        .map((recipient) => recipient.phoneHash);
+      for (
+        let batchStart = 0;
+        batchStart < claimEligiblePhoneHashes.length;
+        batchStart += SMS_CODE_CLAIM_RESERVATION_BATCH_SIZE
+      ) {
+        const phoneHashBatch = claimEligiblePhoneHashes.slice(
+          batchStart,
+          batchStart + SMS_CODE_CLAIM_RESERVATION_BATCH_SIZE,
+        );
+        await ctx.runMutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
+          blastId: args.blastId,
+          phoneHashes: phoneHashBatch,
+        });
+        reservedPhoneHashes.push(...phoneHashBatch);
+      }
 
       const smsRecipients = await createSmsRecipientsForBlast({
         ctx,
@@ -1366,10 +1595,58 @@ export const processQueuedBlastSend = internalAction({
         }
       }
 
+      const completedSendResults = [...optedOutResults, ...bulkSendResult.results];
+      for (
+        let batchStart = 0;
+        batchStart < completedSendResults.length;
+        batchStart += SMS_CODE_CLAIM_RESERVATION_BATCH_SIZE
+      ) {
+        const resultBatch = completedSendResults.slice(
+          batchStart,
+          batchStart + SMS_CODE_CLAIM_RESERVATION_BATCH_SIZE,
+        );
+        let batchWasFinalized = false;
+        let finalizationError: unknown;
+        for (
+          let attempt = 1;
+          attempt <= QUEUED_BLAST_RESULT_FINALIZATION_MAX_ATTEMPTS;
+          attempt += 1
+        ) {
+          try {
+            await ctx.runMutation(internal.textBlasts.finalizeQueuedBlastResultBatch, {
+              blastId: args.blastId,
+              results: resultBatch,
+            });
+            batchWasFinalized = true;
+            break;
+          } catch (error) {
+            finalizationError = error;
+            console.warn(
+              `[processQueuedBlastSend] Result batch finalization attempt ${attempt} failed for text blast ${args.blastId}`,
+            );
+          }
+        }
+        if (!batchWasFinalized) {
+          console.error(
+            `[processQueuedBlastSend] Result batch finalization exhausted retries for text blast ${args.blastId}: ${getErrorMessage(finalizationError)}`,
+          );
+          try {
+            await ctx.runMutation(internal.textBlasts.releaseQueuedReplyActionClaims, {
+              blastId: args.blastId,
+              phoneHashes: resultBatch.map((result) => result.phoneHash),
+            });
+          } catch (releaseError) {
+            console.error(
+              `[processQueuedBlastSend] Failed to release reply-action reservations after result finalization failure for text blast ${args.blastId}: ${getErrorMessage(releaseError)}`,
+            );
+          }
+        }
+      }
+
       await ctx.runMutation(internal.textBlasts.finalizeQueuedBlastSend, {
         blastId: args.blastId,
         totalRecipients: smsRecipients.length,
-        results: [...optedOutResults, ...bulkSendResult.results],
+        results: [],
       });
 
       console.log(
@@ -1377,6 +1654,26 @@ export const processQueuedBlastSend = internalAction({
       );
     } catch (error) {
       console.error(`[processQueuedBlastSend] Error sending text blast ${args.blastId}:`, error);
+      try {
+        for (
+          let batchStart = 0;
+          batchStart < reservedPhoneHashes.length;
+          batchStart += SMS_CODE_CLAIM_RESERVATION_BATCH_SIZE
+        ) {
+          await ctx.runMutation(internal.textBlasts.releaseQueuedReplyActionClaims, {
+            blastId: args.blastId,
+            phoneHashes: reservedPhoneHashes.slice(
+              batchStart,
+              batchStart + SMS_CODE_CLAIM_RESERVATION_BATCH_SIZE,
+            ),
+          });
+        }
+      } catch (releaseError) {
+        console.error(
+          `[processQueuedBlastSend] Failed to release reply-action reservations for text blast ${args.blastId}:`,
+          releaseError,
+        );
+      }
       try {
         await ctx.runMutation(internal.textBlasts.updateBlastStatus, {
           blastId: args.blastId,
@@ -1992,6 +2289,12 @@ export const deleteBlast = mutation({
     if (blast.status === "sending") {
       throw new Error("Cannot delete a text blast that is currently being sent");
     }
+    if (blast.sentCount > 0) {
+      throw new ConvexError(
+        "A text blast with successful deliveries cannot be deleted because its reply routing is frozen.",
+        "SMS_ACTION_ROUTING_FROZEN",
+      );
+    }
 
     const replyActions = await listReplyActionsForBlast(ctx, args.blastId);
     for (const replyAction of replyActions) {
@@ -2029,6 +2332,107 @@ export const updateReplyActions = mutation({
     }
     if (blast.status === "sending") {
       throw new Error("Cannot update reply actions while the blast is sending");
+    }
+
+    if (blast.sentCount > 0) {
+      const existingReplyActions = await listReplyActionsForBlast(ctx, args.blastId);
+      const requestedReplyActions = normalizeFrozenReplyActionsForComparison(args.replyActions);
+      const routingIsUnchanged =
+        requestedReplyActions.length === existingReplyActions.length &&
+        requestedReplyActions.every((requestedReplyAction) =>
+          existingReplyActions.some(
+            (existingReplyAction) =>
+              existingReplyAction.replyCode === requestedReplyAction.replyCode &&
+              existingReplyAction.replyCodeNormalized ===
+                requestedReplyAction.replyCodeNormalized &&
+              existingReplyAction.targetEventId === requestedReplyAction.targetEventId &&
+              existingReplyAction.targetListKey === requestedReplyAction.targetListKey,
+          ),
+        );
+      if (!routingIsUnchanged) {
+        throw new ConvexError(
+          "Delivered reply actions are frozen. Only enable or disable may be changed.",
+          "SMS_ACTION_ROUTING_FROZEN",
+        );
+      }
+
+      const now = Date.now();
+      const enabledTransitionActionIds = new Set<Id<"textBlastReplyActions">>();
+      for (const existingReplyAction of existingReplyActions) {
+        const requestedReplyAction = requestedReplyActions.find(
+          (candidateAction) =>
+            candidateAction.replyCodeNormalized === existingReplyAction.replyCodeNormalized,
+        );
+        if (!requestedReplyAction) continue;
+        if (!existingReplyAction.isEnabled && requestedReplyAction.isEnabled) {
+          const targetEvent = await ensureEventInSiteScope(ctx, existingReplyAction.targetEventId, {
+            siteKey: args.siteKey,
+            workspaceSlug: args.workspaceSlug,
+          });
+          if (!isSmsExecutableEvent(targetEvent, now)) {
+            throw new ConvexError(
+              "This reply action destination is no longer accepting RSVPs.",
+              "SMS_TARGET_UNAVAILABLE",
+            );
+          }
+          await assertNoExecutableEventCodeCollision(
+            ctx,
+            existingReplyAction.replyCodeNormalized,
+            now,
+          );
+          await ensureListExistsForEvent(ctx, targetEvent._id, existingReplyAction.targetListKey);
+          enabledTransitionActionIds.add(existingReplyAction._id);
+        }
+        await ctx.db.patch(existingReplyAction._id, {
+          isEnabled: requestedReplyAction.isEnabled,
+          updatedAt: now,
+        });
+        if (!requestedReplyAction.isEnabled) {
+          const claims = await ctx.db
+            .query("smsCodeClaims")
+            .withIndex("by_reply_action", (queryBuilder) =>
+              queryBuilder.eq("replyActionId", existingReplyAction._id),
+            )
+            .collect();
+          for (const claim of claims) {
+            await ctx.db.delete(claim._id);
+          }
+        }
+      }
+
+      if (enabledTransitionActionIds.size > 0) {
+        const successfulRecipients = await ctx.db
+          .query("textBlastRecipients")
+          .withIndex("by_text_blast_status", (queryBuilder) =>
+            queryBuilder.eq("textBlastId", args.blastId).eq("status", "sent"),
+          )
+          .collect();
+        if (successfulRecipients.length === 0) {
+          throw new ConvexError(
+            "Cannot re-enable reply actions because successful delivery records are unavailable.",
+            "SMS_ACTION_CLAIMS_UNAVAILABLE",
+          );
+        }
+        await reserveReplyActionClaims(ctx, {
+          textBlastId: args.blastId,
+          phoneHashes: successfulRecipients.map((recipient) => recipient.phoneHash),
+          replyActionIds: enabledTransitionActionIds,
+          now,
+        });
+        await finalizeReplyActionClaims(ctx, {
+          textBlastId: args.blastId,
+          results: successfulRecipients.map((recipient) => ({
+            phoneHash: recipient.phoneHash,
+            success: true,
+          })),
+          replyActionIds: enabledTransitionActionIds,
+          now,
+        });
+      }
+      return {
+        ok: true as const,
+        replyActionCount: args.replyActions.length,
+      };
     }
 
     await replaceReplyActionsForBlast(ctx, {
@@ -2317,104 +2721,120 @@ export const getOptedOutPhoneHashesInternal = internalQuery({
   },
 });
 
+async function finalizeQueuedBlastResultBatchWithContext(
+  ctx: MutationCtx,
+  args: {
+    blastId: Id<"textBlasts">;
+    results: BulkSmsSendResult["results"];
+  },
+): Promise<void> {
+  if (args.results.length > SMS_CODE_CLAIM_RESERVATION_BATCH_SIZE) {
+    throw new Error(
+      `Queued blast result batches cannot exceed ${SMS_CODE_CLAIM_RESERVATION_BATCH_SIZE} recipients`,
+    );
+  }
+  const now = Date.now();
+  await finalizeReplyActionClaims(ctx, {
+    textBlastId: args.blastId,
+    results: args.results,
+    now,
+  });
+
+  for (const result of args.results) {
+    const status = result.success ? "sent" : "failed";
+    const sentAt = result.success ? (result.sentAt ?? now) : undefined;
+    const notification = await ctx.db.get(result.notificationId);
+    if (notification) {
+      await ctx.db.patch(result.notificationId, {
+        status,
+        messageId: result.success ? (result.messageId ?? notification.messageId) : undefined,
+        errorMessage: result.success ? undefined : (result.error ?? "SMS send failed"),
+        sentAt: sentAt ?? notification.sentAt,
+      });
+    }
+
+    const delivery = await ctx.db.get(result.textBlastRecipientId);
+    if (delivery) {
+      await ctx.db.patch(result.textBlastRecipientId, {
+        status,
+        messageId: result.success ? (result.messageId ?? delivery.messageId) : undefined,
+        errorMessage: result.success ? undefined : (result.error ?? "SMS send failed"),
+        sentAt: sentAt ?? delivery.sentAt,
+        updatedAt: now,
+      });
+    }
+
+    const conversationPhoneHash = notification?.recipientPhoneHash ?? delivery?.phoneHash;
+    if (notification && conversationPhoneHash) {
+      await recordSmsConversationMessage(ctx, {
+        eventId: notification.eventId,
+        phoneHash: conversationPhoneHash,
+        phoneObfuscated: notification.recipientPhoneObfuscated,
+        participantClerkUserIds: Array.from(
+          new Set([notification.recipientClerkUserId, ...(delivery?.recipientClerkUserIds ?? [])]),
+        ),
+        direction: "outbound",
+        kind: notificationTypeToConversationKind(notification.type),
+        body: notification.message,
+        smsNotificationId: notification._id,
+        textBlastId: notification.textBlastId,
+        textBlastRecipientId: notification.textBlastRecipientId,
+        providerMessageId: result.messageId ?? notification.messageId ?? delivery?.messageId,
+        providerStatus: status,
+        createdAt: sentAt ?? notification.createdAt,
+      });
+    }
+
+    if (
+      result.success &&
+      result.messageId &&
+      result.messageLength !== undefined &&
+      result.messageType &&
+      result.estimatedCost !== undefined
+    ) {
+      const existingUsageLog = await ctx.db
+        .query("smsUsageLogs")
+        .withIndex("by_messageId", (queryBuilder) =>
+          queryBuilder.eq("messageId", result.messageId as string),
+        )
+        .first();
+
+      if (!existingUsageLog) {
+        await ctx.db.insert("smsUsageLogs", {
+          messageId: result.messageId,
+          phoneNumber: result.phoneHash,
+          messageLength: result.messageLength,
+          messageType: result.messageType,
+          estimatedCost: result.estimatedCost,
+          timestamp: sentAt ?? now,
+        });
+      }
+    }
+  }
+}
+
+export const finalizeQueuedBlastResultBatch = internalMutation({
+  args: {
+    blastId: v.id("textBlasts"),
+    results: v.array(queuedBlastSendResultValidator),
+  },
+  handler: finalizeQueuedBlastResultBatchWithContext,
+});
+
 export const finalizeQueuedBlastSend = internalMutation({
   args: {
     blastId: v.id("textBlasts"),
     totalRecipients: v.number(),
-    results: v.array(
-      v.object({
-        notificationId: v.id("smsNotifications"),
-        textBlastRecipientId: v.id("textBlastRecipients"),
-        clerkUserId: v.string(),
-        phoneHash: v.string(),
-        success: v.boolean(),
-        messageId: v.optional(v.string()),
-        error: v.optional(v.string()),
-        messageLength: v.optional(v.number()),
-        messageType: v.optional(v.string()),
-        estimatedCost: v.optional(v.number()),
-        sentAt: v.optional(v.number()),
-      }),
-    ),
+    results: v.array(queuedBlastSendResultValidator),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
-
-    for (const result of args.results) {
-      const status = result.success ? "sent" : "failed";
-      const sentAt = result.success ? (result.sentAt ?? now) : undefined;
-      const notification = await ctx.db.get(result.notificationId);
-      if (notification) {
-        await ctx.db.patch(result.notificationId, {
-          status,
-          messageId: result.success ? (result.messageId ?? notification.messageId) : undefined,
-          errorMessage: result.success ? undefined : (result.error ?? "SMS send failed"),
-          sentAt: sentAt ?? notification.sentAt,
-        });
-      }
-
-      const delivery = await ctx.db.get(result.textBlastRecipientId);
-      if (delivery) {
-        await ctx.db.patch(result.textBlastRecipientId, {
-          status,
-          messageId: result.success ? (result.messageId ?? delivery.messageId) : undefined,
-          errorMessage: result.success ? undefined : (result.error ?? "SMS send failed"),
-          sentAt: sentAt ?? delivery.sentAt,
-          updatedAt: now,
-        });
-      }
-
-      const conversationPhoneHash = notification?.recipientPhoneHash ?? delivery?.phoneHash;
-      if (notification && conversationPhoneHash) {
-        await recordSmsConversationMessage(ctx, {
-          eventId: notification.eventId,
-          phoneHash: conversationPhoneHash,
-          phoneObfuscated: notification.recipientPhoneObfuscated,
-          participantClerkUserIds: Array.from(
-            new Set([
-              notification.recipientClerkUserId,
-              ...(delivery?.recipientClerkUserIds ?? []),
-            ]),
-          ),
-          direction: "outbound",
-          kind: notificationTypeToConversationKind(notification.type),
-          body: notification.message,
-          smsNotificationId: notification._id,
-          textBlastId: notification.textBlastId,
-          textBlastRecipientId: notification.textBlastRecipientId,
-          providerMessageId: result.messageId ?? notification.messageId ?? delivery?.messageId,
-          providerStatus: status,
-          createdAt: sentAt ?? notification.createdAt,
-        });
-      }
-
-      if (
-        result.success &&
-        result.messageId &&
-        result.messageLength !== undefined &&
-        result.messageType &&
-        result.estimatedCost !== undefined
-      ) {
-        const existingUsageLog = await ctx.db
-          .query("smsUsageLogs")
-          .filter((queryBuilder) =>
-            queryBuilder.eq(queryBuilder.field("messageId"), result.messageId),
-          )
-          .first();
-
-        if (!existingUsageLog) {
-          await ctx.db.insert("smsUsageLogs", {
-            messageId: result.messageId,
-            phoneNumber: result.phoneHash,
-            messageLength: result.messageLength,
-            messageType: result.messageType,
-            estimatedCost: result.estimatedCost,
-            timestamp: sentAt ?? now,
-          });
-        }
-      }
+    if (args.results.length > 0) {
+      await finalizeQueuedBlastResultBatchWithContext(ctx, {
+        blastId: args.blastId,
+        results: args.results,
+      });
     }
-
+    const now = Date.now();
     const deliveries = await ctx.db
       .query("textBlastRecipients")
       .withIndex("by_text_blast", (queryBuilder) => queryBuilder.eq("textBlastId", args.blastId))
@@ -2429,6 +2849,39 @@ export const finalizeQueuedBlastSend = internalMutation({
       failedCount,
       status: sentCount > 0 ? "sent" : "failed",
       updatedAt: now,
+    });
+  },
+});
+
+export const reserveQueuedReplyActionClaims = internalMutation({
+  args: {
+    blastId: v.id("textBlasts"),
+    phoneHashes: v.array(v.string()),
+    replyActionIds: v.optional(v.array(v.id("textBlastReplyActions"))),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    await reserveReplyActionClaims(ctx, {
+      textBlastId: args.blastId,
+      phoneHashes: args.phoneHashes,
+      replyActionIds: args.replyActionIds ? new Set(args.replyActionIds) : undefined,
+      now: Date.now(),
+    });
+  },
+});
+
+export const releaseQueuedReplyActionClaims = internalMutation({
+  args: {
+    blastId: v.id("textBlasts"),
+    phoneHashes: v.array(v.string()),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    await finalizeReplyActionClaims(ctx, {
+      textBlastId: args.blastId,
+      results: args.phoneHashes.map((phoneHash) => ({
+        phoneHash,
+        success: false,
+      })),
+      now: Date.now(),
     });
   },
 });
@@ -2679,11 +3132,11 @@ export const processIncomingSmsReply = internalMutation({
         fromPhoneObfuscated,
         inboundMessage,
         normalizedReplyCode,
-        status: "unknown_sender",
+        status: "unmatched_message",
         messageSid: args.messageSid,
         receivedAt,
       });
-      return { shouldRespond: false, status: "unknown_sender" };
+      return { shouldRespond: false, status: "unmatched_message" };
     }
     const sourceEvent = await ctx.db.get(candidate.blast.eventId);
 

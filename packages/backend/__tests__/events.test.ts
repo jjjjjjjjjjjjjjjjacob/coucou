@@ -48,6 +48,83 @@ async function getListCredentialsForEvent(testBackend: TestBackend, eventId: Id<
 }
 
 describe("Events Functions", () => {
+  it("rejects case-insensitive event code collisions across published events", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await seedWorkspace(testBackend);
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+    const [firstEventId, secondEventId] = await testBackend.run(async (databaseContext) => {
+      const now = Date.now();
+      const createEvent = async (name: string) =>
+        await databaseContext.db.insert("events", {
+          workspaceSlug: WORKSPACE_SLUG,
+          siteKey: SITE_KEY,
+          name,
+          location: "Main Room",
+          eventDate: now + 86_400_000,
+          status: "active",
+          lifecycle: "published",
+          createdAt: now,
+          updatedAt: now,
+        });
+      return [await createEvent("First code"), await createEvent("Second code")];
+    });
+
+    await hostBackend.mutation(api.events.addListCredential, {
+      eventId: firstEventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      listKey: "ga",
+      password: "Blue-Door",
+    });
+    await expect(
+      hostBackend.mutation(api.events.addListCredential, {
+        eventId: secondEventId,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+        listKey: "vip",
+        password: "  blue-door  ",
+      }),
+    ).rejects.toThrow("unavailable");
+  });
+
+  it("recomputes the normalized executable code when a password changes", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await seedWorkspace(testBackend);
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+    const credentialId = await testBackend.run(async (databaseContext) => {
+      const now = Date.now();
+      const eventId = await databaseContext.db.insert("events", {
+        workspaceSlug: WORKSPACE_SLUG,
+        siteKey: SITE_KEY,
+        name: "Code edit",
+        location: "Main Room",
+        eventDate: now + 86_400_000,
+        status: "active",
+        lifecycle: "published",
+        createdAt: now,
+        updatedAt: now,
+      });
+      return await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "ga",
+        password: "old-code",
+        passwordNormalized: "old-code",
+        createdAt: now,
+      });
+    });
+
+    await hostBackend.mutation(api.events.updateListCredential, {
+      id: credentialId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      patch: { password: "  New-Code  " },
+    });
+    const credential = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.get(credentialId);
+    });
+    expect(credential?.passwordNormalized).toBe("new-code");
+  });
+
   it("publishes a draft after updateAndPublish writes required fields and lists", async () => {
     const testBackend = convexTest(schema, convexModules);
     await seedWorkspace(testBackend);

@@ -177,6 +177,7 @@ export default function TextBlastDialog({
   const updateReplyActionsMutation = useMutation(api.textBlasts.updateReplyActions);
   const sendBlastAction = useAction(api.textBlasts.sendBlast);
   const sendBlastDirectAction = useAction(api.textBlasts.sendBlastDirect);
+  const replyActionRoutingIsFrozen = Boolean(existingBlast && existingBlast.sentCount > 0);
   const replyActionTargetOptions = useQuery(
     api.textBlasts.getReplyActionTargetOptions,
     workspaceScope ? { ...workspaceScope.queryArgs } : "skip",
@@ -867,11 +868,24 @@ export default function TextBlastDialog({
             Let guests reply with a code to submit a pending RSVP for another event.
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={addReplyAction}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addReplyAction}
+          disabled={replyActionRoutingIsFrozen}
+        >
           <Plus className="h-4 w-4 mr-1" />
           Add
         </Button>
       </div>
+
+      {replyActionRoutingIsFrozen && (
+        <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          This blast has successful deliveries. Reply codes, destination events, and destination
+          lists are frozen; only enable or disable can be changed.
+        </div>
+      )}
 
       {formData.replyActions.length === 0 ? (
         <div className="rounded-md border border-dashed border-border/80 px-3 py-4 text-sm text-muted-foreground">
@@ -910,6 +924,7 @@ export default function TextBlastDialog({
                       variant="ghost"
                       size="sm"
                       onClick={() => removeReplyAction(replyAction.clientId)}
+                      disabled={replyActionRoutingIsFrozen}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -924,6 +939,7 @@ export default function TextBlastDialog({
                     <Select
                       id={`reply-action-event-${replyAction.clientId}`}
                       value={replyAction.targetEventId}
+                      disabled={replyActionRoutingIsFrozen}
                       onValueChange={(value) =>
                         handleReplyActionTargetEventChange(
                           replyAction.clientId,
@@ -950,7 +966,7 @@ export default function TextBlastDialog({
                     <Select
                       id={`reply-action-list-${replyAction.clientId}`}
                       value={replyAction.targetListKey}
-                      disabled={!replyAction.targetEventId}
+                      disabled={!replyAction.targetEventId || replyActionRoutingIsFrozen}
                       onValueChange={(value) =>
                         handleReplyActionTargetListChange(replyAction.clientId, value)
                       }
@@ -970,6 +986,7 @@ export default function TextBlastDialog({
                       id={`reply-action-code-${replyAction.clientId}`}
                       value={replyAction.replyCode}
                       placeholder={selectedListOption?.password ? "List password" : "Reply code"}
+                      disabled={replyActionRoutingIsFrozen}
                       onChange={(event) =>
                         setReplyAction(replyAction.clientId, {
                           replyCode: event.target.value,

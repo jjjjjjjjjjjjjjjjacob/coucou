@@ -42,7 +42,22 @@ function setupTestBackend(): TestBackend {
 }
 
 async function finishQueuedFunctions(testBackend: TestBackend) {
-  await testBackend.finishAllScheduledFunctions(vi.runAllTimers);
+  for (let drainIteration = 0; drainIteration < 100; drainIteration++) {
+    await settleAsyncWork();
+    await testBackend.finishInProgressScheduledFunctions();
+    await settleAsyncWork();
+    if (vi.getTimerCount() === 0) {
+      return;
+    }
+    vi.advanceTimersToNextTimer();
+  }
+  throw new Error("finishQueuedFunctions: too many iterations");
+}
+
+async function settleAsyncWork() {
+  for (let yieldIteration = 0; yieldIteration < 20; yieldIteration++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
 
 function createWorkspaceIdentity(subject: string): Partial<UserIdentity> {
@@ -376,7 +391,7 @@ describe("text blast recipient selection", () => {
     await seedListCredential(testBackend, {
       eventId: targetEventId,
       listKey: "ga",
-      password: "return",
+      password: "invite",
     });
     const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
 
@@ -415,6 +430,22 @@ describe("text blast recipient selection", () => {
         workspaceSlug: WORKSPACE_SLUG,
         replyActions: [
           {
+            replyCode: "INVITE",
+            targetEventId,
+            targetListKey: "ga",
+            isEnabled: true,
+          },
+        ],
+      }),
+    ).rejects.toThrow("unavailable");
+
+    await expect(
+      hostBackend.mutation(api.textBlasts.updateDraft, {
+        blastId: draftId,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+        replyActions: [
+          {
             replyCode: "STOP",
             targetEventId,
             targetListKey: "ga",
@@ -423,6 +454,197 @@ describe("text blast recipient selection", () => {
         ],
       }),
     ).rejects.toThrow("reserved");
+  });
+
+  it("allows action-code reuse only for disjoint recipient phone sets", async () => {
+    const testBackend = setupTestBackend();
+    const targetEventId = await seedEvent(testBackend, "Claim Target");
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+    });
+    const firstBlastId = await seedTextBlast(testBackend, targetEventId, "First claim blast");
+    const secondBlastId = await seedTextBlast(testBackend, targetEventId, "Second claim blast");
+    await seedReplyAction(testBackend, {
+      textBlastId: firstBlastId,
+      replyCode: "Return",
+      targetEventId,
+      targetListKey: "ga",
+    });
+    await seedReplyAction(testBackend, {
+      textBlastId: secondBlastId,
+      replyCode: "RETURN",
+      targetEventId,
+      targetListKey: "ga",
+    });
+    const firstPhone = await normalizeAndHashPhoneNumber("+15551234001");
+    const secondPhone = await normalizeAndHashPhoneNumber("+15551234002");
+
+    await testBackend.mutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
+      blastId: firstBlastId,
+      phoneHashes: [firstPhone.phoneHash],
+    });
+    await expect(
+      testBackend.mutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
+        blastId: secondBlastId,
+        phoneHashes: [firstPhone.phoneHash],
+      }),
+    ).rejects.toThrow("unavailable");
+
+    await testBackend.mutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
+      blastId: secondBlastId,
+      phoneHashes: [secondPhone.phoneHash],
+    });
+    const claims = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("smsCodeClaims")
+        .withIndex("by_code", (queryBuilder) => queryBuilder.eq("normalizedCode", "return"))
+        .collect();
+    });
+    expect(claims).toHaveLength(2);
+  });
+
+  it("releases failed action reservations and reclaims expired reservations", async () => {
+    const testBackend = setupTestBackend();
+    const targetEventId = await seedEvent(testBackend, "Reservation Target");
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+    });
+    const firstBlastId = await seedTextBlast(testBackend, targetEventId, "First reservation");
+    const secondBlastId = await seedTextBlast(testBackend, targetEventId, "Second reservation");
+    await seedReplyAction(testBackend, {
+      textBlastId: firstBlastId,
+      replyCode: "REUSE",
+      targetEventId,
+      targetListKey: "ga",
+    });
+    const secondReplyActionId = await seedReplyAction(testBackend, {
+      textBlastId: secondBlastId,
+      replyCode: "reuse",
+      targetEventId,
+      targetListKey: "ga",
+    });
+    const failedPhone = await normalizeAndHashPhoneNumber("+15551234004");
+    const expiredPhone = await normalizeAndHashPhoneNumber("+15551234005");
+
+    await testBackend.mutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
+      blastId: firstBlastId,
+      phoneHashes: [failedPhone.phoneHash, expiredPhone.phoneHash],
+    });
+    await testBackend.mutation(internal.textBlasts.releaseQueuedReplyActionClaims, {
+      blastId: firstBlastId,
+      phoneHashes: [failedPhone.phoneHash],
+    });
+    await testBackend.run(async (databaseContext) => {
+      const expiredClaims = await databaseContext.db
+        .query("smsCodeClaims")
+        .withIndex("by_code_phone", (queryBuilder) =>
+          queryBuilder.eq("normalizedCode", "reuse").eq("phoneHash", expiredPhone.phoneHash),
+        )
+        .collect();
+      for (const expiredClaim of expiredClaims) {
+        await databaseContext.db.patch(expiredClaim._id, {
+          reservationExpiresAt: Date.now() - 1,
+        });
+      }
+    });
+
+    await testBackend.mutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
+      blastId: secondBlastId,
+      phoneHashes: [failedPhone.phoneHash, expiredPhone.phoneHash],
+    });
+    const claims = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("smsCodeClaims")
+        .withIndex("by_reply_action", (queryBuilder) =>
+          queryBuilder.eq("replyActionId", secondReplyActionId),
+        )
+        .collect();
+    });
+    expect(claims.map((claim) => claim.phoneHash).sort()).toEqual(
+      [failedPhone.phoneHash, expiredPhone.phoneHash].sort(),
+    );
+  });
+
+  it("freezes delivered action routing while allowing enable toggles", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const sourceEventId = await seedEvent(testBackend, "Freeze Source");
+    const targetEventId = await seedEvent(testBackend, "Freeze Target");
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+    });
+    await seedUser(testBackend, "freeze_guest", "+15551234003", "Freeze");
+    const sourceRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "freeze_guest",
+      listKey: "vip",
+    });
+    const blastId = await seedTextBlast(testBackend, sourceEventId, "Frozen blast");
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(blastId, { sentCount: 1 });
+    });
+    await seedReplyAction(testBackend, {
+      textBlastId: blastId,
+      replyCode: "FREEZE",
+      targetEventId,
+      targetListKey: "ga",
+    });
+    await seedDelivery(testBackend, {
+      textBlastId: blastId,
+      phone: "+15551234003",
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId: sourceRsvpId,
+      clerkUserId: "freeze_guest",
+      listKey: "vip",
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+
+    await expect(
+      hostBackend.mutation(api.textBlasts.updateReplyActions, {
+        blastId,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+        replyActions: [
+          {
+            replyCode: "CHANGED",
+            targetEventId,
+            targetListKey: "ga",
+            isEnabled: true,
+          },
+        ],
+      }),
+    ).rejects.toThrow("frozen");
+
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(targetEventId, {
+        status: "inactive",
+        updatedAt: Date.now(),
+      });
+    });
+    await hostBackend.mutation(api.textBlasts.updateReplyActions, {
+      blastId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      replyActions: [
+        {
+          replyCode: "FREEZE",
+          targetEventId,
+          targetListKey: "ga",
+          isEnabled: false,
+        },
+      ],
+    });
+    const storedAction = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("textBlastReplyActions")
+        .withIndex("by_text_blast", (queryBuilder) => queryBuilder.eq("textBlastId", blastId))
+        .unique();
+    });
+    expect(storedAction?.isEnabled).toBe(false);
   });
 
   it("brands Club Chlorine reply-action errors and includes the opt-out reminder", async () => {
@@ -1208,6 +1430,7 @@ describe("text blast recipient selection", () => {
       } else {
         process.env.DEV_TWILIO_ENABLED = previousDevTwilioEnabled;
       }
+      vi.clearAllTimers();
       vi.useRealTimers();
     }
 
@@ -1280,6 +1503,7 @@ describe("text blast recipient selection", () => {
       } else {
         process.env.DEV_TWILIO_ENABLED = previousDevTwilioEnabled;
       }
+      vi.clearAllTimers();
       vi.useRealTimers();
     }
 
@@ -1343,23 +1567,27 @@ describe("text blast recipient selection", () => {
       },
     );
 
+    const successfulResult = {
+      notificationId,
+      textBlastRecipientId,
+      clerkUserId: "user_finalizer",
+      phoneHash,
+      success: true,
+      messageId: "SM_success",
+      messageLength: 5,
+      messageType: "Promotional",
+      estimatedCost: 0.00645,
+      sentAt: 123_456,
+    };
     await testBackend.mutation(internal.textBlasts.finalizeQueuedBlastSend, {
       blastId: textBlastId,
       totalRecipients: 1,
-      results: [
-        {
-          notificationId,
-          textBlastRecipientId,
-          clerkUserId: "user_finalizer",
-          phoneHash,
-          success: true,
-          messageId: "SM_success",
-          messageLength: 5,
-          messageType: "Promotional",
-          estimatedCost: 0.00645,
-          sentAt: 123_456,
-        },
-      ],
+      results: [successfulResult],
+    });
+    await testBackend.mutation(internal.textBlasts.finalizeQueuedBlastSend, {
+      blastId: textBlastId,
+      totalRecipients: 1,
+      results: [successfulResult],
     });
 
     const finalizedState = await testBackend.run(async (databaseContext) => {
@@ -1367,7 +1595,10 @@ describe("text blast recipient selection", () => {
       const notification = await databaseContext.db.get(notificationId);
       const delivery = await databaseContext.db.get(textBlastRecipientId);
       const usageLogs = await databaseContext.db.query("smsUsageLogs").collect();
-      return { blast, notification, delivery, usageLogs };
+      const conversationMessages = await databaseContext.db
+        .query("smsConversationMessages")
+        .collect();
+      return { blast, notification, delivery, usageLogs, conversationMessages };
     });
 
     expect(finalizedState.blast?.status).toBe("sent");
@@ -1378,6 +1609,7 @@ describe("text blast recipient selection", () => {
     expect(finalizedState.delivery?.status).toBe("sent");
     expect(finalizedState.delivery?.messageId).toBe("SM_success");
     expect(finalizedState.usageLogs).toHaveLength(1);
+    expect(finalizedState.conversationMessages).toHaveLength(1);
     expect(finalizedState.usageLogs[0]).toMatchObject({
       messageId: "SM_success",
       phoneNumber: phoneHash,

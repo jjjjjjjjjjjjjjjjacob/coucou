@@ -35,6 +35,17 @@ const workspaceEventDefaultsValidator = v.object({
   referralSharingEnabled: v.optional(v.boolean()),
 });
 
+const smsRsvpMissingFieldValidator = v.object({
+  kind: v.union(
+    v.literal("full_name"),
+    v.literal("social"),
+    v.literal("invited_by"),
+    v.literal("custom"),
+  ),
+  key: v.string(),
+  label: v.string(),
+});
+
 export default defineSchema({
   workspaces: defineTable({
     slug: v.string(),
@@ -593,6 +604,7 @@ export default defineSchema({
   })
     .index("by_text_blast", ["textBlastId"])
     .index("by_text_blast_code", ["textBlastId", "replyCodeNormalized"])
+    .index("by_code", ["replyCodeNormalized"])
     .index("by_target_event", ["targetEventId"]),
 
   textBlastReplyAttempts: defineTable({
@@ -617,6 +629,97 @@ export default defineSchema({
     .index("by_text_blast", ["textBlastId"])
     .index("by_phone", ["phoneHash"])
     .index("by_reply_action", ["replyActionId"])
+    .index("by_status", ["status"]),
+
+  smsCodeClaims: defineTable({
+    normalizedCode: v.string(),
+    kind: v.union(v.literal("event_list"), v.literal("blast_action")),
+    eventId: v.id("events"),
+    listCredentialId: v.optional(v.id("listCredentials")),
+    replyActionId: v.optional(v.id("textBlastReplyActions")),
+    textBlastId: v.optional(v.id("textBlasts")),
+    phoneHash: v.optional(v.string()),
+    status: v.union(v.literal("reserved"), v.literal("active")),
+    reservationExpiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_code", ["normalizedCode"])
+    .index("by_code_phone", ["normalizedCode", "phoneHash"])
+    .index("by_event", ["eventId"])
+    .index("by_list_credential", ["listCredentialId"])
+    .index("by_reply_action", ["replyActionId"])
+    .index("by_text_blast", ["textBlastId"]),
+
+  smsRsvpSessions: defineTable({
+    phoneHash: v.string(),
+    phoneObfuscated: v.string(),
+    eventId: v.id("events"),
+    listKey: v.string(),
+    sourceKind: v.union(v.literal("event_code"), v.literal("blast_action")),
+    normalizedCode: v.string(),
+    listCredentialId: v.optional(v.id("listCredentials")),
+    replyActionId: v.optional(v.id("textBlastReplyActions")),
+    textBlastId: v.optional(v.id("textBlasts")),
+    textBlastRecipientId: v.optional(v.id("textBlastRecipients")),
+    clerkUserId: v.string(),
+    registeredUserId: v.optional(v.id("users")),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    socialProfiles: v.array(
+      v.object({
+        platformKey: v.string(),
+        handle: v.string(),
+      }),
+    ),
+    invitedByName: v.optional(v.string()),
+    customFieldValues: v.record(v.string(), v.string()),
+    missingFields: v.array(smsRsvpMissingFieldValidator),
+    status: v.union(
+      v.literal("active"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+      v.literal("expired"),
+    ),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_phone_status", ["phoneHash", "status"])
+    .index("by_event", ["eventId"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  smsInboundReceipts: defineTable({
+    providerMessageId: v.string(),
+    phoneHash: v.string(),
+    toPhoneNumber: v.string(),
+    body: v.string(),
+    status: v.union(v.literal("processing"), v.literal("processed"), v.literal("failed")),
+    outcome: v.optional(
+      v.union(
+        v.literal("unmatched_message"),
+        v.literal("not_eligible"),
+        v.literal("session_pending"),
+        v.literal("submitted"),
+        v.literal("existing"),
+        v.literal("conflict"),
+        v.literal("target_unavailable"),
+        v.literal("invalid_values"),
+        v.literal("opt_out"),
+        v.literal("opt_in"),
+        v.literal("help"),
+        v.literal("error"),
+      ),
+    ),
+    responseMessage: v.optional(v.string()),
+    targetEventId: v.optional(v.id("events")),
+    sessionId: v.optional(v.id("smsRsvpSessions")),
+    receivedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_provider_message", ["providerMessageId"])
+    .index("by_phone", ["phoneHash"])
     .index("by_status", ["status"]),
 
   smsConversationThreads: defineTable({
@@ -703,6 +806,7 @@ export default defineSchema({
     timestamp: v.number(),
     status: v.optional(v.string()), // 'delivered' | 'failed' | 'unknown'
   })
+    .index("by_messageId", ["messageId"])
     .index("by_timestamp", ["timestamp"])
     .index("by_message_type", ["messageType"])
     .index("by_cost", ["estimatedCost"]),

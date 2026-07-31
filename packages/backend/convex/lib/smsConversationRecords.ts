@@ -111,6 +111,24 @@ export async function recordSmsConversationMessage(
     now: createdAt,
   });
 
+  if (args.smsNotificationId) {
+    const existingNotificationMessage = await ctx.db
+      .query("smsConversationMessages")
+      .withIndex("by_sms_notification", (queryBuilder) =>
+        queryBuilder.eq("smsNotificationId", args.smsNotificationId),
+      )
+      .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("threadId"), thread._id))
+      .first();
+    if (existingNotificationMessage) {
+      await ctx.db.patch(existingNotificationMessage._id, {
+        providerMessageId: args.providerMessageId ?? existingNotificationMessage.providerMessageId,
+        providerStatus: args.providerStatus ?? existingNotificationMessage.providerStatus,
+        updatedAt: Date.now(),
+      });
+      return existingNotificationMessage._id;
+    }
+  }
+
   if (args.providerMessageId) {
     const existingProviderMessage = await ctx.db
       .query("smsConversationMessages")
