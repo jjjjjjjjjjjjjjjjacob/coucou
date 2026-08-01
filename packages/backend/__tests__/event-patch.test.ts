@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { applyEventUnsetFields } from "../convex/lib/eventPatch";
 
 describe("event patch helpers", () => {

@@ -1,9 +1,9 @@
-import { describe, expect, it } from "bun:test";
 import {
   buildApprovalMessageBackfillPatch,
   getDefaultApprovalMessage,
   resolveApprovalMessageText,
 } from "@coucou/sdk/shared/approval-messages";
+import { describe, expect, it } from "vitest";
 
 describe("approval message helpers", () => {
   it("prefers the list approval message over deprecated event-level copy", () => {

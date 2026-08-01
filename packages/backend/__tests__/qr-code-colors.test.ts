@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
 import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
+import { describe, expect, it } from "vitest";
 
 describe("resolveQrCodeColors in Convex QR generation", () => {
   it("normalizes provided colors before QR images are generated", () => {

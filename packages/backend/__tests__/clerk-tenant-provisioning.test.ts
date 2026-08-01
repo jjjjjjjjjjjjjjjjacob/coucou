@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
 import type { ClerkClient, Organization, OrganizationInvitation } from "@clerk/backend";
+import { describe, expect, it } from "vitest";
 import {
   getOrCreateCoucouTenantOrganization,
   getOrCreateTenantAdminInvitation,

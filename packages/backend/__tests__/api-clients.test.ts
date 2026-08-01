@@ -1,6 +1,6 @@
-import { describe, expect, it } from "bun:test";
 import type { UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { hashApiClientKey } from "../convex/lib/apiKeys";
 import schema from "../convex/schema";

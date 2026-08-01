@@ -32,7 +32,22 @@ function readWorkspacePackages() {
 describe("Bun runtime alignment", () => {
   it("uses the packageManager Bun version in CI", () => {
     expect(repositoryPackage.packageManager).toMatch(/^bun@\d+\.\d+\.\d+$/);
-    expect(continuousIntegrationWorkflow).toContain(`bun-version: "${configuredBunVersion}"`);
+    expect(continuousIntegrationWorkflow).toContain(`BUN_VERSION: "${configuredBunVersion}"`);
+    expect(continuousIntegrationWorkflow).toContain("bun-version: ${{ env.BUN_VERSION }}");
+  });
+
+  it("pins the Node runtime used by Vitest", () => {
+    expect(continuousIntegrationWorkflow).toContain('NODE_VERSION: "22"');
+    expect(continuousIntegrationWorkflow).toContain("node-version: ${{ env.NODE_VERSION }}");
+  });
+
+  it("runs CI checks in parallel behind the stable aggregate gate", () => {
+    expect(continuousIntegrationWorkflow).toContain("fail-fast: false");
+    expect(continuousIntegrationWorkflow).toContain("- name: Biome\n            script: check");
+    expect(continuousIntegrationWorkflow).toContain("- name: Tests\n            script: test");
+    expect(continuousIntegrationWorkflow).toContain("- name: Build\n            script: build");
+    expect(continuousIntegrationWorkflow).toContain("needs: checks");
+    expect(continuousIntegrationWorkflow).toContain("CHECKS_RESULT: ${{ needs.checks.result }}");
   });
 
   it("does not let a workspace dependency shadow the configured Bun runtime", () => {

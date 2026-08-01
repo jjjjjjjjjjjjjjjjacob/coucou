@@ -1,4 +1,3 @@
-import { describe, expect, it } from "bun:test";
 import {
   dedupeSocialPlatformConfigs,
   detectSocialPlatformKeyFromCustomField,
@@ -7,6 +6,7 @@ import {
   normalizeSocialPlatformKey,
   parseInvitedBySocialReference,
 } from "@coucou/sdk/shared/primary-fields";
+import { describe, expect, it } from "vitest";
 import {
   collectRequiredPrimaryFieldErrors,
   sanitizePrimaryFieldConfig,

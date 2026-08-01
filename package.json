@@ -19,7 +19,7 @@
     "test": "turbo run test && bun test scripts/__tests__",
     "test:partner-api-docs": "bun test scripts/__tests__/partner-api-docs.test.mjs",
     "test:dojo": "cd apps/dojo && bun test",
-    "test:backend": "cd packages/backend && bun test",
+    "test:backend": "cd packages/backend && bun run test",
     "sync:convex-production-env": "bun scripts/sync-convex-production-env.mjs",
     "sync:github-production-secrets": "bun scripts/sync-github-production-secrets.mjs"
   },

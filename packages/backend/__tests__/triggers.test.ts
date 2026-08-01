@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { cascadeListKeyUpdate, nullifyCredentialReferences } from "../convex/lib/cascadeHelpers";
 import { resolveStoredUserDisplayName } from "../convex/lib/rsvpUserName";
 

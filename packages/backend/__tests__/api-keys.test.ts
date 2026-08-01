@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import {
   API_CLIENT_KEY_DISPLAY_PREFIX_LENGTH,
   API_CLIENT_KEY_PREFIX,

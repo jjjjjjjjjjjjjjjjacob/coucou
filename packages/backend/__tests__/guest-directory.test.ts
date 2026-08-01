@@ -1,6 +1,6 @@
-import { describe, expect, it } from "bun:test";
 import type { UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";

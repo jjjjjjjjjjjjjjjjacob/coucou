@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
 import type { UserIdentity } from "convex/server";
+import { describe, expect, it } from "vitest";
 import type { Id } from "../convex/_generated/dataModel";
 import type { QueryCtx } from "../convex/_generated/server";
 import {

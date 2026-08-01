@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 
 describe("RSVP Functions", () => {
   it("should validate RSVP approval and attendance status types", () => {

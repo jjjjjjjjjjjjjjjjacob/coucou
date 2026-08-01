@@ -10,7 +10,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  BUN_VERSION: "1.3.11"
   CI: "1"
+  NODE_VERSION: "22"
   NEXT_TELEMETRY_DISABLED: "1"
   TURBO_TELEMETRY_DISABLED: "1"
   NEXT_PUBLIC_CONVEX_URL: "https://placeholder.convex.cloud"
@@ -22,20 +24,43 @@ env:
   NEXT_PUBLIC_DANZA_ORGANICA_CLERK_ORGANIZATION_ID: "org_danza_organica"
 
 jobs:
-  static-checks:
-    name: Static Checks
+  checks:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Biome
+            script: check
+          - name: Tests
+            script: test
+          - name: Build
+            script: build
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.11"
+          bun-version: ${{ env.BUN_VERSION }}
 
       - run: bun install --frozen-lockfile
-      - name: Biome check
-        run: bun run check
-      - run: bun run test
-      - run: bun run build
+      - name: Run ${{ matrix.name }}
+        run: bun run ${{ matrix.script }}
+
+  static-checks:
+    name: Static Checks
+    if: ${{ always() }}
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI check
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+        run: test "$CHECKS_RESULT" = "success"

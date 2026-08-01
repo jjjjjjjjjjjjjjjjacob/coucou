@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import {
   CLUB_CHLORINE_OPT_IN_CONFIRMATION,
   formatSmsMessageForSite,

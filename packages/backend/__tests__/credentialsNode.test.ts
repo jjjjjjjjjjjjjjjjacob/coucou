@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { normalizeCredentialPassword } from "../convex/lib/credentialPasswords";
 
 describe("Credentials Node - plaintext event passwords", () => {
