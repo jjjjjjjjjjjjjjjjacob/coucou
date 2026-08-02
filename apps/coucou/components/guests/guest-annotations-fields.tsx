@@ -56,7 +56,7 @@ export function GuestAnnotationsFields({
       <div className="space-y-2">
         <Label htmlFor={`${idPrefix}-tags-input`}>Tags</Label>
         {tags.length > 0 ? (
-          <ChipGroup aria-label="Guest tags">
+          <ChipGroup aria-label="Contact tags">
             {tags.map((tag) => (
               <Chip
                 key={tag}
@@ -124,7 +124,7 @@ export function GuestAnnotationsFields({
           ))}
         </Select>
         <p className="text-xs text-[var(--text-secondary)]">
-          Suggested when adding this guest to future events that have a matching list.
+          Suggested when adding this contact to future events that have a matching list.
         </p>
       </div>
 
@@ -132,7 +132,7 @@ export function GuestAnnotationsFields({
         <Label htmlFor={`${idPrefix}-notes`}>Notes</Label>
         <Textarea
           id={`${idPrefix}-notes`}
-          placeholder="Private notes about this guest…"
+          placeholder="Private notes about this contact…"
           value={notes}
           onChange={(changeEvent) => onNotesChange(changeEvent.target.value)}
           rows={5}

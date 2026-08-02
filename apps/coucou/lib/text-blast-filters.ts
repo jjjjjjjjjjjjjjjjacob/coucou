@@ -216,7 +216,7 @@ export const RECIPIENT_STATUS_LABELS: Record<RecipientApprovalStatus, string> = 
 };
 
 // --- Guest directory filter state ---------------------------------------
-// Person-level filter vocabulary shared between the Guests directory page
+// Person-level filter vocabulary shared between the Contacts directory page
 // and the text blast "Who" step. Composes the recipient filter/history
 // states above with directory-only facets (tags, default list, consent,
 // latest-event status).

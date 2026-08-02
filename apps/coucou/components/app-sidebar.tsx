@@ -71,7 +71,7 @@ export const navigationGroups: DashboardNavigationGroup[] = [
     ],
   },
   {
-    label: "events & guests",
+    label: "events & contacts",
     items: [
       {
         title: "Events",
@@ -81,7 +81,7 @@ export const navigationGroups: DashboardNavigationGroup[] = [
         access: "write",
       },
       {
-        title: "Guests",
+        title: "Contacts",
         url: "/host/guests",
         icon: Users,
         isActive: false,

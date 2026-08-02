@@ -842,6 +842,7 @@ type ApprovedRsvpForList = Doc<"rsvps">;
 
 type RecipientPreview = {
   rsvpId: Id<"rsvps">;
+  sourceRsvpIds: Id<"rsvps">[];
   name: string;
   listKey: string;
   eventId: Id<"events">;
@@ -1980,6 +1981,7 @@ export const getRecipientsForSelection = query({
       const name = [firstName, lastName].filter(Boolean).join(" ") || rsvp.userName || "Unknown";
       return {
         rsvpId: rsvp._id,
+        sourceRsvpIds: recipient.sourceRsvpIds,
         name,
         listKey: rsvp.listKey,
         eventId: rsvp.eventId,

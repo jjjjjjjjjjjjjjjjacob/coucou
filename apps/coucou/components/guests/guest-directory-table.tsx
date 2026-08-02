@@ -284,7 +284,7 @@ export function GuestDirectoryTable({
       {rows.length === 0
         ? (emptyState ?? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <p className="mb-2 text-lg text-[var(--text-secondary)]">No guests found</p>
+              <p className="mb-2 text-lg text-[var(--text-secondary)]">No contacts found</p>
               <p className="text-sm text-[var(--text-secondary)]">
                 Try adjusting the filters or search query.
               </p>

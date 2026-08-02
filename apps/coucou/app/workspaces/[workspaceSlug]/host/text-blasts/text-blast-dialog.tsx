@@ -80,7 +80,7 @@ interface TextBlastDialogProps {
   mode?: "full" | "replyActions";
   /**
    * Seeds the "Who" step when creating a new blast (ignored in edit mode),
-   * e.g. from the Guests directory bulk action.
+   * e.g. from the Contacts directory bulk action.
    */
   initialTargeting?: TextBlastInitialTargeting;
 }
@@ -1327,8 +1327,8 @@ export default function TextBlastDialog({
                   )}
                   {formData.selectedRsvpIds.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Exact audience: {formData.selectedRsvpIds.length} selected recipient
-                      {formData.selectedRsvpIds.length !== 1 ? "s" : ""}
+                      Exact audience: {recipientCount} selected recipient
+                      {recipientCount !== 1 ? "s" : ""}
                     </p>
                   )}
                   {formData.replyActions.length > 0 && (

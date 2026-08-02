@@ -28,7 +28,7 @@ describe("AppSidebar tenant role navigation", () => {
 
     expect(screen.getByText("Overview")).toBeTruthy();
     expect(screen.getByText("Events")).toBeTruthy();
-    expect(screen.getByText("Guests")).toBeTruthy();
+    expect(screen.getByText("Contacts")).toBeTruthy();
     expect(screen.getByText("Text Blasts")).toBeTruthy();
     expect(screen.getByText("Texts")).toBeTruthy();
     expect(screen.getByText("Analytics")).toBeTruthy();
@@ -47,7 +47,7 @@ describe("AppSidebar tenant role navigation", () => {
     expect(screen.getByText("Settings")).toBeTruthy();
     expect(screen.queryByText("Overview")).toBeNull();
     expect(screen.queryByText("Events")).toBeNull();
-    expect(screen.queryByText("Guests")).toBeNull();
+    expect(screen.queryByText("Contacts")).toBeNull();
     expect(screen.queryByText("Text Blasts")).toBeNull();
     expect(screen.queryByText("Texts")).toBeNull();
     expect(screen.queryByText("Users")).toBeNull();

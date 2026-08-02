@@ -224,6 +224,28 @@ describe("guestDirectory.listGuestDirectoryPaginated", () => {
     expect(person.rsvpedToLatestEvent).toBe(true);
   });
 
+  it("limits contact aggregation and event history to the selected events", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const firstEventId = await seedEvent(testBackend, "First Event", -7 * 86_400_000);
+    const secondEventId = await seedEvent(testBackend, "Second Event", -86_400_000);
+    await seedUser(testBackend, "user_shared", "Shared", "+15551239991");
+    await seedRsvp(testBackend, { eventId: firstEventId, clerkUserId: "user_shared" });
+    await seedRsvp(testBackend, { eventId: secondEventId, clerkUserId: "user_shared" });
+    await seedRsvp(testBackend, { eventId: secondEventId, clerkUserId: "user_second_only" });
+
+    const hostBackend = testBackend.withIdentity(createHostIdentity("host_1"));
+    const result = await listDirectory(hostBackend, { eventIds: [firstEventId] });
+
+    expect(result.pagination.totalCount).toBe(1);
+    expect(result.people[0]?.name).toBe("Shared");
+    expect(result.people[0]?.eventCount).toBe(1);
+    expect(result.people[0]?.events.map((eventEntry) => eventEntry.eventId)).toEqual([
+      firstEventId,
+    ]);
+    expect(result.latestEvent?.eventId).toBe(firstEventId);
+  });
+
   it("keys people without phones by clerkUserId and keeps them separate", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);

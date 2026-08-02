@@ -96,7 +96,7 @@ function useWorkspaceNavigationCommands(): NavigationCommandItem[] {
     return [
       { id: "overview", title: "Overview", url: resolve("/host"), icon: Home },
       { id: "events", title: "Events", url: resolve("/host/events"), icon: Calendar },
-      { id: "guests", title: "Guests", url: resolve("/host/guests"), icon: Users },
+      { id: "contacts", title: "Contacts", url: resolve("/host/guests"), icon: Users },
       {
         id: "text-blasts",
         title: "Text Blasts",
@@ -439,7 +439,7 @@ function CommandPalette() {
               {filteredNavigation.length > 0 || filteredEvents.length > 0 ? (
                 <CommandSeparator className="my-2 h-px bg-[var(--border-subtle)]" />
               ) : null}
-              <CommandGroup heading="Guests" className="text-[var(--text-tertiary)]">
+              <CommandGroup heading="Contacts" className="text-[var(--text-tertiary)]">
                 {guestCommands.map((item) => (
                   <CommandItem
                     key={item.id}
@@ -447,7 +447,7 @@ function CommandPalette() {
                     onSelect={() => runCommand(item)}
                     className="flex cursor-pointer items-center rounded-md px-2 py-2 text-[var(--text-primary)] aria-selected:bg-[var(--surface-3)] aria-selected:text-[var(--text-primary)]"
                   >
-                    <CommandResultContent item={item} badgeLabel="Guest" />
+                    <CommandResultContent item={item} badgeLabel="Contact" />
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -456,7 +456,7 @@ function CommandPalette() {
 
           {isGuestSearchLoading ? (
             <CommandLoading className="px-2 py-3 text-xs text-[var(--text-secondary)]">
-              Searching guests…
+              Searching contacts…
             </CommandLoading>
           ) : null}
 

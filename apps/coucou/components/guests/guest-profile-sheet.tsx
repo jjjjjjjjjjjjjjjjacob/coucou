@@ -62,7 +62,7 @@ export function GuestProfileSheet({
         <SheetHeader>
           <SheetTitle>{person.name}</SheetTitle>
           <SheetDescription>
-            Organizer-only tags, notes, and default list for this guest.
+            Organizer-only tags, notes, and default list for this contact.
           </SheetDescription>
         </SheetHeader>
 

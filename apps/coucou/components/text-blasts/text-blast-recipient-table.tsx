@@ -12,6 +12,7 @@ import { RECIPIENT_STATUS_LABELS, type RecipientApprovalStatus } from "@/lib/tex
 
 export interface TextBlastRecipientRow {
   rsvpId: Id<"rsvps">;
+  sourceRsvpIds: Id<"rsvps">[];
   name: string;
   listKey: string;
   eventId: Id<"events">;
@@ -179,7 +180,10 @@ export function TextBlastRecipientTable({
     return filteredRecipients.slice(startIndex, startIndex + pageSize);
   }, [boundedPage, filteredRecipients, pageSize]);
   const pageSelectedCount = pageRecipients.filter((recipient) =>
-    selectedRsvpIdsSet.has(recipient.rsvpId),
+    recipient.sourceRsvpIds.some((rsvpId) => selectedRsvpIdsSet.has(rsvpId)),
+  ).length;
+  const selectedRecipientCount = (recipients ?? []).filter((recipient) =>
+    recipient.sourceRsvpIds.some((rsvpId) => selectedRsvpIdsSet.has(rsvpId)),
   ).length;
   const areAllPageRecipientsSelected =
     pageRecipients.length > 0 && pageSelectedCount === pageRecipients.length;
@@ -187,7 +191,9 @@ export function TextBlastRecipientTable({
     pageSelectedCount > 0 && pageSelectedCount < pageRecipients.length;
   const areAllMatchingRecipientsSelected =
     filteredRecipients.length > 0 &&
-    filteredRecipients.every((recipient) => selectedRsvpIdsSet.has(recipient.rsvpId));
+    filteredRecipients.every((recipient) =>
+      recipient.sourceRsvpIds.some((rsvpId) => selectedRsvpIdsSet.has(rsvpId)),
+    );
   const firstVisibleRecipientNumber =
     filteredRecipients.length === 0 ? 0 : (boundedPage - 1) * pageSize + 1;
   const lastVisibleRecipientNumber = Math.min(boundedPage * pageSize, filteredRecipients.length);
@@ -214,8 +220,9 @@ export function TextBlastRecipientTable({
     onSelectedRsvpIdsChange(Array.from(nextSelectedRsvpIds));
   };
 
-  const toggleRecipient = (recipientId: Id<"rsvps">): void => {
-    updateSelectedRecipients([recipientId], !selectedRsvpIdsSet.has(recipientId));
+  const toggleRecipient = (recipient: TextBlastRecipientRow): void => {
+    const isSelected = recipient.sourceRsvpIds.some((rsvpId) => selectedRsvpIdsSet.has(rsvpId));
+    updateSelectedRecipients(recipient.sourceRsvpIds, !isSelected);
   };
 
   return (
@@ -300,7 +307,7 @@ export function TextBlastRecipientTable({
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-3 py-2.5">
         <p className="text-sm text-[var(--text-secondary)]" aria-live="polite">
-          <span className="font-medium text-[var(--text-primary)]">{selectedRsvpIds.length}</span>{" "}
+          <span className="font-medium text-[var(--text-primary)]">{selectedRecipientCount}</span>{" "}
           selected · {filteredRecipients.length} matching · {sendableRecipientCount} sendable
         </p>
         <div className="flex flex-wrap items-center gap-2">
@@ -320,7 +327,7 @@ export function TextBlastRecipientTable({
             size="sm"
             onClick={() =>
               updateSelectedRecipients(
-                filteredRecipients.map((recipient) => recipient.rsvpId),
+                filteredRecipients.flatMap((recipient) => recipient.sourceRsvpIds),
                 true,
               )
             }
@@ -347,7 +354,7 @@ export function TextBlastRecipientTable({
                   }
                   onCheckedChange={(checkedState) =>
                     updateSelectedRecipients(
-                      pageRecipients.map((recipient) => recipient.rsvpId),
+                      pageRecipients.flatMap((recipient) => recipient.sourceRsvpIds),
                       checkedState === true,
                     )
                   }
@@ -379,7 +386,9 @@ export function TextBlastRecipientTable({
               </tr>
             ) : (
               pageRecipients.map((recipient) => {
-                const isSelected = selectedRsvpIdsSet.has(recipient.rsvpId);
+                const isSelected = recipient.sourceRsvpIds.some((rsvpId) =>
+                  selectedRsvpIdsSet.has(rsvpId),
+                );
                 return (
                   <tr
                     key={recipient.rsvpId}
@@ -389,14 +398,14 @@ export function TextBlastRecipientTable({
                       <Checkbox
                         aria-label={`Select ${recipient.name}`}
                         checked={isSelected}
-                        onCheckedChange={() => toggleRecipient(recipient.rsvpId)}
+                        onCheckedChange={() => toggleRecipient(recipient)}
                       />
                     </td>
                     <td className="max-w-48 px-3 py-3">
                       <button
                         type="button"
                         className="block max-w-full cursor-pointer truncate text-left font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => toggleRecipient(recipient.rsvpId)}
+                        onClick={() => toggleRecipient(recipient)}
                       >
                         {recipient.name}
                       </button>

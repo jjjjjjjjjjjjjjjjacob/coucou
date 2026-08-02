@@ -44,6 +44,7 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_COMMAND_PALETTE_RESULT_LIMIT = 8;
 const MAX_COMMAND_PALETTE_RESULT_LIMIT = 20;
+const DIRECTORY_USER_LOOKUP_BATCH_SIZE = 50;
 
 type PersonEventEntry = {
   eventId: Id<"events">;
@@ -128,9 +129,20 @@ async function getScopedWorkspaceEvents(
   ctx: Pick<QueryCtx, "db">,
   scope: { siteKey?: string; workspaceSlug?: string },
 ): Promise<Doc<"events">[]> {
-  const scopedEvents = (await ctx.db.query("events").collect()).filter((event) =>
-    eventMatchesSiteScope(event, scope),
-  );
+  const candidateEvents = scope.workspaceSlug
+    ? await ctx.db
+        .query("events")
+        .withIndex("by_workspaceSlug", (queryBuilder) =>
+          queryBuilder.eq("workspaceSlug", scope.workspaceSlug),
+        )
+        .collect()
+    : scope.siteKey
+      ? await ctx.db
+          .query("events")
+          .withIndex("by_siteKey", (queryBuilder) => queryBuilder.eq("siteKey", scope.siteKey))
+          .collect()
+      : await ctx.db.query("events").collect();
+  const scopedEvents = candidateEvents.filter((event) => eventMatchesSiteScope(event, scope));
   if (scopedEvents.length > MAX_WORKSPACE_EVENTS_FOR_DIRECTORY) {
     throw new Error(
       `Guest directory supports up to ${MAX_WORKSPACE_EVENTS_FOR_DIRECTORY} events per workspace`,
@@ -189,66 +201,83 @@ async function aggregatePersonsFromRsvps(
   const personsByKey = new Map<string, AggregatedPerson>();
   const userByClerkUserId = new Map<string, Doc<"users"> | null>();
   const phoneHashByClerkUserId = new Map<string, string | null>();
+  const rsvpCollections = await Promise.all(
+    scopedEvents.map(async (event) => {
+      return await ctx.db
+        .query("rsvps")
+        .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
+        .collect();
+    }),
+  );
+  const scopedRsvps = rsvpCollections.flat();
+  if (scopedRsvps.length > MAX_WORKSPACE_RSVPS_FOR_DIRECTORY) {
+    throw new Error(
+      `Guest directory supports up to ${MAX_WORKSPACE_RSVPS_FOR_DIRECTORY} RSVPs per workspace`,
+    );
+  }
 
-  const lookupUser = async (clerkUserId: string): Promise<Doc<"users"> | null> => {
-    if (userByClerkUserId.has(clerkUserId)) {
-      return userByClerkUserId.get(clerkUserId) ?? null;
-    }
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
-      .unique();
-    userByClerkUserId.set(clerkUserId, user);
-    return user;
-  };
+  const uniqueClerkUserIds = Array.from(new Set(scopedRsvps.map((rsvp) => rsvp.clerkUserId)));
+  for (
+    let batchStartIndex = 0;
+    batchStartIndex < uniqueClerkUserIds.length;
+    batchStartIndex += DIRECTORY_USER_LOOKUP_BATCH_SIZE
+  ) {
+    const clerkUserIdBatch = uniqueClerkUserIds.slice(
+      batchStartIndex,
+      batchStartIndex + DIRECTORY_USER_LOOKUP_BATCH_SIZE,
+    );
+    const identityRecords = await Promise.all(
+      clerkUserIdBatch.map(async (clerkUserId) => {
+        const user = await ctx.db
+          .query("users")
+          .withIndex("by_clerkUserId", (queryBuilder) =>
+            queryBuilder.eq("clerkUserId", clerkUserId),
+          )
+          .unique();
 
-  const lookupPhoneHashForClerkUserId = async (clerkUserId: string): Promise<string | null> => {
-    if (phoneHashByClerkUserId.has(clerkUserId)) {
-      return phoneHashByClerkUserId.get(clerkUserId) ?? null;
-    }
-    const phoneHash = await resolveGuestPhoneHashForClerkUserId(ctx, clerkUserId);
-    phoneHashByClerkUserId.set(clerkUserId, phoneHash);
-    return phoneHash;
-  };
-
-  let totalRsvpCount = 0;
-  for (const event of scopedEvents) {
-    const rsvpsForEvent = await ctx.db
-      .query("rsvps")
-      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
-      .collect();
-
-    totalRsvpCount += rsvpsForEvent.length;
-    if (totalRsvpCount > MAX_WORKSPACE_RSVPS_FOR_DIRECTORY) {
-      throw new Error(
-        `Guest directory supports up to ${MAX_WORKSPACE_RSVPS_FOR_DIRECTORY} RSVPs per workspace`,
-      );
-    }
-
-    for (const rsvp of rsvpsForEvent) {
-      const phoneHash =
-        rsvp.guestPhoneHash ?? (await lookupPhoneHashForClerkUserId(rsvp.clerkUserId));
-      const personKey = phoneHash ? `phone:${phoneHash}` : `user:${rsvp.clerkUserId}`;
-
-      let person = personsByKey.get(personKey);
-      if (!person) {
-        person = {
-          personKey,
-          phoneHash,
-          clerkUserIds: new Set(),
-          rsvps: [],
-          users: [],
-        };
-        personsByKey.set(personKey, person);
-      }
-
-      person.rsvps.push(rsvp);
-      if (!person.clerkUserIds.has(rsvp.clerkUserId)) {
-        person.clerkUserIds.add(rsvp.clerkUserId);
-        const user = await lookupUser(rsvp.clerkUserId);
-        if (user) {
-          person.users.push(user);
+        let phoneHash: string | null = null;
+        if (isGuestClerkUserId(clerkUserId)) {
+          phoneHash = clerkUserId.slice(GUEST_CLERK_USER_ID_PREFIX.length) || null;
+        } else if (user?.phone) {
+          try {
+            phoneHash = (await normalizeAndHashPhoneNumber(user.phone)).phoneHash;
+          } catch {
+            phoneHash = null;
+          }
         }
+
+        return { clerkUserId, phoneHash, user };
+      }),
+    );
+
+    for (const identityRecord of identityRecords) {
+      userByClerkUserId.set(identityRecord.clerkUserId, identityRecord.user);
+      phoneHashByClerkUserId.set(identityRecord.clerkUserId, identityRecord.phoneHash);
+    }
+  }
+
+  for (const rsvp of scopedRsvps) {
+    const phoneHash = rsvp.guestPhoneHash ?? phoneHashByClerkUserId.get(rsvp.clerkUserId) ?? null;
+    const personKey = phoneHash ? `phone:${phoneHash}` : `user:${rsvp.clerkUserId}`;
+
+    let person = personsByKey.get(personKey);
+    if (!person) {
+      person = {
+        personKey,
+        phoneHash,
+        clerkUserIds: new Set(),
+        rsvps: [],
+        users: [],
+      };
+      personsByKey.set(personKey, person);
+    }
+
+    person.rsvps.push(rsvp);
+    if (!person.clerkUserIds.has(rsvp.clerkUserId)) {
+      person.clerkUserIds.add(rsvp.clerkUserId);
+      const user = userByClerkUserId.get(rsvp.clerkUserId) ?? null;
+      if (user) {
+        person.users.push(user);
       }
     }
   }
@@ -694,33 +723,35 @@ export const listGuestDirectoryPaginated = query({
     const siteScope = { siteKey: args.siteKey, workspaceSlug: args.workspaceSlug };
 
     const scopedEvents = await getScopedWorkspaceEvents(ctx, siteScope);
-    const eventsById = new Map(scopedEvents.map((event) => [event._id, event]));
+    const requestedEventIds =
+      args.eventIds && args.eventIds.length > 0 ? new Set(args.eventIds) : null;
+    const directoryEvents = requestedEventIds
+      ? scopedEvents.filter((event) => requestedEventIds.has(event._id))
+      : scopedEvents;
+    const eventsById = new Map(directoryEvents.map((event) => [event._id, event]));
     const scopedEventIds = new Set(scopedEvents.map((event) => event._id));
-    const latestEvent = resolveLatestEvent(scopedEvents);
+    const latestEvent = resolveLatestEvent(directoryEvents);
 
-    const persons = await aggregatePersonsFromRsvps(ctx, scopedEvents);
-    const { profilesByPhoneHash, profilesByClerkUserId } = await loadWorkspaceGuestProfiles(
-      ctx,
-      resolvedScope.workspaceId,
-    );
-    const organizerPreferences = await loadOrganizerSmsPreferences(ctx, resolvedScope);
-
+    const [persons, guestProfiles, organizerPreferences, memberships] = await Promise.all([
+      aggregatePersonsFromRsvps(ctx, directoryEvents),
+      loadWorkspaceGuestProfiles(ctx, resolvedScope.workspaceId),
+      loadOrganizerSmsPreferences(ctx, resolvedScope),
+      resolvedScope.clerkOrganizationId
+        ? ctx.db
+            .query("orgMemberships")
+            .withIndex("by_org", (queryBuilder) =>
+              queryBuilder.eq("organizationId", resolvedScope.clerkOrganizationId),
+            )
+            .collect()
+        : Promise.resolve([]),
+    ]);
+    const { profilesByPhoneHash, profilesByClerkUserId } = guestProfiles;
     const membershipRoleByClerkUserId = new Map<string, string>();
-    if (resolvedScope.clerkOrganizationId) {
-      const memberships = await ctx.db
-        .query("orgMemberships")
-        .withIndex("by_org", (queryBuilder) =>
-          queryBuilder.eq("organizationId", resolvedScope.clerkOrganizationId),
-        )
-        .collect();
-      for (const membership of memberships) {
-        membershipRoleByClerkUserId.set(membership.clerkUserId, membership.role);
-      }
+    for (const membership of memberships) {
+      membershipRoleByClerkUserId.set(membership.clerkUserId, membership.role);
     }
 
     const filterConfig = args.recipientFilter ? parseRecipientFilter(args.recipientFilter) : null;
-    const requestedEventIds =
-      args.eventIds && args.eventIds.length > 0 ? new Set(args.eventIds) : null;
     const requestedTags =
       args.tags && args.tags.length > 0
         ? new Set(args.tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))
@@ -758,10 +789,6 @@ export const listGuestDirectoryPaginated = query({
 
     const filteredPersons: FilteredPerson[] = [];
     for (const person of persons) {
-      if (requestedEventIds && !person.rsvps.some((rsvp) => requestedEventIds.has(rsvp.eventId))) {
-        continue;
-      }
-
       const profile = findGuestProfileForPerson(person, profilesByPhoneHash, profilesByClerkUserId);
       const personTags = profile?.tags ?? [];
       if (requestedTags && !personTags.some((tag) => requestedTags.has(tag))) {

@@ -678,7 +678,7 @@ export interface RSVPDashboardRow {
   customFieldValues: Record<string, string>;
 }
 
-// Guest directory (workspace-wide, person-level)
+// Contacts directory (event-scoped, person-level)
 export interface GuestDirectoryPersonEventEntry {
   eventId: Id<"events">;
   eventName: string;

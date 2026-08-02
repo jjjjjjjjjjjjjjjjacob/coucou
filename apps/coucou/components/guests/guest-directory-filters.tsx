@@ -169,7 +169,7 @@ export function GuestDirectoryFilters({
           <div className="relative w-full max-w-xs">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--text-secondary)]" />
             <Input
-              placeholder="Search guests..."
+              placeholder="Search contacts..."
               value={value.searchText}
               disabled={disabled}
               onChange={(changeEvent) =>
@@ -474,7 +474,7 @@ export function GuestDirectoryFilters({
       </div>
 
       {isFullVariant && activeFilterCount > 0 ? (
-        <ChipGroup aria-label="Active guest filters">
+        <ChipGroup aria-label="Active contact filters">
           {value.searchText.trim() ? (
             <Chip
               label={`Search: “${value.searchText.trim()}”`}

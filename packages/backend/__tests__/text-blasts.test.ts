@@ -1069,6 +1069,28 @@ describe("text blast recipient selection", () => {
     expect(allRecipientCount).toBe(3);
   });
 
+  it("returns every source RSVP ID for a deduped recipient preview", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const { firstEventId, secondEventId, firstRsvpId } =
+      await seedMultiEventRecipients(testBackend);
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+
+    const recipientPreviews = await hostBackend.query(api.textBlasts.getRecipientsForSelection, {
+      eventId: firstEventId,
+      targetEventIds: [firstEventId, secondEventId],
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      targetLists: ["vip"],
+    });
+
+    const sharedPhoneRecipient = recipientPreviews.find((recipient) =>
+      recipient.sourceRsvpIds.includes(firstRsvpId),
+    );
+    expect(recipientPreviews).toHaveLength(2);
+    expect(sharedPhoneRecipient?.sourceRsvpIds).toHaveLength(3);
+  });
+
   it("targets approved RSVPs with a sent approval SMS for the same event", async () => {
     const testBackend = setupTestBackend();
     const eventId = await seedEvent(testBackend, "Approval SMS Event");
