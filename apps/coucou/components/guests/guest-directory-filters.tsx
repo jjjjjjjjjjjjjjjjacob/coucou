@@ -181,7 +181,7 @@ export function GuestDirectoryFilters({
         ) : null}
 
         <MultiSelectPopover
-          label="Events"
+          label={isFullVariant && value.eventIds.length === 0 ? "All events" : "Events"}
           selectedCount={value.eventIds.length}
           disabled={disabled || eventOptions.length === 0}
         >

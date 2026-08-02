@@ -228,6 +228,14 @@ async function aggregatePersonsFromRsvps(
     );
     const identityRecords = await Promise.all(
       clerkUserIdBatch.map(async (clerkUserId) => {
+        if (isGuestClerkUserId(clerkUserId)) {
+          return {
+            clerkUserId,
+            phoneHash: clerkUserId.slice(GUEST_CLERK_USER_ID_PREFIX.length) || null,
+            user: null,
+          };
+        }
+
         const user = await ctx.db
           .query("users")
           .withIndex("by_clerkUserId", (queryBuilder) =>
@@ -236,9 +244,7 @@ async function aggregatePersonsFromRsvps(
           .unique();
 
         let phoneHash: string | null = null;
-        if (isGuestClerkUserId(clerkUserId)) {
-          phoneHash = clerkUserId.slice(GUEST_CLERK_USER_ID_PREFIX.length) || null;
-        } else if (user?.phone) {
+        if (user?.phone) {
           try {
             phoneHash = (await normalizeAndHashPhoneNumber(user.phone)).phoneHash;
           } catch {
@@ -810,14 +816,14 @@ export const listGuestDirectoryPaginated = query({
       if (args.rsvpedToLatestEvent === "yes" && !rsvpedToLatestEvent) continue;
       if (args.rsvpedToLatestEvent === "no" && rsvpedToLatestEvent) continue;
 
-      let hasOptedOut = false;
-      let smsConsent = false;
-      const needsConsentForFilter = args.smsConsentFilter && args.smsConsentFilter !== "any";
       const baseSmsConsent = resolveBaseSmsConsent(person, organizerPreferences);
-      if (needsConsentForFilter || baseSmsConsent) {
+      let hasOptedOut = false;
+      let smsConsent = baseSmsConsent;
+      const needsConsentForFilter = args.smsConsentFilter && args.smsConsentFilter !== "any";
+      if (needsConsentForFilter) {
         hasOptedOut = await checkOptOut(person.phoneHash);
+        smsConsent = baseSmsConsent && !hasOptedOut;
       }
-      smsConsent = baseSmsConsent && !hasOptedOut;
 
       if (args.smsConsentFilter === "consented" && !smsConsent) continue;
       if (args.smsConsentFilter === "not_consented" && smsConsent) continue;
@@ -926,45 +932,49 @@ export const listGuestDirectoryPaginated = query({
     );
 
     const blastInWorkspaceCache = new Map<Id<"textBlasts">, boolean>();
-    const people: GuestDirectoryPerson[] = [];
-    for (const filteredPerson of pagedPersons) {
-      const receivedTextCount = await countWorkspaceSentTexts(
-        ctx,
-        filteredPerson.person.phoneHash,
-        scopedEventIds,
-        blastInWorkspaceCache,
-      );
-      const hasOptedOut =
-        filteredPerson.hasOptedOut || (await checkOptOut(filteredPerson.person.phoneHash));
-      const eventsAttendedCount = await countEventsAttendedForPerson(ctx, filteredPerson.person);
+    const people = await Promise.all(
+      pagedPersons.map(async (filteredPerson): Promise<GuestDirectoryPerson> => {
+        const [receivedTextCount, currentOptOutStatus, eventsAttendedCount] = await Promise.all([
+          countWorkspaceSentTexts(
+            ctx,
+            filteredPerson.person.phoneHash,
+            scopedEventIds,
+            blastInWorkspaceCache,
+          ),
+          filteredPerson.hasOptedOut
+            ? Promise.resolve(true)
+            : checkOptOut(filteredPerson.person.phoneHash),
+          countEventsAttendedForPerson(ctx, filteredPerson.person),
+        ]);
 
-      people.push({
-        personKey: filteredPerson.person.personKey,
-        clerkUserIds: Array.from(filteredPerson.person.clerkUserIds),
-        primaryClerkUserId: filteredPerson.identity.primaryClerkUserId,
-        detailReference: filteredPerson.identity.detailReference,
-        name: filteredPerson.identity.name,
-        firstName: filteredPerson.identity.firstName,
-        lastName: filteredPerson.identity.lastName,
-        imageUrl: filteredPerson.identity.imageUrl,
-        phoneObfuscated: filteredPerson.identity.phoneObfuscated,
-        hasPhone: filteredPerson.person.phoneHash !== null,
-        events: filteredPerson.events,
-        eventCount: countDistinctEventIds(filteredPerson.events),
-        eventsAttendedCount,
-        firstRsvpAt: filteredPerson.firstRsvpAt,
-        latestRsvpAt: filteredPerson.latestRsvpAt,
-        rsvpedToLatestEvent: filteredPerson.rsvpedToLatestEvent,
-        smsConsent: filteredPerson.smsConsent && !hasOptedOut,
-        hasOptedOut,
-        receivedTextCount,
-        tags: filteredPerson.tags,
-        notes: filteredPerson.notes,
-        defaultListKey: filteredPerson.defaultListKey,
-        role: filteredPerson.role,
-        hasOrganizationMembership: filteredPerson.role !== null,
-      });
-    }
+        return {
+          personKey: filteredPerson.person.personKey,
+          clerkUserIds: Array.from(filteredPerson.person.clerkUserIds),
+          primaryClerkUserId: filteredPerson.identity.primaryClerkUserId,
+          detailReference: filteredPerson.identity.detailReference,
+          name: filteredPerson.identity.name,
+          firstName: filteredPerson.identity.firstName,
+          lastName: filteredPerson.identity.lastName,
+          imageUrl: filteredPerson.identity.imageUrl,
+          phoneObfuscated: filteredPerson.identity.phoneObfuscated,
+          hasPhone: filteredPerson.person.phoneHash !== null,
+          events: filteredPerson.events,
+          eventCount: countDistinctEventIds(filteredPerson.events),
+          eventsAttendedCount,
+          firstRsvpAt: filteredPerson.firstRsvpAt,
+          latestRsvpAt: filteredPerson.latestRsvpAt,
+          rsvpedToLatestEvent: filteredPerson.rsvpedToLatestEvent,
+          smsConsent: filteredPerson.smsConsent && !currentOptOutStatus,
+          hasOptedOut: currentOptOutStatus,
+          receivedTextCount,
+          tags: filteredPerson.tags,
+          notes: filteredPerson.notes,
+          defaultListKey: filteredPerson.defaultListKey,
+          role: filteredPerson.role,
+          hasOrganizationMembership: filteredPerson.role !== null,
+        };
+      }),
+    );
 
     return {
       people,

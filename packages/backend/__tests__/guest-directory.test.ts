@@ -340,6 +340,13 @@ describe("guestDirectory.listGuestDirectoryPaginated", () => {
 
     const hostBackend = testBackend.withIdentity(createHostIdentity("host_1"));
 
+    const defaultPeople = await listDirectory(hostBackend);
+    const defaultOptedOutPerson = defaultPeople.people.find(
+      (person) => person.personKey === `phone:${optedOutPhoneHash}`,
+    );
+    expect(defaultOptedOutPerson?.hasOptedOut).toBe(true);
+    expect(defaultOptedOutPerson?.smsConsent).toBe(false);
+
     const consentedPeople = await listDirectory(hostBackend, { smsConsentFilter: "consented" });
     expect(consentedPeople.people.map((person) => person.personKey)).toEqual([
       `phone:${consentedPhoneHash}`,

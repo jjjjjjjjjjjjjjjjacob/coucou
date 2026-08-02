@@ -168,7 +168,6 @@ export default function GuestDirectoryPage() {
     };
   }, [filterState, debouncedEventIds, debouncedSearchText]);
 
-  const hasSelectedEvents = filterState.eventIds.length > 0;
   const eventSelectionIsSettled =
     filterState.eventIds.length === debouncedEventIds.length &&
     filterState.eventIds.every((eventId, eventIndex) => eventId === debouncedEventIds[eventIndex]);
@@ -181,12 +180,11 @@ export default function GuestDirectoryPage() {
       pageSize,
       ...(workspaceScope?.queryArgs ?? {}),
     }),
-    enabled: !!isSignedIn && !!workspaceScope && debouncedEventIds.length > 0 && isFilterConfigured,
+    enabled: !!isSignedIn && !!workspaceScope && isFilterConfigured,
   });
-  const directoryData =
-    hasSelectedEvents && eventSelectionIsSettled
-      ? (directoryQuery.data as GuestDirectoryResponse | undefined)
-      : undefined;
+  const directoryData = eventSelectionIsSettled
+    ? (directoryQuery.data as GuestDirectoryResponse | undefined)
+    : undefined;
   const people = React.useMemo(() => directoryData?.people ?? [], [directoryData]);
 
   const facetsQuery = useQuery({
@@ -763,8 +761,7 @@ export default function GuestDirectoryPage() {
   });
 
   const isDirectoryLoading =
-    hasSelectedEvents &&
-    (!eventSelectionIsSettled || (directoryQuery.isLoading && isFilterConfigured));
+    !eventSelectionIsSettled || (directoryQuery.isLoading && isFilterConfigured);
   const pagination = directoryData?.pagination;
   const isDetailPanelOpen = detailPanelUserReference !== null;
 
@@ -774,7 +771,7 @@ export default function GuestDirectoryPage() {
         <div className="min-w-0 flex-1 space-y-5 lg:pr-0">
           <DashboardTitleBar
             title="Contacts"
-            subtitle="Select one or more events to view, filter, annotate, and text contacts"
+            subtitle="Every contact across all events — filter, annotate, and text them"
             breadcrumb={[{ label: "Workspace" }]}
           />
 
@@ -970,17 +967,7 @@ export default function GuestDirectoryPage() {
 
           <Card className="border-[var(--border-subtle)] bg-[var(--surface-2)] shadow-[var(--shadow-card)]">
             <CardContent className="pt-6">
-              {!hasSelectedEvents ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <Users className="mb-3 h-8 w-8 text-[var(--text-tertiary)]" />
-                  <p className="font-medium text-[var(--text-primary)]">
-                    Select at least one event
-                  </p>
-                  <p className="mt-1 max-w-md text-sm text-[var(--text-secondary)]">
-                    Contacts appear here after you choose one or more events from the Events filter.
-                  </p>
-                </div>
-              ) : isDirectoryLoading ? (
+              {isDirectoryLoading ? (
                 <TableSkeleton rows={10} columns={8} />
               ) : (
                 <GuestDirectoryTable
@@ -999,61 +986,59 @@ export default function GuestDirectoryPage() {
             </CardContent>
           </Card>
 
-          {hasSelectedEvents ? (
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-                <Users className="h-3.5 w-3.5" />
-                {pagination ? (
-                  <>
-                    {pagination.totalCount} contacts · Page {pagination.pageIndex + 1} of{" "}
-                    {pagination.totalPages}
-                  </>
-                ) : (
-                  <>Page 1 of 1</>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Select
-                  value={String(pageSize)}
-                  onValueChange={(nextValue) =>
-                    navigateWithParams((params) => {
-                      params.set("pageSize", nextValue);
-                      params.set("page", "0");
-                    })
-                  }
-                  className="w-24"
-                >
-                  {[10, 20, 50, 100].map((pageSizeOption) => (
-                    <SelectOption key={pageSizeOption} value={String(pageSizeOption)}>
-                      {pageSizeOption} / page
-                    </SelectOption>
-                  ))}
-                </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    navigateWithParams((params) => params.set("page", String(pageIndex - 1)))
-                  }
-                  disabled={!pagination?.hasPreviousPage}
-                  className="border-[var(--border-subtle)]"
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    navigateWithParams((params) => params.set("page", String(pageIndex + 1)))
-                  }
-                  disabled={!pagination?.hasNextPage}
-                  className="border-[var(--border-subtle)]"
-                >
-                  Next
-                </Button>
-              </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+              <Users className="h-3.5 w-3.5" />
+              {pagination ? (
+                <>
+                  {pagination.totalCount} contacts · Page {pagination.pageIndex + 1} of{" "}
+                  {pagination.totalPages}
+                </>
+              ) : (
+                <>Page 1 of 1</>
+              )}
             </div>
-          ) : null}
+            <div className="flex items-center gap-2">
+              <Select
+                value={String(pageSize)}
+                onValueChange={(nextValue) =>
+                  navigateWithParams((params) => {
+                    params.set("pageSize", nextValue);
+                    params.set("page", "0");
+                  })
+                }
+                className="w-24"
+              >
+                {[10, 20, 50, 100].map((pageSizeOption) => (
+                  <SelectOption key={pageSizeOption} value={String(pageSizeOption)}>
+                    {pageSizeOption} / page
+                  </SelectOption>
+                ))}
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  navigateWithParams((params) => params.set("page", String(pageIndex - 1)))
+                }
+                disabled={!pagination?.hasPreviousPage}
+                className="border-[var(--border-subtle)]"
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  navigateWithParams((params) => params.set("page", String(pageIndex + 1)))
+                }
+                disabled={!pagination?.hasNextPage}
+                className="border-[var(--border-subtle)]"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </div>
 
         {isDetailPanelOpen ? (
