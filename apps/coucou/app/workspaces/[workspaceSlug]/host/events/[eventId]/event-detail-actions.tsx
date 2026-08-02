@@ -2,7 +2,7 @@
 
 import { api } from "@convex/_generated/api";
 import { useMutation } from "convex/react";
-import { CheckCircle, ChevronDown, Copy, EyeOff, MoreHorizontal, Star, Trash2 } from "lucide-react";
+import { CheckCircle, ChevronDown, Copy, EyeOff, Star, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -97,7 +97,6 @@ export function EventDetailActions({ event }: EventDetailActionsProps) {
             className="border-[var(--border-subtle)] bg-transparent"
             disabled={!workspaceScope}
           >
-            <MoreHorizontal className="h-4 w-4" />
             Actions
             <ChevronDown className="h-4 w-4" />
           </Button>

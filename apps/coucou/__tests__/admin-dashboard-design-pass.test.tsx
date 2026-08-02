@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Id } from "@convex/_generated/dataModel";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { EventDetailActions } from "../app/workspaces/[workspaceSlug]/host/events/[eventId]/event-detail-actions";
 import EventCardClient from "../app/workspaces/[workspaceSlug]/host/events/event-card-client";
 import { EventDetailLayout } from "../components/event-detail-layout";
 import { Select, SelectOption } from "../components/ui/select";
@@ -221,7 +222,7 @@ describe("admin dashboard design pass", () => {
     expect(await screen.findByRole("menuitem", { name: /Send QR codes \(1\)/ })).toBeTruthy();
   });
 
-  it("places event actions beside the details visibility control", () => {
+  it("stacks the icon-only details control below event actions", () => {
     render(
       <EventDetailLayout
         titleBarProps={{
@@ -237,14 +238,27 @@ describe("admin dashboard design pass", () => {
     const hideDetailsButton = screen.getByRole("button", { name: "Hide event details" });
     const actionsButton = screen.getByRole("button", { name: "Actions" });
 
-    expect(hideDetailsButton.parentElement?.parentElement).toBe(
-      actionsButton.parentElement?.parentElement,
-    );
+    expect(hideDetailsButton.parentElement).toBe(actionsButton.parentElement);
+    expect(hideDetailsButton.parentElement?.className).toContain("flex-col");
+    expect(hideDetailsButton.textContent).toBe("");
+    expect(screen.queryByText("Hide details")).toBeNull();
 
     fireEvent.click(hideDetailsButton);
 
     expect(screen.getByRole("button", { name: "Show event details" })).toBeTruthy();
     expect(screen.queryByText("Event properties")).toBeNull();
+  });
+
+  it("uses only the disclosure caret in the event actions button", () => {
+    render(
+      <HapticProvider>
+        <EventDetailActions event={createEvent()} />
+      </HapticProvider>,
+    );
+
+    const actionsButton = screen.getByRole("button", { name: "Actions" });
+
+    expect(actionsButton.querySelectorAll("svg")).toHaveLength(1);
   });
 
   it("includes every in-event management action in the card context menu", async () => {

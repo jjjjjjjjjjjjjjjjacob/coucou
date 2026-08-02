@@ -58,7 +58,7 @@ function EventDetailPageContent({ event, eventsPath }: EventDetailPageContentPro
       <EditEventDialog
         event={event}
         inline
-        initialTab="details"
+        initialTab="guests"
         variant="linear"
         showTrigger={false}
         additionalTabTriggers={
