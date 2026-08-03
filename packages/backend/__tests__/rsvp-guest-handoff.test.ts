@@ -1,6 +1,6 @@
 import type { UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -36,6 +36,10 @@ const aggregateComponentModules = {
 
 const activeTestBackends: TestBackend[] = [];
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 function setupTestBackend(): TestBackend {
   const testBackend = convexTest(schema, convexModules);
   testBackend.registerComponent(
@@ -47,12 +51,36 @@ function setupTestBackend(): TestBackend {
   return testBackend;
 }
 
-// Mutations here fire-and-forget SMS notification actions via the scheduler;
-// drain them so their writes can't land after this file's backend is gone.
-afterEach(async () => {
-  for (const testBackend of activeTestBackends.splice(0)) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+async function settleScheduledFunctionWork() {
+  for (let yieldIteration = 0; yieldIteration < 20; yieldIteration++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+async function drainScheduledFunctions(testBackend: TestBackend) {
+  for (let drainIteration = 0; drainIteration < 100; drainIteration++) {
+    await settleScheduledFunctionWork();
     await testBackend.finishInProgressScheduledFunctions();
+    await settleScheduledFunctionWork();
+    if (vi.getTimerCount() === 0) {
+      return;
+    }
+    vi.advanceTimersToNextTimer();
+  }
+  throw new Error("drainScheduledFunctions: too many iterations");
+}
+
+// Mutations here fire-and-forget SMS notification actions via the scheduler.
+// Keep those timers under test control and drain them serially so no write can
+// land after this file's convex-test backend has been replaced.
+afterEach(async () => {
+  try {
+    for (const testBackend of activeTestBackends.splice(0)) {
+      await drainScheduledFunctions(testBackend);
+    }
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
   }
 });
 
