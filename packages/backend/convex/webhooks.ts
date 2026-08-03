@@ -225,7 +225,8 @@ export const handleOptOut = httpAction(async (ctx, request) => {
 });
 
 /**
- * Handle incoming SMS messages (for STOP/START responses)
+ * Handle incoming SMS messages for compliance, event-password RSVPs, and
+ * recipient-scoped custom reply actions.
  */
 export const handleIncomingSms = httpAction(async (ctx, request) => {
   const body = await request.text();
@@ -262,8 +263,19 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
       body: rawMessageBody,
     });
     if (!receiptResult.accepted) {
+      console.info("[twilio.incoming] Duplicate receipt ignored", {
+        providerMessageId: messageSid,
+        fromPhone: fromPhoneObfuscated,
+        toPhone: toPhoneObfuscated,
+      });
       return emptyTwimlResponse();
     }
+    console.info("[twilio.incoming] Receipt accepted", {
+      providerMessageId: messageSid,
+      fromPhone: fromPhoneObfuscated,
+      toPhone: toPhoneObfuscated,
+      messageKind: complianceOutcome ?? "routable",
+    });
     const rawPayload = twilioParamsToRecord(params);
 
     if (complianceOutcome === "opt_out") {
@@ -305,16 +317,18 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
       console.log(
         `SMS help request recorded for ${fromPhoneObfuscated} to ${toPhoneObfuscated || "unknown number"}`,
       );
-    } else if (process.env.SMS_CODE_ROUTER_ENABLED !== "true") {
-      await ctx.runMutation(internal.smsCodeRouter.completeInboundWithoutRouting, {
-        providerMessageId: messageSid,
-      });
     } else {
       const replyResult = await ctx.runMutation(internal.smsCodeRouter.processReservedInbound, {
         providerMessageId: messageSid,
         fromPhoneNumber: from,
         messageBody: rawMessageBody,
         rawPayload,
+      });
+      console.info("[twilio.incoming] Reply routing completed", {
+        providerMessageId: messageSid,
+        outcome: replyResult.outcome,
+        targetEventId: replyResult.targetEventId,
+        shouldRespond: replyResult.shouldRespond,
       });
       if (replyResult.shouldRespond && replyResult.responseMessage) {
         try {
@@ -336,6 +350,11 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
               providerStatus: sendResult.success === true ? "sent" : "failed",
             });
           }
+          console.info("[twilio.incoming] Reply response attempted", {
+            providerMessageId: messageSid,
+            outboundMessageId: sendResult.messageId,
+            success: sendResult.success === true,
+          });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error("Failed to send reply action response:", errorMessage);

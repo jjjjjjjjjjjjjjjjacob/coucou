@@ -71,6 +71,7 @@ import {
   recordSmsConversationMessage,
   type SmsConversationKind,
 } from "./lib/smsConversationRecords";
+import { resolveSmsOrganizerPreference } from "./lib/smsOrganizerPreferences";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
 import { ConvexError } from "./lib/types";
@@ -3470,13 +3471,22 @@ export const processIncomingSmsReply = internalMutation({
       wasAutomaticallyApproved = await tryAutoApproveRsvp(ctx, destinationRsvp);
     }
 
+    const organizerPreference = await resolveSmsOrganizerPreference(ctx, {
+      clerkUserId,
+      event: targetEvent,
+      siteKey: targetEvent.siteKey,
+    });
     const responseMessage = wasAutomaticallyApproved
       ? undefined
-      : formatRsvpConfirmationMessage(targetEvent, {
-          firstName: user?.firstName,
-          lastName: user?.lastName,
-          fullName: userName || sourceRsvp.userName,
-        });
+      : formatRsvpConfirmationMessage(
+          targetEvent,
+          {
+            firstName: user?.firstName,
+            lastName: user?.lastName,
+            fullName: userName || sourceRsvp.userName,
+          },
+          { organizerName: organizerPreference.organizerName },
+        );
     const replyAttemptId = await logReplyAttempt(ctx, {
       textBlastId: candidate.blast._id,
       textBlastRecipientId: candidate.delivery._id,

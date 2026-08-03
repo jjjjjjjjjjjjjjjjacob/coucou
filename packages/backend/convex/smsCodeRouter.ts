@@ -234,18 +234,26 @@ async function resolveSmsCode(
   const eventRoutes = await findEventCodeRoutes(ctx, normalizedCode, now);
   const actionRoutes = await findExecutableActionRoutes(ctx, normalizedCode, phoneHash, now);
 
-  if (
-    eventRoutes.length > 1 ||
-    (eventRoutes.length > 0 && actionRoutes.executableCount > 0) ||
-    actionRoutes.eligibleRoutes.length > 1
-  ) {
+  if (eventRoutes.length > 1) {
     return { status: "conflict" };
   }
 
-  const route = eventRoutes[0] ?? actionRoutes.eligibleRoutes[0];
+  // An active event list password is the built-in route and must remain
+  // available to every sender. Custom blast actions are considered only when
+  // no event password matches, even if stale data contains the same code.
+  const route = eventRoutes[0];
   if (route) {
     const claimIsValid = await ensureResolvedRouteClaim(ctx, route, phoneHash, now);
     return claimIsValid ? { status: "matched", route } : { status: "conflict" };
+  }
+
+  if (actionRoutes.eligibleRoutes.length > 1) {
+    return { status: "conflict" };
+  }
+  const actionRoute = actionRoutes.eligibleRoutes[0];
+  if (actionRoute) {
+    const claimIsValid = await ensureResolvedRouteClaim(ctx, actionRoute, phoneHash, now);
+    return claimIsValid ? { status: "matched", route: actionRoute } : { status: "conflict" };
   }
   if (actionRoutes.executableCount > 0) {
     return { status: "not_eligible" };
@@ -1127,26 +1135,6 @@ export const completeComplianceInbound = internalMutation({
   },
 });
 
-export const completeInboundWithoutRouting = internalMutation({
-  args: {
-    providerMessageId: v.string(),
-  },
-  handler: async (ctx, args): Promise<void> => {
-    const receipt = await ctx.db
-      .query("smsInboundReceipts")
-      .withIndex("by_provider_message", (queryBuilder) =>
-        queryBuilder.eq("providerMessageId", args.providerMessageId),
-      )
-      .unique();
-    if (!receipt || receipt.status !== "processing") return;
-    await ctx.db.patch(receipt._id, {
-      status: "processed",
-      outcome: "unmatched_message",
-      updatedAt: Date.now(),
-    });
-  },
-});
-
 export const failInboundReceipt = internalMutation({
   args: {
     providerMessageId: v.string(),
@@ -1191,6 +1179,10 @@ export const processReservedInbound = internalMutation({
       )
       .unique();
     if (!receipt || receipt.status !== "processing") {
+      console.info("[smsCodeRouter.processReservedInbound] Receipt is not routable", {
+        providerMessageId: args.providerMessageId,
+        receiptStatus: receipt?.status ?? "missing",
+      });
       return {
         duplicate: true,
         shouldRespond: false,
@@ -1204,6 +1196,13 @@ export const processReservedInbound = internalMutation({
       phoneResolution.phoneHash,
       receivedAt,
     );
+    console.info("[smsCodeRouter.processReservedInbound] Route resolved", {
+      providerMessageId: args.providerMessageId,
+      routeStatus: routeResolution.status,
+      routeKind: routeResolution.status === "matched" ? routeResolution.route.kind : undefined,
+      targetEventId:
+        routeResolution.status === "matched" ? routeResolution.route.event._id : undefined,
+    });
     let result: ProcessedInboundResult;
     if (routeResolution.status === "conflict") {
       result = { shouldRespond: false, outcome: "conflict" };
@@ -1250,6 +1249,12 @@ export const processReservedInbound = internalMutation({
     }
 
     await finishReceipt(ctx, args.providerMessageId, result, receivedAt);
+    console.info("[smsCodeRouter.processReservedInbound] Receipt processed", {
+      providerMessageId: args.providerMessageId,
+      outcome: result.outcome,
+      targetEventId: result.targetEventId,
+      shouldRespond: result.shouldRespond,
+    });
     return result;
   },
 });

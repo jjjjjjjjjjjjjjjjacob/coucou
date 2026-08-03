@@ -1,6 +1,6 @@
 import type { UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -36,6 +36,10 @@ const aggregateComponentModules = {
 
 const activeTestBackends: TestBackend[] = [];
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 function setupTestBackend(): TestBackend {
   const testBackend = convexTest(schema, convexModules);
   testBackend.registerComponent(
@@ -47,12 +51,36 @@ function setupTestBackend(): TestBackend {
   return testBackend;
 }
 
-// Mutations here fire-and-forget SMS notification actions via the scheduler;
-// drain them so their writes can't land after this file's backend is gone.
-afterEach(async () => {
-  for (const testBackend of activeTestBackends.splice(0)) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+async function settleScheduledFunctionWork() {
+  for (let yieldIteration = 0; yieldIteration < 20; yieldIteration++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+async function drainScheduledFunctions(testBackend: TestBackend) {
+  for (let drainIteration = 0; drainIteration < 100; drainIteration++) {
+    await settleScheduledFunctionWork();
     await testBackend.finishInProgressScheduledFunctions();
+    await settleScheduledFunctionWork();
+    if (vi.getTimerCount() === 0) {
+      return;
+    }
+    vi.advanceTimersToNextTimer();
+  }
+  throw new Error("drainScheduledFunctions: too many iterations");
+}
+
+// Mutations here fire-and-forget SMS notification actions via the scheduler.
+// Keep those timers under test control and drain them serially so no write can
+// land after this file's convex-test backend has been replaced.
+afterEach(async () => {
+  try {
+    for (const testBackend of activeTestBackends.splice(0)) {
+      await drainScheduledFunctions(testBackend);
+    }
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
   }
 });
 
@@ -76,6 +104,50 @@ async function seedActiveEvent(testBackend: TestBackend): Promise<Id<"events">> 
       maxAttendees: 2,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+    });
+  });
+}
+
+async function seedWorkspaceActiveEvent(
+  testBackend: TestBackend,
+  {
+    workspaceSlug,
+    workspaceName,
+    siteKey,
+  }: {
+    workspaceSlug: string;
+    workspaceName: string;
+    siteKey: string;
+  },
+): Promise<Id<"events">> {
+  return await testBackend.run(async (databaseContext) => {
+    const now = Date.now();
+    const workspaceId = await databaseContext.db.insert("workspaces", {
+      slug: workspaceSlug,
+      name: workspaceName,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await databaseContext.db.insert("workspaceSites", {
+      workspaceId,
+      siteKey,
+      domain: `${workspaceSlug}.example.com`,
+      appKind: "test",
+      createdAt: now,
+      updatedAt: now,
+    });
+    return await databaseContext.db.insert("events", {
+      workspaceSlug,
+      siteKey,
+      shortId: `${workspaceSlug}-event`,
+      name: `${workspaceName} Event`,
+      hosts: [workspaceName],
+      location: "Main Room",
+      eventDate: now + 60 * 60 * 1000,
+      status: "active",
+      maxAttendees: 2,
+      createdAt: now,
+      updatedAt: now,
     });
   });
 }
@@ -124,6 +196,7 @@ describe("guest RSVP handoff", () => {
             clerkUserId: expect.stringMatching(/^guest:/),
             consentEnabled: true,
             phoneNumber: "+13104996272",
+            organizerName: "Club Chlorine",
           },
         ],
       }),
@@ -194,15 +267,13 @@ describe("guest RSVP handoff", () => {
         [
           expect.objectContaining({
             eventId: firstEventId,
-            message:
-              "CLUB CHLORINE: Hi Ava, we received your RSVP for First Guest Night.\n\nReply STOP to opt out.",
+            message: "CLUB CHLORINE: Hi Ava, we received your RSVP for First Guest Night.",
           }),
         ],
         [
           expect.objectContaining({
             eventId: secondEventId,
-            message:
-              "CLUB CHLORINE: Welcome back, Ava. Your Second Guest Night RSVP is pending.\n\nReply STOP to opt out.",
+            message: "CLUB CHLORINE: Welcome back, Ava. Your Second Guest Night RSVP is pending.",
           }),
         ],
       ]),
@@ -628,6 +699,171 @@ describe("guest RSVP handoff", () => {
       expect(userPreference?.smsConsent).toBe(false);
       expect(userPreference?.sourceRsvpId).toBe(submittedRsvp._id);
     });
+  });
+
+  it("sends enrollment again after an organizer opt-out and re-enrollment", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_sms_reenrollment", "+13104996272"),
+    );
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Mina",
+      lastName: "Park",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      smsConsent: true,
+      customFields: {},
+      socialProfiles: [],
+    });
+    const rsvp = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder.eq("eventId", eventId).eq("clerkUserId", "user_sms_reenrollment"),
+        )
+        .unique();
+    });
+    if (!rsvp) throw new Error("Expected RSVP for SMS re-enrollment test");
+
+    await authedBackend.mutation(api.rsvps.updateSmsPreference, {
+      rsvpId: rsvp._id,
+      smsConsent: false,
+    });
+    await authedBackend.mutation(api.rsvps.updateSmsPreference, {
+      rsvpId: rsvp._id,
+      smsConsent: true,
+    });
+
+    const consentTransitions = await testBackend.run(async (databaseContext) => {
+      const scheduledFunctions = await databaseContext.db.system
+        .query("_scheduled_functions")
+        .collect();
+      return scheduledFunctions
+        .filter(
+          (scheduledFunction) =>
+            scheduledFunction.name === "notifications:sendSmsConsentStatusMessage",
+        )
+        .map((scheduledFunction) => scheduledFunction.args[0]?.consentEnabled);
+    });
+    expect(consentTransitions).toEqual([true, false, true]);
+  });
+
+  it("does not repeat enrollment when another event has stale per-event consent", async () => {
+    const testBackend = setupTestBackend();
+    const firstEventId = await seedActiveEvent(testBackend);
+    const secondEventId = await seedActiveEvent(testBackend);
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_stale_event_consent", "+13104996272"),
+    );
+    const submissionArgs = {
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Mina",
+      lastName: "Park",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      smsConsent: false,
+      customFields: {},
+      socialProfiles: [],
+    };
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      ...submissionArgs,
+      eventId: firstEventId,
+    });
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      ...submissionArgs,
+      eventId: secondEventId,
+    });
+    const [firstRsvp, secondRsvp] = await testBackend.run(async (databaseContext) => {
+      const rsvps = await databaseContext.db.query("rsvps").collect();
+      return [
+        rsvps.find((rsvp) => rsvp.eventId === firstEventId),
+        rsvps.find((rsvp) => rsvp.eventId === secondEventId),
+      ];
+    });
+    if (!firstRsvp || !secondRsvp) throw new Error("Expected both workspace RSVPs");
+
+    await authedBackend.mutation(api.rsvps.updateSmsPreference, {
+      rsvpId: firstRsvp._id,
+      smsConsent: true,
+    });
+    await authedBackend.mutation(api.rsvps.updateSmsPreference, {
+      rsvpId: secondRsvp._id,
+      smsConsent: true,
+    });
+
+    const enabledMessages = await testBackend.run(async (databaseContext) => {
+      const scheduledFunctions = await databaseContext.db.system
+        .query("_scheduled_functions")
+        .collect();
+      return scheduledFunctions.filter(
+        (scheduledFunction) =>
+          scheduledFunction.name === "notifications:sendSmsConsentStatusMessage" &&
+          scheduledFunction.args[0]?.consentEnabled === true,
+      );
+    });
+    expect(enabledMessages).toHaveLength(1);
+  });
+
+  it("keeps enrollment independent between workspaces", async () => {
+    const testBackend = setupTestBackend();
+    const clubEventId = await seedWorkspaceActiveEvent(testBackend, {
+      workspaceSlug: "club-chlorine",
+      workspaceName: "Club Chlorine",
+      siteKey: "club-chlorine",
+    });
+    const danzaEventId = await seedWorkspaceActiveEvent(testBackend, {
+      workspaceSlug: "danza-organica",
+      workspaceName: "Danza Organica",
+      siteKey: "danza-organica",
+    });
+    const authedBackend = testBackend.withIdentity(
+      createPhoneIdentity("user_multi_workspace", "+13104996272"),
+    );
+    const submissionArgs = {
+      listKey: "ga",
+      firstName: "Mina",
+      lastName: "Park",
+      phone: "+13104996272",
+      shareContact: true,
+      attendees: 1,
+      smsConsent: true,
+      customFields: {},
+      socialProfiles: [],
+    };
+
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      ...submissionArgs,
+      eventId: clubEventId,
+      siteKey: "club-chlorine",
+    });
+    await authedBackend.mutation(api.rsvps.submitRequest, {
+      ...submissionArgs,
+      eventId: danzaEventId,
+      siteKey: "danza-organica",
+    });
+
+    const organizerNames = await testBackend.run(async (databaseContext) => {
+      const scheduledFunctions = await databaseContext.db.system
+        .query("_scheduled_functions")
+        .collect();
+      return scheduledFunctions
+        .filter(
+          (scheduledFunction) =>
+            scheduledFunction.name === "notifications:sendSmsConsentStatusMessage" &&
+            scheduledFunction.args[0]?.consentEnabled === true,
+        )
+        .map((scheduledFunction) => scheduledFunction.args[0]?.organizerName);
+    });
+    expect(organizerNames).toEqual(["Club Chlorine", "Danza Organica"]);
   });
 
   it("inherits organizer SMS consent only when a future-event RSVP is submitted", async () => {

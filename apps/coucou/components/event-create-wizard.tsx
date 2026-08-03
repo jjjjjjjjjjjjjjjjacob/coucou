@@ -1070,6 +1070,7 @@ export default function EventCreateWizard() {
       {stepIndex === 6 && (
         <div className="space-y-4">
           <RsvpConfirmationTextSection
+            organizerName={workspace?.name ?? workspaceScope?.workspaceSlug ?? "Event Host"}
             rsvpConfirmationMessageEnabled={rsvpConfirmationMessageEnabled}
             rsvpConfirmationMessage={rsvpConfirmationMessage}
             defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}

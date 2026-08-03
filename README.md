@@ -58,9 +58,9 @@ TWILIO_AUTH_TOKEN
 TWILIO_PHONE_NUMBER
 ```
 
-`SMS_CODE_ROUTER_ENABLED` is an optional rollout flag and defaults to disabled.
-Set it to `true` only after the production SMS code collision audit reports zero
-conflicts and executable claims have been backfilled.
+Inbound SMS routing is always enabled: active event list passwords submit or
+move an RSVP to the corresponding list, while text blasts may add optional
+recipient-scoped custom reply codes.
 
 `APP_BASE_URL` must be `https://coucou.events` in production. Known event
 sites resolve to their own configured domains first, so this value is only the

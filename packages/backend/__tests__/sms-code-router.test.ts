@@ -405,6 +405,117 @@ describe("deterministic SMS code router", () => {
     expect(state.redemption).toBeNull();
   });
 
+  it("gives an event password priority over a custom reply action with the same code", async () => {
+    const testBackend = setupTestBackend();
+    const phoneNumber = "+15551230014";
+    const passwordEvent = await seedEvent(testBackend, {
+      name: "Password destination",
+      code: "DEFAULT",
+    });
+    const customActionEvent = await seedEvent(testBackend, {
+      name: "Custom action destination",
+    });
+
+    await testBackend.run(async (databaseContext) => {
+      const now = Date.now();
+      await databaseContext.db.insert("listCredentials", {
+        eventId: passwordEvent.eventId,
+        listKey: "vip",
+        password: "VIP",
+        passwordNormalized: "vip",
+        createdAt: now,
+      });
+      await databaseContext.db.insert("listCredentials", {
+        eventId: customActionEvent.eventId,
+        listKey: "ga",
+        createdAt: now,
+      });
+      await databaseContext.db.insert("users", {
+        clerkUserId: "event_password_user",
+        phone: phoneNumber,
+        firstName: "Default",
+        lastName: "Guest",
+        createdAt: now,
+        updatedAt: now,
+      });
+      const existingRsvpId = await databaseContext.db.insert("rsvps", {
+        eventId: passwordEvent.eventId,
+        clerkUserId: "event_password_user",
+        listKey: "vip",
+        userName: "Default Guest",
+        shareContact: true,
+        smsConsent: true,
+        status: "approved",
+        approvalStatus: "approved",
+        createdAt: now,
+        updatedAt: now,
+      });
+      const textBlastId = await databaseContext.db.insert("textBlasts", {
+        eventId: passwordEvent.eventId,
+        name: "Conflicting legacy action",
+        message: "Reply DEFAULT",
+        targetLists: ["vip"],
+        recipientCount: 1,
+        sentCount: 1,
+        failedCount: 0,
+        sentBy: "host",
+        status: "sent",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await databaseContext.db.insert("textBlastReplyActions", {
+        textBlastId,
+        replyCode: "DEFAULT",
+        replyCodeNormalized: "default",
+        targetEventId: customActionEvent.eventId,
+        targetListKey: "ga",
+        isEnabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const phoneResolution = await normalizeAndHashPhoneNumber(phoneNumber);
+      await databaseContext.db.insert("textBlastRecipients", {
+        textBlastId,
+        phoneHash: phoneResolution.phoneHash,
+        status: "sent",
+        sourceEventIds: [passwordEvent.eventId],
+        sourceRsvpIds: [existingRsvpId],
+        sourceListKeys: ["vip"],
+        recipientClerkUserIds: ["event_password_user"],
+        sentAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const result = await processInbound(testBackend, {
+      messageSid: "SM_event_password_priority",
+      phoneNumber,
+      body: "DEFAULT",
+    });
+    expect(result.outcome).toBe("submitted");
+
+    const state = await testBackend.run(async (databaseContext) => {
+      const passwordEventRsvp = await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder
+            .eq("eventId", passwordEvent.eventId)
+            .eq("clerkUserId", "event_password_user"),
+        )
+        .unique();
+      const customActionEventRsvps = await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event", (queryBuilder) =>
+          queryBuilder.eq("eventId", customActionEvent.eventId),
+        )
+        .collect();
+      return { passwordEventRsvp, customActionEventRsvps };
+    });
+    expect(state.passwordEventRsvp?.listKey).toBe("ga");
+    expect(state.customActionEventRsvps).toHaveLength(0);
+  });
+
   it("stores ordinary free text only in the most recent outbound thread", async () => {
     const testBackend = setupTestBackend();
     const firstEvent = await seedEvent(testBackend, { name: "First" });

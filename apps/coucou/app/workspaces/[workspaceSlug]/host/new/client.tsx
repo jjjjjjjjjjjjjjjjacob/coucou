@@ -9,7 +9,7 @@ import {
   getDefaultRsvpConfirmationMessage,
   sanitizeOptionalRsvpConfirmationMessage,
 } from "@coucou/sdk/shared/rsvp-confirmation-messages";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
 import React from "react";
@@ -65,6 +65,10 @@ function validateCreate(values: EventFormData, lists: ListRow[]): string[] {
 export default function NewEventClient() {
   const router = useRouter();
   const workspaceScope = useWorkspaceScope();
+  const workspace = useQuery(
+    api.workspaces.getWorkspaceBySlug,
+    workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
+  );
   const eventsPath = useWorkspaceOperationPath("host", "events?created=1");
   const create = useAction(api.eventsNode.create);
   const form = useForm<EventFormData>({
@@ -304,6 +308,7 @@ export default function NewEventClient() {
           listsSection={
             <div className="space-y-6">
               <RsvpConfirmationTextSection
+                organizerName={workspace?.name ?? workspaceScope?.workspaceSlug ?? "Event Host"}
                 rsvpConfirmationMessageEnabled={rsvpConfirmationMessageEnabled}
                 rsvpConfirmationMessage={rsvpConfirmationMessage}
                 defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}

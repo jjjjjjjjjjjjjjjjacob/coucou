@@ -1,3 +1,4 @@
+import { formatOrganizerSmsMessage } from "@coucou/sdk/shared/event-branding";
 import { MessageTemplateVariableButtons } from "@/components/message-template-variable-buttons";
 import { Field, FieldDescription, FieldLabel, FieldSwitchRow } from "@/components/ui/field";
 import { SectionCard } from "@/components/ui/section-card";
@@ -9,6 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export interface RsvpConfirmationTextSectionProps {
+  organizerName: string;
   rsvpConfirmationMessageEnabled: boolean;
   rsvpConfirmationMessage: string;
   defaultRsvpConfirmationMessage: string;
@@ -26,6 +28,7 @@ const RSVP_CONFIRMATION_VARIABLES = [
 ] as const;
 
 export function RsvpConfirmationTextSection({
+  organizerName,
   rsvpConfirmationMessageEnabled,
   rsvpConfirmationMessage,
   defaultRsvpConfirmationMessage,
@@ -34,9 +37,12 @@ export function RsvpConfirmationTextSection({
   previewVariables,
   className,
 }: RsvpConfirmationTextSectionProps) {
-  const previewMessage = applyMessageTemplateVariables(
-    rsvpConfirmationMessage.trim() ? rsvpConfirmationMessage : defaultRsvpConfirmationMessage,
-    previewVariables,
+  const previewMessage = formatOrganizerSmsMessage(
+    organizerName,
+    applyMessageTemplateVariables(
+      rsvpConfirmationMessage.trim() ? rsvpConfirmationMessage : defaultRsvpConfirmationMessage,
+      previewVariables,
+    ),
   );
 
   return (

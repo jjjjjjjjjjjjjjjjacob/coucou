@@ -3,6 +3,7 @@ import {
   resolveApprovalMessageText,
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
+import { resolveEventMessagingBrandName } from "@coucou/sdk/shared/event-branding";
 import {
   applyMessageTemplateVariables,
   formatEventDateForMessageTemplate,
@@ -18,10 +19,11 @@ import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
 import {
+  CLUB_CHLORINE_BRAND_NAME,
   CLUB_CHLORINE_MESSAGE_PREFIX,
-  CLUB_CHLORINE_OPT_IN_CONFIRMATION,
-  CLUB_CHLORINE_OPT_OUT_CONFIRMATION,
   formatSmsMessageForSite,
+  formatSmsOptInConfirmation,
+  formatSmsOptOutConfirmation,
   isClubChlorineSite,
 } from "./lib/smsProgramCopy";
 
@@ -252,35 +254,17 @@ function getSmsMessageHeader(event: SmsConsentEventSummary): string {
 
 function formatSmsConsentMessage(
   event: SmsConsentEventSummary,
-  eventId: Id<"events">,
-  baseUrl: string,
   consentEnabled: boolean,
+  organizerName?: string,
 ): string {
-  if (isClubChlorineSite(event.siteKey)) {
-    return consentEnabled ? CLUB_CHLORINE_OPT_IN_CONFIRMATION : CLUB_CHLORINE_OPT_OUT_CONFIRMATION;
-  }
-
-  const header = getSmsMessageHeader(event);
-  const eventLabel = event.name?.trim() || "this event";
-  const statusUrl = `${baseUrl}/events/${eventId}/status`;
-
-  if (consentEnabled) {
-    return `${header}:
-
-SMS updates enabled for ${eventLabel}. We'll text you about RSVP updates.
-
-Reply STOP to cancel.
-
-Manage & View Status: ${statusUrl}`;
-  }
-
-  return `${header}:
-
-SMS updates disabled for ${eventLabel}. You won't receive texts about the event.
-
-Reply START to opt-in again.
-
-Manage & View Status: ${statusUrl}`;
+  const resolvedOrganizerName =
+    organizerName?.trim() ||
+    (isClubChlorineSite(event.siteKey)
+      ? CLUB_CHLORINE_BRAND_NAME
+      : resolveEventMessagingBrandName(event));
+  return consentEnabled
+    ? formatSmsOptInConfirmation(resolvedOrganizerName)
+    : formatSmsOptOutConfirmation(resolvedOrganizerName);
 }
 
 export const sendApprovalSms = action({
@@ -542,6 +526,7 @@ export const sendSmsConsentStatusMessage = action({
     clerkUserId: v.string(),
     consentEnabled: v.boolean(),
     phoneNumber: v.optional(v.string()),
+    organizerName: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<SmsActionResult> => {
     // Check if Twilio is disabled in development
@@ -576,11 +561,6 @@ export const sendSmsConsentStatusMessage = action({
       return { skipped: "no_event" };
     }
 
-    const validatedBaseUrl = resolvePublicBaseUrlForEvent(event);
-    if (!validatedBaseUrl) {
-      throw new Error("Missing public base URL for event site");
-    }
-
     const userRecord = await ctx.runQuery(api.users.getByClerkUser, {
       clerkUserId: args.clerkUserId,
     });
@@ -593,9 +573,8 @@ export const sendSmsConsentStatusMessage = action({
     try {
       const message = formatSmsConsentMessage(
         event as SmsConsentEventSummary,
-        args.eventId,
-        validatedBaseUrl,
         args.consentEnabled,
+        args.organizerName,
       );
       const phoneResolution = await normalizeAndHashPhoneNumber(recipientPhoneNumber);
 

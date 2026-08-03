@@ -16,7 +16,6 @@ export const optionalBackendEnvironmentVariables = Object.freeze([
   "CLERK_FRONTEND_API_URLS",
   "TWILIO_MESSAGING_SERVICE_SID",
   "DEV_TWILIO_ENABLED",
-  "SMS_CODE_ROUTER_ENABLED",
 ]);
 
 export const requiredGitHubProductionSecrets = Object.freeze([

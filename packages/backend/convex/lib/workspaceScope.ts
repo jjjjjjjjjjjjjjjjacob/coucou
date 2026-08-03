@@ -9,6 +9,7 @@ export interface TenantWorkspaceScopeInput {
 export interface ResolvedTenantWorkspaceScope {
   workspaceId: Id<"workspaces">;
   workspaceSlug: string;
+  workspaceName: string;
   siteKey: string | null;
 }
 
@@ -48,6 +49,7 @@ export async function resolveTenantWorkspaceScope(
   return {
     workspaceId: workspace._id,
     workspaceSlug: workspace.slug,
+    workspaceName: workspace.name.trim() || workspace.slug,
     siteKey: siteKey ?? null,
   };
 }

@@ -96,3 +96,18 @@ export function resolveEventMessagingBrandName(
 
   return fallback;
 }
+
+export function formatOrganizerSmsPrefix(organizerName: string): string {
+  const trimmedOrganizerName = organizerName.trim();
+  return trimmedOrganizerName ? `${trimmedOrganizerName.toUpperCase()}:` : "";
+}
+
+export function formatOrganizerSmsMessage(organizerName: string, message: string): string {
+  const trimmedMessage = message.trim();
+  const organizerPrefix = formatOrganizerSmsPrefix(organizerName);
+  if (!organizerPrefix) return trimmedMessage;
+  if (trimmedMessage.toLowerCase().startsWith(organizerPrefix.toLowerCase())) {
+    return `${organizerPrefix}${trimmedMessage.slice(organizerPrefix.length)}`;
+  }
+  return trimmedMessage ? `${organizerPrefix} ${trimmedMessage}` : organizerPrefix;
+}
