@@ -11,7 +11,10 @@ import { insertRsvpIntoAggregate, updateRsvpInAggregate } from "./rsvpAggregate"
 import { tryAutoApproveRsvp } from "./rsvpApproval";
 import { formatRsvpConfirmationMessage } from "./rsvpConfirmationMessages";
 import { resolveApprovalStatus } from "./rsvpStatus";
-import { upsertSmsOrganizerPreference } from "./smsOrganizerPreferences";
+import {
+  resolveSmsOrganizerPreference,
+  upsertSmsOrganizerPreference,
+} from "./smsOrganizerPreferences";
 import { replaceRsvpSocialProfileSnapshots } from "./socialProfileRecords";
 
 export type RsvpSubmissionServiceResult = {
@@ -246,6 +249,11 @@ export async function submitRsvpThroughSharedService(
       : {};
   const userName = `${firstName} ${lastName}`.trim();
   const existingRsvp = await findExistingRsvp(ctx, input);
+  const existingOrganizerPreference = await resolveSmsOrganizerPreference(ctx, {
+    clerkUserId: input.clerkUserId,
+    event: input.event,
+    siteKey: input.event.siteKey,
+  });
 
   if (existingRsvp?.listKey === input.listKey) {
     if (input.smsConsent && existingRsvp.smsConsent !== true) {
@@ -366,11 +374,15 @@ export async function submitRsvpThroughSharedService(
     approvalStatus: resolveApprovalStatus(finalizationResult.rsvp),
     responseMessage: finalizationResult.wasAutomaticallyApproved
       ? undefined
-      : formatRsvpConfirmationMessage(input.event, {
-          firstName,
-          lastName,
-          fullName: userName,
-        }),
+      : formatRsvpConfirmationMessage(
+          input.event,
+          {
+            firstName,
+            lastName,
+            fullName: userName,
+          },
+          { organizerName: existingOrganizerPreference.organizerName },
+        ),
   };
 }
 

@@ -322,11 +322,20 @@ export default function TextBlastDialog({
       if (normalizedReplyCodes.has(normalizedReplyCode)) {
         return "Reply action codes must be unique.";
       }
+      const selectedListOption = replyActionTargetOptionMap
+        .get(replyAction.targetEventId as Id<"events">)
+        ?.lists.find((listOption) => listOption.listKey === replyAction.targetListKey);
+      if (
+        selectedListOption?.password &&
+        normalizeReplyCodeForValidation(selectedListOption.password) === normalizedReplyCode
+      ) {
+        return `The list password “${selectedListOption.password}” already works as the default. Choose a different custom reply code.`;
+      }
       normalizedReplyCodes.add(normalizedReplyCode);
     }
 
     return null;
-  }, [formData.replyActions]);
+  }, [formData.replyActions, replyActionTargetOptionMap]);
   const replyActionsAreValid = replyActionValidationMessage === null;
 
   // Get available lists for selected event from query result
@@ -557,7 +566,7 @@ export default function TextBlastDialog({
         ...prev.replyActions,
         {
           clientId: createReplyActionClientId(),
-          replyCode: firstListOption?.password ?? "",
+          replyCode: "",
           targetEventId: firstTargetOption?.eventId ?? "",
           targetListKey: firstListOption?.listKey ?? "",
           isEnabled: true,
@@ -599,7 +608,6 @@ export default function TextBlastDialog({
           ...replyAction,
           targetEventId,
           targetListKey: firstListOption?.listKey ?? "",
-          replyCode: replyAction.replyCode.trim() || firstListOption?.password || "",
         };
       }),
     }));
@@ -610,13 +618,9 @@ export default function TextBlastDialog({
       ...prev,
       replyActions: prev.replyActions.map((replyAction) => {
         if (replyAction.clientId !== clientId) return replyAction;
-        const listOption = getReplyActionListOptions(replyAction.targetEventId).find(
-          (option) => option.listKey === targetListKey,
-        );
         return {
           ...replyAction,
           targetListKey,
-          replyCode: replyAction.replyCode.trim() || listOption?.password || "",
         };
       }),
     }));
@@ -863,9 +867,10 @@ export default function TextBlastDialog({
     <div className="space-y-3 rounded-md border border-border/70 p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <Label>Reply Actions</Label>
+          <Label>Custom Reply Actions</Label>
           <p className="text-xs text-muted-foreground">
-            Let guests reply with a code to submit a pending RSVP for another event.
+            Active event list passwords always submit an RSVP to that list for any sender. Add
+            recipient-scoped custom codes here when a blast needs another reply.
           </p>
         </div>
         <Button
@@ -889,7 +894,7 @@ export default function TextBlastDialog({
 
       {formData.replyActions.length === 0 ? (
         <div className="rounded-md border border-dashed border-border/80 px-3 py-4 text-sm text-muted-foreground">
-          No reply actions configured.
+          No custom reply actions configured. Event list passwords still work automatically.
         </div>
       ) : (
         <div className="space-y-3">
@@ -985,7 +990,7 @@ export default function TextBlastDialog({
                     <Input
                       id={`reply-action-code-${replyAction.clientId}`}
                       value={replyAction.replyCode}
-                      placeholder={selectedListOption?.password ? "List password" : "Reply code"}
+                      placeholder="Custom reply code"
                       disabled={replyActionRoutingIsFrozen}
                       onChange={(event) =>
                         setReplyAction(replyAction.clientId, {
@@ -996,9 +1001,10 @@ export default function TextBlastDialog({
                   </div>
                 </div>
 
-                {selectedListOption && !selectedListOption.password && !replyAction.replyCode && (
+                {selectedListOption?.password && (
                   <div className="text-xs text-muted-foreground">
-                    Open lists need a manual reply code.
+                    The list password “{selectedListOption.password}” already works as the default
+                    reply for everyone. Choose a different code for this custom action.
                   </div>
                 )}
               </div>
@@ -1333,7 +1339,7 @@ export default function TextBlastDialog({
                   )}
                   {formData.replyActions.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Reply Actions: {formData.replyActions.length} code
+                      Custom Reply Actions: {formData.replyActions.length} code
                       {formData.replyActions.length !== 1 ? "s" : ""} configured
                     </p>
                   )}

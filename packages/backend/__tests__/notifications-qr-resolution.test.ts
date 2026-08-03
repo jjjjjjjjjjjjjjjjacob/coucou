@@ -116,7 +116,7 @@ describe("approval SMS template variables", () => {
     );
   });
 
-  it("uses the fixed Club Chlorine sender and opt-out reminder for Club Chlorine events", () => {
+  it("uses the fixed Club Chlorine sender without an ongoing opt-out reminder", () => {
     const message = formatApprovalMessage(
       { ...event, siteKey: "club-chlorine" },
       recipient,
@@ -126,7 +126,7 @@ describe("approval SMS template variables", () => {
     );
 
     expect(message).toBe(
-      "CLUB CHLORINE:\n\nYou are approved for Spring Gala: After Dark. https://clubchlorine.party/redeem/ticket-code\n\nReply STOP to opt out.",
+      "CLUB CHLORINE:\n\nYou are approved for Spring Gala: After Dark. https://clubchlorine.party/redeem/ticket-code",
     );
   });
 });

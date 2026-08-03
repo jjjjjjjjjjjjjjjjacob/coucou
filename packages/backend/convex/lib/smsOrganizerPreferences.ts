@@ -6,6 +6,7 @@ type SmsOrganizerPreferenceSource = "organizer" | "none";
 
 type ResolvedSmsOrganizerScope = {
   organizerKey: string;
+  organizerName: string;
   workspaceId?: Id<"workspaces">;
   workspaceSlug?: string;
   siteKey?: string;
@@ -14,6 +15,14 @@ type ResolvedSmsOrganizerScope = {
 function normalizeOptionalText(value: string | null | undefined): string | undefined {
   const trimmedValue = value?.trim();
   return trimmedValue ? trimmedValue : undefined;
+}
+
+function formatOrganizerFallbackName(value: string): string {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((word) => `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`)
+    .join(" ");
 }
 
 async function resolveSmsOrganizerScope(
@@ -31,6 +40,7 @@ async function resolveSmsOrganizerScope(
   if (workspaceScope) {
     return {
       organizerKey: `workspace:${workspaceScope.workspaceId}`,
+      organizerName: workspaceScope.workspaceName,
       workspaceId: workspaceScope.workspaceId,
       workspaceSlug: workspaceScope.workspaceSlug,
       siteKey: workspaceScope.siteKey ?? siteKey,
@@ -40,6 +50,7 @@ async function resolveSmsOrganizerScope(
   if (workspaceSlug) {
     return {
       organizerKey: `workspaceSlug:${workspaceSlug}`,
+      organizerName: formatOrganizerFallbackName(workspaceSlug),
       workspaceSlug,
       siteKey,
     };
@@ -48,6 +59,7 @@ async function resolveSmsOrganizerScope(
   if (siteKey) {
     return {
       organizerKey: `site:${siteKey}`,
+      organizerName: formatOrganizerFallbackName(siteKey),
       siteKey,
     };
   }
@@ -144,6 +156,8 @@ export async function resolveSmsOrganizerPreference(
   smsConsentTimestamp?: number;
   smsConsentIpAddress?: string;
   source: SmsOrganizerPreferenceSource;
+  organizerKey?: string;
+  organizerName?: string;
 }> {
   const resolvedPreference = await resolveSmsOrganizerPreferenceRecord(ctx, {
     clerkUserId,
@@ -161,6 +175,8 @@ export async function resolveSmsOrganizerPreference(
       smsConsentTimestamp: preference.smsConsentTimestamp,
       smsConsentIpAddress: preference.smsConsentIpAddress,
       source: "organizer",
+      organizerKey: organizerScope.organizerKey,
+      organizerName: organizerScope.organizerName,
     };
   }
 
@@ -169,7 +185,12 @@ export async function resolveSmsOrganizerPreference(
     organizerScope,
   });
   if (!historicalPreference) {
-    return { smsConsent: false, source: "none" };
+    return {
+      smsConsent: false,
+      source: "none",
+      organizerKey: organizerScope.organizerKey,
+      organizerName: organizerScope.organizerName,
+    };
   }
 
   return {
@@ -177,6 +198,8 @@ export async function resolveSmsOrganizerPreference(
     smsConsentTimestamp: historicalPreference.smsConsentTimestamp,
     smsConsentIpAddress: historicalPreference.smsConsentIpAddress,
     source: "organizer",
+    organizerKey: organizerScope.organizerKey,
+    organizerName: organizerScope.organizerName,
   };
 }
 

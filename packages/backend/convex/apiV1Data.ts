@@ -865,6 +865,7 @@ export const createRsvpFromApiClient = internalMutation({
           clerkUserId,
           consentEnabled: smsConsentChange === "enabled",
           phoneNumber: normalizedPhoneNumber,
+          organizerName: existingOrganizerPreference.organizerName,
         });
       }
 
@@ -964,6 +965,7 @@ export const createRsvpFromApiClient = internalMutation({
         clerkUserId,
         consentEnabled: smsConsentChange === "enabled",
         phoneNumber: normalizedPhoneNumber,
+        organizerName: existingOrganizerPreference.organizerName,
       });
     }
 

@@ -647,7 +647,7 @@ describe("text blast recipient selection", () => {
     expect(storedAction?.isEnabled).toBe(false);
   });
 
-  it("brands Club Chlorine reply-action errors and includes the opt-out reminder", async () => {
+  it("brands Club Chlorine reply-action errors without an ongoing opt-out reminder", async () => {
     const testBackend = setupTestBackend();
     const sourceEventId = await seedEvent(testBackend, "Club Chlorine Source Event");
     const targetEventId = await seedEvent(testBackend, "Club Chlorine Target Event");
@@ -691,7 +691,7 @@ describe("text blast recipient selection", () => {
       shouldRespond: true,
       status: "invalid_code",
       responseMessage:
-        "CLUB CHLORINE: We could not match that reply code. Check the text and try again.\n\nReply STOP to opt out.",
+        "CLUB CHLORINE: We could not match that reply code. Check the text and try again.",
     });
   });
 
@@ -758,7 +758,7 @@ describe("text blast recipient selection", () => {
     expect(result.status).toBe("submitted");
     expect(result.shouldRespond).toBe(true);
     expect(result.responseMessage).toBe(
-      "RSVP submitted for Target Event. Your request is pending approval.",
+      "DOJO POMODORO: RSVP submitted for Target Event. Your request is pending approval.",
     );
     expect(targetRsvp?.approvalStatus).toBe("pending");
     expect(targetRsvp?.listKey).toBe("ga");
@@ -883,7 +883,7 @@ describe("text blast recipient selection", () => {
     expect(result.status).toBe("submitted");
     expect(result.shouldRespond).toBe(true);
     expect(result.responseMessage).toBe(
-      "Hi Riley, we received your RSVP for Custom Confirmation Target at Test Venue.",
+      "DOJO POMODORO: Hi Riley, we received your RSVP for Custom Confirmation Target at Test Venue.",
     );
   });
 

@@ -555,7 +555,7 @@ describe("event confirmation texts", () => {
       },
     });
     expect(
-      screen.getByText("Thanks John — your RSVP for Spring Gala at Main Room is pending."),
+      screen.getByText("DOJO: Thanks John — your RSVP for Spring Gala at Main Room is pending."),
     ).toBeInTheDocument();
     expect(screen.getAllByPlaceholderText(/Use {{firstName}}/)).toHaveLength(3);
 

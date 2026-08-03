@@ -1063,6 +1063,7 @@ export default function EditEventDialog({
             <TabsContent value="confirmations" className="pt-5">
               <div className="space-y-4">
                 <RsvpConfirmationTextSection
+                  organizerName={workspace?.name ?? workspaceScope?.workspaceSlug ?? "Event Host"}
                   rsvpConfirmationMessageEnabled={currentRsvpConfirmationMessageEnabled}
                   rsvpConfirmationMessage={currentRsvpConfirmationMessage}
                   defaultRsvpConfirmationMessage={defaultRsvpConfirmationMessage}

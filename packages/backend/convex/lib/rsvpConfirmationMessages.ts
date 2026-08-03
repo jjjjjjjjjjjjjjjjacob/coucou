@@ -1,4 +1,8 @@
 import {
+  formatOrganizerSmsMessage,
+  resolveEventMessagingBrandName,
+} from "@coucou/sdk/shared/event-branding";
+import {
   applyMessageTemplateVariables,
   formatEventDateForMessageTemplate,
   formatEventTitleForMessageTemplate,
@@ -6,7 +10,7 @@ import {
 } from "@coucou/sdk/shared/message-template";
 import { resolveRsvpConfirmationMessageText } from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import type { Doc } from "../_generated/dataModel";
-import { formatSmsMessageForSite } from "./smsProgramCopy";
+import { CLUB_CHLORINE_BRAND_NAME, isClubChlorineSite } from "./smsProgramCopy";
 
 type RsvpConfirmationEvent = Pick<
   Doc<"events">,
@@ -16,6 +20,8 @@ type RsvpConfirmationEvent = Pick<
   | "location"
   | "eventDate"
   | "eventTimezone"
+  | "hosts"
+  | "productionCompany"
   | "rsvpConfirmationMessage"
   | "rsvpConfirmationMessageEnabled"
 >;
@@ -29,6 +35,7 @@ type RsvpConfirmationRecipient = {
 export function formatRsvpConfirmationMessage(
   event: RsvpConfirmationEvent,
   recipient: RsvpConfirmationRecipient,
+  options: { organizerName?: string } = {},
 ): string | undefined {
   const messageTemplate = resolveRsvpConfirmationMessageText({
     eventName: event.name,
@@ -41,8 +48,13 @@ export function formatRsvpConfirmationMessage(
   const recipientFullName =
     recipient.fullName ?? [recipient.firstName, recipient.lastName].filter(Boolean).join(" ");
 
-  return formatSmsMessageForSite(
-    event.siteKey,
+  const organizerName =
+    options.organizerName?.trim() ||
+    (isClubChlorineSite(event.siteKey)
+      ? CLUB_CHLORINE_BRAND_NAME
+      : resolveEventMessagingBrandName(event));
+  return formatOrganizerSmsMessage(
+    organizerName,
     applyMessageTemplateVariables(messageTemplate, {
       firstName: resolveMessageTemplateFirstName({
         firstName: recipient.firstName,

@@ -636,16 +636,21 @@ export const submitRequest = mutation({
         eventId: args.eventId,
         clerkUserId,
         consentEnabled: resolvedSmsConsent.smsConsentChange === "enabled",
+        organizerName: existingOrganizerSmsPreference.organizerName,
       });
     }
 
     const rsvpConfirmationMessage =
       !existing && resolvedSmsConsent.smsConsent && !wasAutomaticallyApproved
-        ? formatRsvpConfirmationMessage(event, {
-            firstName: user?.firstName ?? submittedFirstName,
-            lastName: user?.lastName ?? submittedLastName,
-            fullName: userName,
-          })
+        ? formatRsvpConfirmationMessage(
+            event,
+            {
+              firstName: user?.firstName ?? submittedFirstName,
+              lastName: user?.lastName ?? submittedLastName,
+              fullName: userName,
+            },
+            { organizerName: existingOrganizerSmsPreference.organizerName },
+          )
         : undefined;
     if (rsvpConfirmationMessage) {
       await ctx.scheduler.runAfter(
@@ -854,16 +859,21 @@ export const submitGuestRequest = mutation({
         clerkUserId: guestClerkUserId,
         consentEnabled: resolvedSmsConsent.smsConsentChange === "enabled",
         phoneNumber: normalizedPhoneNumber,
+        organizerName: existingOrganizerSmsPreference.organizerName,
       });
     }
 
     const rsvpConfirmationMessage =
       !existing && resolvedSmsConsent.smsConsent && !wasAutomaticallyApproved
-        ? formatRsvpConfirmationMessage(event, {
-            firstName: submittedFirstName,
-            lastName: submittedLastName,
-            fullName: guestName,
-          })
+        ? formatRsvpConfirmationMessage(
+            event,
+            {
+              firstName: submittedFirstName,
+              lastName: submittedLastName,
+              fullName: guestName,
+            },
+            { organizerName: existingOrganizerSmsPreference.organizerName },
+          )
         : undefined;
     if (rsvpConfirmationMessage) {
       await ctx.scheduler.runAfter(
@@ -1368,11 +1378,17 @@ export const smsPreferenceForUserEvent = query({
     const event = await getEventInSiteScope(ctx, eventId, { siteKey });
     if (!event) return null;
 
-    return await resolveSmsOrganizerPreference(ctx, {
+    const organizerPreference = await resolveSmsOrganizerPreference(ctx, {
       clerkUserId: identity.subject,
       event,
       siteKey,
     });
+    return {
+      smsConsent: organizerPreference.smsConsent,
+      smsConsentTimestamp: organizerPreference.smsConsentTimestamp,
+      smsConsentIpAddress: organizerPreference.smsConsentIpAddress,
+      source: organizerPreference.source,
+    };
   },
 });
 
@@ -1400,11 +1416,17 @@ export const smsPreferenceForUserEventByRouteId = query({
     });
     if (!event) return null;
 
-    return await resolveSmsOrganizerPreference(ctx, {
+    const organizerPreference = await resolveSmsOrganizerPreference(ctx, {
       clerkUserId: identity.subject,
       event,
       siteKey,
     });
+    return {
+      smsConsent: organizerPreference.smsConsent,
+      smsConsentTimestamp: organizerPreference.smsConsentTimestamp,
+      smsConsentIpAddress: organizerPreference.smsConsentIpAddress,
+      source: organizerPreference.source,
+    };
   },
 });
 
@@ -1501,8 +1523,46 @@ export const updateSmsPreference = mutation({
         ? smsConsentIpAddress.slice(0, 256)
         : undefined;
 
-    const notificationsByEvent = new Map<Id<"events">, boolean>();
+    const notificationsByOrganizer = new Map<
+      string,
+      {
+        eventId: Id<"events">;
+        consentEnabled: boolean;
+        organizerName?: string;
+      }
+    >();
     let updatedCount = 0;
+
+    const updateOrganizerPreference = async (
+      event: Doc<"events">,
+      sourceRsvpId: Id<"rsvps">,
+      rsvpSmsConsentIpAddress: string | undefined,
+    ) => {
+      const existingOrganizerPreference = await resolveSmsOrganizerPreference(ctx, {
+        clerkUserId,
+        event,
+        siteKey: event.siteKey,
+      });
+      await upsertSmsOrganizerPreference(ctx, {
+        clerkUserId,
+        event,
+        smsConsent,
+        smsConsentIpAddress: rsvpSmsConsentIpAddress,
+        sourceEventId: event._id,
+        sourceRsvpId,
+        now,
+      });
+      if (existingOrganizerPreference.smsConsent === smsConsent) return;
+
+      const organizerKey = existingOrganizerPreference.organizerKey ?? `event:${event._id}`;
+      if (!notificationsByOrganizer.has(organizerKey)) {
+        notificationsByOrganizer.set(organizerKey, {
+          eventId: event._id,
+          consentEnabled: smsConsent,
+          organizerName: existingOrganizerPreference.organizerName,
+        });
+      }
+    };
 
     if (applyToAll || !rsvpId) {
       const rsvps = await ctx.db
@@ -1513,27 +1573,16 @@ export const updateSmsPreference = mutation({
         const rsvpSmsConsentIpAddress = smsConsent
           ? (sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress)
           : rsvp.smsConsentIpAddress;
+        const event = await ctx.db.get(rsvp.eventId);
+        if (event) {
+          await updateOrganizerPreference(event, rsvp._id, rsvpSmsConsentIpAddress);
+        }
         await ctx.db.patch(rsvp._id, {
           smsConsent,
           smsConsentTimestamp: now,
           smsConsentIpAddress: rsvpSmsConsentIpAddress,
           updatedAt: now,
         });
-        const event = await ctx.db.get(rsvp.eventId);
-        if (event) {
-          await upsertSmsOrganizerPreference(ctx, {
-            clerkUserId,
-            event,
-            smsConsent,
-            smsConsentIpAddress: rsvpSmsConsentIpAddress,
-            sourceEventId: rsvp.eventId,
-            sourceRsvpId: rsvp._id,
-            now,
-          });
-        }
-        if (rsvp.smsConsent !== smsConsent) {
-          notificationsByEvent.set(rsvp.eventId, smsConsent);
-        }
       }
       updatedCount = rsvps.length;
     } else {
@@ -1545,35 +1594,27 @@ export const updateSmsPreference = mutation({
         ? (sanitizedSmsConsentIpAddress ?? rsvp.smsConsentIpAddress)
         : rsvp.smsConsentIpAddress;
       if (event) {
-        await upsertSmsOrganizerPreference(ctx, {
-          clerkUserId,
-          event,
-          smsConsent,
-          smsConsentIpAddress: rsvpSmsConsentIpAddress,
-          sourceEventId: rsvp.eventId,
-          sourceRsvpId: rsvp._id,
-          now,
-        });
+        await updateOrganizerPreference(event, rsvp._id, rsvpSmsConsentIpAddress);
       }
-      if (rsvp.smsConsent === smsConsent) return { updated: 0 };
-
-      await ctx.db.patch(rsvpId, {
-        smsConsent,
-        smsConsentTimestamp: now,
-        smsConsentIpAddress: rsvpSmsConsentIpAddress,
-        updatedAt: now,
-      });
-      notificationsByEvent.set(rsvp.eventId, smsConsent);
-      updatedCount = 1;
+      if (rsvp.smsConsent !== smsConsent) {
+        await ctx.db.patch(rsvpId, {
+          smsConsent,
+          smsConsentTimestamp: now,
+          smsConsentIpAddress: rsvpSmsConsentIpAddress,
+          updatedAt: now,
+        });
+        updatedCount = 1;
+      }
     }
 
-    if (notificationsByEvent.size > 0) {
+    if (notificationsByOrganizer.size > 0) {
       await Promise.all(
-        Array.from(notificationsByEvent.entries()).map(([eventId, consentEnabled]) =>
+        Array.from(notificationsByOrganizer.values()).map((notification) =>
           ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
-            eventId,
+            eventId: notification.eventId,
             clerkUserId,
-            consentEnabled,
+            consentEnabled: notification.consentEnabled,
+            organizerName: notification.organizerName,
           }),
         ),
       );
