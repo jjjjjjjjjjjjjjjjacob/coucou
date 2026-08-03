@@ -9,6 +9,7 @@ describe("HeaderClient navigation", () => {
     renderWithProviders(<HeaderClient />);
 
     const triggerButton = screen.getByRole("button", { name: /Danza Organica menu/i });
+    expect(triggerButton.querySelector("svg")).toHaveAttribute("data-icon", "globe-02");
     await user.click(triggerButton);
 
     const profileItem = await screen.findByRole("menuitem", { name: /^Profile$/i });

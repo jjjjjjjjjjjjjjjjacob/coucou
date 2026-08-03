@@ -177,7 +177,7 @@ const STEPS: WizardStep[] = [
   {
     number: "02",
     title: "Schedule & capacity",
-    description: "Set the location, start time, attendee limit, and RSVP status.",
+    description: "Set the location, start time, and attendee limit.",
     validate: ["location", "eventDate"],
   },
   {
@@ -349,7 +349,7 @@ function createDefaultEventFormValues(defaults: EventWizardDefaults): EventFormD
     guestPortalLinkLabel: "",
     guestPortalLinkUrl: "",
     maxAttendees: 1,
-    status: "inactive",
+    status: "active",
     themeBackgroundColor: defaults.themeBackgroundColor,
     themeTextColor: defaults.themeTextColor,
     qrCodeColor: "#000000",
@@ -975,7 +975,7 @@ export default function EventCreateWizard() {
         eventEndDate: eventEndTimestamp,
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
-        status: values.status ?? "inactive",
+        status: "active",
         sendQrOnApproval,
         attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
         referralSharingEnabled: values.referralSharingEnabled ?? false,
@@ -1440,28 +1440,6 @@ function StepWhereWhen({
                 <SelectOption value="6">6</SelectOption>
               </Select>
             </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="status"
-        render={({ field }) => (
-          <FormItem className="max-w-xs">
-            <FormLabel>RSVP status</FormLabel>
-            <FormControl>
-              <Select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={field.value ?? "inactive"}
-                onValueChange={(value) => field.onChange(value)}
-              >
-                <SelectOption value="inactive">Inactive</SelectOption>
-                <SelectOption value="active">Active</SelectOption>
-                <SelectOption value="past">Past</SelectOption>
-              </Select>
-            </FormControl>
-            <FormDescription>Active events can receive RSVP submissions.</FormDescription>
             <FormMessage />
           </FormItem>
         )}
@@ -2007,11 +1985,6 @@ function StepReview({
       stepIndex: 1,
       key: "Max",
       value: `${values.maxAttendees ?? 1} per RSVP`,
-    },
-    {
-      stepIndex: 1,
-      key: "Status",
-      value: values.status ?? "inactive",
     },
     {
       stepIndex: 2,

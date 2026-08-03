@@ -334,12 +334,6 @@ export function EventPropertyPanel({ event }: EventPropertyPanelProps) {
       <PropertySection title="Status">
         <div className="flex flex-wrap gap-2">
           <StatusBadge variant={statusVariant} />
-          <StatusBadge
-            variant={
-              event.status === "active" ? "approved" : event.status === "past" ? "past" : "default"
-            }
-            label={`RSVP ${event.status ?? "inactive"}`}
-          />
           {event.isFeatured ? <StatusBadge variant="issued" label="Featured" /> : null}
         </div>
       </PropertySection>

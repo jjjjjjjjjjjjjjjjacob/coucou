@@ -461,7 +461,7 @@ describe("RSVP page reservation-status gate", () => {
   });
 
   it("does not evaluate the RSVP experiment for closed homepage events", async () => {
-    const closedEvent = createEvent({ status: "inactive" });
+    const closedEvent = createEvent({ lifecycle: "draft" });
     eventDocument = closedEvent;
     eventList = [closedEvent];
     eventRsvpStatus = null;

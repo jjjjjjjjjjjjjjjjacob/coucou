@@ -120,30 +120,6 @@ export function EventScheduleSection<FormValues extends BaseEventFormValues>({
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name={"status" as Path<FormValues>}
-          render={({ field }) => (
-            <FormItem className="w-full max-w-xs">
-              <FormLabel>RSVP Status</FormLabel>
-              <FormDescription>Active events can receive RSVP submissions.</FormDescription>
-              <FormControl>
-                <Select
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                  value={(field.value as string | undefined) ?? "inactive"}
-                  onValueChange={(value) =>
-                    field.onChange(value as PathValue<FormValues, Path<FormValues>>)
-                  }
-                >
-                  <SelectOption value="inactive">Inactive</SelectOption>
-                  <SelectOption value="active">Active</SelectOption>
-                  <SelectOption value="past">Past</SelectOption>
-                </Select>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
       </div>
     </SectionCard>
   );

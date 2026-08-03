@@ -309,7 +309,7 @@ export const create = action({
       }
     }
 
-    const eventStatus = args.status ?? "inactive";
+    const eventStatus = args.status ?? "active";
     const passwordCandidates = args.lists.map((list) => ({
       listKey: list.listKey,
       password: list.password,

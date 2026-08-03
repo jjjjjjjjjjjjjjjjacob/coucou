@@ -41,7 +41,10 @@ function formatLandingDate(timestamp: number, timezone?: string): string {
 interface LandingRowSeed {
   eventId: Id<"events">;
   routeId: string;
+  title: string;
+  subtitle?: string;
   date: string;
+  location?: string;
   lineup: DanzaLandingEvent["lineup"];
   isOpenForRsvp: boolean;
 }
@@ -69,10 +72,14 @@ function HomeContent() {
       .map((event) => ({
         eventId: event._id,
         routeId: getEventRouteId(event),
+        title: event.name,
+        subtitle: event.secondaryTitle,
         date: formatLandingDate(event.eventDate, event.eventTimezone),
+        location: event.location,
         lineup: getPublicEventActs(event).map((act) => ({
           label: act.displayName,
           descriptorBadges: act.descriptorBadges,
+          href: act.socialUrl,
         })),
         isOpenForRsvp: isEventOpenForRsvp(event),
       }));
@@ -104,7 +111,7 @@ function HomeContent() {
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-24 py-8">
       {landingRowSeeds.map((rowSeed, index) => (
         <HomeEventRow
           key={rowSeed.eventId}
@@ -184,7 +191,10 @@ function HomeEventRow({
 
   const event: DanzaLandingEvent = {
     id: rowSeed.routeId,
+    title: rowSeed.title,
+    subtitle: rowSeed.subtitle,
     date: rowSeed.date,
+    location: rowSeed.location,
     lineup: rowSeed.lineup,
     rsvpHref: brickHref,
     rsvpLabel: brickLabel,

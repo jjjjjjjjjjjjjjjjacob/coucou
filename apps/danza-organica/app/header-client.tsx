@@ -1,7 +1,9 @@
 "use client";
 import { SignedIn, SignedOut, SignOutButton, useUser } from "@clerk/nextjs";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
-import { Cog, DoorOpen, LogIn, LogOut, Menu, Settings, User } from "lucide-react";
+import { Globe02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Cog, DoorOpen, LogIn, LogOut, Settings, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -81,10 +83,16 @@ export default function HeaderClient({ initialSatelliteOrigin }: HeaderClientPro
           <Button
             variant="ghost"
             size="icon"
-            className="aspect-square animate-in fade-in duration-600 pointer-events-auto"
+            className="aspect-square animate-in fade-in duration-600 pointer-events-auto text-primary hover:text-primary"
             aria-label={`${siteConfiguration.brandName} menu`}
           >
-            <Menu className="h-5 w-5" />
+            <HugeiconsIcon
+              aria-hidden="true"
+              className="size-5"
+              data-icon="globe-02"
+              icon={Globe02Icon}
+              size={20}
+            />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">

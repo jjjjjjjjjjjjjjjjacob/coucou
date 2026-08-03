@@ -169,6 +169,7 @@ describe("Events Functions", () => {
     const listCredentials = await getListCredentialsForEvent(testBackend, draftResult.eventId);
 
     expect(publishedEvent?.lifecycle).toBe("published");
+    expect(publishedEvent?.status).toBe("active");
     expect(publishedEvent?.name).toBe("Published Night");
     expect(publishedEvent?.location).toBe("Main Room");
     expect(publishedEvent?.eventDate).toBe(eventDate);

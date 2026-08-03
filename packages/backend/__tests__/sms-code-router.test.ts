@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
 import { internal } from "../convex/_generated/api";
-import type { Id } from "../convex/_generated/dataModel";
+import type { Doc, Id } from "../convex/_generated/dataModel";
 import { buildGuestClerkUserId } from "../convex/lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "../convex/lib/phoneHash";
 import { obfuscatePhoneNumber } from "../convex/lib/phoneUtils";
@@ -41,14 +41,16 @@ async function seedEvent(
     name: string;
     code?: string;
     customFields?: Array<{ key: string; label: string; required?: boolean }>;
-    workspaceSlug?: string;
+    primaryFieldConfig?: Doc<"events">["primaryFieldConfig"];
+    workspaceSlug?: string | null;
     siteKey?: string;
   },
 ): Promise<{ eventId: Id<"events">; listCredentialId?: Id<"listCredentials"> }> {
   return await testBackend.run(async (databaseContext) => {
     const now = Date.now();
     const eventId = await databaseContext.db.insert("events", {
-      workspaceSlug: args.workspaceSlug ?? "club-chlorine",
+      workspaceSlug:
+        args.workspaceSlug === null ? undefined : (args.workspaceSlug ?? "club-chlorine"),
       siteKey: args.siteKey ?? "club-chlorine",
       name: args.name,
       location: "Le Bain",
@@ -56,6 +58,7 @@ async function seedEvent(
       status: "active",
       lifecycle: "published",
       customFields: args.customFields,
+      primaryFieldConfig: args.primaryFieldConfig,
       rsvpConfirmationMessageEnabled: false,
       createdAt: now,
       updatedAt: now,
@@ -110,7 +113,9 @@ describe("deterministic SMS code router", () => {
       body: "  saturday ",
     });
     expect(initialResult.outcome).toBe("session_pending");
-    expect(initialResult.responseMessage).toContain("your full name and your city");
+    expect(initialResult.responseMessage).toContain(
+      "To complete your RSVP, reply with your full name and your city",
+    );
 
     const partialResult = await processInbound(testBackend, {
       messageSid: "SM_partial",
@@ -192,6 +197,91 @@ describe("deterministic SMS code router", () => {
         .unique();
     });
     expect(rsvp?.userName).toBe("Jordan Lee");
+  });
+
+  it("prefills required fields from prior guest RSVPs for the registered sending number", async () => {
+    const testBackend = setupTestBackend();
+    const phoneNumber = "+15551230016";
+    const phoneResolution = await normalizeAndHashPhoneNumber(phoneNumber);
+    const guestClerkUserId = buildGuestClerkUserId(phoneResolution.phoneHash);
+    const priorEvent = await seedEvent(testBackend, {
+      name: "Prior legacy event",
+      workspaceSlug: null,
+    });
+    const destinationEvent = await seedEvent(testBackend, {
+      name: "Known fields event",
+      code: "PREFILLED",
+      primaryFieldConfig: {
+        socialPlatforms: [
+          {
+            platformKey: "instagram",
+            label: "Instagram",
+            required: true,
+          },
+        ],
+      },
+    });
+    await testBackend.run(async (databaseContext) => {
+      const now = Date.now();
+      await databaseContext.db.insert("users", {
+        clerkUserId: "user_prefilled",
+        phone: phoneNumber,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const priorRsvpId = await databaseContext.db.insert("rsvps", {
+        eventId: priorEvent.eventId,
+        clerkUserId: guestClerkUserId,
+        listKey: "ga",
+        userName: "Jacob Smith",
+        guestPhoneHash: phoneResolution.phoneHash,
+        guestPhoneObfuscated: obfuscatePhoneNumber(phoneNumber),
+        shareContact: true,
+        smsConsent: true,
+        status: "approved",
+        approvalStatus: "approved",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await databaseContext.db.insert("rsvpSocialProfiles", {
+        eventId: priorEvent.eventId,
+        rsvpId: priorRsvpId,
+        clerkUserId: guestClerkUserId,
+        platformKey: "instagram",
+        handle: "@jacob",
+        normalizedHandle: "jacob",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const result = await processInbound(testBackend, {
+      messageSid: "SM_prefilled_guest_history",
+      phoneNumber,
+      body: "PREFILLED",
+    });
+
+    expect(result.outcome).toBe("submitted");
+    expect(result.shouldRespond).toBe(false);
+    const destinationRsvpState = await testBackend.run(async (databaseContext) => {
+      const destinationRsvp = await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder.eq("eventId", destinationEvent.eventId).eq("clerkUserId", "user_prefilled"),
+        )
+        .unique();
+      const destinationSocialProfiles = destinationRsvp
+        ? await databaseContext.db
+            .query("rsvpSocialProfiles")
+            .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", destinationRsvp._id))
+            .collect()
+        : [];
+      return { destinationRsvp, destinationSocialProfiles };
+    });
+    expect(destinationRsvpState.destinationRsvp?.userName).toBe("Jacob Smith");
+    expect(destinationRsvpState.destinationSocialProfiles).toEqual([
+      expect.objectContaining({ platformKey: "instagram", handle: "jacob" }),
+    ]);
   });
 
   it("uses a no-prefill guest session when a phone has multiple registered identities", async () => {
@@ -321,7 +411,7 @@ describe("deterministic SMS code router", () => {
     });
     await testBackend.run(async (databaseContext) => {
       await databaseContext.db.patch(eventId, {
-        status: "inactive",
+        lifecycle: "draft",
         updatedAt: Date.now(),
       });
     });

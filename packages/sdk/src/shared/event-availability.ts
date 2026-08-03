@@ -8,9 +8,13 @@ export const RSVP_CLOSE_GRACE_PERIOD_AFTER_START_MS = 24 * 60 * 60 * 1000;
 export const RSVP_CLOSE_GRACE_PERIOD_MS = 10 * 60 * 60 * 1000;
 
 export type EventAvailabilityStatus = "active" | "inactive" | "past";
+export type EventAvailabilityLifecycle = "draft" | "published";
 
 export interface EventAvailabilityInput {
+  /** Legacy status retained for compatibility. RSVP availability follows lifecycle and timing. */
   status?: EventAvailabilityStatus | string;
+  /** Events created before lifecycle was introduced are treated as published. */
+  lifecycle?: EventAvailabilityLifecycle | string;
   eventDate: number;
   /** Explicit event close timestamp. */
   eventEndDate?: number | null;
@@ -32,7 +36,7 @@ export function isEventOpenForRsvp(
   event: EventAvailabilityInput,
   now: number = Date.now(),
 ): boolean {
-  if (event.status !== "active") {
+  if ((event.lifecycle ?? "published") !== "published") {
     return false;
   }
 

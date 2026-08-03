@@ -88,7 +88,7 @@ function eventSharesWorkspace(
   candidateEvent: Doc<"events">,
   destinationEvent: Doc<"events">,
 ): boolean {
-  if (destinationEvent.workspaceSlug) {
+  if (candidateEvent.workspaceSlug && destinationEvent.workspaceSlug) {
     return candidateEvent.workspaceSlug === destinationEvent.workspaceSlug;
   }
   return Boolean(destinationEvent.siteKey && candidateEvent.siteKey === destinationEvent.siteKey);
@@ -98,7 +98,7 @@ function profileGrantSharesWorkspace(
   profileGrant: Doc<"workspaceProfileValueGrants">,
   destinationEvent: Doc<"events">,
 ): boolean {
-  if (destinationEvent.workspaceSlug) {
+  if (profileGrant.workspaceSlug && destinationEvent.workspaceSlug) {
     return profileGrant.workspaceSlug === destinationEvent.workspaceSlug;
   }
   return Boolean(destinationEvent.siteKey && profileGrant.siteKey === destinationEvent.siteKey);
@@ -383,49 +383,62 @@ async function resolveSmsIdentity(
   };
 }
 
-async function findMostRecentWorkspaceRsvp(
+async function findWorkspaceRsvpCandidates(
   ctx: MutationCtx,
   route: SmsCodeRoute,
   identity: SmsIdentity,
   phoneHash: string,
-): Promise<Doc<"rsvps"> | null> {
+): Promise<Doc<"rsvps">[]> {
+  const prioritizedRsvps: Doc<"rsvps">[] = [];
   if (route.kind === "blast_action" && !identity.ambiguous) {
     const sourceRsvps = (
       await Promise.all(route.delivery.sourceRsvpIds.map((rsvpId) => ctx.db.get(rsvpId)))
     )
       .filter((rsvp): rsvp is Doc<"rsvps"> => rsvp !== null)
-      .filter((rsvp) => rsvp.clerkUserId === identity.clerkUserId)
+      .filter(
+        (rsvp) => rsvp.clerkUserId === identity.clerkUserId || rsvp.guestPhoneHash === phoneHash,
+      )
       .sort((firstRsvp, secondRsvp) => secondRsvp.updatedAt - firstRsvp.updatedAt);
-    if (sourceRsvps[0]) return sourceRsvps[0];
+    prioritizedRsvps.push(...sourceRsvps);
   }
 
-  const candidateRsvps = identity.registeredUser
-    ? await ctx.db
-        .query("rsvps")
-        .withIndex("by_user", (queryBuilder) =>
-          queryBuilder.eq("clerkUserId", identity.clerkUserId),
-        )
-        .collect()
-    : await ctx.db
-        .query("rsvps")
-        .withIndex("by_guestPhoneHash", (queryBuilder) =>
-          queryBuilder.eq("guestPhoneHash", phoneHash),
-        )
-        .collect();
+  const [identityRsvps, phoneRsvps] = await Promise.all([
+    ctx.db
+      .query("rsvps")
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.clerkUserId))
+      .collect(),
+    ctx.db
+      .query("rsvps")
+      .withIndex("by_guestPhoneHash", (queryBuilder) =>
+        queryBuilder.eq("guestPhoneHash", phoneHash),
+      )
+      .collect(),
+  ]);
+  const candidateRsvpsById = new Map(
+    [...identityRsvps, ...phoneRsvps]
+      .filter(
+        (rsvp) =>
+          rsvp.clerkUserId === identity.clerkUserId ||
+          (identity.registeredUser !== undefined && isGuestClerkUserId(rsvp.clerkUserId)),
+      )
+      .map((rsvp) => [rsvp._id, rsvp]),
+  );
   const matchingRsvps: Doc<"rsvps">[] = [];
-  for (const rsvp of candidateRsvps) {
-    if (!identity.registeredUser && rsvp.clerkUserId !== identity.clerkUserId) {
-      continue;
-    }
+  for (const rsvp of candidateRsvpsById.values()) {
     const candidateEvent = await ctx.db.get(rsvp.eventId);
     if (candidateEvent && eventSharesWorkspace(candidateEvent, route.event)) {
       matchingRsvps.push(rsvp);
     }
   }
-  return (
-    matchingRsvps.sort((firstRsvp, secondRsvp) => secondRsvp.updatedAt - firstRsvp.updatedAt)[0] ??
-    null
-  );
+  matchingRsvps.sort((firstRsvp, secondRsvp) => secondRsvp.updatedAt - firstRsvp.updatedAt);
+
+  const orderedRsvpsById = new Map<Id<"rsvps">, Doc<"rsvps">>();
+  for (const rsvp of [...prioritizedRsvps, ...matchingRsvps]) {
+    if (!orderedRsvpsById.has(rsvp._id)) {
+      orderedRsvpsById.set(rsvp._id, rsvp);
+    }
+  }
+  return Array.from(orderedRsvpsById.values());
 }
 
 function splitFullName(fullName: string | null | undefined): {
@@ -481,20 +494,26 @@ async function buildInitialSessionValues(
     };
   }
 
-  const sourceRsvp = await findMostRecentWorkspaceRsvp(ctx, route, identity, phoneHash);
+  const sourceRsvps = await findWorkspaceRsvpCandidates(ctx, route, identity, phoneHash);
   const registeredName = identity.registeredUser
     ? {
         firstName: identity.registeredUser.firstName?.trim() || undefined,
         lastName: identity.registeredUser.lastName?.trim() || undefined,
       }
     : {};
-  const rsvpName = splitFullName(sourceRsvp?.userName);
-  const sourceSocialProfiles = sourceRsvp
-    ? await ctx.db
-        .query("rsvpSocialProfiles")
-        .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", sourceRsvp._id))
-        .collect()
-    : [];
+  const rsvpNames = sourceRsvps.map((sourceRsvp) => splitFullName(sourceRsvp.userName));
+  const rsvpFirstName = rsvpNames.find((name) => name.firstName)?.firstName;
+  const rsvpLastName = rsvpNames.find((name) => name.lastName)?.lastName;
+  const sourceSocialProfiles = (
+    await Promise.all(
+      sourceRsvps.map((sourceRsvp) =>
+        ctx.db
+          .query("rsvpSocialProfiles")
+          .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", sourceRsvp._id))
+          .collect(),
+      ),
+    )
+  ).flat();
   const grantedSocialProfiles = await getWorkspaceGrantedSocialProfiles(ctx, route, identity);
   const socialProfilesByPlatform = new Map<string, { platformKey: string; handle: string }>();
   for (const profile of [...grantedSocialProfiles, ...sourceSocialProfiles]) {
@@ -509,14 +528,16 @@ async function buildInitialSessionValues(
 
   const customFieldValues: Record<string, string> = {};
   for (const field of route.event.customFields ?? []) {
-    const value = sourceRsvp?.customFieldValues?.[field.key]?.trim();
+    const value = sourceRsvps
+      .map((sourceRsvp) => sourceRsvp.customFieldValues?.[field.key]?.trim())
+      .find(Boolean);
     if (value) customFieldValues[field.key] = value;
   }
   return {
-    firstName: registeredName.firstName ?? rsvpName.firstName,
-    lastName: registeredName.lastName ?? rsvpName.lastName,
+    firstName: registeredName.firstName ?? rsvpFirstName,
+    lastName: registeredName.lastName ?? rsvpLastName,
     socialProfiles: Array.from(socialProfilesByPlatform.values()),
-    invitedByName: sourceRsvp?.invitedByName,
+    invitedByName: sourceRsvps.map((sourceRsvp) => sourceRsvp.invitedByName?.trim()).find(Boolean),
     customFieldValues,
   };
 }

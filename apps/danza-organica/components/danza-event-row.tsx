@@ -10,10 +10,13 @@ import type {
 } from "react";
 import { useState } from "react";
 
-// Danza Organica reuses the chlorine landing-row data shape so the page
-// logic (contextual RSVP bricks, preserved-query hrefs) ports verbatim
-// between tenant apps; only the rendering below is danza-specific.
-export type DanzaLandingEvent = ChlorineLandingEvent;
+// Danza Organica builds on the shared landing event shape while keeping the
+// editorial event title separate from its artist lineup.
+export interface DanzaLandingEvent extends ChlorineLandingEvent {
+  title: string;
+  subtitle?: string | null;
+  location?: string;
+}
 export type DanzaLineupEntry = ChlorineLineupEntry;
 
 export type DanzaEventRowVariant = "default" | "minimized" | "expanded";
@@ -37,31 +40,33 @@ export interface DanzaEventRowProps {
    */
   variant?: DanzaEventRowVariant;
   /**
-   * Optional href to the event's dedicated detail page. When set on a
-   * "default" row, a small "DETAILS" link is rendered under the RSVP
-   * brick. On a "minimized" row the entire row becomes a link to this href.
+   * Optional href to the event's dedicated detail page. Default rows render
+   * it beneath the RSVP action; minimized rows use it for the entire row.
    */
   detailHref?: string;
+  /**
+   * Optional label for the link beneath the RSVP action. Defaults to
+   * "Details"; event detail pages use "← Back" in the same position.
+   */
+  detailLabel?: string;
   /**
    * Content rendered below the row when `variant === "expanded"`.
    */
   expandedContent?: ReactNode;
   /**
-   * Optional content rendered in column 3 ABOVE the RSVP brick.
+   * Optional content rendered above the RSVP action.
    */
   topRightSlot?: ReactNode;
   /**
-   * Optional content rendered in column 3 below the RSVP brick.
+   * Optional content rendered below the RSVP action.
    */
   bottomRightSlot?: ReactNode;
 }
 
 /**
- * Danza Organica's event row. Same 3-column grid (date · lineup · RSVP
- * brick) and interaction rules as `ChlorineEventRow`, but typography comes
- * entirely from the preset tokens — `var(--tt-display)` (Geist for the
- * danza preset) at the dojo scale instead of chlorine's hard-coded Bowlby
- * One — and the brick respects the preset's `--tt-button-radius`.
+ * Danza Organica's centered event composition. The title and subtitle lead,
+ * with artists, date, location, and actions following in a single editorial
+ * stack that echoes Dojo's event detail page.
  */
 export function DanzaEventRow({
   event,
@@ -71,42 +76,27 @@ export function DanzaEventRow({
   linkComponent: LinkComponent,
   variant = "default",
   detailHref,
+  detailLabel = "Details",
   expandedContent,
   topRightSlot,
   bottomRightSlot,
 }: DanzaEventRowProps) {
   const isMinimized = variant === "minimized";
   const isExpanded = variant === "expanded";
-  const isDefault = variant === "default";
   const rsvpClickable = Boolean(event.rsvpHref && !event.rsvpDisabled);
-  // When a `detailHref` is present on a default row we DO NOT wrap the
-  // entire row in an anchor — the secondary "Details" link below the brick
-  // would become a nested `<a>` inside another `<a>` (invalid HTML and the
-  // source of a Next.js hydration warning). The brick itself becomes the
-  // link target instead. Minimized rows still wrap because they have no
-  // nested links.
-  const wrapMinimizedAsDetailLink = isMinimized && Boolean(detailHref);
-  const wrapDefaultAsRsvpLink = isDefault && rsvpClickable && !detailHref;
-  const rowIsLink = wrapMinimizedAsDetailLink || wrapDefaultAsRsvpLink;
+  const rowIsLink = isMinimized && Boolean(detailHref);
   const RowTag = rowIsLink ? ((LinkComponent ?? "a") as ElementType) : "div";
-  const rowHref = wrapMinimizedAsDetailLink ? detailHref! : event.rsvpHref;
+  const rowHref = rowIsLink ? detailHref : undefined;
   const rowProps =
     rowIsLink && rowHref ? ({ href: rowHref } as { href: string }) : ({} as Record<string, never>);
-  const verticalPadding = isMinimized ? (mobile ? "6px 0" : "8px 0") : mobile ? "10px 0" : "14px 0";
+  const lineupText = event.lineup
+    .map((lineupEntry) => (typeof lineupEntry === "string" ? lineupEntry : lineupEntry.label))
+    .join(" · ");
 
-  // Brick = the visible "RSVP" / "CLOSED" tile in column 3. When we are NOT
-  // wrapping the whole row in the rsvp anchor, the brick must itself be the
-  // link target so the user has something clickable.
   const renderBrick = () => {
     if (!rsvpClickable) {
       return <span style={buildRsvpBrickStyle(mobile, true)}>{event.rsvpLabel ?? "CLOSED"}</span>;
     }
-    if (wrapDefaultAsRsvpLink) {
-      // Whole row is the link → brick is just the visual tile.
-      return <span style={buildRsvpBrickStyle(mobile, false)}>{event.rsvpLabel ?? "RSVP"}</span>;
-    }
-    // Row is a div (because detailHref forces no row-anchor), so the brick
-    // owns the click.
     const BrickTag = (LinkComponent ?? "a") as ElementType;
     return (
       <BrickTag
@@ -123,7 +113,7 @@ export function DanzaEventRow({
   };
 
   const renderDetailsLink = () => {
-    if (!detailHref || !isDefault) return null;
+    if (!detailHref || isMinimized) return null;
     const DetailTag = (LinkComponent ?? "a") as ElementType;
     return (
       <DetailTag
@@ -139,7 +129,7 @@ export function DanzaEventRow({
           cursor: "pointer",
         }}
       >
-        Details
+        {detailLabel}
       </DetailTag>
     );
   };
@@ -148,16 +138,19 @@ export function DanzaEventRow({
     <RowTag
       {...rowProps}
       style={{
-        display: "grid",
-        gridTemplateColumns: mobile ? "auto 1fr auto" : "120px 1fr 90px",
-        gap: mobile ? 16 : 32,
+        display: isMinimized ? "grid" : "flex",
+        gridTemplateColumns: isMinimized ? (mobile ? "1fr auto" : "100px 1fr auto") : undefined,
+        flexDirection: isMinimized ? undefined : "column",
+        justifyContent: "center",
+        gap: isMinimized ? (mobile ? 10 : 24) : mobile ? 20 : 24,
         width: "100%",
         maxWidth: "100%",
         minWidth: 0,
         boxSizing: "border-box",
         overflowX: "hidden",
-        padding: verticalPadding,
-        alignItems: "baseline",
+        padding: isMinimized ? (mobile ? "14px 0" : "16px 0") : "0",
+        alignItems: "center",
+        textAlign: isMinimized ? "left" : "center",
         opacity: visible ? 1 : 0,
         transform: visible ? "translateY(0)" : "translateY(24px)",
         transition: `opacity 700ms ease ${delayMs}ms, transform 700ms cubic-bezier(0.2,0,0.2,1) ${delayMs}ms`,
@@ -166,84 +159,53 @@ export function DanzaEventRow({
         cursor: rowIsLink ? "pointer" : "default",
       }}
     >
-      <div
-        style={{
-          fontFamily: "var(--tt-text)",
-          fontSize: mobile ? 13 : 16,
-          color: isMinimized ? "var(--tt-fg-mute)" : "var(--tt-fg)",
-          fontWeight: 600,
-          letterSpacing: "0.04em",
-        }}
-      >
-        {event.date}
-      </div>
-      <div
-        style={{
-          fontFamily: "var(--tt-display)",
-          fontSize: mobile ? 17 : 22,
-          fontWeight: 700,
-          lineHeight: 1.15,
-          color: isMinimized ? "var(--tt-fg-mute)" : "var(--tt-fg)",
-          textTransform: "uppercase",
-          letterSpacing: "0.02em",
-          minWidth: 0,
-          overflowWrap: "anywhere",
-          ...(isMinimized
-            ? {
-                fontSize: mobile ? 14 : 16,
+      {isMinimized ? (
+        <>
+          <div
+            style={{
+              display: mobile ? "none" : "block",
+              fontFamily: "var(--tt-text)",
+              fontSize: 12,
+              color: "var(--tt-fg-mute)",
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+            }}
+          >
+            {event.date}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontFamily: "var(--tt-display)",
+                fontSize: mobile ? 15 : 16,
+                fontWeight: 700,
+                lineHeight: 1.15,
+                color: "var(--tt-fg-mute)",
+                textTransform: "uppercase",
+                letterSpacing: "0.02em",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-              }
-            : null),
-        }}
-      >
-        {isMinimized ? (
-          <span>
-            {event.lineup
-              .map((lineupEntry) =>
-                typeof lineupEntry === "string" ? lineupEntry : lineupEntry.label,
-              )
-              .join(" · ")}
-          </span>
-        ) : (
-          event.lineup.map((lineupEntry, lineupIndex) => {
-            const normalizedLineupEntry =
-              typeof lineupEntry === "string" ? { label: lineupEntry } : lineupEntry;
-            const labelWithBadges = (
-              <>
-                <span>{normalizedLineupEntry.label}</span>
-                {normalizedLineupEntry.descriptorBadges?.length ? (
-                  <DanzaLineupBadges badges={normalizedLineupEntry.descriptorBadges} />
-                ) : null}
-              </>
-            );
-            // Lineup entries become real `<a>`s only when (a) an href is
-            // provided AND (b) the row itself is NOT already wrapped in an
-            // anchor — otherwise we'd nest `<a>` inside `<a>`.
-            const canRenderLineupAnchor = Boolean(normalizedLineupEntry.href) && !rowIsLink;
-            return canRenderLineupAnchor ? (
-              <DanzaLineupAnchor
-                key={`${normalizedLineupEntry.label}-${lineupIndex}`}
-                href={normalizedLineupEntry.href!}
-              >
-                {labelWithBadges}
-              </DanzaLineupAnchor>
-            ) : (
-              <div key={`${normalizedLineupEntry.label}-${lineupIndex}`}>{labelWithBadges}</div>
-            );
-          })
-        )}
-      </div>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: isExpanded ? "flex-end" : "center",
-          gap: 6,
-        }}
-      >
-        {isMinimized ? (
+              }}
+            >
+              {event.title}
+              {event.subtitle ? ` — ${event.subtitle}` : ""}
+            </div>
+            <div
+              style={{
+                marginTop: 3,
+                color: "var(--tt-fg-mute)",
+                fontSize: 10,
+                letterSpacing: "0.04em",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {mobile ? `${event.date} · ` : ""}
+              {lineupText}
+            </div>
+          </div>
           <span
             style={{
               fontFamily: "var(--tt-text)",
@@ -257,20 +219,150 @@ export function DanzaEventRow({
           >
             DETAILS →
           </span>
-        ) : (
-          <>
+        </>
+      ) : (
+        <>
+          <div style={{ width: "100%", maxWidth: 600 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontFamily: "var(--tt-display)",
+                fontSize: mobile ? 38 : 56,
+                fontWeight: 700,
+                lineHeight: 0.98,
+                color: "var(--tt-fg)",
+                textTransform: "uppercase",
+                letterSpacing: "-0.035em",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {event.title}
+            </h1>
+            {event.subtitle ? (
+              <p
+                style={{
+                  margin: mobile ? "10px 0 0" : "12px 0 0",
+                  fontFamily: "var(--tt-display)",
+                  fontSize: mobile ? 21 : 28,
+                  fontWeight: 650,
+                  lineHeight: 1.05,
+                  color: "var(--tt-fg-dim)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.01em",
+                }}
+              >
+                {event.subtitle}
+              </p>
+            ) : null}
+          </div>
+
+          {event.lineup.length > 0 ? (
+            <div
+              aria-label="Featuring"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 7,
+                maxWidth: 520,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "var(--tt-text)",
+                  fontSize: 10,
+                  fontWeight: 650,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "var(--tt-fg-mute)",
+                }}
+              >
+                Featuring
+              </span>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                  gap: "5px 12px",
+                  fontFamily: "var(--tt-display)",
+                  fontSize: mobile ? 16 : 19,
+                  fontWeight: 650,
+                  lineHeight: 1.2,
+                  color: "var(--tt-fg)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.025em",
+                }}
+              >
+                {event.lineup.map((lineupEntry, lineupIndex) => {
+                  const normalizedLineupEntry =
+                    typeof lineupEntry === "string" ? { label: lineupEntry } : lineupEntry;
+                  const labelWithBadges = (
+                    <>
+                      <span>{normalizedLineupEntry.label}</span>
+                      {normalizedLineupEntry.descriptorBadges?.length ? (
+                        <DanzaLineupBadges badges={normalizedLineupEntry.descriptorBadges} />
+                      ) : null}
+                    </>
+                  );
+                  const artistContent = normalizedLineupEntry.href ? (
+                    <DanzaLineupAnchor href={normalizedLineupEntry.href}>
+                      {labelWithBadges}
+                    </DanzaLineupAnchor>
+                  ) : (
+                    labelWithBadges
+                  );
+                  return (
+                    <span key={`${normalizedLineupEntry.label}-${lineupIndex}`}>
+                      {artistContent}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 3,
+              fontFamily: "var(--tt-text)",
+              fontSize: mobile ? 14 : 16,
+              fontWeight: 550,
+              lineHeight: 1.25,
+              color: "var(--tt-fg)",
+              letterSpacing: "0.02em",
+              textTransform: "uppercase",
+            }}
+          >
+            <span>{event.date}</span>
+            {event.location ? <span>{event.location}</span> : null}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
             {topRightSlot}
             {renderBrick()}
-            {bottomRightSlot}
             {renderDetailsLink()}
-          </>
-        )}
-      </div>
+            {bottomRightSlot}
+          </div>
+        </>
+      )}
       {isExpanded && expandedContent ? (
         <div
           style={{
-            gridColumn: mobile ? "1 / -1" : "2 / -1",
-            paddingTop: mobile ? 14 : 18,
+            width: "100%",
+            maxWidth: 540,
+            paddingTop: mobile ? 8 : 12,
+            textAlign: "left",
           }}
         >
           {expandedContent}
@@ -325,7 +417,7 @@ function DanzaLineupAnchor({ href, children }: DanzaLineupAnchorProps) {
       onBlur={() => setIsHovered(false)}
       style={{
         color: isHovered ? "var(--tt-fg-dim)" : "inherit",
-        display: "block",
+        display: "inline-block",
         textDecoration: "none",
         width: "fit-content",
         transition: "color 180ms ease",

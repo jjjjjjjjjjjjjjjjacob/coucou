@@ -594,7 +594,7 @@ export const insertWithCreds = mutation({
       eventDate: args.eventDate,
       eventEndDate: args.eventEndDate,
       eventTimezone: args.eventTimezone,
-      status: args.status ?? "inactive",
+      status: args.status ?? "active",
       lifecycle: "published",
       publishedAt: now,
       defersQrDelivery: args.defersQrDelivery,
@@ -914,6 +914,7 @@ export const publishEvent = mutation({
       now,
     );
     await ctx.db.patch(args.eventId, {
+      status: "active",
       lifecycle: "published",
       publishedAt: event.publishedAt ?? now,
       updatedAt: now,
@@ -955,6 +956,7 @@ export const unpublishEvent = mutation({
       .collect();
     await syncExecutableEventCodeClaims(ctx, { ...event, lifecycle: "draft" }, credentials, now);
     await ctx.db.patch(args.eventId, {
+      status: "inactive",
       lifecycle: "draft",
       updatedAt: now,
     });

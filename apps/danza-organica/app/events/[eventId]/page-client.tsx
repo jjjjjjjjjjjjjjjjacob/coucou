@@ -181,16 +181,6 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   const expandedContent = (
     <div className="flex flex-col gap-5">
       <dl className="grid gap-x-6 gap-y-2" style={{ gridTemplateColumns: "min-content 1fr" }}>
-        <dt style={textLabelStyle}>When</dt>
-        <dd style={textBodyStyle}>
-          {formatExpandedDate(resolvedFocusedEvent.eventDate, resolvedFocusedEvent.eventTimezone)}
-        </dd>
-        {resolvedFocusedEvent.location ? (
-          <>
-            <dt style={textLabelStyle}>Where</dt>
-            <dd style={textBodyStyle}>{resolvedFocusedEvent.location}</dd>
-          </>
-        ) : null}
         {resolvedFocusedEvent.hosts && resolvedFocusedEvent.hosts.length > 0 ? (
           <>
             <dt style={textLabelStyle}>Hosts</dt>
@@ -241,7 +231,13 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     allRows.push({
       landingEvent: {
         id: eventRouteId,
-        date: formatLandingDate(resolvedFocusedEvent.eventDate, resolvedFocusedEvent.eventTimezone),
+        title: resolvedFocusedEvent.name,
+        subtitle: resolvedFocusedEvent.secondaryTitle,
+        date: formatExpandedDate(
+          resolvedFocusedEvent.eventDate,
+          resolvedFocusedEvent.eventTimezone,
+        ),
+        location: resolvedFocusedEvent.location,
         lineup: getPublicEventActs(resolvedFocusedEvent).map((act) => ({
           label: act.displayName,
           descriptorBadges: act.descriptorBadges,
@@ -270,7 +266,12 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     allRows.push({
       landingEvent: {
         id: eventRouteIdentifier,
-        date: formatLandingDate(event.eventDate, event.eventTimezone),
+        title: event.name,
+        subtitle: event.secondaryTitle,
+        date: isFocused
+          ? formatExpandedDate(event.eventDate, event.eventTimezone)
+          : formatLandingDate(event.eventDate, event.eventTimezone),
+        location: event.location,
         lineup: getPublicEventActs(event).map((act) => ({
           label: act.displayName,
           descriptorBadges: act.descriptorBadges,
@@ -293,30 +294,6 @@ export default function EventPageClient({ params }: EventPageClientProps) {
     <div>
       {allRows.map((row, index) => (
         <div key={row.landingEvent.id}>
-          {row.isFocused ? (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                paddingBottom: 6,
-              }}
-            >
-              <Link
-                href={buildPathWithPreservedQuery("/", searchParams, ["step"])}
-                style={{
-                  fontFamily: "var(--tt-text)",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--tt-fg-mute)",
-                  textDecoration: "none",
-                }}
-              >
-                ← Back
-              </Link>
-            </div>
-          ) : null}
           <DanzaEventRow
             event={row.landingEvent}
             mobile={isMobile}
@@ -326,9 +303,10 @@ export default function EventPageClient({ params }: EventPageClientProps) {
             variant={row.isFocused ? "expanded" : "minimized"}
             detailHref={
               row.isFocused
-                ? undefined
+                ? buildPathWithPreservedQuery("/", searchParams, ["step"])
                 : buildEventDetailPathWithPreservedQuery(row.landingEvent.id, searchParams)
             }
+            detailLabel={row.isFocused ? "← Back" : undefined}
             bottomRightSlot={
               row.isFocused && isSignedIn ? (
                 <EventReferralShareButton event={resolvedFocusedEvent} showLabel={false} />

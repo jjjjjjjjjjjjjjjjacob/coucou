@@ -1,6 +1,6 @@
 "use client";
 
-import { TenantMasthead, TenantTemplateProvider } from "@coucou/ui/tenant-template";
+import { TenantTemplateProvider } from "@coucou/ui/tenant-template";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { Footer } from "@/components/footer";
@@ -20,8 +20,8 @@ export function resolveContentMaxWidthPx(pathname: string | null | undefined): n
 
 /**
  * Danza Organica's chrome is deliberately minimal — the Dojo Pomodoro
- * treatment recolored teal/black: a token-driven masthead wordmark, a
- * centered editorial column, and the shared legal footer. The
+ * treatment recolored teal/black: a floating menu, a centered editorial
+ * column, and the shared legal footer. The
  * `TenantTemplateProvider` here is what puts the danza preset's `--tt-*`
  * variables (and the teal body background) in scope for every route,
  * including the shared rsvp/status/ticket components from
@@ -44,18 +44,13 @@ export function AppChrome({
       className="flex flex-1 flex-col"
     >
       <HeaderClient initialSatelliteOrigin={satelliteOrigin} />
-      <TenantMasthead
-        preset={siteConfiguration.preset}
-        brandName={siteConfiguration.brandName}
-        tagline=""
-      />
-      <main className="flex-1 w-full">
+      <main className="flex min-h-screen w-full items-center justify-center">
         <div
           style={{
             width: "100%",
             maxWidth: contentMaxWidthPx,
             margin: "0 auto",
-            padding: "48px 24px 72px",
+            padding: "96px 24px",
             boxSizing: "border-box",
           }}
         >

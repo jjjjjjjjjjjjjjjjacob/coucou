@@ -621,7 +621,7 @@ describe("text blast recipient selection", () => {
 
     await testBackend.run(async (databaseContext) => {
       await databaseContext.db.patch(targetEventId, {
-        status: "inactive",
+        lifecycle: "draft",
         updatedAt: Date.now(),
       });
     });

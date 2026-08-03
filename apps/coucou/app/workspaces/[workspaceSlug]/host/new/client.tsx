@@ -88,7 +88,7 @@ export default function NewEventClient() {
       guestPortalLinkLabel: "",
       guestPortalLinkUrl: "",
       maxAttendees: 1,
-      status: "inactive",
+      status: "active",
       themeBackgroundColor: EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
       themeTextColor: EVENT_THEME_DEFAULT_TEXT_COLOR,
       qrCodeColor: "#000000",
@@ -236,7 +236,7 @@ export default function NewEventClient() {
         eventDate: timestamp,
         eventTimezone: values.eventTimezone,
         maxAttendees: values.maxAttendees,
-        status: values.status ?? "inactive",
+        status: "active",
         attendanceQuestionEnabled: values.attendanceQuestionEnabled ?? false,
         rsvpConfirmationMessageEnabled: values.rsvpConfirmationMessageEnabled ?? true,
         rsvpConfirmationMessage: sanitizeOptionalRsvpConfirmationMessage(

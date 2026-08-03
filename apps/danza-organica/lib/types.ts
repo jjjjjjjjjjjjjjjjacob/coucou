@@ -105,6 +105,8 @@ export interface Event {
   eventTimezone?: string;
   maxAttendees?: number;
   status?: EventStatus;
+  lifecycle?: "draft" | "published";
+  publishedAt?: number;
   attendanceQuestionEnabled?: boolean;
   referralSharingEnabled?: boolean;
   customFields?: CustomField[];

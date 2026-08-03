@@ -6,7 +6,7 @@ import type { Id } from "@convex/_generated/dataModel";
 import { CountrySelector, countries } from "@coucou/ui/auth";
 import { TenantButton } from "@coucou/ui/tenant-template";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { CheckCircle2 } from "lucide-react";
+import { Check, CheckCircle2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { type Path, useForm } from "react-hook-form";
@@ -1196,20 +1196,30 @@ export function RsvpAcceptedForm({
             <div className="max-w-2xl space-y-2">
               <label
                 htmlFor="sms-opt-in"
-                className="flex items-start gap-2 text-sm text-foreground"
+                className="flex cursor-pointer items-start gap-2 text-sm text-primary"
               >
                 <input
                   id="sms-opt-in"
                   type="checkbox"
                   checked={smsConsentEnabled}
                   onChange={(event) => handleSmsConsentChange(event.target.checked)}
-                  className="mt-0.5 shrink-0"
+                  aria-describedby="sms-opt-in-disclosure"
+                  className="peer sr-only"
                 />
-                <span className="font-medium text-foreground">
+                <span
+                  aria-hidden="true"
+                  className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-[4px] border border-primary/40 bg-transparent text-primary-foreground peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:border-primary peer-focus-visible:ring-[3px] peer-focus-visible:ring-primary/30"
+                >
+                  {smsConsentEnabled ? <Check className="size-3.5" strokeWidth={3} /> : null}
+                </span>
+                <span className="font-medium text-primary">
                   {danzaOrganicaSmsProgram.consentLabel}
                 </span>
               </label>
-              <p className="text-[10px] leading-tight text-muted-foreground">
+              <p
+                id="sms-opt-in-disclosure"
+                className="text-pretty text-[10px] leading-tight text-primary/70"
+              >
                 <SmsProgramDisclosure />
               </p>
             </div>

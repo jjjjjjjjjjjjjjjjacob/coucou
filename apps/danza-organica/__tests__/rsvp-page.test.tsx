@@ -462,8 +462,24 @@ describe("RSVP page reservation-status gate", () => {
     expect(postHogFeatureFlagCalls).toEqual([]);
   });
 
+  it("treats a published upcoming event as open despite its legacy inactive status", async () => {
+    const publishedEvent = createEvent({ status: "inactive", lifecycle: "published" });
+    eventDocument = publishedEvent;
+    eventList = [publishedEvent];
+    eventRsvpStatus = null;
+
+    await renderHomePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("rsvp-brick-club").getAttribute("href")).toBe(
+        "/events/club/rsvp/full",
+      );
+    });
+    expect(postHogFeatureFlagCalls).toEqual(["rsvp-flow-route"]);
+  });
+
   it("does not evaluate the RSVP experiment for closed homepage events", async () => {
-    const closedEvent = createEvent({ status: "inactive" });
+    const closedEvent = createEvent({ lifecycle: "draft" });
     eventDocument = closedEvent;
     eventList = [closedEvent];
     eventRsvpStatus = null;

@@ -26,5 +26,5 @@ export function formatSmsFieldList(labels: readonly string[]): string {
 export function buildSmsRsvpFieldPrompt(labels: readonly string[]): string {
   const fieldList = formatSmsFieldList(labels);
   const valueWord = labels.length === 1 ? "value" : "values";
-  return `Reply with ${fieldList}, in that order, separated by commas (${labels.length} ${valueWord}).`;
+  return `To complete your RSVP, reply with ${fieldList}, in that order, separated by commas (${labels.length} ${valueWord}).`;
 }
