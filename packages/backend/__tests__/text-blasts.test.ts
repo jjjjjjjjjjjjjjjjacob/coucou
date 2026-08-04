@@ -456,6 +456,83 @@ describe("text blast recipient selection", () => {
     ).rejects.toThrow("reserved");
   });
 
+  it("validates reply codes against active event codes and overlapping blast recipients", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const sourceEventId = await seedEvent(testBackend, "Availability Source");
+    const targetEventId = await seedEvent(testBackend, "Availability Target");
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "ga",
+      password: "INVITE",
+    });
+    await seedUser(testBackend, "overlapping_guest", "+15551234101", "Overlap");
+    await seedUser(testBackend, "disjoint_guest", "+15551234102", "Disjoint");
+    const overlappingRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "overlapping_guest",
+      listKey: "vip",
+    });
+    const disjointRsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "disjoint_guest",
+      listKey: "vip",
+    });
+    const activeBlastId = await seedTextBlast(
+      testBackend,
+      sourceEventId,
+      "Active reply-code blast",
+    );
+    await seedReplyAction(testBackend, {
+      textBlastId: activeBlastId,
+      replyCode: "RETURN",
+      targetEventId,
+      targetListKey: "ga",
+    });
+    await seedDelivery(testBackend, {
+      textBlastId: activeBlastId,
+      phone: "+15551234101",
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId: overlappingRsvpId,
+      clerkUserId: "overlapping_guest",
+      listKey: "vip",
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+
+    const overlappingResult = await hostBackend.query(api.textBlasts.validateReplyActionCodes, {
+      eventId: sourceEventId,
+      targetEventIds: [sourceEventId],
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      targetLists: ["vip"],
+      selectedRsvpIds: [overlappingRsvpId],
+      replyActions: [
+        { replyCode: "return", isEnabled: true },
+        { replyCode: "invite", isEnabled: true },
+      ],
+    });
+
+    expect(overlappingResult.checkedRecipientCount).toBe(1);
+    expect(overlappingResult.results).toMatchObject([
+      { status: "reply_code_conflict", isAvailable: false },
+      { status: "event_code_conflict", isAvailable: false },
+    ]);
+
+    const disjointResult = await hostBackend.query(api.textBlasts.validateReplyActionCodes, {
+      eventId: sourceEventId,
+      targetEventIds: [sourceEventId],
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      targetLists: ["vip"],
+      selectedRsvpIds: [disjointRsvpId],
+      replyActions: [{ replyCode: "RETURN", isEnabled: true }],
+    });
+
+    expect(disjointResult.checkedRecipientCount).toBe(1);
+    expect(disjointResult.results).toMatchObject([{ status: "available", isAvailable: true }]);
+  });
+
   it("allows action-code reuse only for disjoint recipient phone sets", async () => {
     const testBackend = setupTestBackend();
     const targetEventId = await seedEvent(testBackend, "Claim Target");

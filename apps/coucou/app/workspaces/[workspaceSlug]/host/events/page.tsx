@@ -12,6 +12,7 @@ import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectOption } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { Event } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
 import EventCardClient from "./event-card-client";
@@ -23,13 +24,34 @@ type FilterOption = "all" | "draft" | "upcoming" | "past";
 
 type EventWithFlyer = { event: Event; flyerUrl: string | null };
 
+function EventsLoadingState() {
+  return (
+    <div role="status" aria-label="Loading events" className="grid grid-cols-1 gap-3">
+      <span className="sr-only">Loading events</span>
+      {Array.from({ length: 5 }).map((_, eventRowIndex) => (
+        <div
+          key={`event-loading-row-${eventRowIndex}`}
+          className="flex items-center gap-4 rounded-lg border bg-card p-4 shadow-sm"
+        >
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-48 max-w-full" />
+            <Skeleton className="h-3 w-64 max-w-full" />
+          </div>
+          <Skeleton className="size-8 shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function EventsPage() {
   const router = useRouter();
   const workspaceScope = useWorkspaceScope();
   const newEventPath = useWorkspaceOperationPath("host", "new");
-  const eventEntries = useQuery(api.events.listAllWithFlyerUrls, {
-    ...(workspaceScope?.queryArgs ?? {}),
-  }) as EventWithFlyer[] | undefined;
+  const eventEntries = useQuery(
+    api.events.listAllWithFlyerUrls,
+    workspaceScope ? workspaceScope.queryArgs : "skip",
+  ) as EventWithFlyer[] | undefined;
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("date");
@@ -182,7 +204,9 @@ export default function EventsPage() {
         </div>
       ) : null}
 
-      {(!eventEntries || eventEntries.length === 0) && (
+      {eventEntries === undefined ? <EventsLoadingState /> : null}
+
+      {eventEntries !== undefined && eventEntries.length === 0 && (
         <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
           <p className="text-lg text-[var(--text-secondary)]">No events yet</p>
           <p className="text-sm text-[var(--text-secondary)]">

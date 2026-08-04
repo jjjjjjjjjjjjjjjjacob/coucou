@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { PageCard } from "@/components/ui/page-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UserTextHistory } from "@/components/users/user-text-history";
 import type {
   GuestDirectoryFacets,
   GuestProfileLookupResult,
@@ -337,40 +338,6 @@ function InviterHistoryCard({
   );
 }
 
-function TextHistoryList({ threads }: { threads: UserSmsThreadHistoryEntry[] }) {
-  if (threads.length === 0) {
-    return <p className="text-sm text-[var(--text-secondary)]">No text history found.</p>;
-  }
-
-  return (
-    <div className="space-y-2">
-      {threads.map((thread) => (
-        <div
-          key={thread._id}
-          className="flex flex-col gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div className="min-w-0">
-            <div className="font-medium text-[var(--text-primary)]">{thread.participantName}</div>
-            <div className="text-xs text-[var(--text-secondary)]">
-              {thread.eventName} · {thread.phoneObfuscated}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge
-              variant={thread.canSend ? "approved" : "default"}
-              label={thread.canSend ? "Send enabled" : "Read-only"}
-              showDot={false}
-            />
-            <span className="text-xs text-[var(--text-tertiary)]">
-              {thread.messageCount} message{thread.messageCount === 1 ? "" : "s"}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export interface UserDetailContentProps {
   /** Already-decoded user reference: a users id or "rsvp~<rsvpId>". */
   userReference: string;
@@ -559,7 +526,7 @@ export function UserDetailContent({
 
         <TabsContent value="texts" className="pt-4">
           <PageCard title="Text history" description="SMS conversations involving this user">
-            <TextHistoryList threads={threads ?? []} />
+            <UserTextHistory threads={threads} />
           </PageCard>
         </TabsContent>
       </Tabs>

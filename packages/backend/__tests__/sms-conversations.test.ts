@@ -88,7 +88,9 @@ async function seedThreadMessage(
     eventId: Id<"events">;
     phone: string;
     clerkUserIds: string[];
-    direction?: "inbound" | "outbound";
+    direction?: "inbound" | "outbound" | "system";
+    body?: string;
+    createdAt?: number;
     providerMessageId?: string;
     providerStatus?: string;
   },
@@ -101,10 +103,10 @@ async function seedThreadMessage(
     participantClerkUserIds: args.clerkUserIds,
     direction: args.direction ?? "inbound",
     kind: "sms",
-    body: args.direction === "outbound" ? "Outbound test" : "Inbound test",
+    body: args.body ?? (args.direction === "outbound" ? "Outbound test" : "Inbound test"),
     providerMessageId: args.providerMessageId,
     providerStatus: args.providerStatus ?? "received",
-    createdAt: Date.now(),
+    createdAt: args.createdAt ?? Date.now(),
   });
   const threads = await testBackend.run(async (databaseContext) => {
     return await databaseContext.db
@@ -148,9 +150,219 @@ describe("sms conversations", () => {
 
     expect(threads).toHaveLength(1);
     expect(threads[0]?.participantName).toBe("Riley Park");
+    expect(threads[0]?.eventName).toBe("Conversation Event");
+    expect(threads[0]?.eventDate).toBeGreaterThan(0);
     expect(threads[0]?.canSend).toBe(true);
     expect(detail.thread.phoneObfuscated).toContain("2222");
     expect(detail.messages.map((message) => message.body)).toEqual(["Inbound test"]);
+  });
+
+  it("lists all workspace event threads with event metadata, global sorting, and event search", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const earlierEventId = await seedEvent(testBackend, "Earlier Event");
+    const laterEventId = await seedEvent(testBackend, "Later Event");
+    const outsideEventId = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.insert("events", {
+        workspaceSlug: "outside-workspace",
+        siteKey: "outside-site",
+        name: "Outside Event",
+        location: "Other Venue",
+        eventDate: Date.now() + 172_800_000,
+        status: "active",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const earlierThreadId = await seedThreadMessage(testBackend, {
+      eventId: earlierEventId,
+      phone: "555-201-1001",
+      clerkUserIds: [],
+      body: "Earlier message",
+      createdAt: 1_700_000_000_000,
+    });
+    const laterThreadId = await seedThreadMessage(testBackend, {
+      eventId: laterEventId,
+      phone: "555-201-1002",
+      clerkUserIds: [],
+      body: "Later message",
+      createdAt: 1_700_000_100_000,
+    });
+    await seedThreadMessage(testBackend, {
+      eventId: outsideEventId,
+      phone: "555-201-1003",
+      clerkUserIds: [],
+      body: "Outside message",
+      createdAt: 1_700_000_200_000,
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_all_events"));
+
+    const allThreads = await hostBackend.query(api.smsConversations.listThreads, {
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    const eventSearchThreads = await hostBackend.query(api.smsConversations.listThreads, {
+      search: "Earlier Event",
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    expect(allThreads.map((thread) => thread._id)).toEqual([laterThreadId, earlierThreadId]);
+    expect(allThreads.map((thread) => thread.eventName)).toEqual(["Later Event", "Earlier Event"]);
+    expect(allThreads.some((thread) => thread.eventName === "Outside Event")).toBe(false);
+    expect(eventSearchThreads.map((thread) => thread._id)).toEqual([earlierThreadId]);
+  });
+
+  it("filters conversation states independently and combines multiple states with OR", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const needsReplyThreadId = await seedThreadMessage(testBackend, {
+      eventId,
+      phone: "555-202-1001",
+      clerkUserIds: [],
+      direction: "inbound",
+      createdAt: 1_700_001_000_000,
+    });
+    const waitingWithIncomingThreadId = await seedThreadMessage(testBackend, {
+      eventId,
+      phone: "555-202-1002",
+      clerkUserIds: [],
+      direction: "inbound",
+      createdAt: 1_700_001_100_000,
+    });
+    await seedThreadMessage(testBackend, {
+      eventId,
+      phone: "555-202-1002",
+      clerkUserIds: [],
+      direction: "outbound",
+      createdAt: 1_700_001_200_000,
+    });
+    const waitingWithoutIncomingThreadId = await seedThreadMessage(testBackend, {
+      eventId,
+      phone: "555-202-1003",
+      clerkUserIds: [],
+      direction: "outbound",
+      createdAt: 1_700_001_300_000,
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_filters"));
+
+    const queryThreadIds = async (
+      conversationStates: Array<
+        "needs_reply" | "waiting_on_guest" | "has_incoming" | "no_incoming"
+      >,
+    ) => {
+      const threads = await hostBackend.query(api.smsConversations.listThreads, {
+        eventId,
+        conversationStates,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+      });
+      return new Set(threads.map((thread) => thread._id));
+    };
+
+    expect(await queryThreadIds(["needs_reply"])).toEqual(new Set([needsReplyThreadId]));
+    expect(await queryThreadIds(["waiting_on_guest"])).toEqual(
+      new Set([waitingWithIncomingThreadId, waitingWithoutIncomingThreadId]),
+    );
+    expect(await queryThreadIds(["has_incoming"])).toEqual(
+      new Set([needsReplyThreadId, waitingWithIncomingThreadId]),
+    );
+    expect(await queryThreadIds(["no_incoming"])).toEqual(
+      new Set([waitingWithoutIncomingThreadId]),
+    );
+    expect(await queryThreadIds(["needs_reply", "no_incoming"])).toEqual(
+      new Set([needsReplyThreadId, waitingWithoutIncomingThreadId]),
+    );
+    expect(await queryThreadIds([])).toEqual(
+      new Set([needsReplyThreadId, waitingWithIncomingThreadId, waitingWithoutIncomingThreadId]),
+    );
+  });
+
+  it("uses the event RSVP name when the linked user has no stored name", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: "guest_without_profile_name",
+        phone: "555-111-3434",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await databaseContext.db.insert("rsvps", {
+        eventId,
+        clerkUserId: "guest_without_profile_name",
+        listKey: "ga",
+        userName: "Elena Chiu",
+        shareContact: true,
+        status: "pending",
+        approvalStatus: "pending",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+    const threadId = await seedThreadMessage(testBackend, {
+      eventId,
+      phone: "555-111-3434",
+      clerkUserIds: ["guest_without_profile_name"],
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+
+    const threads = await hostBackend.query(api.smsConversations.listThreads, {
+      eventId,
+      search: "Elena",
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    const detail = await hostBackend.query(api.smsConversations.getThread, {
+      threadId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0]?.participantName).toBe("Elena Chiu");
+    expect(detail.thread.participantName).toBe("Elena Chiu");
+  });
+
+  it("uses a phone-matched RSVP name when a thread has no linked user", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const phone = "555-111-5656";
+    const phoneResolution = await normalizeAndHashPhoneNumber(phone);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("rsvps", {
+        eventId,
+        clerkUserId: "guest_phone_only",
+        listKey: "ga",
+        userName: "Jordan Ben-Shmuel",
+        guestPhoneHash: phoneResolution.phoneHash,
+        guestPhoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
+        shareContact: true,
+        status: "pending",
+        approvalStatus: "pending",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+    await seedThreadMessage(testBackend, {
+      eventId,
+      phone,
+      clerkUserIds: [],
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+
+    const threads = await hostBackend.query(api.smsConversations.listThreads, {
+      eventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0]?.participantName).toBe("Jordan Ben-Shmuel");
   });
 
   it("records inbound webhook messages on existing threads", async () => {

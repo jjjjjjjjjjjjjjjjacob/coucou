@@ -291,22 +291,22 @@
 }
 
 html.maison-dashboard-light {
-  background-color: #f8f7f2;
+  background-color: #f4f5f7;
 }
 
 html.maison-dashboard-light body.maison-app-surface,
 html.maison-dashboard-light body.maison-linear,
 html.maison-dashboard-light .maison-app-surface,
 html.maison-dashboard-light .maison-linear {
-  --tt-bg: #f8f7f2;
+  --tt-bg: #f4f5f7;
   --tt-bg-2: #ffffff;
-  --tt-fg: #171412;
-  --tt-fg-dim: #6f6961;
-  --tt-fg-mute: #9a9288;
-  --tt-highlight: #ece8df;
-  --tt-highlight-strong: #ded7c9;
-  --tt-rule: rgba(23, 20, 18, 0.1);
-  --tt-rule-strong: rgba(23, 20, 18, 0.18);
+  --tt-fg: #181a1f;
+  --tt-fg-dim: #656a73;
+  --tt-fg-mute: #8d939d;
+  --tt-highlight: #e9ebef;
+  --tt-highlight-strong: #dadde3;
+  --tt-rule: rgba(24, 26, 31, 0.1);
+  --tt-rule-strong: rgba(24, 26, 31, 0.18);
 
   --background: var(--tt-bg);
   --foreground: var(--tt-fg);
@@ -371,7 +371,7 @@ html:has(> body.maison-linear) {
 }
 
 html.maison-dashboard-light:has(> body.maison-linear) {
-  background-color: #f8f7f2;
+  background-color: #f4f5f7;
 }
 
 .maison-obscur-toast[data-sonner-toast] {

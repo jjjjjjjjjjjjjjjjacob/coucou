@@ -3,41 +3,66 @@
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useAction, useQuery } from "convex/react";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Info,
-  MessageSquare,
-  RefreshCw,
-  Search,
-  Send,
-} from "lucide-react";
+import { AlertCircle, Filter, MessageSquare, RefreshCw, Search, Send } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DashboardTitleBar } from "@/components/dashboard-title-bar";
+import { SmsConversationMessageBubble } from "@/components/sms-conversation-message-bubble";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Chip, ChipGroup } from "@/components/ui/chip-group";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatEventTitleInline } from "@/lib/event-display";
 import type {
   Event,
-  SmsConversationDirection,
-  SmsConversationKind,
-  SmsConversationMessage,
+  SmsConversationFilterState,
   SmsConversationThread,
+  SmsConversationThreadDetail,
+  SmsConversationThreadSummary,
 } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { cn } from "@/lib/utils";
 
-type ThreadDetail = {
-  thread: SmsConversationThread;
-  event: Event | null;
-  messages: SmsConversationMessage[];
-};
+const ALL_EVENTS_VALUE = "all";
+
+const CONVERSATION_FILTER_OPTIONS: Array<{
+  value: SmsConversationFilterState;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "needs_reply",
+    label: "Needs reply",
+    description: "Latest text is incoming",
+  },
+  {
+    value: "waiting_on_guest",
+    label: "Waiting on guest",
+    description: "Latest text is outgoing",
+  },
+  {
+    value: "has_incoming",
+    label: "Has incoming",
+    description: "One or more incoming texts",
+  },
+  {
+    value: "no_incoming",
+    label: "No incoming",
+    description: "No incoming texts",
+  },
+];
+
+function getConversationFilterLabel(filterState: SmsConversationFilterState): string {
+  return (
+    CONVERSATION_FILTER_OPTIONS.find((filterOption) => filterOption.value === filterState)?.label ??
+    filterState
+  );
+}
 
 function formatConversationTimestamp(timestamp: number | undefined): string {
   if (!timestamp) return "-";
@@ -47,74 +72,6 @@ function formatConversationTimestamp(timestamp: number | undefined): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(timestamp));
-}
-
-function formatConversationFullTimestamp(timestamp: number | undefined): string {
-  if (!timestamp) return "-";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(timestamp));
-}
-
-function formatKindLabel(kind: SmsConversationKind | undefined): string {
-  switch (kind) {
-    case "manual":
-      return "Manual";
-    case "blast":
-      return "Blast";
-    case "approval":
-      return "Approval";
-    case "consent":
-      return "Consent";
-    case "reply_action":
-      return "Reply action";
-    case "opt_out":
-      return "Opt-out";
-    case "help":
-      return "Help";
-    case "delivery_status":
-      return "Delivery";
-    case "system":
-      return "System";
-    case "sms":
-    default:
-      return "SMS";
-  }
-}
-
-function getDirectionLabel(direction: SmsConversationDirection | undefined): string {
-  switch (direction) {
-    case "inbound":
-      return "Inbound";
-    case "outbound":
-      return "Outbound";
-    case "system":
-      return "System";
-    default:
-      return "Message";
-  }
-}
-
-function getStatusIcon(status: string | undefined) {
-  switch (status) {
-    case "sent":
-    case "delivered":
-      return <CheckCircle2 className="h-3.5 w-3.5" />;
-    case "failed":
-    case "undelivered":
-      return <AlertCircle className="h-3.5 w-3.5" />;
-    case "pending":
-    case "queued":
-    case "accepted":
-      return <Clock className="h-3.5 w-3.5" />;
-    default:
-      return <Info className="h-3.5 w-3.5" />;
-  }
 }
 
 function getThreadPreview(thread: SmsConversationThread): string {
@@ -135,82 +92,18 @@ function EmptyThreadState() {
   );
 }
 
-function MessageBubble({ message }: { message: SmsConversationMessage }) {
-  if (message.direction === "system") {
-    return (
-      <div className="flex justify-center">
-        <div className="max-w-[88%] rounded-md border border-border bg-secondary/40 px-3 py-2 text-center text-xs text-muted-foreground">
-          <div>{message.body || formatKindLabel(message.kind)}</div>
-          <div className="mt-1 flex items-center justify-center gap-2 text-[11px]">
-            <span>{formatConversationFullTimestamp(message.createdAt)}</span>
-            {message.providerStatus ? <span>{message.providerStatus}</span> : null}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const isOutbound = message.direction === "outbound";
-  return (
-    <div className={cn("flex", isOutbound ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[82%] rounded-lg border px-4 py-3 shadow-sm",
-          isOutbound
-            ? "border-primary/20 bg-primary text-primary-foreground"
-            : "border-border bg-card text-foreground",
-        )}
-      >
-        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-          {message.body || "Media message"}
-        </div>
-        {message.mediaUrls && message.mediaUrls.length > 0 ? (
-          <div className="mt-3 grid gap-2">
-            {message.mediaUrls.map((mediaUrl) => (
-              <a
-                key={mediaUrl}
-                href={mediaUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="truncate rounded border border-border bg-background px-2 py-1 text-xs text-foreground underline-offset-2 hover:underline"
-              >
-                {mediaUrl}
-              </a>
-            ))}
-          </div>
-        ) : null}
-        <div
-          className={cn(
-            "mt-2 flex flex-wrap items-center gap-2 text-[11px]",
-            isOutbound ? "text-primary-foreground/75" : "text-muted-foreground",
-          )}
-        >
-          <span>{getDirectionLabel(message.direction)}</span>
-          <span>{formatKindLabel(message.kind)}</span>
-          <span>{formatConversationFullTimestamp(message.createdAt)}</span>
-          {message.providerStatus ? (
-            <span className="inline-flex items-center gap-1">
-              {getStatusIcon(message.providerStatus)}
-              {message.providerStatus}
-            </span>
-          ) : null}
-          {message.providerMessageId ? (
-            <span className="max-w-[12rem] truncate">id: {message.providerMessageId}</span>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function TextsPage() {
   const searchParams = useSearchParams();
   const workspaceScope = useWorkspaceScope();
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(
-    searchParams.get("eventId"),
+  const [selectedEventId, setSelectedEventId] = useState<string>(
+    searchParams.get("eventId") ?? ALL_EVENTS_VALUE,
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedConversationStates, setSelectedConversationStates] = useState<
+    SmsConversationFilterState[]
+  >([]);
+  const [conversationFiltersOpen, setConversationFiltersOpen] = useState(false);
   const [selectedThreadId, setSelectedThreadId] = useState<Id<"smsConversationThreads"> | null>(
     null,
   );
@@ -230,27 +123,30 @@ export default function TextsPage() {
     [events],
   );
 
-  useEffect(() => {
-    if (!selectedEventId && eventsSorted[0]?._id) {
-      setSelectedEventId(eventsSorted[0]._id);
-    }
-  }, [eventsSorted, selectedEventId]);
+  const selectedEventIsValid =
+    selectedEventId === ALL_EVENTS_VALUE ||
+    eventsSorted.some((event) => event._id === selectedEventId);
 
-  const selectedEvent = useMemo(
-    () => eventsSorted.find((event) => event._id === selectedEventId) ?? null,
-    [eventsSorted, selectedEventId],
-  );
+  useEffect(() => {
+    if (events !== undefined && !selectedEventIsValid) {
+      setSelectedEventId(ALL_EVENTS_VALUE);
+      setSelectedThreadId(null);
+    }
+  }, [events, selectedEventIsValid]);
 
   const threads = useQuery(
     api.smsConversations.listThreads,
-    selectedEventId && workspaceScope
+    workspaceScope && selectedEventIsValid
       ? {
-          eventId: selectedEventId as Id<"events">,
+          ...(selectedEventId === ALL_EVENTS_VALUE
+            ? {}
+            : { eventId: selectedEventId as Id<"events"> }),
           search: searchQuery,
+          conversationStates: selectedConversationStates,
           ...workspaceScope.queryArgs,
         }
       : "skip",
-  ) as SmsConversationThread[] | undefined;
+  ) as SmsConversationThreadSummary[] | undefined;
 
   useEffect(() => {
     if (!threads || threads.length === 0) {
@@ -270,7 +166,7 @@ export default function TextsPage() {
           ...workspaceScope.queryArgs,
         }
       : "skip",
-  ) as ThreadDetail | undefined;
+  ) as SmsConversationThreadDetail | undefined;
   const sendManualMessage = useAction(api.smsConversations.sendManualMessage);
 
   useEffect(() => {
@@ -281,6 +177,20 @@ export default function TextsPage() {
   const requiredMessagePrefix =
     workspaceScope?.siteKey === "club-chlorine" ? "CLUB CHLORINE:" : null;
   const canSendMessage = Boolean(selectedThread?.canSend && messageDraft.trim() && !isSending);
+  const hasConversationFilters =
+    searchQuery.trim().length > 0 || selectedConversationStates.length > 0;
+
+  function updateConversationState(filterState: SmsConversationFilterState, selected: boolean) {
+    setSelectedConversationStates((currentFilterStates) => {
+      if (selected) {
+        return currentFilterStates.includes(filterState)
+          ? currentFilterStates
+          : [...currentFilterStates, filterState];
+      }
+      return currentFilterStates.filter((currentFilterState) => currentFilterState !== filterState);
+    });
+    setSelectedThreadId(null);
+  }
 
   async function handleSendMessage() {
     if (!selectedThreadId || !workspaceScope || !messageDraft.trim()) return;
@@ -309,13 +219,16 @@ export default function TextsPage() {
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <DashboardTitleBar
         title="Texts"
-        subtitle="Per-event SMS threads with guests, reply actions, and delivery history."
+        subtitle="Workspace SMS threads with guests, reply actions, and delivery history."
         secondaryAction={
           <Button
             type="button"
             variant="outline"
             onClick={() => {
+              setSelectedEventId(ALL_EVENTS_VALUE);
               setSearchQuery("");
+              setSelectedConversationStates([]);
+              setConversationFiltersOpen(false);
               setSelectedThreadId(null);
             }}
           >
@@ -329,22 +242,19 @@ export default function TextsPage() {
         <aside className="flex min-h-0 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)]">
           <div className="shrink-0 space-y-3 border-b border-[var(--border-subtle)] p-3">
             <Select
-              value={selectedEventId ?? ""}
+              value={selectedEventId}
               onValueChange={(value) => {
-                setSelectedEventId(value || null);
+                setSelectedEventId(value);
                 setSelectedThreadId(null);
               }}
               aria-label="Select event"
             >
-              {eventsSorted.length === 0 ? (
-                <SelectOption value="">No events</SelectOption>
-              ) : (
-                eventsSorted.map((event) => (
-                  <SelectOption key={event._id} value={event._id}>
-                    {formatEventTitleInline(event)}
-                  </SelectOption>
-                ))
-              )}
+              <SelectOption value={ALL_EVENTS_VALUE}>All events</SelectOption>
+              {eventsSorted.map((event) => (
+                <SelectOption key={event._id} value={event._id}>
+                  {formatEventTitleInline(event)}
+                </SelectOption>
+              ))}
             </Select>
             <div className="relative">
               <Search className="absolute top-2.5 left-3 h-4 w-4 text-muted-foreground" />
@@ -355,6 +265,71 @@ export default function TextsPage() {
                 className="pl-9"
               />
             </div>
+            <Popover open={conversationFiltersOpen} onOpenChange={setConversationFiltersOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start border-[var(--border-subtle)] font-normal"
+                >
+                  <Filter className="h-4 w-4" />
+                  <span className="flex-1 text-left">Conversation state</span>
+                  {selectedConversationStates.length > 0 ? (
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                      {selectedConversationStates.length}
+                    </Badge>
+                  ) : null}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 p-2">
+                <div className="space-y-1">
+                  {CONVERSATION_FILTER_OPTIONS.map((filterOption) => {
+                    const checkboxId = `conversation-state-${filterOption.value}`;
+                    return (
+                      <label
+                        key={filterOption.value}
+                        htmlFor={checkboxId}
+                        className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-[var(--surface-3)]"
+                      >
+                        <Checkbox
+                          id={checkboxId}
+                          checked={selectedConversationStates.includes(filterOption.value)}
+                          onCheckedChange={(checked) =>
+                            updateConversationState(filterOption.value, checked === true)
+                          }
+                          className="mt-0.5"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium">{filterOption.label}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {filterOption.description}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+            {hasConversationFilters ? (
+              <ChipGroup aria-label="Active conversation filters">
+                {searchQuery.trim() ? (
+                  <Chip
+                    label={`Search: “${searchQuery.trim()}”`}
+                    onRemove={() => setSearchQuery("")}
+                    removeLabel="Clear conversation search"
+                  />
+                ) : null}
+                {selectedConversationStates.map((filterState) => (
+                  <Chip
+                    key={filterState}
+                    label={getConversationFilterLabel(filterState)}
+                    onRemove={() => updateConversationState(filterState, false)}
+                    removeLabel={`Remove ${getConversationFilterLabel(filterState)} filter`}
+                  />
+                ))}
+              </ChipGroup>
+            ) : null}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -368,7 +343,11 @@ export default function TextsPage() {
               </div>
             ) : threads.length === 0 ? (
               <div className="p-6 text-center text-sm text-muted-foreground">
-                No SMS conversations for this event yet.
+                {hasConversationFilters
+                  ? "No conversations match these filters."
+                  : selectedEventId === ALL_EVENTS_VALUE
+                    ? "No SMS conversations in this workspace yet."
+                    : "No SMS conversations for this event yet."}
               </div>
             ) : (
               threads.map((thread) => {
@@ -391,6 +370,11 @@ export default function TextsPage() {
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {thread.phoneObfuscated}
                         </div>
+                        {selectedEventId === ALL_EVENTS_VALUE ? (
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {thread.eventName}
+                          </div>
+                        ) : null}
                       </div>
                       <Badge
                         variant={thread.canSend ? "secondary" : "outline"}
@@ -429,7 +413,9 @@ export default function TextsPage() {
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span>{selectedThread.phoneObfuscated}</span>
                       <span>
-                        {selectedEvent ? formatEventTitleInline(selectedEvent) : "Selected event"}
+                        {threadDetail?.event
+                          ? formatEventTitleInline(threadDetail.event)
+                          : "Unknown event"}
                       </span>
                       <span>{selectedThread.messageCount} messages</span>
                     </div>
@@ -454,7 +440,7 @@ export default function TextsPage() {
                 ) : (
                   <div className="space-y-4">
                     {(threadDetail?.messages ?? []).map((message) => (
-                      <MessageBubble key={message._id} message={message} />
+                      <SmsConversationMessageBubble key={message._id} message={message} />
                     ))}
                     <div ref={messagesEndRef} />
                   </div>

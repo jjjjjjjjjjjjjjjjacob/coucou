@@ -7,9 +7,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **IMPORTANT: Always use `bun` as the package manager - NEVER use npm, yarn, or pnpm**
 
 ### Build Commands
-- `bun dev` - Start development server for all apps in parallel (uses Turbo)
-- `bun build` - Build all apps for production (uses Turbo)
-- `bun lint` - Run linting across all apps (uses Turbo)
+- `bun run dev` - Start development servers through Turbo
+- `bun run check` - Run the required repository-wide Biome formatting and lint gate
+- `bun run test` - Run all tests included in CI
+- `bun run build` - Build all production apps through Turbo
+- `bun run quality` - Run the complete CI-equivalent check, test, and build gate
+- `bun run quality:fix` - Apply safe Biome formatting/lint fixes, then run the complete quality gate
+- `bun run lint` - Run linting only; this is narrower than the required `check` script
+
+## Required CI Static Checks
+
+The required GitHub `Static Checks` gate in `.github/workflows/ci.yml` passes only when its Biome, Tests, and Build jobs all pass. Before completing any change to code, tests, configuration, dependencies, or build tooling, run the exact root scripts used by CI:
+
+```bash
+bun run quality
+```
+
+- `bun run quality` runs `bun run check`, `bun run test`, and `bun run build` in sequence.
+- `bun run quality:fix` first runs `biome check --write .` to format files, organize imports, and apply safe lint fixes, then runs the complete `quality` gate. Review all generated changes before committing them.
+- Run `bun run quality` from the repository root; all three underlying checks are mandatory.
+- `bun run check` verifies repository-wide Biome formatting and linting. `bun run lint` alone is not equivalent and is not sufficient.
+- `bun run test` runs every workspace test task and the script tests.
+- `bun run build` runs all production builds through Turbo, including framework/type validation performed during those builds.
+- Targeted tests and package-level checks are useful while developing, but they do not replace the full gate.
+- Fix failures rather than skipping checks, weakening configuration, or suppressing errors. Never report a task complete unless all three checks pass. If a check cannot run because of an environment or external dependency, report the exact command and failure clearly.
+- `.github/workflows/ci.yml` and the root `package.json` are the source of truth. Keep this section synchronized whenever CI changes.
 
 ### Web App (apps/web)
 - `cd apps/web && bun dev` - Start Next.js development server on port 2345
@@ -82,6 +104,6 @@ Based on the codebase structure, this appears to be an event management system w
 - Component names should clearly indicate their purpose
 
 ## Notes
-- No test suite currently configured
-- ESLint configuration is minimal due to toolchain compatibility issues
+- The repository has workspace and script test suites run by `bun run test`.
+- Biome is the required repository-wide formatting and linting gate; selected web apps also have ESLint scripts for targeted validation.
 - Uses Bun as package manager with workspaces configuration

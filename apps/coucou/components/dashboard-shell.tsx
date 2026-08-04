@@ -11,5 +11,9 @@ interface DashboardShellProps {
 export function DashboardShell({ children }: DashboardShellProps) {
   useMaisonLinearBodyClass();
 
-  return <CoucouLinearShell sidebar={<DashboardSidebar />}>{children}</CoucouLinearShell>;
+  return (
+    <CoucouLinearShell sidebar={<DashboardSidebar />} mobileTitle="Coucou">
+      {children}
+    </CoucouLinearShell>
+  );
 }

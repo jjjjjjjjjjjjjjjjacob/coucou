@@ -73,7 +73,10 @@ function WorkspaceDashboardChrome({
   }
 
   return (
-    <CoucouLinearShell sidebar={<AppSidebar canWrite={workspaceAccessState.canWrite} />}>
+    <CoucouLinearShell
+      sidebar={<AppSidebar canWrite={workspaceAccessState.canWrite} />}
+      mobileTitle={workspaceAccessState.workspaceBrandName}
+    >
       {writeOnlyRoute ? (
         <AccessRequiredState workspaceAccessState={workspaceAccessState} />
       ) : (

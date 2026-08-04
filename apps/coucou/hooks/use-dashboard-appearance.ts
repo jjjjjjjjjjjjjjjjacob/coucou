@@ -6,6 +6,9 @@ export type DashboardAppearance = "dark" | "light";
 
 const DASHBOARD_APPEARANCE_STORAGE_KEY = "coucou-dashboard-appearance";
 const DASHBOARD_LIGHT_MODE_CLASS_NAME = "maison-dashboard-light";
+const dashboardAppearanceSubscribers = new Set<() => void>();
+let cachedDashboardAppearance: DashboardAppearance = "dark";
+let removeDashboardAppearanceStorageListener: (() => void) | null = null;
 
 function isDashboardAppearance(value: string | null): value is DashboardAppearance {
   return value === "dark" || value === "light";
@@ -13,16 +16,22 @@ function isDashboardAppearance(value: string | null): value is DashboardAppearan
 
 function getStoredDashboardAppearance(): DashboardAppearance {
   if (typeof window === "undefined") {
-    return "dark";
+    return cachedDashboardAppearance;
   }
 
   try {
     const storedDashboardAppearance = window.localStorage.getItem(DASHBOARD_APPEARANCE_STORAGE_KEY);
 
-    return isDashboardAppearance(storedDashboardAppearance) ? storedDashboardAppearance : "dark";
+    if (isDashboardAppearance(storedDashboardAppearance)) {
+      cachedDashboardAppearance = storedDashboardAppearance;
+    } else {
+      cachedDashboardAppearance = "dark";
+    }
   } catch {
-    return "dark";
+    return cachedDashboardAppearance;
   }
+
+  return cachedDashboardAppearance;
 }
 
 function applyDashboardAppearance(dashboardAppearance: DashboardAppearance) {
@@ -47,6 +56,8 @@ function clearDashboardAppearance() {
 }
 
 function storeDashboardAppearance(dashboardAppearance: DashboardAppearance) {
+  cachedDashboardAppearance = dashboardAppearance;
+
   if (typeof window === "undefined") {
     return;
   }
@@ -58,21 +69,70 @@ function storeDashboardAppearance(dashboardAppearance: DashboardAppearance) {
   }
 }
 
+function notifyDashboardAppearanceSubscribers() {
+  for (const subscriber of Array.from(dashboardAppearanceSubscribers)) {
+    subscriber();
+  }
+}
+
+function getServerDashboardAppearance(): DashboardAppearance {
+  return "dark";
+}
+
+function subscribeToDashboardAppearance(subscriber: () => void): () => void {
+  dashboardAppearanceSubscribers.add(subscriber);
+
+  if (typeof window !== "undefined" && !removeDashboardAppearanceStorageListener) {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key !== DASHBOARD_APPEARANCE_STORAGE_KEY) {
+        return;
+      }
+
+      if (isDashboardAppearance(event.newValue)) {
+        cachedDashboardAppearance = event.newValue;
+        applyDashboardAppearance(event.newValue);
+      } else {
+        cachedDashboardAppearance = "dark";
+        applyDashboardAppearance("dark");
+      }
+      notifyDashboardAppearanceSubscribers();
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    removeDashboardAppearanceStorageListener = () => {
+      window.removeEventListener("storage", handleStorageChange);
+      removeDashboardAppearanceStorageListener = null;
+    };
+  }
+
+  return () => {
+    dashboardAppearanceSubscribers.delete(subscriber);
+    if (dashboardAppearanceSubscribers.size === 0) {
+      removeDashboardAppearanceStorageListener?.();
+      clearDashboardAppearance();
+    }
+  };
+}
+
+function initializeDashboardAppearance() {
+  applyDashboardAppearance(getStoredDashboardAppearance());
+}
+
 function useDashboardAppearance() {
-  const [dashboardAppearance, setDashboardAppearanceState] =
-    React.useState<DashboardAppearance>("dark");
+  const dashboardAppearance = React.useSyncExternalStore(
+    subscribeToDashboardAppearance,
+    getStoredDashboardAppearance,
+    getServerDashboardAppearance,
+  );
 
   React.useEffect(() => {
-    const storedDashboardAppearance = getStoredDashboardAppearance();
-    setDashboardAppearanceState(storedDashboardAppearance);
-    applyDashboardAppearance(storedDashboardAppearance);
-    return clearDashboardAppearance;
-  }, []);
+    applyDashboardAppearance(dashboardAppearance);
+  }, [dashboardAppearance]);
 
   const setDashboardAppearance = React.useCallback((appearance: DashboardAppearance) => {
-    setDashboardAppearanceState(appearance);
     storeDashboardAppearance(appearance);
     applyDashboardAppearance(appearance);
+    notifyDashboardAppearanceSubscribers();
   }, []);
 
   const toggleDashboardAppearance = React.useCallback(() => {
@@ -91,7 +151,9 @@ function useDashboardAppearance() {
 }
 
 export {
+  clearDashboardAppearance,
   DASHBOARD_APPEARANCE_STORAGE_KEY,
   DASHBOARD_LIGHT_MODE_CLASS_NAME,
+  initializeDashboardAppearance,
   useDashboardAppearance,
 };

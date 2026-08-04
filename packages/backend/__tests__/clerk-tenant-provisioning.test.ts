@@ -1,8 +1,8 @@
-import type { ClerkClient, Organization, OrganizationInvitation } from "@clerk/backend";
+import type { ClerkClient, Organization, OrganizationMembership } from "@clerk/backend";
 import { describe, expect, it } from "vitest";
 import {
   getOrCreateCoucouTenantOrganization,
-  getOrCreateTenantAdminInvitation,
+  getOrCreateTenantAdminMembership,
 } from "../convex/lib/clerkTenantProvisioning";
 
 type ClerkOrganizationsApi = ClerkClient["organizations"];
@@ -23,17 +23,17 @@ function createOrganization(
   } as unknown as Organization;
 }
 
-function createInvitation(): OrganizationInvitation {
+function createMembership(role = "org:admin"): OrganizationMembership {
   return {
-    id: "orginv_danza_admin",
-    organizationId: "org_danza",
-    emailAddress: "events@coucou.events",
-    role: "org:admin",
-    status: "pending",
-    publicMetadata: {
-      workspaceSlug: "danza-organica",
+    id: "orgmem_danza_admin",
+    role,
+    organization: {
+      id: "org_danza",
     },
-  } as unknown as OrganizationInvitation;
+    publicUserData: {
+      userId: "user_coucou_admin",
+    },
+  } as unknown as OrganizationMembership;
 }
 
 function createNotFoundError(): Record<string, unknown> {
@@ -153,28 +153,71 @@ describe("Clerk tenant provisioning", () => {
     ).rejects.toThrow("already in use by another organization");
   });
 
-  it("reuses an existing pending tenant admin invitation", async () => {
-    const existingInvitation = createInvitation();
+  it("reuses an existing tenant admin membership without sending an invitation", async () => {
+    const existingMembership = createMembership();
     let createCallCount = 0;
     const clerkOrganizations = {
-      getOrganizationInvitationList: async () => ({
-        data: [existingInvitation],
+      getOrganizationMembershipList: async () => ({
+        data: [existingMembership],
         totalCount: 1,
       }),
-      createOrganizationInvitation: async () => {
+      createOrganizationMembership: async () => {
         createCallCount += 1;
-        return existingInvitation;
+        return existingMembership;
       },
     } as unknown as ClerkOrganizationsApi;
 
-    const invitation = await getOrCreateTenantAdminInvitation(clerkOrganizations, {
+    const membership = await getOrCreateTenantAdminMembership(clerkOrganizations, {
       organizationId: "org_danza",
-      workspaceSlug: "danza-organica",
-      tenantAdminEmail: "events@coucou.events",
-      inviterClerkUserId: "user_coucou_admin",
+      tenantAdminClerkUserId: "user_coucou_admin",
     });
 
-    expect(invitation).toBe(existingInvitation);
+    expect(membership).toBe(existingMembership);
     expect(createCallCount).toBe(0);
+  });
+
+  it("directly creates an admin membership when the user is not yet a member", async () => {
+    const createdMembership = createMembership();
+    let invitationCallCount = 0;
+    const clerkOrganizations = {
+      getOrganizationMembershipList: async () => ({ data: [], totalCount: 0 }),
+      createOrganizationMembership: async () => createdMembership,
+      createOrganizationInvitation: async () => {
+        invitationCallCount += 1;
+        throw new Error("Invitation API should not be called");
+      },
+    } as unknown as ClerkOrganizationsApi;
+
+    const membership = await getOrCreateTenantAdminMembership(clerkOrganizations, {
+      organizationId: "org_danza",
+      tenantAdminClerkUserId: "user_coucou_admin",
+    });
+
+    expect(membership).toBe(createdMembership);
+    expect(invitationCallCount).toBe(0);
+  });
+
+  it("promotes an existing tenant member directly to admin", async () => {
+    const existingMembership = createMembership("org:member");
+    const promotedMembership = createMembership();
+    let updateCallCount = 0;
+    const clerkOrganizations = {
+      getOrganizationMembershipList: async () => ({
+        data: [existingMembership],
+        totalCount: 1,
+      }),
+      updateOrganizationMembership: async () => {
+        updateCallCount += 1;
+        return promotedMembership;
+      },
+    } as unknown as ClerkOrganizationsApi;
+
+    const membership = await getOrCreateTenantAdminMembership(clerkOrganizations, {
+      organizationId: "org_danza",
+      tenantAdminClerkUserId: "user_coucou_admin",
+    });
+
+    expect(membership).toBe(promotedMembership);
+    expect(updateCallCount).toBe(1);
   });
 });

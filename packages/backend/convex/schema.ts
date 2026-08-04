@@ -888,6 +888,7 @@ export default defineSchema({
     status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("denied")),
     workspaceId: v.optional(v.id("workspaces")),
     tenantAdminEmail: v.optional(v.string()),
+    tenantAdminClerkUserId: v.optional(v.string()),
     clerkOrganizationId: v.optional(v.string()),
     clerkOrganizationSlug: v.optional(v.string()),
     clerkInvitationId: v.optional(v.string()),

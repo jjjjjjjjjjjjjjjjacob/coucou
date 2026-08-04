@@ -1,4 +1,4 @@
-import type { ClerkClient, Organization, OrganizationInvitation } from "@clerk/backend";
+import type { ClerkClient, Organization, OrganizationMembership } from "@clerk/backend";
 
 type ClerkOrganizationsApi = ClerkClient["organizations"];
 
@@ -8,11 +8,9 @@ interface TenantOrganizationInput {
   createdByClerkUserId: string;
 }
 
-interface TenantInvitationInput {
+interface TenantAdminMembershipInput {
   organizationId: string;
-  workspaceSlug: string;
-  tenantAdminEmail: string;
-  inviterClerkUserId: string;
+  tenantAdminClerkUserId: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -143,64 +141,55 @@ export async function getOrCreateCoucouTenantOrganization(
   }
 }
 
-async function findPendingTenantAdminInvitation(
+async function findTenantAdminMembership(
   clerkOrganizations: ClerkOrganizationsApi,
   organizationId: string,
-  workspaceSlug: string,
-  tenantAdminEmail: string,
-): Promise<OrganizationInvitation | null> {
-  const invitationList = await clerkOrganizations.getOrganizationInvitationList({
+  tenantAdminClerkUserId: string,
+): Promise<OrganizationMembership | null> {
+  const membershipList = await clerkOrganizations.getOrganizationMembershipList({
     organizationId,
-    status: ["pending"],
-    limit: 100,
+    userId: [tenantAdminClerkUserId],
+    limit: 1,
   });
 
-  return (
-    invitationList.data.find(
-      (invitation) =>
-        invitation.emailAddress.toLowerCase() === tenantAdminEmail &&
-        invitation.role === "org:admin" &&
-        invitation.publicMetadata?.workspaceSlug === workspaceSlug,
-    ) ?? null
-  );
+  return membershipList.data[0] ?? null;
 }
 
-export async function getOrCreateTenantAdminInvitation(
+export async function getOrCreateTenantAdminMembership(
   clerkOrganizations: ClerkOrganizationsApi,
-  { organizationId, workspaceSlug, tenantAdminEmail, inviterClerkUserId }: TenantInvitationInput,
-): Promise<OrganizationInvitation> {
-  const existingInvitation = await findPendingTenantAdminInvitation(
+  { organizationId, tenantAdminClerkUserId }: TenantAdminMembershipInput,
+): Promise<OrganizationMembership> {
+  const existingMembership = await findTenantAdminMembership(
     clerkOrganizations,
     organizationId,
-    workspaceSlug,
-    tenantAdminEmail,
+    tenantAdminClerkUserId,
   );
-  if (existingInvitation) {
-    return existingInvitation;
+  if (existingMembership?.role === "org:admin") {
+    return existingMembership;
   }
 
   try {
-    return await clerkOrganizations.createOrganizationInvitation({
-      organizationId,
-      inviterUserId: inviterClerkUserId,
-      emailAddress: tenantAdminEmail,
-      role: "org:admin",
-      redirectUrl: `/workspaces/${workspaceSlug}/dashboard`,
-      publicMetadata: {
-        workspaceSlug,
-      },
-    });
+    return existingMembership
+      ? await clerkOrganizations.updateOrganizationMembership({
+          organizationId,
+          userId: tenantAdminClerkUserId,
+          role: "org:admin",
+        })
+      : await clerkOrganizations.createOrganizationMembership({
+          organizationId,
+          userId: tenantAdminClerkUserId,
+          role: "org:admin",
+        });
   } catch (error: unknown) {
-    const invitationCreatedByAnotherAttempt = await findPendingTenantAdminInvitation(
+    const membershipUpdatedByAnotherAttempt = await findTenantAdminMembership(
       clerkOrganizations,
       organizationId,
-      workspaceSlug,
-      tenantAdminEmail,
+      tenantAdminClerkUserId,
     );
-    if (invitationCreatedByAnotherAttempt) {
-      return invitationCreatedByAnotherAttempt;
+    if (membershipUpdatedByAnotherAttempt?.role === "org:admin") {
+      return membershipUpdatedByAnotherAttempt;
     }
 
-    throw new Error(describeClerkError(error, "Clerk organization invitation"));
+    throw new Error(describeClerkError(error, "Clerk organization admin membership"));
   }
 }

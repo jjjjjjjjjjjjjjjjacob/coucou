@@ -117,6 +117,20 @@ type StoredReplyActionInput = {
   isEnabled: boolean;
 };
 
+type ReplyCodeAvailabilityStatus =
+  | "available"
+  | "invalid"
+  | "event_code_conflict"
+  | "reply_code_conflict";
+
+type ReplyCodeAvailabilityResult = {
+  replyCode: string;
+  normalizedReplyCode: string;
+  status: ReplyCodeAvailabilityStatus;
+  isAvailable: boolean;
+  message?: string;
+};
+
 type ReplyActionAttemptStatus =
   | "submitted"
   | "already_exists"
@@ -267,11 +281,11 @@ function throwSmsCodeConflict(): never {
   );
 }
 
-async function assertNoExecutableEventCodeCollision(
+async function hasExecutableEventCodeCollision(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   normalizedCode: string,
   now: number,
-): Promise<void> {
+): Promise<boolean> {
   const matchingCredentials = await ctx.db
     .query("listCredentials")
     .withIndex("by_passwordNormalized", (queryBuilder) =>
@@ -281,9 +295,100 @@ async function assertNoExecutableEventCodeCollision(
   for (const matchingCredential of matchingCredentials) {
     const event = await ctx.db.get(matchingCredential.eventId);
     if (event && isSmsExecutableEvent(event, now)) {
-      throwSmsCodeConflict();
+      return true;
     }
   }
+
+  return false;
+}
+
+async function assertNoExecutableEventCodeCollision(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  normalizedCode: string,
+  now: number,
+): Promise<void> {
+  if (await hasExecutableEventCodeCollision(ctx, normalizedCode, now)) {
+    throwSmsCodeConflict();
+  }
+}
+
+async function hasActiveReplyActionCollision(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  args: {
+    normalizedCode: string;
+    recipientPhoneHashes: ReadonlySet<string>;
+    excludedTextBlastId?: Id<"textBlasts">;
+    now: number;
+  },
+): Promise<boolean> {
+  if (args.recipientPhoneHashes.size === 0) {
+    return false;
+  }
+
+  const matchingReplyActions = await ctx.db
+    .query("textBlastReplyActions")
+    .withIndex("by_code", (queryBuilder) =>
+      queryBuilder.eq("replyCodeNormalized", args.normalizedCode),
+    )
+    .collect();
+
+  for (const matchingReplyAction of matchingReplyActions) {
+    if (
+      !matchingReplyAction.isEnabled ||
+      matchingReplyAction.textBlastId === args.excludedTextBlastId
+    ) {
+      continue;
+    }
+
+    const targetEvent = await ctx.db.get(matchingReplyAction.targetEventId);
+    if (!targetEvent || !isSmsExecutableEvent(targetEvent, args.now)) {
+      continue;
+    }
+
+    const targetList = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event_key", (queryBuilder) =>
+        queryBuilder
+          .eq("eventId", matchingReplyAction.targetEventId)
+          .eq("listKey", matchingReplyAction.targetListKey),
+      )
+      .first();
+    if (!targetList) {
+      continue;
+    }
+
+    const existingClaims = await ctx.db
+      .query("smsCodeClaims")
+      .withIndex("by_reply_action", (queryBuilder) =>
+        queryBuilder.eq("replyActionId", matchingReplyAction._id),
+      )
+      .collect();
+    const hasOverlappingLiveClaim = existingClaims.some(
+      (claim) =>
+        claim.phoneHash !== undefined &&
+        args.recipientPhoneHashes.has(claim.phoneHash) &&
+        (claim.status === "active" || (claim.reservationExpiresAt ?? 0) > args.now),
+    );
+    if (hasOverlappingLiveClaim) {
+      return true;
+    }
+
+    // Successful deliveries are the source of truth for legacy routes that
+    // predate smsCodeClaims or have not been backfilled yet.
+    const successfulDeliveries = await ctx.db
+      .query("textBlastRecipients")
+      .withIndex("by_text_blast_status", (queryBuilder) =>
+        queryBuilder.eq("textBlastId", matchingReplyAction.textBlastId).eq("status", "sent"),
+      )
+      .collect();
+    if (
+      successfulDeliveries.some((delivery) => args.recipientPhoneHashes.has(delivery.phoneHash))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function normalizeReplyActionsForStorage(
@@ -2450,6 +2555,169 @@ export const updateReplyActions = mutation({
     return {
       ok: true as const,
       replyActionCount: args.replyActions.length,
+    };
+  },
+});
+
+/**
+ * Validate reply codes against every executable SMS route for the blast's
+ * intended recipients. Event-list passwords are global, while text-blast
+ * reply actions only collide when their recipient phone sets overlap.
+ */
+export const validateReplyActionCodes = query({
+  args: {
+    blastId: v.optional(v.id("textBlasts")),
+    eventId: v.optional(v.id("events")),
+    targetEventIds: v.optional(v.array(v.id("events"))),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+    targetLists: v.optional(v.array(v.string())),
+    recipientFilter: v.optional(v.string()),
+    recipientHistoryFilter: recipientHistoryFilterValidator,
+    selectedRsvpIds: v.optional(v.array(v.id("rsvps"))),
+    replyActions: v.array(
+      v.object({
+        replyCode: v.string(),
+        isEnabled: v.boolean(),
+      }),
+    ),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    checkedRecipientCount: number;
+    results: ReplyCodeAvailabilityResult[];
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const identityWithRole = identity as IdentityWithRole;
+    if (!identityHasHostRole(identityWithRole)) {
+      throw new Error("Not authorized for this workspace");
+    }
+
+    const scopedBlast = args.blastId
+      ? (
+          await ensureTextBlastInSiteScope(ctx, args.blastId, {
+            siteKey: args.siteKey,
+            workspaceSlug: args.workspaceSlug,
+          })
+        ).blast
+      : null;
+    if (scopedBlast && !identityCanManageBlast(identityWithRole, scopedBlast.sentBy)) {
+      throw new Error("Not authorized to validate this text blast");
+    }
+
+    let recipientPhoneHashes = new Set<string>();
+    if (scopedBlast && scopedBlast.sentCount > 0) {
+      const successfulDeliveries = await ctx.db
+        .query("textBlastRecipients")
+        .withIndex("by_text_blast_status", (queryBuilder) =>
+          queryBuilder.eq("textBlastId", scopedBlast._id).eq("status", "sent"),
+        )
+        .collect();
+      recipientPhoneHashes = new Set(
+        successfulDeliveries.map((successfulDelivery) => successfulDelivery.phoneHash),
+      );
+    } else {
+      const primaryEventId = args.eventId ?? scopedBlast?.eventId;
+      const targetLists = args.targetLists ?? scopedBlast?.targetLists ?? [];
+      if (primaryEventId && targetLists.length > 0) {
+        const targetEventIds =
+          args.targetEventIds ??
+          (scopedBlast ? getBlastTargetEventIds(scopedBlast) : [primaryEventId]);
+        await ensureEventsInSiteScope(ctx, targetEventIds, {
+          siteKey: args.siteKey,
+          workspaceSlug: args.workspaceSlug,
+        });
+        const recipients = await selectRecipientsFromStoredPhones(ctx, {
+          eventId: primaryEventId,
+          targetEventIds,
+          siteKey: args.siteKey,
+          workspaceSlug: args.workspaceSlug,
+          targetLists,
+          recipientFilter: args.recipientFilter ?? scopedBlast?.recipientFilter,
+          recipientHistoryFilter:
+            args.recipientHistoryFilter ?? scopedBlast?.recipientHistoryFilter,
+          selectedRsvpIds: args.selectedRsvpIds ?? scopedBlast?.selectedRsvpIds,
+        });
+        recipientPhoneHashes = new Set(recipients.map((recipient) => recipient.phoneHash));
+      }
+    }
+
+    const now = Date.now();
+    const results: ReplyCodeAvailabilityResult[] = [];
+    for (const replyAction of args.replyActions) {
+      let sanitizedReplyCode: ReturnType<typeof sanitizeReplyCode>;
+      try {
+        sanitizedReplyCode = sanitizeReplyCode(replyAction.replyCode);
+      } catch (error) {
+        results.push({
+          replyCode: replyAction.replyCode,
+          normalizedReplyCode: normalizeReplyCode(replyAction.replyCode),
+          status: "invalid",
+          isAvailable: false,
+          message: getErrorMessage(error),
+        });
+        continue;
+      }
+
+      if (!replyAction.isEnabled) {
+        results.push({
+          replyCode: sanitizedReplyCode.replyCode,
+          normalizedReplyCode: sanitizedReplyCode.replyCodeNormalized,
+          status: "available",
+          isAvailable: true,
+        });
+        continue;
+      }
+
+      if (await hasExecutableEventCodeCollision(ctx, sanitizedReplyCode.replyCodeNormalized, now)) {
+        results.push({
+          replyCode: sanitizedReplyCode.replyCode,
+          normalizedReplyCode: sanitizedReplyCode.replyCodeNormalized,
+          status: "event_code_conflict",
+          isAvailable: false,
+          message:
+            "This code is already active as an event list password. Choose another reply code.",
+        });
+        continue;
+      }
+
+      if (
+        await hasActiveReplyActionCollision(ctx, {
+          normalizedCode: sanitizedReplyCode.replyCodeNormalized,
+          recipientPhoneHashes,
+          excludedTextBlastId: scopedBlast?._id,
+          now,
+        })
+      ) {
+        results.push({
+          replyCode: sanitizedReplyCode.replyCode,
+          normalizedReplyCode: sanitizedReplyCode.replyCodeNormalized,
+          status: "reply_code_conflict",
+          isAvailable: false,
+          message:
+            "This code is already active for a recipient in another text blast. Choose another reply code.",
+        });
+        continue;
+      }
+
+      results.push({
+        replyCode: sanitizedReplyCode.replyCode,
+        normalizedReplyCode: sanitizedReplyCode.replyCodeNormalized,
+        status: "available",
+        isAvailable: true,
+      });
+    }
+
+    return {
+      checkedRecipientCount: recipientPhoneHashes.size,
+      results,
     };
   },
 });

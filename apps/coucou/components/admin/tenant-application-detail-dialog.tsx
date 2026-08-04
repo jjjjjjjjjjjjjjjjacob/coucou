@@ -3,7 +3,7 @@
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useAction, useMutation } from "convex/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,6 +27,7 @@ interface ApplicationLike {
   submittedAt: number;
   status: "pending" | "accepted" | "denied";
   tenantAdminEmail?: string;
+  tenantAdminClerkUserId?: string;
   clerkOrganizationId?: string;
   clerkOrganizationSlug?: string;
   clerkInvitationId?: string;
@@ -46,17 +47,8 @@ export function TenantApplicationDetailDialog({
   const deny = useMutation(api.tenantApplications.denyApplication);
   const [slug, setSlug] = useState("");
   const [primaryDomain, setPrimaryDomain] = useState("");
-  const [tenantAdminEmail, setTenantAdminEmail] = useState("");
   const [denialReason, setDenialReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!application || !open) {
-      return;
-    }
-
-    setTenantAdminEmail(application.tenantAdminEmail ?? application.operatorEmail ?? "");
-  }, [application, open]);
 
   if (!application) return null;
 
@@ -111,15 +103,12 @@ export function TenantApplicationDetailDialog({
                 placeholder="example.com"
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[12px]" style={{ color: "var(--tt-fg-mute)" }}>
-                Tenant admin email
-              </label>
-              <Input
-                value={tenantAdminEmail}
-                onChange={(event) => setTenantAdminEmail(event.target.value)}
-                placeholder="operator@example.com"
-              />
+            <div
+              className="rounded border p-3 text-[13px]"
+              style={{ borderColor: "var(--tt-rule)", color: "var(--tt-fg-dim)" }}
+            >
+              You will be added directly as this tenant&apos;s organization admin so you can finish
+              setup. No invitation will be sent.
             </div>
             <div className="space-y-1">
               <label className="text-[12px]" style={{ color: "var(--tt-fg-mute)" }}>
@@ -174,7 +163,7 @@ export function TenantApplicationDetailDialog({
               </Button>
               <Button
                 type="button"
-                disabled={submitting || !slug.trim() || !tenantAdminEmail.trim()}
+                disabled={submitting || !slug.trim()}
                 onClick={async () => {
                   try {
                     setSubmitting(true);
@@ -184,11 +173,10 @@ export function TenantApplicationDetailDialog({
                           id: application._id,
                           slug: slug.trim(),
                           primaryDomain: primaryDomain.trim() || undefined,
-                          tenantAdminEmail: tenantAdminEmail.trim(),
                         }),
                       {
                         loading: "Accepting application...",
-                        success: "Application accepted",
+                        success: "Tenant created with your admin access",
                         error: (error) => getToastErrorMessage(error, "Failed to accept"),
                       },
                     );

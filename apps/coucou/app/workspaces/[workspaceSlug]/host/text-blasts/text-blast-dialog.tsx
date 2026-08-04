@@ -114,6 +114,19 @@ interface ReplyActionTargetOption {
   lists: Array<{ listKey: string; password?: string }>;
 }
 
+interface ReplyCodeAvailabilityResult {
+  replyCode: string;
+  normalizedReplyCode: string;
+  status: "available" | "invalid" | "event_code_conflict" | "reply_code_conflict";
+  isAvailable: boolean;
+  message?: string;
+}
+
+interface ReplyCodeAvailabilityResponse {
+  checkedRecipientCount: number;
+  results: ReplyCodeAvailabilityResult[];
+}
+
 const SMS_CHAR_LIMIT = 160;
 const SMS_CONCAT_LIMIT = 320;
 type MessageTemplateVariableName = (typeof MESSAGE_TEMPLATE_VARIABLES)[number];
@@ -304,7 +317,7 @@ export default function TextBlastDialog({
     () => new Map((replyActionTargetOptions ?? []).map((option) => [option.eventId, option])),
     [replyActionTargetOptions],
   );
-  const replyActionValidationMessage = useMemo(() => {
+  const replyActionLocalValidationMessage = useMemo(() => {
     const normalizedReplyCodes = new Set<string>();
 
     for (const replyAction of formData.replyActions) {
@@ -326,6 +339,7 @@ export default function TextBlastDialog({
         .get(replyAction.targetEventId as Id<"events">)
         ?.lists.find((listOption) => listOption.listKey === replyAction.targetListKey);
       if (
+        replyAction.isEnabled &&
         selectedListOption?.password &&
         normalizeReplyCodeForValidation(selectedListOption.password) === normalizedReplyCode
       ) {
@@ -336,7 +350,51 @@ export default function TextBlastDialog({
 
     return null;
   }, [formData.replyActions, replyActionTargetOptionMap]);
-  const replyActionsAreValid = replyActionValidationMessage === null;
+  const shouldCheckReplyCodeAvailability =
+    workspaceScope !== null &&
+    formData.replyActions.length > 0 &&
+    replyActionLocalValidationMessage === null &&
+    Boolean(blastId || primaryEventId);
+  const replyCodeAvailabilityResponse = useQuery(
+    api.textBlasts.validateReplyActionCodes,
+    shouldCheckReplyCodeAvailability && workspaceScope
+      ? {
+          ...(blastId ? { blastId } : {}),
+          ...(primaryEventId ? { eventId: primaryEventId as Id<"events"> } : {}),
+          targetEventIds: formData.eventIds,
+          targetLists: formData.targetLists,
+          recipientFilter: encodedRecipientFilter,
+          recipientHistoryFilter: encodedRecipientHistoryFilter,
+          selectedRsvpIds:
+            formData.selectedRsvpIds.length > 0 ? formData.selectedRsvpIds : undefined,
+          replyActions: formData.replyActions.map((replyAction) => ({
+            replyCode: replyAction.replyCode,
+            isEnabled: replyAction.isEnabled,
+          })),
+          ...workspaceScope.queryArgs,
+        }
+      : "skip",
+  ) as ReplyCodeAvailabilityResponse | undefined;
+  const replyCodeAvailabilityIsPending =
+    shouldCheckReplyCodeAvailability && replyCodeAvailabilityResponse === undefined;
+  const replyCodeAvailabilityByNormalizedCode = useMemo(
+    () =>
+      new Map(
+        (replyCodeAvailabilityResponse?.results ?? []).map((availabilityResult) => [
+          availabilityResult.normalizedReplyCode,
+          availabilityResult,
+        ]),
+      ),
+    [replyCodeAvailabilityResponse],
+  );
+  const replyCodeAvailabilityMessage =
+    replyCodeAvailabilityResponse?.results.find(
+      (availabilityResult) => !availabilityResult.isAvailable,
+    )?.message ?? null;
+  const replyActionValidationMessage =
+    replyActionLocalValidationMessage ?? replyCodeAvailabilityMessage;
+  const replyActionsAreValid =
+    replyActionValidationMessage === null && !replyCodeAvailabilityIsPending;
 
   // Get available lists for selected event from query result
   const availableLists = useMemo(() => {
@@ -903,6 +961,9 @@ export default function TextBlastDialog({
             const selectedListOption = listOptions.find(
               (listOption) => listOption.listKey === replyAction.targetListKey,
             );
+            const replyCodeAvailability = replyCodeAvailabilityByNormalizedCode.get(
+              normalizeReplyCodeForValidation(replyAction.replyCode),
+            );
             return (
               <div
                 key={replyAction.clientId}
@@ -998,6 +1059,21 @@ export default function TextBlastDialog({
                         })
                       }
                     />
+                    {replyAction.isEnabled && replyAction.replyCode.trim() && (
+                      <div
+                        className={`text-xs ${
+                          replyCodeAvailability?.isAvailable
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : replyCodeAvailability
+                              ? "text-destructive"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {replyCodeAvailability?.isAvailable
+                          ? `Available for ${replyCodeAvailabilityResponse?.checkedRecipientCount ?? 0} recipient${replyCodeAvailabilityResponse?.checkedRecipientCount === 1 ? "" : "s"}.`
+                          : (replyCodeAvailability?.message ?? "Checking code availability…")}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1015,6 +1091,9 @@ export default function TextBlastDialog({
 
       {replyActionValidationMessage && (
         <div className="text-xs text-destructive">{replyActionValidationMessage}</div>
+      )}
+      {replyCodeAvailabilityIsPending && !replyActionValidationMessage && (
+        <div className="text-xs text-muted-foreground">Checking reply code availability…</div>
       )}
     </div>
   );
@@ -1358,7 +1437,7 @@ export default function TextBlastDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="flex max-h-[94vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-7xl">
+      <DialogContent className="flex w-[calc(100%-2rem)] max-h-[94vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-7xl">
         <DialogHeader className="px-6 pt-6">
           <DialogTitle>
             {isReplyActionsOnlyMode

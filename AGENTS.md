@@ -16,18 +16,31 @@ Guidelines for AI agents working with this codebase.
 ### Development Workflow
 ```bash
 # Start development server
-bun dev
+bun run dev
 
-# Build for production
-bun build
+# Run the complete CI validation gate
+bun run quality
 
-# Run linting
-bun lint
-
-# Work with specific apps
-cd apps/web && bun dev
-cd apps/convex && npx convex dev
+# Apply safe formatting/lint fixes, then run the complete gate
+bun run quality:fix
 ```
+
+## Required CI Static Checks
+
+The required GitHub `Static Checks` gate in `.github/workflows/ci.yml` succeeds only when every check below succeeds. Before completing any change to code, tests, configuration, dependencies, or build tooling, run these commands from the repository root:
+
+```bash
+bun run quality
+```
+
+- `bun run quality` runs `bun run check`, `bun run test`, and `bun run build` in sequence.
+- `bun run quality:fix` first runs `biome check --write .` to format files, organize imports, and apply safe lint fixes, then runs the complete `quality` gate. Review all generated changes before committing them.
+- `bun run check` runs the repository-wide Biome formatting and lint checks.
+- `bun run test` runs all workspace tests plus the tests under `scripts/__tests__`.
+- `bun run build` runs the production builds through Turbo and performs framework/type validation included by those builds.
+- All three commands are mandatory. `bun run lint`, a package-level check, or a targeted test is useful during development but is not a substitute for the full CI gate.
+- Fix failures instead of skipping checks, weakening configuration, or suppressing errors. Do not report a task complete until all three commands pass. If an environment or external dependency makes a command impossible to run, report the exact command and failure instead of claiming success.
+- Treat `.github/workflows/ci.yml` and the root `package.json` scripts as the source of truth. If CI changes, update this section in the same change.
 
 ## Code Quality Standards
 
@@ -89,14 +102,14 @@ apps/
 2. Use proper TypeScript interfaces from `lib/types.ts`
 3. Follow verbose naming conventions
 4. Use server components when possible
-5. Test with `bun dev` and `bun lint`
+5. Run the complete CI validation gate described above
 
 ### Making Changes
 1. Always read existing code first to understand patterns
 2. Update types in `lib/types.ts` if needed
 3. Use descriptive variable names throughout
 4. Maintain consistency with existing patterns
-5. Run `bun lint` to check for issues
+5. Run `bun run quality` from the repository root
 
 ### Common Utilities
 - Date/time handling: Use utilities in `lib/utils.ts`
@@ -112,7 +125,7 @@ Before completing any task:
 - [ ] "use client" only where necessary
 - [ ] Proper error handling with typed errors
 - [ ] Consistent with existing codebase patterns
-- [ ] Code passes `bun lint`
+- [ ] `bun run quality` passes from the repository root
 - [ ] No duplicate code (DRY principle followed)
 
 ## Common Mistakes to Avoid

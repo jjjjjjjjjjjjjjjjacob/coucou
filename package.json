@@ -16,6 +16,8 @@
     "format:check": "biome format .",
     "check": "biome check .",
     "check:write": "biome check --write .",
+    "quality": "bun run check && bun run test && bun run build",
+    "quality:fix": "bun run check:write && bun run quality",
     "test": "turbo run test && bun test scripts/__tests__",
     "test:partner-api-docs": "bun test scripts/__tests__/partner-api-docs.test.mjs",
     "test:dojo": "cd apps/dojo && bun test",

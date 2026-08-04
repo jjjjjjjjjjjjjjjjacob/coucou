@@ -387,7 +387,11 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
 }
 
 function AdminAuthenticatedShell({ children }: { children: ReactNode }) {
-  return <CoucouLinearShell sidebar={<AdminSidebar />}>{children}</CoucouLinearShell>;
+  return (
+    <CoucouLinearShell sidebar={<AdminSidebar />} mobileTitle="Coucou admin">
+      {children}
+    </CoucouLinearShell>
+  );
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

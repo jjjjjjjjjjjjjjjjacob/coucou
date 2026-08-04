@@ -26,6 +26,7 @@ interface ApplicationRow {
   submittedAt: number;
   status: "pending" | "accepted" | "denied";
   tenantAdminEmail?: string;
+  tenantAdminClerkUserId?: string;
   clerkOrganizationId?: string;
   clerkOrganizationSlug?: string;
   clerkInvitationId?: string;

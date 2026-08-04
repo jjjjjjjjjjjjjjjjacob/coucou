@@ -88,10 +88,7 @@ export interface UserRsvpHistoryEntry {
   updatedAt: number;
 }
 
-export interface UserSmsThreadHistoryEntry extends SmsConversationThread {
-  eventName: string;
-  eventDate: number;
-}
+export type UserSmsThreadHistoryEntry = SmsConversationThreadSummary;
 
 export interface EventGuestRsvp {
   id: Id<"rsvps">;
@@ -322,6 +319,12 @@ export interface TextBlast {
 
 export type SmsConversationDirection = "inbound" | "outbound" | "system";
 
+export type SmsConversationFilterState =
+  | "needs_reply"
+  | "waiting_on_guest"
+  | "has_incoming"
+  | "no_incoming";
+
 export type SmsConversationKind =
   | "sms"
   | "manual"
@@ -357,6 +360,11 @@ export interface SmsConversationThread {
   updatedAt: number;
 }
 
+export interface SmsConversationThreadSummary extends SmsConversationThread {
+  eventName: string;
+  eventDate: number;
+}
+
 export interface SmsConversationMessage {
   _id: Id<"smsConversationMessages">;
   threadId: Id<"smsConversationThreads">;
@@ -375,6 +383,12 @@ export interface SmsConversationMessage {
   adminClerkUserId?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface SmsConversationThreadDetail {
+  thread: SmsConversationThread;
+  event: Event | null;
+  messages: SmsConversationMessage[];
 }
 
 export interface UserEventSharing {

@@ -6,7 +6,7 @@ import { writeAuditEntry } from "./audit";
 import { action, internalMutation, mutation, query } from "./functions";
 import {
   getOrCreateCoucouTenantOrganization,
-  getOrCreateTenantAdminInvitation,
+  getOrCreateTenantAdminMembership,
 } from "./lib/clerkTenantProvisioning";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
 import {
@@ -102,10 +102,9 @@ export const acceptApplicationInDatabase = internalMutation({
     id: v.id("tenantApplications"),
     slug: v.string(),
     primaryDomain: v.optional(v.string()),
-    tenantAdminEmail: v.string(),
+    tenantAdminClerkUserId: v.string(),
     clerkOrganizationId: v.string(),
     clerkOrganizationSlug: v.string(),
-    clerkInvitationId: v.string(),
     decidedByClerkUserId: v.string(),
   },
   handler: async (
@@ -114,10 +113,9 @@ export const acceptApplicationInDatabase = internalMutation({
       id,
       slug,
       primaryDomain,
-      tenantAdminEmail,
+      tenantAdminClerkUserId,
       clerkOrganizationId,
       clerkOrganizationSlug,
-      clerkInvitationId,
       decidedByClerkUserId,
     },
   ) => {
@@ -138,10 +136,9 @@ export const acceptApplicationInDatabase = internalMutation({
 
     await ctx.db.patch(id, {
       status: "accepted",
-      tenantAdminEmail,
+      tenantAdminClerkUserId,
       clerkOrganizationId,
       clerkOrganizationSlug,
-      clerkInvitationId,
       decidedAt: now,
       decidedByClerkUserId,
       workspaceId,
@@ -155,10 +152,10 @@ export const acceptApplicationInDatabase = internalMutation({
       workspaceId,
       summary: `Accepted ${application.name} as workspace ${slug}`,
       metadata: {
-        tenantAdminEmail,
+        tenantAdminClerkUserId,
         clerkOrganizationId,
         clerkOrganizationSlug,
-        clerkInvitationId,
+        provisioningMethod: "direct_membership",
       },
     });
 
@@ -171,18 +168,10 @@ export const acceptApplication = action({
     id: v.id("tenantApplications"),
     slug: v.string(),
     primaryDomain: v.optional(v.string()),
-    tenantAdminEmail: v.string(),
   },
-  handler: async (
-    ctx,
-    { id, slug, primaryDomain, tenantAdminEmail },
-  ): Promise<Id<"workspaces">> => {
+  handler: async (ctx, { id, slug, primaryDomain }): Promise<Id<"workspaces">> => {
     const identity = await requireCoucouPlatformMember(ctx);
     const normalizedSlug = normalizeTenantWorkspaceSlug(slug);
-    const normalizedTenantAdminEmail = tenantAdminEmail.trim().toLowerCase();
-    if (!normalizedTenantAdminEmail) {
-      throw new Error("Tenant admin email is required");
-    }
 
     const existingWorkspace = await ctx.runQuery(api.workspaces.getWorkspaceBySlug, {
       slug: normalizedSlug,
@@ -210,21 +199,18 @@ export const acceptApplication = action({
       slug: normalizedSlug,
       createdByClerkUserId: identity.subject,
     });
-    const invitation = await getOrCreateTenantAdminInvitation(clerk.organizations, {
+    await getOrCreateTenantAdminMembership(clerk.organizations, {
       organizationId: organization.id,
-      workspaceSlug: normalizedSlug,
-      tenantAdminEmail: normalizedTenantAdminEmail,
-      inviterClerkUserId: identity.subject,
+      tenantAdminClerkUserId: identity.subject,
     });
 
     return await ctx.runMutation(internal.tenantApplications.acceptApplicationInDatabase, {
       id,
       slug: normalizedSlug,
       primaryDomain,
-      tenantAdminEmail: normalizedTenantAdminEmail,
+      tenantAdminClerkUserId: identity.subject,
       clerkOrganizationId: organization.id,
       clerkOrganizationSlug: organization.slug,
-      clerkInvitationId: invitation.id,
       decidedByClerkUserId: identity.subject,
     });
   },

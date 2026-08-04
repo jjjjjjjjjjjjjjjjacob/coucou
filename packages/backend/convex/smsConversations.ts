@@ -5,7 +5,8 @@ import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, query } from "./functions";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
-import { ensureEventInSiteScope } from "./lib/siteScope";
+import { resolveStoredUserDisplayName } from "./lib/rsvpUserName";
+import { ensureEventInSiteScope, eventMatchesSiteScope } from "./lib/siteScope";
 import {
   recordSmsConversationMessage,
   type SmsConversationDirection,
@@ -35,6 +36,13 @@ const smsConversationKindValidator = v.union(
   v.literal("system"),
 );
 
+const smsConversationFilterStateValidator = v.union(
+  v.literal("needs_reply"),
+  v.literal("waiting_on_guest"),
+  v.literal("has_incoming"),
+  v.literal("no_incoming"),
+);
+
 const scopeArgs = {
   siteKey: v.optional(v.string()),
   workspaceSlug: v.optional(v.string()),
@@ -44,6 +52,12 @@ type SiteScopeArgs = {
   siteKey?: string;
   workspaceSlug?: string;
 };
+
+type SmsConversationFilterState =
+  | "needs_reply"
+  | "waiting_on_guest"
+  | "has_incoming"
+  | "no_incoming";
 
 type SendReadiness =
   | { state: "ready"; phoneNumber: string; clerkUserId: string }
@@ -149,10 +163,47 @@ function notificationKindForType(type: string): SmsConversationKind {
   }
 }
 
-function formatUserDisplayName(user: Doc<"users"> | null): string | null {
-  if (!user) return null;
-  const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
-  return displayName || user.clerkUserId || null;
+function threadMatchesConversationFilterState(
+  thread: Doc<"smsConversationThreads">,
+  filterState: SmsConversationFilterState,
+): boolean {
+  switch (filterState) {
+    case "needs_reply":
+      return thread.lastMessageDirection === "inbound";
+    case "waiting_on_guest":
+      return thread.lastMessageDirection === "outbound";
+    case "has_incoming":
+      return thread.inboundCount > 0;
+    case "no_incoming":
+      return thread.inboundCount === 0;
+  }
+}
+
+function splitRsvpDisplayName(displayName: string | undefined): {
+  firstName?: string;
+  lastName?: string;
+} {
+  const normalizedDisplayName = displayName?.trim().replace(/\s+/g, " ");
+  if (!normalizedDisplayName) return {};
+
+  const nameParts = normalizedDisplayName.split(" ");
+  return {
+    firstName: nameParts[0],
+    lastName: nameParts.slice(1).join(" ") || undefined,
+  };
+}
+
+function resolveParticipantDisplayName(
+  user: Doc<"users"> | null,
+  rsvp: Doc<"rsvps"> | null,
+): string | null {
+  const rsvpDisplayName = rsvp?.userName?.trim().replace(/\s+/g, " ");
+  const rsvpNameParts = splitRsvpDisplayName(rsvpDisplayName);
+  const firstName = user?.firstName?.trim() || rsvpNameParts.firstName;
+  const lastName = user?.lastName?.trim() || rsvpNameParts.lastName;
+  const combinedDisplayName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
+  return combinedDisplayName || resolveStoredUserDisplayName(user) || rsvpDisplayName || null;
 }
 
 async function getUserByClerkUserId(
@@ -169,12 +220,36 @@ async function summarizeThreadParticipants(
   ctx: Pick<QueryCtx, "db">,
   thread: Doc<"smsConversationThreads">,
 ): Promise<ThreadParticipantSummary> {
-  const users = await Promise.all(
-    thread.participantClerkUserIds.map((clerkUserId) => getUserByClerkUserId(ctx, clerkUserId)),
+  const participantRecords = await Promise.all(
+    thread.participantClerkUserIds.map(async (clerkUserId) => {
+      const [user, rsvp] = await Promise.all([
+        getUserByClerkUserId(ctx, clerkUserId),
+        ctx.db
+          .query("rsvps")
+          .withIndex("by_event_user", (queryBuilder) =>
+            queryBuilder.eq("eventId", thread.eventId).eq("clerkUserId", clerkUserId),
+          )
+          .first(),
+      ]);
+      return { user, rsvp };
+    }),
   );
-  const displayNames = users
-    .map((user) => formatUserDisplayName(user))
+  const displayNames = participantRecords
+    .map(({ user, rsvp }) => resolveParticipantDisplayName(user, rsvp))
     .filter((displayName): displayName is string => displayName !== null);
+
+  if (displayNames.length === 0) {
+    const phoneMatchedRsvp = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event_guestPhoneHash", (queryBuilder) =>
+        queryBuilder.eq("eventId", thread.eventId).eq("guestPhoneHash", thread.phoneHash),
+      )
+      .first();
+    const phoneMatchedDisplayName = resolveParticipantDisplayName(null, phoneMatchedRsvp);
+    if (phoneMatchedDisplayName) {
+      displayNames.push(phoneMatchedDisplayName);
+    }
+  }
 
   return {
     displayName: displayNames[0] ?? thread.phoneObfuscated,
@@ -474,32 +549,58 @@ export const getRsvpThreadTargetInternal = internalQuery({
 
 export const listThreads = query({
   args: {
-    eventId: v.id("events"),
+    eventId: v.optional(v.id("events")),
     search: v.optional(v.string()),
+    conversationStates: v.optional(v.array(smsConversationFilterStateValidator)),
     ...scopeArgs,
   },
   handler: async (ctx, args) => {
-    await requireWorkspaceRead(ctx, {
-      siteKey: args.siteKey,
-      workspaceSlug: args.workspaceSlug,
-    });
-    await ensureEventInSiteScope(ctx, args.eventId, {
+    const workspaceScope = await requireWorkspaceRead(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
 
+    const eventScope = {
+      siteKey: args.siteKey ?? workspaceScope.siteKey ?? undefined,
+      workspaceSlug: args.workspaceSlug ?? workspaceScope.workspaceSlug,
+    };
+    const scopedEvents = args.eventId
+      ? [await ensureEventInSiteScope(ctx, args.eventId, eventScope)]
+      : (await ctx.db.query("events").collect()).filter((event) =>
+          eventMatchesSiteScope(event, eventScope),
+        );
+    const eventById = new Map(scopedEvents.map((event) => [event._id, event]));
+
     const search = args.search?.trim().toLowerCase() ?? "";
-    const threads = await ctx.db
-      .query("smsConversationThreads")
-      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", args.eventId))
-      .collect();
+    const selectedConversationStates = Array.from(new Set(args.conversationStates ?? []));
+    const threadGroups = await Promise.all(
+      scopedEvents.map(
+        async (event) =>
+          await ctx.db
+            .query("smsConversationThreads")
+            .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
+            .collect(),
+      ),
+    );
+    const threads = threadGroups
+      .flat()
+      .filter(
+        (thread) =>
+          selectedConversationStates.length === 0 ||
+          selectedConversationStates.some((filterState) =>
+            threadMatchesConversationFilterState(thread, filterState),
+          ),
+      );
 
     const enrichedThreads = await Promise.all(
       threads.map(async (thread) => {
         const participants = await summarizeThreadParticipants(ctx, thread);
         const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
+        const event = eventById.get(thread.eventId);
         return {
           ...thread,
+          eventName: event?.name ?? "Unknown Event",
+          eventDate: event?.eventDate ?? 0,
           participantName: participants.displayName,
           canSend: sendReadiness.state === "ready",
           sendDisabledReason: sendReadiness.state === "ready" ? undefined : sendReadiness.reason,
@@ -513,7 +614,8 @@ export const listThreads = query({
         return (
           thread.participantName.toLowerCase().includes(search) ||
           thread.phoneObfuscated.toLowerCase().includes(search) ||
-          (thread.lastMessageBody ?? "").toLowerCase().includes(search)
+          (thread.lastMessageBody ?? "").toLowerCase().includes(search) ||
+          thread.eventName.toLowerCase().includes(search)
         );
       })
       .sort(
