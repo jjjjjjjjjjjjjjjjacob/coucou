@@ -1,6 +1,7 @@
 import type { UserIdentity } from "convex/server";
 import { api } from "../_generated/api";
 import type { ActionCtx, QueryCtx } from "../_generated/server";
+import { resolveCanonicalClerkUserId } from "./canonicalUserIdentity";
 
 interface PlatformAuthReader {
   auth: {
@@ -8,6 +9,19 @@ interface PlatformAuthReader {
   };
   db?: QueryCtx["db"];
   runQuery?: ActionCtx["runQuery"];
+}
+
+async function resolveAuthenticatedClerkUserId(
+  ctx: PlatformAuthReader,
+  identity: UserIdentity,
+): Promise<string> {
+  if (ctx.db) {
+    return await resolveCanonicalClerkUserId({ db: ctx.db }, identity.subject);
+  }
+  if (ctx.runQuery) {
+    return await ctx.runQuery(api.users.getCurrentCanonicalClerkUserId, {});
+  }
+  return identity.subject;
 }
 
 function getStringClaim(identity: UserIdentity, keys: string[]): string | null {
@@ -71,9 +85,13 @@ async function hasStoredCoucouMembership(
     return false;
   }
 
+  const canonicalClerkUserId = await resolveAuthenticatedClerkUserId(ctx, identity);
+
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
+    .withIndex("by_user", (queryBuilder) =>
+      queryBuilder.eq("clerkUserId", canonicalClerkUserId),
+    )
     .filter((queryBuilder) =>
       queryBuilder.eq(queryBuilder.field("organizationId"), coucouOrganizationId),
     )
@@ -90,8 +108,10 @@ async function hasStoredCoucouMembershipFromAction(
     return false;
   }
 
+  const canonicalClerkUserId = await resolveAuthenticatedClerkUserId(ctx, identity);
+
   const storedMemberships = await ctx.runQuery(api.orgMemberships.listForUser, {
-    clerkUserId: identity.subject,
+    clerkUserId: canonicalClerkUserId,
   });
   const dashboardWorkspaceAccess = await ctx.runQuery(api.workspaces.getDashboardWorkspaceAccess, {
     memberships: storedMemberships.map((storedMembership) => ({

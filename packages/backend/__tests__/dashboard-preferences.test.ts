@@ -102,4 +102,58 @@ describe("dashboard table preferences", () => {
       }),
     ).resolves.toBeNull();
   });
+
+  it("stores panel state per user and workspace", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await createWorkspace(testBackend);
+    const adminBackend = testBackend.withIdentity(createWorkspaceIdentity("user_admin"));
+
+    await expect(
+      adminBackend.query(api.dashboardPreferences.getCurrentUserPanelPreference, {
+        workspaceSlug: "dojo-pomodoro",
+        panelKey: "event-details",
+      }),
+    ).resolves.toBeNull();
+
+    const firstPreferenceId = await adminBackend.mutation(
+      api.dashboardPreferences.upsertCurrentUserPanelPreference,
+      {
+        workspaceSlug: "dojo-pomodoro",
+        panelKey: "event-details",
+        isOpen: true,
+      },
+    );
+
+    await expect(
+      adminBackend.query(api.dashboardPreferences.getCurrentUserPanelPreference, {
+        workspaceSlug: "dojo-pomodoro",
+        panelKey: "event-details",
+      }),
+    ).resolves.toBe(true);
+
+    const secondPreferenceId = await adminBackend.mutation(
+      api.dashboardPreferences.upsertCurrentUserPanelPreference,
+      {
+        workspaceSlug: "dojo-pomodoro",
+        panelKey: "event-details",
+        isOpen: false,
+      },
+    );
+
+    expect(secondPreferenceId).toBe(firstPreferenceId);
+    await expect(
+      adminBackend.query(api.dashboardPreferences.getCurrentUserPanelPreference, {
+        workspaceSlug: "dojo-pomodoro",
+        panelKey: "event-details",
+      }),
+    ).resolves.toBe(false);
+
+    const otherUserBackend = testBackend.withIdentity(createWorkspaceIdentity("user_other"));
+    await expect(
+      otherUserBackend.query(api.dashboardPreferences.getCurrentUserPanelPreference, {
+        workspaceSlug: "dojo-pomodoro",
+        panelKey: "event-details",
+      }),
+    ).resolves.toBeNull();
+  });
 });

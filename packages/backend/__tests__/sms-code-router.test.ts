@@ -284,33 +284,103 @@ describe("deterministic SMS code router", () => {
     ]);
   });
 
-  it("uses a no-prefill guest session when a phone has multiple registered identities", async () => {
+  it("rolls up split same-phone RSVP history and submits without a completion prompt", async () => {
     const testBackend = setupTestBackend();
-    await seedEvent(testBackend, { name: "Ambiguous event", code: "AMBIG" });
+    const phoneNumber = "+15551230007";
+    const phoneResolution = await normalizeAndHashPhoneNumber(phoneNumber);
+    const oldestPriorEvent = await seedEvent(testBackend, { name: "Old history" });
+    const newestPriorEvent = await seedEvent(testBackend, { name: "New history" });
+    const additionalPriorEvent = await seedEvent(testBackend, { name: "More history" });
+    const destinationEvent = await seedEvent(testBackend, {
+      name: "August 8",
+      code: "AMBIG",
+      primaryFieldConfig: {
+        socialPlatforms: [{ platformKey: "instagram", label: "Instagram", required: true }],
+      },
+    });
     await testBackend.run(async (databaseContext) => {
       const now = Date.now();
-      for (const [clerkUserId, firstName] of [
-        ["user_one", "First"],
-        ["user_two", "Second"],
-      ]) {
-        await databaseContext.db.insert("users", {
-          clerkUserId,
-          phone: "+15551230007",
-          firstName,
-          lastName: "Person",
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
+      await databaseContext.db.insert("users", {
+        clerkUserId: "user_one",
+        phone: phoneNumber,
+        phoneHash: phoneResolution.phoneHash,
+        firstName: "Jacob",
+        lastName: "Stein",
+        createdAt: now - 10_000,
+        updatedAt: now,
+      });
+      await databaseContext.db.insert("users", {
+        clerkUserId: "user_two",
+        phone: phoneNumber,
+        phoneHash: phoneResolution.phoneHash,
+        firstName: "Jacob",
+        lastName: "Stein",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await databaseContext.db.insert("rsvps", {
+        eventId: oldestPriorEvent.eventId,
+        clerkUserId: "user_one",
+        listKey: "ga",
+        userName: "Jacob Stein",
+        shareContact: true,
+        status: "approved",
+        approvalStatus: "approved",
+        createdAt: now - 20_000,
+        updatedAt: now - 20_000,
+      });
+      const newestPriorRsvpId = await databaseContext.db.insert("rsvps", {
+        eventId: newestPriorEvent.eventId,
+        clerkUserId: "user_two",
+        listKey: "ga",
+        userName: "Jacob Stein",
+        shareContact: true,
+        status: "approved",
+        approvalStatus: "approved",
+        createdAt: now - 5_000,
+        updatedAt: now - 5_000,
+      });
+      await databaseContext.db.insert("rsvpSocialProfiles", {
+        eventId: newestPriorEvent.eventId,
+        rsvpId: newestPriorRsvpId,
+        clerkUserId: "user_two",
+        platformKey: "instagram",
+        handle: "jacobstein",
+        normalizedHandle: "jacobstein",
+        createdAt: now - 5_000,
+        updatedAt: now - 5_000,
+      });
+      await databaseContext.db.insert("rsvps", {
+        eventId: additionalPriorEvent.eventId,
+        clerkUserId: "user_two",
+        listKey: "ga",
+        userName: "Jacob Stein",
+        shareContact: true,
+        status: "approved",
+        approvalStatus: "approved",
+        createdAt: now - 1_000,
+        updatedAt: now - 1_000,
+      });
     });
 
     const result = await processInbound(testBackend, {
       messageSid: "SM_ambiguous_user",
-      phoneNumber: "+15551230007",
+      phoneNumber,
       body: "AMBIG",
     });
-    expect(result.outcome).toBe("session_pending");
-    expect(result.responseMessage).toContain("your full name");
+    expect(result.outcome).toBe("submitted");
+    expect(result.shouldRespond).toBe(false);
+    const destinationRsvp = await testBackend.run(async (databaseContext) =>
+      await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder
+            .eq("eventId", destinationEvent.eventId)
+            .eq("clerkUserId", "user_two"),
+        )
+        .unique(),
+    );
+    expect(destinationRsvp?.userName).toBe("Jacob Stein");
   });
 
   it("does not prefill from another workspace that shares the same site key", async () => {

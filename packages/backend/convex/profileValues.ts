@@ -6,6 +6,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./functions";
+import { resolveCanonicalClerkUserId } from "./lib/canonicalUserIdentity";
 import {
   grantWorkspaceProfileValue,
   isSocialProfileFieldKey,
@@ -138,11 +139,14 @@ export const listForCurrentUser = query({
   handler: async (ctx, { fieldKeys }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const normalizedFieldKeys = normalizeProfileFieldKeySet(fieldKeys);
     const profileFieldValues = await ctx.db
       .query("profileFieldValues")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
+      )
       .collect();
 
     return profileFieldValues
@@ -167,6 +171,7 @@ export const listForCurrentUserInWorkspace = query({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
     if (!workspaceSlug && !siteKey) return [];
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const scope = await resolveTenantWorkspaceScope(ctx, {
       workspaceSlug,
@@ -177,7 +182,9 @@ export const listForCurrentUserInWorkspace = query({
     const normalizedFieldKeys = normalizeProfileFieldKeySet(fieldKeys);
     const profileFieldValues = await ctx.db
       .query("profileFieldValues")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
+      )
       .collect();
 
     if (profileFieldValues.length === 0) return [];
@@ -205,7 +212,7 @@ export const listForCurrentUserInWorkspace = query({
 
     const grantedIds = new Set<string>();
     const activeGrants = await listWorkspaceProfileValueGrantsForUser(ctx, {
-      clerkUserId: identity.subject,
+      clerkUserId: canonicalClerkUserId,
       workspaceId: scope.workspaceId,
       workspaceSlug: scope.workspaceSlug,
       siteKey: scope.siteKey ?? undefined,
@@ -247,18 +254,19 @@ export const createForCurrentUser = mutation({
   handler: async (ctx, { fieldKey, value, label }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerkUserId", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
       )
       .unique();
     const normalizedFieldKey = normalizeProfileFieldKey(fieldKey);
     const profileFieldValueInput = normalizeProfileFieldValueInput(normalizedFieldKey, value);
 
     return await upsertProfileFieldValue(ctx, {
-      clerkUserId: identity.subject,
+      clerkUserId: canonicalClerkUserId,
       userId: user?._id,
       fieldKey: normalizedFieldKey,
       value: profileFieldValueInput.value,
@@ -277,13 +285,14 @@ export const listWorkspaceGrantsForCurrentUser = query({
   handler: async (ctx, { workspaceSlug, siteKey }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const workspaceScope = await resolveWorkspaceProfileScope(ctx, {
       workspaceSlug,
       siteKey,
     });
     const grants = await listWorkspaceProfileValueGrantsForUser(ctx, {
-      clerkUserId: identity.subject,
+      clerkUserId: canonicalClerkUserId,
       ...workspaceScope,
     });
 
@@ -300,6 +309,7 @@ export const grantForCurrentUser = mutation({
   handler: async (ctx, { workspaceSlug, siteKey, profileFieldValueId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
     if (!workspaceSlug && !siteKey) {
       throw new Error("Workspace scope required");
     }
@@ -308,7 +318,7 @@ export const grantForCurrentUser = mutation({
     if (!profileFieldValue) {
       throw new Error("Profile field value not found");
     }
-    if (profileFieldValue.clerkUserId !== identity.subject) {
+    if (profileFieldValue.clerkUserId !== canonicalClerkUserId) {
       throw new Error("Forbidden");
     }
 
@@ -319,7 +329,7 @@ export const grantForCurrentUser = mutation({
 
     return await grantWorkspaceProfileValue(ctx, {
       ...workspaceScope,
-      clerkUserId: identity.subject,
+      clerkUserId: canonicalClerkUserId,
       fieldKey: profileFieldValue.fieldKey,
       profileFieldValueId,
     });
@@ -333,12 +343,13 @@ export const revokeWorkspaceGrantForCurrentUser = mutation({
   handler: async (ctx, { workspaceProfileValueGrantId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const grant = await ctx.db.get(workspaceProfileValueGrantId);
     if (!grant) {
       throw new Error("Workspace profile grant not found");
     }
-    if (grant.clerkUserId !== identity.subject) {
+    if (grant.clerkUserId !== canonicalClerkUserId) {
       throw new Error("Forbidden");
     }
 
@@ -356,10 +367,13 @@ export const listAllGrantsForCurrentUser = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const grants = await ctx.db
       .query("workspaceProfileValueGrants")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
+      )
       .collect();
 
     const activeGrants = grants.filter((grant) => grant.revokedAt === undefined);
@@ -410,12 +424,13 @@ export const listGrantedForWorkspaceGuest = query({
     clerkUserId: v.string(),
   },
   handler: async (ctx, { workspaceSlug, siteKey, clerkUserId }) => {
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, clerkUserId);
     const workspaceScope = await requireWorkspaceRead(ctx, {
       workspaceSlug,
       siteKey,
     });
     const grants = await listWorkspaceProfileValueGrantsForUser(ctx, {
-      clerkUserId,
+      clerkUserId: canonicalClerkUserId,
       workspaceId: workspaceScope.workspaceId,
       workspaceSlug: workspaceScope.workspaceSlug,
       siteKey: workspaceScope.siteKey ?? undefined,

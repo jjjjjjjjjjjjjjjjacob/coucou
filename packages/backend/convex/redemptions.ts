@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./functions";
+import {
+  resolveCanonicalClerkUserId,
+  resolveCanonicalRsvpId,
+} from "./lib/canonicalUserIdentity";
 import { generateRedemptionCode } from "./lib/codeGenerators";
 import { canManuallyEditTicket, resolveApprovalStatus } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";
@@ -225,6 +229,7 @@ export const forCurrentUserEvent = query({
   handler: async (ctx, { eventId, siteKey, workspaceSlug }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
     const event = await getEventInSiteScope(ctx, eventId, {
       siteKey,
       workspaceSlug,
@@ -235,13 +240,13 @@ export const forCurrentUserEvent = query({
     // This ensures the query re-runs when user document becomes available
     const _userDocument = await ctx.db
       .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", canonicalClerkUserId))
       .unique();
 
     const redemptionRecord = await ctx.db
       .query("redemptions")
       .withIndex("by_event_user", (q) => {
-        return q.eq("eventId", eventId).eq("clerkUserId", identity.subject);
+        return q.eq("eventId", eventId).eq("clerkUserId", canonicalClerkUserId);
       })
       .unique();
     if (!redemptionRecord) return null;
@@ -258,7 +263,8 @@ export const getRedemptionByRsvpId = query({
   handler: async (ctx, { rsvpId, siteKey, workspaceSlug }) => {
     await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
-    const rsvpRecord = await ctx.db.get(rsvpId);
+    const canonicalRsvpId = await resolveCanonicalRsvpId(ctx, rsvpId);
+    const rsvpRecord = await ctx.db.get(canonicalRsvpId);
     if (!rsvpRecord) return null;
     await ensureEventInSiteScope(ctx, rsvpRecord.eventId, {
       siteKey,

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { mutation, query } from "./functions";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
+import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
 
 function resolveBatchSize(batchSize: number | undefined): number {
@@ -133,6 +134,7 @@ export const applyProfilePhoneBackfill = mutation({
 
     const now = Date.now();
     for (const update of updates) {
+      const phoneResolution = await normalizeAndHashPhoneNumber(update.phone);
       const user = await ctx.db
         .query("users")
         .withIndex("by_clerkUserId", (queryBuilder) =>
@@ -143,7 +145,8 @@ export const applyProfilePhoneBackfill = mutation({
       if (!user) {
         await ctx.db.insert("users", {
           clerkUserId: update.clerkUserId,
-          phone: update.phone,
+          phone: phoneResolution.normalizedPhoneNumber,
+          phoneHash: phoneResolution.phoneHash,
           createdAt: now,
           updatedAt: now,
         });
@@ -152,7 +155,8 @@ export const applyProfilePhoneBackfill = mutation({
 
       if (!user.phone) {
         await ctx.db.patch(user._id, {
-          phone: update.phone,
+          phone: phoneResolution.normalizedPhoneNumber,
+          phoneHash: phoneResolution.phoneHash,
           updatedAt: now,
         });
       }

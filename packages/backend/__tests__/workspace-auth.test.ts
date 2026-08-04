@@ -50,15 +50,20 @@ function createAuthContext(identity: UserIdentity | null) {
 
 function createAuthContextWithStoredMembership(identity: UserIdentity | null, role: string) {
   const db = {
-    query: () => ({
+    query: (tableName: string) => ({
       withIndex: () => ({
+        first: async () => null,
+        unique: async () => null,
         filter: () => ({
-          unique: async () => ({
-            _id: "membership_123",
-            clerkUserId: "user_123",
-            organizationId: "org_123",
-            role,
-          }),
+          unique: async () =>
+            tableName === "orgMemberships"
+              ? {
+                  _id: "membership_123",
+                  clerkUserId: "user_123",
+                  organizationId: "org_123",
+                  role,
+                }
+              : null,
         }),
       }),
     }),

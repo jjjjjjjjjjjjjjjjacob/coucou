@@ -6,11 +6,30 @@ import type { MutationCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { action, internalQuery, mutation, query } from "./functions";
 import { generateReferralCode } from "./lib/codeGenerators";
+import {
+  resolveCanonicalRsvpId,
+  resolveCanonicalUserById,
+  resolveCanonicalUserIdentity,
+} from "./lib/canonicalUserIdentity";
+import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { resolveApprovalStatus } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope } from "./lib/siteScope";
 import { requireWorkspaceAdmin, requireWorkspaceHost } from "./lib/workspaceAuth";
 
 const REFERRAL_CODE_MAX_ATTEMPTS = 20;
+
+async function normalizeUserPhone(phone: string | undefined): Promise<{
+  phone?: string;
+  phoneHash?: string;
+}> {
+  const trimmedPhone = phone?.trim();
+  if (!trimmedPhone) return {};
+  const phoneResolution = await normalizeAndHashPhoneNumber(trimmedPhone);
+  return {
+    phone: phoneResolution.normalizedPhoneNumber,
+    phoneHash: phoneResolution.phoneHash,
+  };
+}
 
 function normalizeReferralCode(value: string): string {
   return value.trim().toUpperCase();
@@ -136,15 +155,16 @@ export const upsertFromClerk = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const existing = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
-      .unique();
+    const identityResolution = args.clerkUserId
+      ? await resolveCanonicalUserIdentity(ctx, args.clerkUserId)
+      : null;
+    const existing = identityResolution?.user ?? null;
+    const normalizedPhone = await normalizeUserPhone(args.phone);
 
     if (!existing) {
       await ctx.db.insert("users", {
-        clerkUserId: args.clerkUserId,
-        phone: args.phone,
+        clerkUserId: identityResolution?.clerkUserId ?? args.clerkUserId,
+        ...normalizedPhone,
         imageUrl: args.imageUrl,
         createdAt: now,
         updatedAt: now,
@@ -152,7 +172,7 @@ export const upsertFromClerk = mutation({
       return { created: true } as const;
     } else {
       await ctx.db.patch(existing._id, {
-        phone: args.phone ?? existing.phone,
+        ...(args.phone !== undefined ? normalizedPhone : {}),
         imageUrl: args.imageUrl ?? existing.imageUrl,
         updatedAt: now,
       });
@@ -164,10 +184,16 @@ export const upsertFromClerk = mutation({
 export const getByClerkUser = query({
   args: { clerkUserId: v.string() },
   handler: async (ctx, { clerkUserId }) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
-      .unique();
+    return (await resolveCanonicalUserIdentity(ctx, clerkUserId)).user;
+  },
+});
+
+export const getCurrentCanonicalClerkUserId = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    return (await resolveCanonicalUserIdentity(ctx, identity.subject)).clerkUserId;
   },
 });
 
@@ -176,12 +202,21 @@ export const getByReferralCode = query({
   handler: async (ctx, { referralCode }) => {
     const normalizedReferralCode = normalizeReferralCode(referralCode);
     if (!normalizedReferralCode) return null;
-    return await ctx.db
+    const directUser = await ctx.db
       .query("users")
       .withIndex("by_referralCode", (queryBuilder) =>
         queryBuilder.eq("referralCode", normalizedReferralCode),
       )
       .unique();
+    if (directUser) return directUser;
+
+    const alias = await ctx.db
+      .query("userIdentityAliases")
+      .withIndex("by_legacyReferralCode", (queryBuilder) =>
+        queryBuilder.eq("legacyReferralCode", normalizedReferralCode),
+      )
+      .first();
+    return alias ? await ctx.db.get(alias.canonicalUserId) : null;
   },
 });
 
@@ -192,12 +227,8 @@ export const ensureCurrentReferralCode = mutation({
     if (!identity) throw new Error("Unauthorized");
 
     const now = Date.now();
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
-      )
-      .unique();
+    const identityResolution = await resolveCanonicalUserIdentity(ctx, identity.subject);
+    const existingUser = identityResolution.user;
 
     if (existingUser?.referralCode) {
       return { referralCode: existingUser.referralCode };
@@ -212,9 +243,10 @@ export const ensureCurrentReferralCode = mutation({
       return { referralCode };
     }
 
+    const normalizedPhone = await normalizeUserPhone(identity.phoneNumber ?? undefined);
     await ctx.db.insert("users", {
-      clerkUserId: identity.subject,
-      phone: identity.phoneNumber ?? undefined,
+      clerkUserId: identityResolution.clerkUserId,
+      ...normalizedPhone,
       imageUrl: identity.pictureUrl ?? undefined,
       referralCode,
       createdAt: now,
@@ -227,10 +259,7 @@ export const ensureCurrentReferralCode = mutation({
 export const getByClerkUserInternal = internalQuery({
   args: { clerkUserId: v.string() },
   handler: async (ctx, { clerkUserId }) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
-      .unique();
+    return (await resolveCanonicalUserIdentity(ctx, clerkUserId)).user;
   },
 });
 
@@ -242,17 +271,15 @@ export const upsertContactPhone = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
 
-    const normalizedPhone = phone?.trim() || undefined;
+    const normalizedPhone = await normalizeUserPhone(phone);
     const now = Date.now();
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
-      .unique();
+    const identityResolution = await resolveCanonicalUserIdentity(ctx, identity.subject);
+    const user = identityResolution.user;
 
     if (!user) {
       await ctx.db.insert("users", {
-        clerkUserId: identity.subject,
-        phone: normalizedPhone,
+        clerkUserId: identityResolution.clerkUserId,
+        ...normalizedPhone,
         imageUrl: identity.pictureUrl ?? undefined,
         createdAt: now,
         updatedAt: now,
@@ -261,7 +288,7 @@ export const upsertContactPhone = mutation({
     }
 
     await ctx.db.patch(user._id, {
-      phone: normalizedPhone ?? user.phone,
+      ...(phone !== undefined ? normalizedPhone : {}),
       updatedAt: now,
     });
     return { created: false as const };
@@ -276,15 +303,14 @@ export const updateProfileMeta = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
-      .unique();
+    const identityResolution = await resolveCanonicalUserIdentity(ctx, identity.subject);
+    const user = identityResolution.user;
     const now = Date.now();
     if (!user) {
+      const normalizedPhone = await normalizeUserPhone(identity.phoneNumber ?? undefined);
       await ctx.db.insert("users", {
-        clerkUserId: identity.subject,
-        phone: identity.phoneNumber ?? undefined,
+        clerkUserId: identityResolution.clerkUserId,
+        ...normalizedPhone,
         firstName: args.firstName,
         lastName: args.lastName,
         imageUrl: identity.pictureUrl ?? undefined,
@@ -314,9 +340,10 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const normalizedPhone = await normalizeUserPhone(args.phone);
     const userId = await ctx.db.insert("users", {
       clerkUserId: args.clerkUserId,
-      phone: args.phone,
+      ...normalizedPhone,
       firstName: args.firstName,
       lastName: args.lastName,
       imageUrl: args.imageUrl,
@@ -888,7 +915,7 @@ export const updateUserRoleWithClerk = action({
 export const getById = query({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
-    const user = await ctx.db.get(userId);
+    const user = await resolveCanonicalUserById(ctx, userId);
     if (!user) {
       throw new Error("User not found");
     }
@@ -918,7 +945,9 @@ export const getOrganizationUserByReference = query({
         "rsvps",
         args.userReference.slice(rsvpReferencePrefix.length),
       );
-      fallbackRsvp = rsvpId ? await ctx.db.get(rsvpId) : null;
+      fallbackRsvp = rsvpId
+        ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, rsvpId))
+        : null;
       if (!fallbackRsvp) {
         throw new Error("Guest not found");
       }
@@ -934,7 +963,7 @@ export const getOrganizationUserByReference = query({
         .unique();
     } else {
       const userId = ctx.db.normalizeId("users", args.userReference);
-      user = userId ? await ctx.db.get(userId) : null;
+      user = userId ? await resolveCanonicalUserById(ctx, userId) : null;
     }
 
     if (!user && !fallbackRsvp) {
@@ -942,6 +971,26 @@ export const getOrganizationUserByReference = query({
     }
 
     const clerkUserId = user?.clerkUserId ?? fallbackRsvp?.clerkUserId;
+    const guestPhoneHash = user?.phoneHash ?? fallbackRsvp?.guestPhoneHash;
+    const guestProfile = guestPhoneHash
+      ? await ctx.db
+          .query("workspaceGuestProfiles")
+          .withIndex("by_workspace_phoneHash", (queryBuilder) =>
+            queryBuilder
+              .eq("workspaceId", workspaceScope.workspaceId)
+              .eq("guestPhoneHash", guestPhoneHash),
+          )
+          .first()
+      : clerkUserId
+        ? await ctx.db
+            .query("workspaceGuestProfiles")
+            .withIndex("by_workspace_clerkUserId", (queryBuilder) =>
+              queryBuilder
+                .eq("workspaceId", workspaceScope.workspaceId)
+                .eq("clerkUserId", clerkUserId),
+            )
+            .first()
+        : null;
     const membership = clerkUserId
       ? await ctx.db
           .query("orgMemberships")
@@ -964,6 +1013,7 @@ export const getOrganizationUserByReference = query({
       imageUrl: user?.imageUrl,
       phone: user?.phone ?? fallbackRsvp?.guestPhoneObfuscated,
       referralCode: user?.referralCode ?? fallbackRsvp?.referralCode,
+      invitedByNames: (guestProfile?.invitedByHistory ?? []).map((entry) => entry.displayName),
       createdAt: user?.createdAt ?? fallbackRsvp?.createdAt ?? Date.now(),
       updatedAt:
         user?.updatedAt ?? fallbackRsvp?.updatedAt ?? fallbackRsvp?.createdAt ?? Date.now(),
@@ -986,12 +1036,31 @@ export const getOrganizationUserById = query({
       workspaceSlug: args.workspaceSlug,
     });
 
-    const user = await ctx.db.get(args.userId);
+    const user = await resolveCanonicalUserById(ctx, args.userId);
     if (!user) {
       throw new Error("User not found");
     }
 
     const clerkUserId = user.clerkUserId;
+    const guestProfile = user.phoneHash
+      ? await ctx.db
+          .query("workspaceGuestProfiles")
+          .withIndex("by_workspace_phoneHash", (queryBuilder) =>
+            queryBuilder
+              .eq("workspaceId", workspaceScope.workspaceId)
+              .eq("guestPhoneHash", user.phoneHash),
+          )
+          .first()
+      : clerkUserId
+        ? await ctx.db
+            .query("workspaceGuestProfiles")
+            .withIndex("by_workspace_clerkUserId", (queryBuilder) =>
+              queryBuilder
+                .eq("workspaceId", workspaceScope.workspaceId)
+                .eq("clerkUserId", clerkUserId),
+            )
+            .first()
+        : null;
     const membership = clerkUserId
       ? await ctx.db
           .query("orgMemberships")
@@ -1013,6 +1082,7 @@ export const getOrganizationUserById = query({
       imageUrl: user.imageUrl,
       phone: user.phone,
       referralCode: user.referralCode,
+      invitedByNames: (guestProfile?.invitedByHistory ?? []).map((entry) => entry.displayName),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       role: membership?.role ?? "guest",

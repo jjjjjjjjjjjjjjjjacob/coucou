@@ -120,6 +120,7 @@ async function seedRsvp(
     smsConsentTimestamp?: number;
     guestPhoneHash?: string;
     customFieldValues?: Record<string, string>;
+    invitedByName?: string;
     createdAt?: number;
   },
 ) {
@@ -134,6 +135,8 @@ async function seedRsvp(
       smsConsent: args.smsConsent,
       smsConsentTimestamp: args.smsConsentTimestamp,
       customFieldValues: args.customFieldValues,
+      invitedByName: args.invitedByName,
+      invitedByNormalizedName: args.invitedByName?.trim().toLocaleLowerCase(),
       status: args.status ?? "approved",
       approvalStatus: args.status ?? "approved",
       createdAt: args.createdAt ?? Date.now(),
@@ -244,6 +247,54 @@ describe("guestDirectory.listGuestDirectoryPaginated", () => {
       firstEventId,
     ]);
     expect(result.latestEvent?.eventId).toBe(firstEventId);
+  });
+
+  it("returns distinct contact inviter history and each RSVP's event inviter", async () => {
+    const testBackend = setupTestBackend();
+    const workspaceId = await seedWorkspace(testBackend);
+    const firstEventId = await seedEvent(testBackend, "First Invite", -2 * 86_400_000);
+    const secondEventId = await seedEvent(testBackend, "Second Invite", -86_400_000);
+    const phoneNumber = "+15551239992";
+    const { phoneHash } = await normalizeAndHashPhoneNumber(phoneNumber);
+    await seedUser(testBackend, "user_invited", "Invited", phoneNumber);
+    await seedRsvp(testBackend, {
+      eventId: firstEventId,
+      clerkUserId: "user_invited",
+      invitedByName: "Alice Host",
+      createdAt: 10,
+    });
+    await seedRsvp(testBackend, {
+      eventId: secondEventId,
+      clerkUserId: "user_invited",
+      invitedByName: "alice host",
+      createdAt: 20,
+    });
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("workspaceGuestProfiles", {
+        workspaceId,
+        clerkUserId: "user_invited",
+        guestPhoneHash: phoneHash,
+        tags: [],
+        invitedByHistory: [
+          {
+            displayName: "Bob Promoter",
+            normalizedName: "bob promoter",
+            firstSeenAt: 1,
+            lastSeenAt: 2,
+          },
+        ],
+        createdAt: 1,
+        updatedAt: 2,
+      });
+    });
+
+    const result = await listDirectory(
+      testBackend.withIdentity(createHostIdentity("host_inviter_history")),
+    );
+    expect(result.people[0]?.invitedByNames).toEqual(["Bob Promoter", "alice host"]);
+    expect(
+      result.people[0]?.events.map((eventEntry) => eventEntry.invitedByName).sort(),
+    ).toEqual(["Alice Host", "alice host"]);
   });
 
   it("keys people without phones by clerkUserId and keeps them separate", async () => {

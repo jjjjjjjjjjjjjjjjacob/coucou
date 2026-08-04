@@ -5,6 +5,7 @@ import {
 } from "@coucou/sdk/shared/primary-fields";
 import { v } from "convex/values";
 import { mutation, query } from "./functions";
+import { resolveCanonicalClerkUserId } from "./lib/canonicalUserIdentity";
 import {
   socialPlatformKeyFromProfileFieldKey,
   upsertProfileFieldValue,
@@ -17,10 +18,13 @@ export const listForCurrentUser = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const profileFieldValues = await ctx.db
       .query("profileFieldValues")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
+      )
       .collect();
     const socialProfileFieldValues = profileFieldValues
       .map((profileFieldValue) => {
@@ -61,7 +65,9 @@ export const listForCurrentUser = query({
 
     return await ctx.db
       .query("userSocialProfiles")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
+      )
       .collect();
   },
 });
@@ -74,6 +80,7 @@ export const listForCurrentUserInWorkspace = query({
   handler: async (ctx, { workspaceSlug, siteKey }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
     if (!workspaceSlug && !siteKey) return [];
 
     const scope = await resolveTenantWorkspaceScope(ctx, {
@@ -84,7 +91,9 @@ export const listForCurrentUserInWorkspace = query({
 
     const userRsvps = await ctx.db
       .query("rsvps")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
+      )
       .collect();
 
     if (userRsvps.length === 0) return [];
@@ -153,6 +162,7 @@ export const upsertForCurrentUser = mutation({
   handler: async (ctx, { platformKey, handle }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const normalizedPlatformKey = normalizeSocialPlatformKey(platformKey);
     const normalizedHandle = normalizeSocialHandleInput(handle, normalizedPlatformKey);
@@ -166,12 +176,12 @@ export const upsertForCurrentUser = mutation({
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerkUserId", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
       )
       .unique();
 
     await upsertProfileFieldValue(ctx, {
-      clerkUserId: identity.subject,
+      clerkUserId: canonicalClerkUserId,
       userId: user?._id,
       fieldKey: `social.${normalizedPlatformKey}`,
       value: normalizedHandle,
@@ -180,7 +190,7 @@ export const upsertForCurrentUser = mutation({
     });
 
     return await upsertUserSocialProfile(ctx, {
-      clerkUserId: identity.subject,
+      clerkUserId: canonicalClerkUserId,
       userId: user?._id,
       platformKey: normalizedPlatformKey,
       handle: normalizedHandle,

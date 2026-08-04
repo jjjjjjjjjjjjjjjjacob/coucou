@@ -1,6 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./guestIdentity";
+import { appendInviterHistoryForContact } from "./inviterHistory";
 import {
   assertRequiredPrimaryFieldValues,
   buildInvitedByPatch,
@@ -154,6 +155,13 @@ export async function finalizeRsvpSubmissionThroughSharedService(
   if (!storedRsvp) {
     throw new Error("RSVP submission could not be stored");
   }
+  await appendInviterHistoryForContact(ctx, {
+    event: input.event,
+    clerkUserId: input.clerkUserId,
+    guestPhoneHash: storedRsvp.guestPhoneHash ?? input.registeredUser?.phoneHash,
+    invitedByName: storedRsvp.invitedByName,
+    seenAt: storedRsvp.updatedAt,
+  });
   if (input.previousRsvp) {
     try {
       await updateRsvpInAggregate(ctx, input.previousRsvp, storedRsvp);
@@ -253,6 +261,14 @@ export async function submitRsvpThroughSharedService(
     clerkUserId: input.clerkUserId,
     event: input.event,
     siteKey: input.event.siteKey,
+  });
+
+  await appendInviterHistoryForContact(ctx, {
+    event: input.event,
+    clerkUserId: input.clerkUserId,
+    guestPhoneHash: input.guestPhoneHash ?? input.registeredUser?.phoneHash,
+    invitedByName: input.invitedByName,
+    seenAt: now,
   });
 
   if (existingRsvp?.listKey === input.listKey) {

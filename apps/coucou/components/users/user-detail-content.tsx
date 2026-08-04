@@ -239,6 +239,11 @@ function RsvpHistoryList({ rsvps }: { rsvps: UserRsvpHistoryEntry[] }) {
             <div className="text-xs text-[var(--text-secondary)]">
               {formatEventDateTime(rsvp.eventDate)}
             </div>
+            {rsvp.invitedByName ? (
+              <div className="text-xs text-[var(--text-tertiary)]">
+                Invited by {rsvp.invitedByName}
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge
@@ -288,6 +293,45 @@ function EventHistoryList({ rsvps }: { rsvps: UserRsvpHistoryEntry[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function InviterHistoryCard({
+  rsvps,
+  storedInvitedByNames,
+}: {
+  rsvps: UserRsvpHistoryEntry[];
+  storedInvitedByNames: string[];
+}) {
+  const invitedByNames = Array.from(
+    new Map(
+      [
+        ...storedInvitedByNames,
+        ...rsvps.map((rsvp) => rsvp.invitedByName).filter((value): value is string => Boolean(value)),
+      ]
+        .map((invitedByName) => invitedByName.trim())
+        .filter(Boolean)
+        .map((invitedByName) => [invitedByName.toLocaleLowerCase(), invitedByName]),
+    ).values(),
+  ).filter((invitedByName): invitedByName is string => Boolean(invitedByName));
+
+  return (
+    <PageCard title="Invited by" description="Every distinct inviter across this contact’s RSVPs">
+      {invitedByNames.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {invitedByNames.map((invitedByName) => (
+            <span
+              key={invitedByName.toLocaleLowerCase()}
+              className="rounded-full bg-[var(--surface-3)] px-2.5 py-1 text-xs text-[var(--text-secondary)]"
+            >
+              {invitedByName}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--text-secondary)]">No inviter history.</p>
+      )}
+    </PageCard>
   );
 }
 
@@ -494,6 +538,10 @@ export function UserDetailContent({
             userReference={userReference}
             listKeyOptions={listKeyOptions}
             tagSuggestions={tagSuggestions}
+          />
+          <InviterHistoryCard
+            rsvps={rsvps ?? []}
+            storedInvitedByNames={user.invitedByNames}
           />
           <UserProfileCard user={user} />
         </TabsContent>

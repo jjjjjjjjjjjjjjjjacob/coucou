@@ -35,9 +35,14 @@ function EventDetailSkeleton() {
 interface EventDetailPageContentProps {
   event: Event;
   eventsPath: string;
+  preferenceQueryArgs: { siteKey: string; workspaceSlug: string };
 }
 
-function EventDetailPageContent({ event, eventsPath }: EventDetailPageContentProps) {
+function EventDetailPageContent({
+  event,
+  eventsPath,
+  preferenceQueryArgs,
+}: EventDetailPageContentProps) {
   const title = formatEventTitleInline(event);
 
   return (
@@ -54,6 +59,7 @@ function EventDetailPageContent({ event, eventsPath }: EventDetailPageContentPro
         actions: <EventDetailActions event={event} />,
       }}
       propertyPanel={<EventPropertyPanel event={event} />}
+      preferenceQueryArgs={preferenceQueryArgs}
     >
       <EditEventDialog
         event={event}
@@ -88,7 +94,7 @@ export default function EventDetailPage() {
     workspaceScope ? { eventId, ...workspaceScope.queryArgs } : "skip",
   ) as Event | null | undefined;
 
-  if (event === undefined) {
+  if (event === undefined || !workspaceScope) {
     return <EventDetailSkeleton />;
   }
 
@@ -107,7 +113,11 @@ export default function EventDetailPage() {
 
   return (
     <EventEditProvider>
-      <EventDetailPageContent event={event} eventsPath={eventsPath} />
+      <EventDetailPageContent
+        event={event}
+        eventsPath={eventsPath}
+        preferenceQueryArgs={workspaceScope.queryArgs}
+      />
     </EventEditProvider>
   );
 }

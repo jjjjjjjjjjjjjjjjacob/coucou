@@ -6,6 +6,10 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
+import {
+  canonicalizeClerkUserIds,
+  resolveCanonicalClerkUserId,
+} from "./lib/canonicalUserIdentity";
 import { isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
@@ -61,6 +65,7 @@ type RouteResolution =
 type SmsIdentity = {
   clerkUserId: string;
   registeredUser?: Doc<"users">;
+  historyClerkUserIds: string[];
   participantClerkUserIds: string[];
   ambiguous: boolean;
 };
@@ -308,9 +313,22 @@ async function resolveRegisteredUsers(
   ctx: MutationCtx,
   normalizedPhoneNumber: string,
   rawPhoneNumber: string,
+  phoneHash: string,
   participantClerkUserIds: readonly string[],
 ): Promise<Doc<"users">[]> {
   const usersByIdentifier = new Map<string, Doc<"users">>();
+  const phoneHashUsers = await ctx.db
+    .query("users")
+    .withIndex("by_phoneHash", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
+    .collect();
+  for (const user of phoneHashUsers) {
+    if (user.clerkUserId && !isGuestClerkUserId(user.clerkUserId)) {
+      usersByIdentifier.set(user.clerkUserId, user);
+    }
+  }
+
+  // Exact-phone fallbacks cover the deployment window before phoneHash has
+  // been backfilled. New writes always use the hash index above.
   const directPhoneValues = Array.from(new Set([normalizedPhoneNumber, rawPhoneNumber.trim()]));
   for (const phoneValue of directPhoneValues) {
     const phoneUsers = await ctx.db
@@ -324,7 +342,11 @@ async function resolveRegisteredUsers(
     }
   }
 
-  for (const clerkUserId of participantClerkUserIds) {
+  const canonicalParticipantClerkUserIds = await canonicalizeClerkUserIds(
+    ctx,
+    participantClerkUserIds,
+  );
+  for (const clerkUserId of canonicalParticipantClerkUserIds) {
     if (isGuestClerkUserId(clerkUserId) || usersByIdentifier.has(clerkUserId)) {
       continue;
     }
@@ -332,10 +354,50 @@ async function resolveRegisteredUsers(
       .query("users")
       .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
       .unique();
-    if (user) usersByIdentifier.set(clerkUserId, user);
+    if (!user?.phone) continue;
+    try {
+      const participantPhoneResolution = await normalizeAndHashPhoneNumber(user.phone);
+      if (participantPhoneResolution.phoneHash === phoneHash) {
+        usersByIdentifier.set(clerkUserId, user);
+      }
+    } catch {
+      // Invalid/stale participant phones must not make a valid phone identity ambiguous.
+    }
   }
 
   return Array.from(usersByIdentifier.values());
+}
+
+async function chooseSmsCanonicalUser(
+  ctx: MutationCtx,
+  registeredUsers: readonly Doc<"users">[],
+): Promise<Doc<"users"> | null> {
+  const usersWithRsvpCounts = await Promise.all(
+    registeredUsers.map(async (user) => ({
+      user,
+      rsvpCount: user.clerkUserId
+        ? (
+            await ctx.db
+              .query("rsvps")
+              .withIndex("by_user", (queryBuilder) =>
+                queryBuilder.eq("clerkUserId", user.clerkUserId as string),
+              )
+              .collect()
+          ).length
+        : 0,
+    })),
+  );
+  return (
+    usersWithRsvpCounts.sort((firstEntry, secondEntry) => {
+      if (firstEntry.rsvpCount !== secondEntry.rsvpCount) {
+        return secondEntry.rsvpCount - firstEntry.rsvpCount;
+      }
+      if (firstEntry.user.createdAt !== secondEntry.user.createdAt) {
+        return secondEntry.user.createdAt - firstEntry.user.createdAt;
+      }
+      return String(firstEntry.user._id).localeCompare(String(secondEntry.user._id));
+    })[0]?.user ?? null
+  );
 }
 
 async function resolveSmsIdentity(
@@ -353,33 +415,38 @@ async function resolveSmsIdentity(
   ).flatMap((thread) => thread.participantClerkUserIds);
   const deliveryParticipants =
     route.kind === "blast_action" ? route.delivery.recipientClerkUserIds : [];
-  const registeredUsers = await resolveRegisteredUsers(ctx, normalizedPhoneNumber, rawPhoneNumber, [
-    ...threadParticipants,
-    ...deliveryParticipants,
-  ]);
-  const participantClerkUserIds = Array.from(
-    new Set([
-      ...threadParticipants,
-      ...deliveryParticipants,
-      ...registeredUsers
+  const registeredUsers = await resolveRegisteredUsers(
+    ctx,
+    normalizedPhoneNumber,
+    rawPhoneNumber,
+    phoneHash,
+    [...threadParticipants, ...deliveryParticipants],
+  );
+  const canonicalUser = await chooseSmsCanonicalUser(ctx, registeredUsers);
+  const historyClerkUserIds = Array.from(
+    new Set(
+      registeredUsers
         .map((user) => user.clerkUserId)
         .filter((clerkUserId): clerkUserId is string => Boolean(clerkUserId)),
-    ]),
+    ),
   );
 
-  if (registeredUsers.length === 1 && registeredUsers[0].clerkUserId) {
+  if (canonicalUser?.clerkUserId) {
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, canonicalUser.clerkUserId);
     return {
-      clerkUserId: registeredUsers[0].clerkUserId,
-      registeredUser: registeredUsers[0],
-      participantClerkUserIds,
+      clerkUserId: canonicalClerkUserId,
+      registeredUser: canonicalUser,
+      historyClerkUserIds: Array.from(new Set([...historyClerkUserIds, canonicalClerkUserId])),
+      participantClerkUserIds: [canonicalClerkUserId],
       ambiguous: false,
     };
   }
 
   return {
     clerkUserId: `guest:${phoneHash}`,
-    participantClerkUserIds,
-    ambiguous: registeredUsers.length > 1,
+    historyClerkUserIds: [],
+    participantClerkUserIds: [],
+    ambiguous: false,
   };
 }
 
@@ -396,17 +463,26 @@ async function findWorkspaceRsvpCandidates(
     )
       .filter((rsvp): rsvp is Doc<"rsvps"> => rsvp !== null)
       .filter(
-        (rsvp) => rsvp.clerkUserId === identity.clerkUserId || rsvp.guestPhoneHash === phoneHash,
+        (rsvp) =>
+          identity.historyClerkUserIds.includes(rsvp.clerkUserId) ||
+          rsvp.guestPhoneHash === phoneHash,
       )
       .sort((firstRsvp, secondRsvp) => secondRsvp.updatedAt - firstRsvp.updatedAt);
     prioritizedRsvps.push(...sourceRsvps);
   }
 
-  const [identityRsvps, phoneRsvps] = await Promise.all([
-    ctx.db
-      .query("rsvps")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.clerkUserId))
-      .collect(),
+  const [identityRsvpCollections, phoneRsvps] = await Promise.all([
+    Promise.all(
+      Array.from(new Set([identity.clerkUserId, ...identity.historyClerkUserIds])).map(
+        async (clerkUserId) =>
+          await ctx.db
+            .query("rsvps")
+            .withIndex("by_user", (queryBuilder) =>
+              queryBuilder.eq("clerkUserId", clerkUserId),
+            )
+            .collect(),
+      ),
+    ),
     ctx.db
       .query("rsvps")
       .withIndex("by_guestPhoneHash", (queryBuilder) =>
@@ -414,10 +490,12 @@ async function findWorkspaceRsvpCandidates(
       )
       .collect(),
   ]);
+  const identityRsvps = identityRsvpCollections.flat();
   const candidateRsvpsById = new Map(
     [...identityRsvps, ...phoneRsvps]
       .filter(
         (rsvp) =>
+          identity.historyClerkUserIds.includes(rsvp.clerkUserId) ||
           rsvp.clerkUserId === identity.clerkUserId ||
           (identity.registeredUser !== undefined && isGuestClerkUserId(rsvp.clerkUserId)),
       )
@@ -459,10 +537,21 @@ async function getWorkspaceGrantedSocialProfiles(
   identity: SmsIdentity,
 ): Promise<Array<{ platformKey: string; handle: string }>> {
   if (!identity.registeredUser) return [];
-  const grants = await ctx.db
-    .query("workspaceProfileValueGrants")
-    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.clerkUserId))
-    .collect();
+  const grants = (
+    await Promise.all(
+      Array.from(new Set([identity.clerkUserId, ...identity.historyClerkUserIds])).map(
+        async (clerkUserId) =>
+          await ctx.db
+            .query("workspaceProfileValueGrants")
+            .withIndex("by_user", (queryBuilder) =>
+              queryBuilder.eq("clerkUserId", clerkUserId),
+            )
+            .collect(),
+      ),
+    )
+  )
+    .flat()
+    .sort((firstGrant, secondGrant) => secondGrant.updatedAt - firstGrant.updatedAt);
   const profiles: Array<{ platformKey: string; handle: string }> = [];
   for (const grant of grants) {
     if (
@@ -513,10 +602,12 @@ async function buildInitialSessionValues(
           .collect(),
       ),
     )
-  ).flat();
+  )
+    .flat()
+    .sort((firstProfile, secondProfile) => secondProfile.updatedAt - firstProfile.updatedAt);
   const grantedSocialProfiles = await getWorkspaceGrantedSocialProfiles(ctx, route, identity);
   const socialProfilesByPlatform = new Map<string, { platformKey: string; handle: string }>();
-  for (const profile of [...grantedSocialProfiles, ...sourceSocialProfiles]) {
+  for (const profile of [...sourceSocialProfiles, ...grantedSocialProfiles]) {
     const platformKey = normalizeSocialPlatformKey(profile.platformKey);
     if (platformKey && !socialProfilesByPlatform.has(platformKey)) {
       socialProfilesByPlatform.set(platformKey, {

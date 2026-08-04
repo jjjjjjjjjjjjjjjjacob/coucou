@@ -1,5 +1,7 @@
 "use client";
 
+import { api } from "@convex/_generated/api";
+import { useMutation, useQuery } from "convex/react";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import * as React from "react";
 
@@ -13,19 +15,80 @@ interface EventDetailLayoutProps extends React.HTMLAttributes<HTMLDivElement> {
   titleBarProps: DashboardTitleBarProps;
   children: React.ReactNode;
   propertyPanel: React.ReactNode;
+  preferenceQueryArgs?: { siteKey?: string; workspaceSlug?: string };
   defaultPanelOpen?: boolean;
 }
+
+const EVENT_DETAILS_PANEL_PREFERENCE_KEY = "event-details";
 
 export function EventDetailLayout({
   titleBarProps,
   children,
   propertyPanel,
-  defaultPanelOpen = true,
+  preferenceQueryArgs,
+  defaultPanelOpen = false,
   className,
   ...props
 }: EventDetailLayoutProps) {
   const [isPanelOpen, setIsPanelOpen] = React.useState(defaultPanelOpen);
+  const panelOpenState = React.useRef(defaultPanelOpen);
+  const hasPendingPanelPreferenceChange = React.useRef(false);
+  const savedPanelPreference = useQuery(
+    api.dashboardPreferences.getCurrentUserPanelPreference,
+    preferenceQueryArgs
+      ? {
+          ...preferenceQueryArgs,
+          panelKey: EVENT_DETAILS_PANEL_PREFERENCE_KEY,
+        }
+      : "skip",
+  );
+  const savePanelPreference = useMutation(
+    api.dashboardPreferences.upsertCurrentUserPanelPreference,
+  );
   const titleBarActions = titleBarProps.actions || titleBarProps.action;
+
+  React.useEffect(() => {
+    if (
+      savedPanelPreference === undefined ||
+      (savedPanelPreference !== null && typeof savedPanelPreference !== "boolean")
+    ) {
+      return;
+    }
+
+    if (hasPendingPanelPreferenceChange.current) {
+      if (savedPanelPreference === panelOpenState.current) {
+        hasPendingPanelPreferenceChange.current = false;
+      }
+      return;
+    }
+
+    const nextPanelOpenState = savedPanelPreference ?? defaultPanelOpen;
+    panelOpenState.current = nextPanelOpenState;
+    setIsPanelOpen(nextPanelOpenState);
+  }, [defaultPanelOpen, savedPanelPreference]);
+
+  const togglePanel = React.useCallback(() => {
+    const previousPanelOpenState = panelOpenState.current;
+    const nextPanelOpenState = !previousPanelOpenState;
+
+    panelOpenState.current = nextPanelOpenState;
+    setIsPanelOpen(nextPanelOpenState);
+
+    if (!preferenceQueryArgs) {
+      return;
+    }
+
+    hasPendingPanelPreferenceChange.current = true;
+    void savePanelPreference({
+      ...preferenceQueryArgs,
+      panelKey: EVENT_DETAILS_PANEL_PREFERENCE_KEY,
+      isOpen: nextPanelOpenState,
+    }).catch(() => {
+      hasPendingPanelPreferenceChange.current = false;
+      panelOpenState.current = previousPanelOpenState;
+      setIsPanelOpen(previousPanelOpenState);
+    });
+  }, [preferenceQueryArgs, savePanelPreference]);
 
   const toggleButton = (
     <Tooltip>
@@ -35,7 +98,7 @@ export function EventDetailLayout({
           variant="outline"
           size="icon"
           className="size-8 border-[var(--border-subtle)] bg-transparent"
-          onClick={() => setIsPanelOpen((value) => !value)}
+          onClick={togglePanel}
           aria-label={isPanelOpen ? "Hide event details" : "Show event details"}
           aria-pressed={isPanelOpen}
         >

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./functions";
+import { resolveCanonicalClerkUserId } from "./lib/canonicalUserIdentity";
 import { requireWorkspaceRead } from "./lib/workspaceAuth";
 
 const MAX_TABLE_IDENTIFIER_COUNT = 120;
@@ -10,6 +11,12 @@ const tablePreferenceArgsValidator = {
   workspaceSlug: v.optional(v.string()),
   tableKey: v.string(),
   scopeKey: v.string(),
+};
+
+const panelPreferenceArgsValidator = {
+  siteKey: v.optional(v.string()),
+  workspaceSlug: v.optional(v.string()),
+  panelKey: v.string(),
 };
 
 function normalizeTablePreferenceIdentifier(identifier: string): string | null {
@@ -59,6 +66,7 @@ export const getCurrentUserTablePreference = query({
     if (!identity) {
       throw new Error("Unauthorized");
     }
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const resolvedScope = await requireWorkspaceRead(ctx, {
       siteKey: args.siteKey,
@@ -71,7 +79,7 @@ export const getCurrentUserTablePreference = query({
       .query("dashboardTablePreferences")
       .withIndex("by_user_workspace_table_scope", (queryBuilder) =>
         queryBuilder
-          .eq("clerkUserId", identity.subject)
+          .eq("clerkUserId", canonicalClerkUserId)
           .eq("workspaceId", resolvedScope.workspaceId)
           .eq("tableKey", tableKey)
           .eq("scopeKey", scopeKey),
@@ -101,6 +109,7 @@ export const upsertCurrentUserTablePreference = mutation({
     if (!identity) {
       throw new Error("Unauthorized");
     }
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const resolvedScope = await requireWorkspaceRead(ctx, {
       siteKey: args.siteKey,
@@ -116,7 +125,7 @@ export const upsertCurrentUserTablePreference = mutation({
       .query("dashboardTablePreferences")
       .withIndex("by_user_workspace_table_scope", (queryBuilder) =>
         queryBuilder
-          .eq("clerkUserId", identity.subject)
+          .eq("clerkUserId", canonicalClerkUserId)
           .eq("workspaceId", resolvedScope.workspaceId)
           .eq("tableKey", tableKey)
           .eq("scopeKey", scopeKey),
@@ -133,12 +142,89 @@ export const upsertCurrentUserTablePreference = mutation({
     }
 
     return await ctx.db.insert("dashboardTablePreferences", {
-      clerkUserId: identity.subject,
+      clerkUserId: canonicalClerkUserId,
       workspaceId: resolvedScope.workspaceId,
       tableKey,
       scopeKey,
       columnOrder,
       hiddenColumnIds,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const getCurrentUserPanelPreference = query({
+  args: panelPreferenceArgsValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
+
+    const resolvedScope = await requireWorkspaceRead(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const panelKey = normalizeRequiredTablePreferenceIdentifier(args.panelKey, "Panel key");
+
+    const preference = await ctx.db
+      .query("dashboardPanelPreferences")
+      .withIndex("by_user_workspace_panel", (queryBuilder) =>
+        queryBuilder
+          .eq("clerkUserId", canonicalClerkUserId)
+          .eq("workspaceId", resolvedScope.workspaceId)
+          .eq("panelKey", panelKey),
+      )
+      .unique();
+
+    return preference?.isOpen ?? null;
+  },
+});
+
+export const upsertCurrentUserPanelPreference = mutation({
+  args: {
+    ...panelPreferenceArgsValidator,
+    isOpen: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
+
+    const resolvedScope = await requireWorkspaceRead(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const panelKey = normalizeRequiredTablePreferenceIdentifier(args.panelKey, "Panel key");
+    const now = Date.now();
+
+    const existingPreference = await ctx.db
+      .query("dashboardPanelPreferences")
+      .withIndex("by_user_workspace_panel", (queryBuilder) =>
+        queryBuilder
+          .eq("clerkUserId", canonicalClerkUserId)
+          .eq("workspaceId", resolvedScope.workspaceId)
+          .eq("panelKey", panelKey),
+      )
+      .unique();
+
+    if (existingPreference) {
+      await ctx.db.patch(existingPreference._id, {
+        isOpen: args.isOpen,
+        updatedAt: now,
+      });
+      return existingPreference._id;
+    }
+
+    return await ctx.db.insert("dashboardPanelPreferences", {
+      clerkUserId: canonicalClerkUserId,
+      workspaceId: resolvedScope.workspaceId,
+      panelKey,
+      isOpen: args.isOpen,
       createdAt: now,
       updatedAt: now,
     });

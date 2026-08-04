@@ -11,6 +11,7 @@ const convexModules = {
   "../convex/exportsQueries.ts": () => import("../convex/exportsQueries"),
   "../convex/mobileStaff.ts": () => import("../convex/mobileStaff"),
   "../convex/orgMemberships.ts": () => import("../convex/orgMemberships"),
+  "../convex/users.ts": () => import("../convex/users"),
   "../convex/workspaces.ts": () => import("../convex/workspaces"),
 };
 

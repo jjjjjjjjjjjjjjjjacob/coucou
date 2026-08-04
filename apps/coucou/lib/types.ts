@@ -66,6 +66,7 @@ export interface OrganizationUserDetail {
   imageUrl?: string;
   phone?: string;
   referralCode?: string;
+  invitedByNames: string[];
   createdAt: number;
   updatedAt: number;
   role: string;
@@ -82,6 +83,7 @@ export interface UserRsvpHistoryEntry {
   attendanceStatus: "yes" | "no" | "maybe";
   ticketStatus: "not-issued" | "issued" | "disabled" | "redeemed";
   attendees: number;
+  invitedByName?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -687,6 +689,7 @@ export interface GuestDirectoryPersonEventEntry {
   listKey?: string;
   approvalStatus: "pending" | "approved" | "denied";
   attendanceStatus?: string;
+  invitedByName?: string;
   rsvpCreatedAt: number;
 }
 
@@ -713,6 +716,7 @@ export interface GuestDirectoryPerson {
   tags: string[];
   notes?: string;
   defaultListKey?: string;
+  invitedByNames: string[];
   role: string | null;
   hasOrganizationMembership: boolean;
 }

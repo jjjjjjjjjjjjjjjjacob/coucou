@@ -5,8 +5,13 @@ import { api, components } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
+import {
+  resolveCanonicalClerkUserId,
+  resolveCanonicalRsvpId,
+} from "./lib/canonicalUserIdentity";
 import { generateRsvpHandoffToken } from "./lib/codeGenerators";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
+import { appendInviterHistoryForContact } from "./lib/inviterHistory";
 import { hashOpaqueValue, normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import {
@@ -88,10 +93,20 @@ async function buildReferralPatch(
   const referralCode = normalizeReferralCode(rawReferralCode);
   if (!referralCode) return undefined;
 
-  const referrer = await ctx.db
+  const directReferrer = await ctx.db
     .query("users")
     .withIndex("by_referralCode", (queryBuilder) => queryBuilder.eq("referralCode", referralCode))
     .unique();
+  const legacyReferralAlias = directReferrer
+    ? null
+    : await ctx.db
+        .query("userIdentityAliases")
+        .withIndex("by_legacyReferralCode", (queryBuilder) =>
+          queryBuilder.eq("legacyReferralCode", referralCode),
+        )
+        .first();
+  const referrer =
+    directReferrer ?? (legacyReferralAlias ? await ctx.db.get(legacyReferralAlias.canonicalUserId) : null);
 
   if (!referrer) {
     return {
@@ -231,13 +246,17 @@ async function mergeSubmittedUserProfile(
     normalizeOptionalText(submittedPhoneNumber) ??
     normalizeOptionalText(identityPhoneNumber) ??
     normalizeOptionalText(user?.phone);
+  const phoneResolution = nextPhoneNumber
+    ? await normalizeAndHashPhoneNumber(nextPhoneNumber)
+    : null;
 
   if (!user) {
     if (!nextFirstName && !nextLastName && !nextPhoneNumber) return null;
 
     const userId = await ctx.db.insert("users", {
       clerkUserId,
-      phone: nextPhoneNumber,
+      phone: phoneResolution?.normalizedPhoneNumber,
+      phoneHash: phoneResolution?.phoneHash,
       firstName: nextFirstName,
       lastName: nextLastName,
       imageUrl,
@@ -249,6 +268,7 @@ async function mergeSubmittedUserProfile(
 
   const userPatch: {
     phone?: string;
+    phoneHash?: string;
     firstName?: string;
     lastName?: string;
     imageUrl?: string;
@@ -258,8 +278,12 @@ async function mergeSubmittedUserProfile(
   };
   let shouldPatchUser = false;
 
-  if (nextPhoneNumber && nextPhoneNumber !== user.phone) {
-    userPatch.phone = nextPhoneNumber;
+  if (
+    phoneResolution &&
+    (phoneResolution.normalizedPhoneNumber !== user.phone || phoneResolution.phoneHash !== user.phoneHash)
+  ) {
+    userPatch.phone = phoneResolution.normalizedPhoneNumber;
+    userPatch.phoneHash = phoneResolution.phoneHash;
     shouldPatchUser = true;
   }
   if (nextFirstName && nextFirstName !== user.firstName) {
@@ -473,7 +497,7 @@ export const submitRequest = mutation({
     // Require authenticated user
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
-    const clerkUserId = identity.subject;
+    const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     let user = await ctx.db
       .query("users")
@@ -1252,10 +1276,12 @@ export const claimGuestRsvpsForCurrentUser = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
 
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
+
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerkUserId", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", identity.subject),
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
       )
       .unique();
     const phoneNumber = identity.phoneNumber ?? user?.phone;
@@ -1264,7 +1290,7 @@ export const claimGuestRsvpsForCurrentUser = mutation({
     }
 
     return await claimGuestRsvpsForPhone(ctx, {
-      clerkUserId: identity.subject,
+      clerkUserId: canonicalClerkUserId,
       phoneNumber,
     });
   },
@@ -1276,8 +1302,9 @@ export const claimGuestRsvpsForClerkPhoneInternal = internalMutation({
     phone: v.string(),
   },
   handler: async (ctx, { clerkUserId, phone }) => {
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, clerkUserId);
     return await claimGuestRsvpsForPhone(ctx, {
-      clerkUserId,
+      clerkUserId: canonicalClerkUserId,
       phoneNumber: phone,
     });
   },
@@ -1295,9 +1322,12 @@ export const checkSmsConsentForUserEvent = internalQuery({
     clerkUserId: v.string(),
   },
   handler: async (ctx, { eventId, clerkUserId }) => {
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, clerkUserId);
     const rsvp = await ctx.db
       .query("rsvps")
-      .withIndex("by_event_user", (q) => q.eq("eventId", eventId).eq("clerkUserId", clerkUserId))
+      .withIndex("by_event_user", (q) =>
+        q.eq("eventId", eventId).eq("clerkUserId", canonicalClerkUserId),
+      )
       .unique();
 
     const hasConsented = rsvp?.smsConsent === true;
@@ -1316,9 +1346,12 @@ export const getApprovedRsvpWithRedemption = internalQuery({
     clerkUserId: v.string(),
   },
   handler: async (ctx, { eventId, clerkUserId }) => {
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, clerkUserId);
     const rsvp = await ctx.db
       .query("rsvps")
-      .withIndex("by_event_user", (q) => q.eq("eventId", eventId).eq("clerkUserId", clerkUserId))
+      .withIndex("by_event_user", (q) =>
+        q.eq("eventId", eventId).eq("clerkUserId", canonicalClerkUserId),
+      )
       .unique();
 
     if (!rsvp || resolveApprovalStatus(rsvp) !== "approved") {
@@ -1327,7 +1360,9 @@ export const getApprovedRsvpWithRedemption = internalQuery({
 
     const redemption = await ctx.db
       .query("redemptions")
-      .withIndex("by_event_user", (q) => q.eq("eventId", eventId).eq("clerkUserId", clerkUserId))
+      .withIndex("by_event_user", (q) =>
+        q.eq("eventId", eventId).eq("clerkUserId", canonicalClerkUserId),
+      )
       .unique();
 
     if (!redemption) {
@@ -1379,7 +1414,7 @@ export const smsPreferenceForUserEvent = query({
     if (!event) return null;
 
     const organizerPreference = await resolveSmsOrganizerPreference(ctx, {
-      clerkUserId: identity.subject,
+      clerkUserId: await resolveCanonicalClerkUserId(ctx, identity.subject),
       event,
       siteKey,
     });
@@ -1417,7 +1452,7 @@ export const smsPreferenceForUserEventByRouteId = query({
     if (!event) return null;
 
     const organizerPreference = await resolveSmsOrganizerPreference(ctx, {
-      clerkUserId: identity.subject,
+      clerkUserId: await resolveCanonicalClerkUserId(ctx, identity.subject),
       event,
       siteKey,
     });
@@ -1436,7 +1471,7 @@ async function collectUserSharedEvents(
 ) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) return [];
-  const clerkUserId = identity.subject;
+  const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
   const rsvps = await ctx.db
     .query("rsvps")
     .withIndex("by_user", (q) => q.eq("clerkUserId", clerkUserId))
@@ -1514,9 +1549,10 @@ export const updateSmsPreference = mutation({
     smsConsentIpAddress: v.optional(v.string()),
   },
   handler: async (ctx, { rsvpId, smsConsent, applyToAll, smsConsentIpAddress }) => {
+    rsvpId = rsvpId ? await resolveCanonicalRsvpId(ctx, rsvpId) : undefined;
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
-    const clerkUserId = identity.subject;
+    const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
     const now = Date.now();
     const sanitizedSmsConsentIpAddress =
       smsConsent && typeof smsConsentIpAddress === "string"
@@ -1630,9 +1666,10 @@ export const updateSharedFields = mutation({
     fields: v.record(v.string(), v.string()),
   },
   handler: async (ctx, { rsvpId, fields }) => {
+    rsvpId = await resolveCanonicalRsvpId(ctx, rsvpId);
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
-    const clerkUserId = identity.subject;
+    const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const rsvp = await ctx.db.get(rsvpId);
     if (!rsvp) throw new NotFoundError("RSVP");
@@ -1680,9 +1717,10 @@ export const updateSharedPrimaryFields = mutation({
     invitedByName: v.optional(v.string()),
   },
   handler: async (ctx, { rsvpId, socialProfiles, invitedByName }) => {
+    rsvpId = await resolveCanonicalRsvpId(ctx, rsvpId);
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
-    const clerkUserId = identity.subject;
+    const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
     const rsvp = await ctx.db.get(rsvpId);
     if (!rsvp) throw new NotFoundError("RSVP");
@@ -1739,9 +1777,17 @@ export const updateSharedPrimaryFields = mutation({
     }
 
     if (primaryFieldConfig?.invitedBy?.enabled === true && invitedByName !== undefined) {
+      const now = Date.now();
       await ctx.db.patch(rsvpId, {
         ...buildInvitedByPatch(invitedByName),
-        updatedAt: Date.now(),
+        updatedAt: now,
+      });
+      await appendInviterHistoryForContact(ctx, {
+        event,
+        clerkUserId,
+        guestPhoneHash: rsvp.guestPhoneHash ?? user?.phoneHash,
+        invitedByName,
+        seenAt: now,
       });
     }
 
@@ -2695,7 +2741,7 @@ export const statusForUserEvent = query({
     if (!identity) return null;
     const event = await getEventInSiteScope(ctx, eventId, { siteKey });
     if (!event) return null;
-    const clerkUserId = identity.subject;
+    const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
     const rsvps = await ctx.db
       .query("rsvps")
       .withIndex("by_event", (query) => query.eq("eventId", eventId))
@@ -2739,18 +2785,19 @@ export const statusForUserEventServer = query({
     siteKey: v.optional(v.string()),
   },
   handler: async (ctx, { eventId, clerkUserId, siteKey }) => {
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, clerkUserId);
     const event = await getEventInSiteScope(ctx, eventId, { siteKey });
     if (!event) return null;
     const rsvps = await ctx.db
       .query("rsvps")
       .withIndex("by_event", (query) => query.eq("eventId", eventId))
-      .filter((query) => query.eq(query.field("clerkUserId"), clerkUserId))
+      .filter((query) => query.eq(query.field("clerkUserId"), canonicalClerkUserId))
       .collect();
     if (rsvps.length === 0) return null;
 
     const chosen = selectPrimaryRsvp(rsvps);
 
-    const redemptionInfo = await resolveRedemption(ctx, eventId, clerkUserId, chosen);
+    const redemptionInfo = await resolveRedemption(ctx, eventId, canonicalClerkUserId, chosen);
     const socialProfiles = await ctx.db
       .query("rsvpSocialProfiles")
       .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", chosen._id))
@@ -2795,7 +2842,7 @@ export const statusForUserEventByRouteId = query({
     if (!identity) return null;
     const event = await getEventInSiteScope(ctx, resolvedEventRoute.eventId, { siteKey });
     if (!event) return null;
-    const clerkUserId = identity.subject;
+    const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
     const rsvps = await ctx.db
       .query("rsvps")
       .withIndex("by_event", (query) => query.eq("eventId", resolvedEventRoute.eventId))
@@ -2840,6 +2887,7 @@ export const statusForUserEventServerByRouteId = query({
     workspaceSlug: v.optional(v.string()),
   },
   handler: async (ctx, { eventRouteId, clerkUserId, siteKey, workspaceSlug }) => {
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, clerkUserId);
     const resolvedEventRoute: { eventId: Id<"events">; shortId?: string } | null =
       await ctx.runQuery(api.events.resolveRouteId, {
         eventRouteId,
@@ -2853,7 +2901,7 @@ export const statusForUserEventServerByRouteId = query({
     const rsvps = await ctx.db
       .query("rsvps")
       .withIndex("by_event", (query) => query.eq("eventId", resolvedEventRoute.eventId))
-      .filter((query) => query.eq(query.field("clerkUserId"), clerkUserId))
+      .filter((query) => query.eq(query.field("clerkUserId"), canonicalClerkUserId))
       .collect();
     if (rsvps.length === 0) return null;
 
@@ -2862,7 +2910,7 @@ export const statusForUserEventServerByRouteId = query({
     const redemptionInfo = await resolveRedemption(
       ctx,
       resolvedEventRoute.eventId,
-      clerkUserId,
+      canonicalClerkUserId,
       chosen,
     );
     const socialProfiles = await ctx.db
@@ -2996,7 +3044,7 @@ export const markTicketViewed = mutation({
     return await markApprovedRsvpTicketViewed(ctx, {
       eventId,
       siteKey,
-      clerkUserId: identity.subject,
+      clerkUserId: await resolveCanonicalClerkUserId(ctx, identity.subject),
     });
   },
 });
@@ -3009,7 +3057,7 @@ export const acceptRsvp = mutation({
     return await markApprovedRsvpTicketViewed(ctx, {
       eventId,
       siteKey,
-      clerkUserId: identity.subject,
+      clerkUserId: await resolveCanonicalClerkUserId(ctx, identity.subject),
     });
   },
 });
@@ -3045,7 +3093,7 @@ async function collectUserTickets(
     if (scope) return [];
     throw new Error("Unauthorized");
   }
-  const clerkUserId = identity.subject;
+  const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
   const userRsvps = await ctx.db
     .query("rsvps")
@@ -3868,9 +3916,12 @@ export const listByClerkUser = query({
       workspaceSlug: args.workspaceSlug,
     });
 
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, args.clerkUserId);
     const userRsvps = await ctx.db
       .query("rsvps")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", args.clerkUserId))
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
+      )
       .collect();
 
     const workspaceEvents = await ctx.db
@@ -3897,6 +3948,7 @@ export const listByClerkUser = query({
           attendanceStatus: rsvp.attendanceStatus ?? "yes",
           ticketStatus: rsvp.ticketStatus ?? "not-issued",
           attendees: rsvp.attendees ?? 1,
+          invitedByName: rsvp.invitedByName,
           createdAt: rsvp.createdAt,
           updatedAt: rsvp.updatedAt,
         };

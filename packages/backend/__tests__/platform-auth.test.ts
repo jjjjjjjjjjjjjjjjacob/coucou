@@ -76,6 +76,10 @@ function createActionAuthContext(
       queryCallCount += 1;
 
       if (queryCallCount === 1) {
+        return identity?.subject ?? "user_123";
+      }
+
+      if (queryCallCount === 2) {
         return hasCoucouOrganizationAccess
           ? [
               {

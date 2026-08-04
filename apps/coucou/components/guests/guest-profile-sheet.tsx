@@ -62,11 +62,28 @@ export function GuestProfileSheet({
         <SheetHeader>
           <SheetTitle>{person.name}</SheetTitle>
           <SheetDescription>
-            Organizer-only tags, notes, and default list for this contact.
+            Contact history plus organizer-only tags, notes, and default list.
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-4 pb-4">
+          <div className="mb-5 space-y-2">
+            <div className="text-sm font-medium text-[var(--text-primary)]">Invited by</div>
+            {person.invitedByNames.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {person.invitedByNames.map((invitedByName) => (
+                  <span
+                    key={invitedByName.toLocaleLowerCase()}
+                    className="rounded-full bg-[var(--surface-3)] px-2.5 py-1 text-xs text-[var(--text-secondary)]"
+                  >
+                    {invitedByName}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-[var(--text-tertiary)]">No inviter history.</p>
+            )}
+          </div>
           <GuestAnnotationsFields
             tags={tags}
             onTagsChange={setTags}

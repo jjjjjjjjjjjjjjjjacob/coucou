@@ -46,6 +46,13 @@ const smsRsvpMissingFieldValidator = v.object({
   label: v.string(),
 });
 
+const inviterHistoryEntryValidator = v.object({
+  displayName: v.string(),
+  normalizedName: v.string(),
+  firstSeenAt: v.number(),
+  lastSeenAt: v.number(),
+});
+
 export default defineSchema({
   workspaces: defineTable({
     slug: v.string(),
@@ -129,6 +136,7 @@ export default defineSchema({
     // Temporarily optional to run migration; switch back to v.string() after.
     clerkUserId: v.optional(v.string()),
     phone: v.optional(v.string()),
+    phoneHash: v.optional(v.string()),
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
@@ -139,7 +147,28 @@ export default defineSchema({
   })
     .index("by_clerkUserId", ["clerkUserId"])
     .index("by_phone", ["phone"])
+    .index("by_phoneHash", ["phoneHash"])
     .index("by_referralCode", ["referralCode"]),
+
+  // Retired Clerk identities remain durable aliases after same-phone users are
+  // physically consolidated. Reads and writes resolve aliases before touching
+  // user-owned state, so an older Clerk account can never recreate a user row.
+  userIdentityAliases: defineTable({
+    aliasClerkUserId: v.string(),
+    canonicalClerkUserId: v.string(),
+    canonicalUserId: v.id("users"),
+    phoneHash: v.optional(v.string()),
+    retiredUserId: v.optional(v.id("users")),
+    legacyReferralCode: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_alias", ["aliasClerkUserId"])
+    .index("by_canonical", ["canonicalClerkUserId"])
+    .index("by_canonical_user", ["canonicalUserId"])
+    .index("by_retired_user", ["retiredUserId"])
+    .index("by_phoneHash", ["phoneHash"])
+    .index("by_legacyReferralCode", ["legacyReferralCode"]),
 
   orgMemberships: defineTable({
     clerkUserId: v.string(),
@@ -164,6 +193,17 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_user_workspace_table_scope", ["clerkUserId", "workspaceId", "tableKey", "scopeKey"]),
 
+  dashboardPanelPreferences: defineTable({
+    clerkUserId: v.string(),
+    workspaceId: v.id("workspaces"),
+    panelKey: v.string(),
+    isOpen: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_user_workspace_panel", ["clerkUserId", "workspaceId", "panelKey"]),
+
   // Organizer-set per-workspace guest annotations (tags, notes, default list).
   // A person is matched by guestPhoneHash first (stable across guest-account
   // claiming), then by clerkUserId; upserts write both when known.
@@ -174,6 +214,7 @@ export default defineSchema({
     tags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
     defaultListKey: v.optional(v.string()),
+    invitedByHistory: v.optional(v.array(inviterHistoryEntryValidator)),
     updatedByClerkUserId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -371,6 +412,20 @@ export default defineSchema({
       searchField: "userName",
       filterFields: ["eventId", "status", "listKey", "ticketStatus"],
     }),
+
+  // A retired RSVP ID can still be found after a same-event identity collision.
+  // This is intentionally separate from immutable audit/webhook payloads, whose
+  // original IDs and JSON snapshots are never rewritten.
+  rsvpIdentityAliases: defineTable({
+    retiredRsvpId: v.id("rsvps"),
+    canonicalRsvpId: v.id("rsvps"),
+    retiredClerkUserId: v.string(),
+    canonicalClerkUserId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_retired", ["retiredRsvpId"])
+    .index("by_canonical", ["canonicalRsvpId"]),
 
   userSmsOrganizerPreferences: defineTable({
     clerkUserId: v.string(),

@@ -3,6 +3,7 @@ import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "../_generated/server";
 import { getCoucouOrganizationSlug, requireCoucouPlatformMember } from "./platformAuth";
+import { resolveCanonicalClerkUserId } from "./canonicalUserIdentity";
 
 type WorkspaceCapability = "host" | "door" | "admin" | "read";
 
@@ -99,9 +100,15 @@ async function getStoredOrganizationMembershipRole(
   organizationId: string,
 ): Promise<string | null> {
   if (ctx.db) {
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId(
+      { db: ctx.db },
+      clerkUserId,
+    );
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
+      )
       .filter((queryBuilder) =>
         queryBuilder.eq(queryBuilder.field("organizationId"), organizationId),
       )
@@ -110,8 +117,9 @@ async function getStoredOrganizationMembershipRole(
   }
 
   if (ctx.runQuery) {
+    const canonicalClerkUserId = await ctx.runQuery(api.users.getCurrentCanonicalClerkUserId, {});
     const memberships = (await ctx.runQuery(api.orgMemberships.listForUser, {
-      clerkUserId,
+      clerkUserId: canonicalClerkUserId,
     })) as StoredOrganizationMembership[];
     const membership = memberships.find(
       (storedMembership) => storedMembership.organizationId === organizationId,

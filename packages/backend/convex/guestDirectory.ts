@@ -13,6 +13,10 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
+import {
+  resolveCanonicalRsvpId,
+  resolveCanonicalUserById,
+} from "./lib/canonicalUserIdentity";
 import { GUEST_CLERK_USER_ID_PREFIX, isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
@@ -54,6 +58,7 @@ type PersonEventEntry = {
   listKey?: string;
   approvalStatus: ApprovalStatus;
   attendanceStatus?: string;
+  invitedByName?: string;
   rsvpCreatedAt: number;
 };
 
@@ -80,6 +85,7 @@ export type GuestDirectoryPerson = {
   tags: string[];
   notes?: string;
   defaultListKey?: string;
+  invitedByNames: string[];
   role: string | null;
   hasOrganizationMembership: boolean;
 };
@@ -123,6 +129,28 @@ function normalizeTags(rawTags: string[]): string[] {
     throw new Error(`A guest can have at most ${MAX_TAGS_PER_GUEST} tags`);
   }
   return normalizedTags;
+}
+
+function resolveInvitedByNames(
+  person: AggregatedPerson,
+  profile: Doc<"workspaceGuestProfiles"> | null,
+): string[] {
+  const displayNameByNormalizedName = new Map<string, string>();
+  for (const historyEntry of profile?.invitedByHistory ?? []) {
+    displayNameByNormalizedName.set(historyEntry.normalizedName, historyEntry.displayName);
+  }
+  const newestRsvpsFirst = [...person.rsvps].sort(
+    (firstRsvp, secondRsvp) => secondRsvp.updatedAt - firstRsvp.updatedAt,
+  );
+  for (const rsvp of newestRsvpsFirst) {
+    const displayName = rsvp.invitedByName?.trim().replace(/\s+/g, " ");
+    if (!displayName) continue;
+    const normalizedName = displayName.toLocaleLowerCase();
+    if (!displayNameByNormalizedName.has(normalizedName)) {
+      displayNameByNormalizedName.set(normalizedName, displayName);
+    }
+  }
+  return Array.from(displayNameByNormalizedName.values());
 }
 
 async function getScopedWorkspaceEvents(
@@ -790,6 +818,7 @@ export const listGuestDirectoryPaginated = query({
       tags: string[];
       notes?: string;
       defaultListKey?: string;
+      invitedByNames: string[];
       role: string | null;
     };
 
@@ -873,6 +902,7 @@ export const listGuestDirectoryPaginated = query({
             listKey: rsvp.listKey ?? undefined,
             approvalStatus: resolveApprovalStatus(rsvp),
             attendanceStatus: rsvp.attendanceStatus ?? undefined,
+            invitedByName: rsvp.invitedByName,
             rsvpCreatedAt: rsvp.createdAt,
           };
         })
@@ -894,6 +924,7 @@ export const listGuestDirectoryPaginated = query({
         tags: personTags,
         notes: profile?.notes,
         defaultListKey: profile?.defaultListKey,
+        invitedByNames: resolveInvitedByNames(person, profile),
         role,
       });
     }
@@ -970,6 +1001,7 @@ export const listGuestDirectoryPaginated = query({
           tags: filteredPerson.tags,
           notes: filteredPerson.notes,
           defaultListKey: filteredPerson.defaultListKey,
+          invitedByNames: filteredPerson.invitedByNames,
           role: filteredPerson.role,
           hasOrganizationMembership: filteredPerson.role !== null,
         };
@@ -1222,7 +1254,9 @@ export const getGuestProfileByUserReference = query({
         "rsvps",
         args.userReference.slice(rsvpReferencePrefix.length),
       );
-      const rsvp = rsvpId ? await ctx.db.get(rsvpId) : null;
+      const rsvp = rsvpId
+        ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, rsvpId))
+        : null;
       if (!rsvp) {
         throw new Error("Guest not found");
       }
@@ -1237,7 +1271,7 @@ export const getGuestProfileByUserReference = query({
         undefined;
     } else {
       const userId = ctx.db.normalizeId("users", args.userReference);
-      const user = userId ? await ctx.db.get(userId) : null;
+      const user = userId ? await resolveCanonicalUserById(ctx, userId) : null;
       if (!user) {
         throw new Error("User not found");
       }

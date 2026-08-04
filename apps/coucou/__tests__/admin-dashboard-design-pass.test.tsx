@@ -17,6 +17,8 @@ import type { Event } from "../lib/types";
 
 interface ConvexTestGlobal {
   __setConvexQueryResponse?: (nextResponse: unknown) => void;
+  __clearConvexMutationCalls?: () => void;
+  __getConvexMutationCalls?: () => unknown[];
 }
 
 function setConvexQueryResponse(nextResponse: unknown) {
@@ -223,6 +225,10 @@ describe("admin dashboard design pass", () => {
   });
 
   it("stacks the icon-only details control below event actions", () => {
+    const convexTestGlobal = globalThis as typeof globalThis & ConvexTestGlobal;
+    setConvexQueryResponse(null);
+    convexTestGlobal.__clearConvexMutationCalls?.();
+
     render(
       <EventDetailLayout
         titleBarProps={{
@@ -230,23 +236,29 @@ describe("admin dashboard design pass", () => {
           actions: <button type="button">Actions</button>,
         }}
         propertyPanel={<div>Event properties</div>}
+        preferenceQueryArgs={{ workspaceSlug: "dojo-pomodoro" }}
       >
         <div>Event editor</div>
       </EventDetailLayout>,
     );
 
-    const hideDetailsButton = screen.getByRole("button", { name: "Hide event details" });
+    const showDetailsButton = screen.getByRole("button", { name: "Show event details" });
     const actionsButton = screen.getByRole("button", { name: "Actions" });
 
-    expect(hideDetailsButton.parentElement).toBe(actionsButton.parentElement);
-    expect(hideDetailsButton.parentElement?.className).toContain("flex-col");
-    expect(hideDetailsButton.textContent).toBe("");
-    expect(screen.queryByText("Hide details")).toBeNull();
-
-    fireEvent.click(hideDetailsButton);
-
-    expect(screen.getByRole("button", { name: "Show event details" })).toBeTruthy();
+    expect(showDetailsButton.parentElement).toBe(actionsButton.parentElement);
+    expect(showDetailsButton.parentElement?.className).toContain("flex-col");
+    expect(showDetailsButton.textContent).toBe("");
     expect(screen.queryByText("Event properties")).toBeNull();
+
+    fireEvent.click(showDetailsButton);
+
+    expect(screen.getByRole("button", { name: "Hide event details" })).toBeTruthy();
+    expect(screen.getByText("Event properties")).toBeTruthy();
+    expect(convexTestGlobal.__getConvexMutationCalls?.()).toContainEqual({
+      workspaceSlug: "dojo-pomodoro",
+      panelKey: "event-details",
+      isOpen: true,
+    });
   });
 
   it("uses only the disclosure caret in the event actions button", () => {
