@@ -5,10 +5,7 @@ import { api, components } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
-import {
-  resolveCanonicalClerkUserId,
-  resolveCanonicalRsvpId,
-} from "./lib/canonicalUserIdentity";
+import { resolveCanonicalClerkUserId, resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
 import { generateRsvpHandoffToken } from "./lib/codeGenerators";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
 import { appendInviterHistoryForContact } from "./lib/inviterHistory";
@@ -106,7 +103,8 @@ async function buildReferralPatch(
         )
         .first();
   const referrer =
-    directReferrer ?? (legacyReferralAlias ? await ctx.db.get(legacyReferralAlias.canonicalUserId) : null);
+    directReferrer ??
+    (legacyReferralAlias ? await ctx.db.get(legacyReferralAlias.canonicalUserId) : null);
 
   if (!referrer) {
     return {
@@ -280,7 +278,8 @@ async function mergeSubmittedUserProfile(
 
   if (
     phoneResolution &&
-    (phoneResolution.normalizedPhoneNumber !== user.phone || phoneResolution.phoneHash !== user.phoneHash)
+    (phoneResolution.normalizedPhoneNumber !== user.phone ||
+      phoneResolution.phoneHash !== user.phoneHash)
   ) {
     userPatch.phone = phoneResolution.normalizedPhoneNumber;
     userPatch.phoneHash = phoneResolution.phoneHash;
@@ -3919,9 +3918,7 @@ export const listByClerkUser = query({
     const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, args.clerkUserId);
     const userRsvps = await ctx.db
       .query("rsvps")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
       .collect();
 
     const workspaceEvents = await ctx.db

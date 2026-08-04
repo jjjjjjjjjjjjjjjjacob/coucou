@@ -307,7 +307,9 @@ function InviterHistoryCard({
     new Map(
       [
         ...storedInvitedByNames,
-        ...rsvps.map((rsvp) => rsvp.invitedByName).filter((value): value is string => Boolean(value)),
+        ...rsvps
+          .map((rsvp) => rsvp.invitedByName)
+          .filter((value): value is string => Boolean(value)),
       ]
         .map((invitedByName) => invitedByName.trim())
         .filter(Boolean)
@@ -539,10 +541,7 @@ export function UserDetailContent({
             listKeyOptions={listKeyOptions}
             tagSuggestions={tagSuggestions}
           />
-          <InviterHistoryCard
-            rsvps={rsvps ?? []}
-            storedInvitedByNames={user.invitedByNames}
-          />
+          <InviterHistoryCard rsvps={rsvps ?? []} storedInvitedByNames={user.invitedByNames} />
           <UserProfileCard user={user} />
         </TabsContent>
 

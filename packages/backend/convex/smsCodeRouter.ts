@@ -6,10 +6,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
-import {
-  canonicalizeClerkUserIds,
-  resolveCanonicalClerkUserId,
-} from "./lib/canonicalUserIdentity";
+import { canonicalizeClerkUserIds, resolveCanonicalClerkUserId } from "./lib/canonicalUserIdentity";
 import { isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
@@ -477,9 +474,7 @@ async function findWorkspaceRsvpCandidates(
         async (clerkUserId) =>
           await ctx.db
             .query("rsvps")
-            .withIndex("by_user", (queryBuilder) =>
-              queryBuilder.eq("clerkUserId", clerkUserId),
-            )
+            .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
             .collect(),
       ),
     ),
@@ -543,9 +538,7 @@ async function getWorkspaceGrantedSocialProfiles(
         async (clerkUserId) =>
           await ctx.db
             .query("workspaceProfileValueGrants")
-            .withIndex("by_user", (queryBuilder) =>
-              queryBuilder.eq("clerkUserId", clerkUserId),
-            )
+            .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
             .collect(),
       ),
     )

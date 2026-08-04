@@ -13,10 +13,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
-import {
-  resolveCanonicalRsvpId,
-  resolveCanonicalUserById,
-} from "./lib/canonicalUserIdentity";
+import { resolveCanonicalRsvpId, resolveCanonicalUserById } from "./lib/canonicalUserIdentity";
 import { GUEST_CLERK_USER_ID_PREFIX, isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
@@ -1254,9 +1251,7 @@ export const getGuestProfileByUserReference = query({
         "rsvps",
         args.userReference.slice(rsvpReferencePrefix.length),
       );
-      const rsvp = rsvpId
-        ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, rsvpId))
-        : null;
+      const rsvp = rsvpId ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, rsvpId)) : null;
       if (!rsvp) {
         throw new Error("Guest not found");
       }

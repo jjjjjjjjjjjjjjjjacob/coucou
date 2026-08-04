@@ -10,7 +10,7 @@
     "android": "expo run:android",
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
+    "test": "jest --no-watchman",
     "doctor": "expo-doctor",
     "export": "expo export --platform all"
   },

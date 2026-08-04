@@ -72,9 +72,9 @@ export const backfillUserPhoneHashes = mutation({
   },
 });
 
-async function loadDuplicatePhoneGroups(
-  ctx: { db: Parameters<typeof buildDuplicatePhoneGroupReport>[0]["db"] },
-): Promise<Map<string, Doc<"users">[]>> {
+async function loadDuplicatePhoneGroups(ctx: {
+  db: Parameters<typeof buildDuplicatePhoneGroupReport>[0]["db"];
+}): Promise<Map<string, Doc<"users">[]>> {
   const users = await ctx.db.query("users").collect();
   const usersByPhoneHash = new Map<string, Doc<"users">[]>();
   for (const user of users) {
@@ -94,10 +94,7 @@ export const processDuplicatePhoneGroups = mutation({
     confirmation: v.optional(v.string()),
     snapshotReference: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    { cursor, batchSize, dryRun = true, confirmation, snapshotReference },
-  ) => {
+  handler: async (ctx, { cursor, batchSize, dryRun = true, confirmation, snapshotReference }) => {
     await requireCoucouPlatformMember(ctx);
     if (!dryRun) {
       if (confirmation !== EXECUTION_CONFIRMATION) {
@@ -110,10 +107,13 @@ export const processDuplicatePhoneGroups = mutation({
 
     const duplicateGroups = await loadDuplicatePhoneGroups(ctx);
     const allPhoneHashes = Array.from(duplicateGroups.keys()).sort();
-    const remainingPhoneHashes = allPhoneHashes.filter((phoneHash) => !cursor || phoneHash > cursor);
+    const remainingPhoneHashes = allPhoneHashes.filter(
+      (phoneHash) => !cursor || phoneHash > cursor,
+    );
     const selectedPhoneHashes = remainingPhoneHashes.slice(0, resolveBatchSize(batchSize, 5));
     const reports = [];
-    const unresolvedGroups: Array<{ phoneHash: string; userIds: Id<"users">[]; reason: string }> = [];
+    const unresolvedGroups: Array<{ phoneHash: string; userIds: Id<"users">[]; reason: string }> =
+      [];
 
     for (const phoneHash of selectedPhoneHashes) {
       const users = duplicateGroups.get(phoneHash) ?? [];
@@ -253,9 +253,9 @@ export const getPostMigrationHealth = query({
     const grantReferences = (await ctx.db.query("workspaceProfileValueGrants").collect()).filter(
       (grant) => retiredClerkUserIds.has(grant.clerkUserId),
     ).length;
-    const preferenceReferences = (await ctx.db.query("userSmsOrganizerPreferences").collect()).filter(
-      (preference) => retiredClerkUserIds.has(preference.clerkUserId),
-    ).length;
+    const preferenceReferences = (
+      await ctx.db.query("userSmsOrganizerPreferences").collect()
+    ).filter((preference) => retiredClerkUserIds.has(preference.clerkUserId)).length;
     const notificationReferences = (await ctx.db.query("smsNotifications").collect()).filter(
       (notification) => retiredClerkUserIds.has(notification.recipientClerkUserId),
     ).length;
@@ -266,15 +266,11 @@ export const getPostMigrationHealth = query({
     ).length;
     const threadReferences = (await ctx.db.query("smsConversationThreads").collect()).filter(
       (thread) =>
-        thread.participantClerkUserIds.some((clerkUserId) =>
-          retiredClerkUserIds.has(clerkUserId),
-        ),
+        thread.participantClerkUserIds.some((clerkUserId) => retiredClerkUserIds.has(clerkUserId)),
     ).length;
     const blastRecipientReferences = (await ctx.db.query("textBlastRecipients").collect()).filter(
       (recipient) =>
-        recipient.recipientClerkUserIds.some((clerkUserId) =>
-          retiredClerkUserIds.has(clerkUserId),
-        ),
+        recipient.recipientClerkUserIds.some((clerkUserId) => retiredClerkUserIds.has(clerkUserId)),
     ).length;
     liveRetiredReferenceCount +=
       membershipReferences +

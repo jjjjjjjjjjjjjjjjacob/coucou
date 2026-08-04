@@ -37,10 +37,7 @@ export function mergeInviterHistoryEntries(
       displayName:
         addition.seenAt >= currentEntry.lastSeenAt ? displayName : currentEntry.displayName,
       normalizedName,
-      firstSeenAt: Math.min(
-        currentEntry.firstSeenAt,
-        addition.firstSeenAt ?? addition.seenAt,
-      ),
+      firstSeenAt: Math.min(currentEntry.firstSeenAt, addition.firstSeenAt ?? addition.seenAt),
       lastSeenAt: Math.max(currentEntry.lastSeenAt, addition.seenAt),
     });
   }
@@ -69,7 +66,9 @@ async function resolveEventWorkspaceId(
   if (event.siteKey) {
     const workspaceSite = await ctx.db
       .query("workspaceSites")
-      .withIndex("by_siteKey", (queryBuilder) => queryBuilder.eq("siteKey", event.siteKey as string))
+      .withIndex("by_siteKey", (queryBuilder) =>
+        queryBuilder.eq("siteKey", event.siteKey as string),
+      )
       .unique();
     if (workspaceSite) return workspaceSite.workspaceId;
 

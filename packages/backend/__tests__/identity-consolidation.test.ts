@@ -269,7 +269,9 @@ describe("same-phone identity consolidation", () => {
       }),
     ]);
     expect(
-      await testBackend.run(async (databaseContext) => await databaseContext.db.get(seededIds.retiredUserId)),
+      await testBackend.run(
+        async (databaseContext) => await databaseContext.db.get(seededIds.retiredUserId),
+      ),
     ).not.toBeNull();
 
     const execution = await authenticatedBackend.mutation(
@@ -282,7 +284,10 @@ describe("same-phone identity consolidation", () => {
       },
     );
     expect(execution.reports[0]).toEqual(
-      expect.objectContaining({ canonicalUserId: seededIds.canonicalUserId, rsvpCollisionCount: 1 }),
+      expect.objectContaining({
+        canonicalUserId: seededIds.canonicalUserId,
+        rsvpCollisionCount: 1,
+      }),
     );
 
     const state = await testBackend.run(async (databaseContext) => {
@@ -308,21 +313,15 @@ describe("same-phone identity consolidation", () => {
         .unique();
       const socialProfiles = await databaseContext.db
         .query("userSocialProfiles")
-        .withIndex("by_user", (queryBuilder) =>
-          queryBuilder.eq("clerkUserId", "user_canonical"),
-        )
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", "user_canonical"))
         .collect();
       const fieldValues = await databaseContext.db
         .query("profileFieldValues")
-        .withIndex("by_user", (queryBuilder) =>
-          queryBuilder.eq("clerkUserId", "user_canonical"),
-        )
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", "user_canonical"))
         .collect();
       const grants = await databaseContext.db
         .query("workspaceProfileValueGrants")
-        .withIndex("by_user", (queryBuilder) =>
-          queryBuilder.eq("clerkUserId", "user_canonical"),
-        )
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", "user_canonical"))
         .collect();
       const contactProfile = await databaseContext.db
         .query("workspaceGuestProfiles")
@@ -455,13 +454,14 @@ describe("same-phone identity consolidation", () => {
   it("reports invalid phones without writing them", async () => {
     const testBackend = setupTestBackend();
     const authenticatedBackend = testBackend.withIdentity(platformIdentity("platform_admin"));
-    const invalidUserId = await testBackend.run(async (databaseContext) =>
-      await databaseContext.db.insert("users", {
-        clerkUserId: "invalid_phone",
-        phone: "12",
-        createdAt: 1,
-        updatedAt: 1,
-      }),
+    const invalidUserId = await testBackend.run(
+      async (databaseContext) =>
+        await databaseContext.db.insert("users", {
+          clerkUserId: "invalid_phone",
+          phone: "12",
+          createdAt: 1,
+          updatedAt: 1,
+        }),
     );
     const result = await authenticatedBackend.mutation(
       api.identityConsolidation.backfillUserPhoneHashes,
@@ -470,8 +470,8 @@ describe("same-phone identity consolidation", () => {
     expect(result.invalidPhones).toEqual([
       expect.objectContaining({ userId: invalidUserId, phone: "12" }),
     ]);
-    const unchangedUser = await testBackend.run(async (databaseContext) =>
-      await databaseContext.db.get(invalidUserId),
+    const unchangedUser = await testBackend.run(
+      async (databaseContext) => await databaseContext.db.get(invalidUserId),
     );
     expect(unchangedUser?.phoneHash).toBeUndefined();
   });

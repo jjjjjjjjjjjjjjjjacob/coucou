@@ -2,8 +2,8 @@ import type { UserIdentity } from "convex/server";
 import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "../_generated/server";
-import { getCoucouOrganizationSlug, requireCoucouPlatformMember } from "./platformAuth";
 import { resolveCanonicalClerkUserId } from "./canonicalUserIdentity";
+import { getCoucouOrganizationSlug, requireCoucouPlatformMember } from "./platformAuth";
 
 type WorkspaceCapability = "host" | "door" | "admin" | "read";
 
@@ -100,15 +100,10 @@ async function getStoredOrganizationMembershipRole(
   organizationId: string,
 ): Promise<string | null> {
   if (ctx.db) {
-    const canonicalClerkUserId = await resolveCanonicalClerkUserId(
-      { db: ctx.db },
-      clerkUserId,
-    );
+    const canonicalClerkUserId = await resolveCanonicalClerkUserId({ db: ctx.db }, clerkUserId);
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
       .filter((queryBuilder) =>
         queryBuilder.eq(queryBuilder.field("organizationId"), organizationId),
       )

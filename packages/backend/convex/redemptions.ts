@@ -1,10 +1,7 @@
 import { v } from "convex/values";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./functions";
-import {
-  resolveCanonicalClerkUserId,
-  resolveCanonicalRsvpId,
-} from "./lib/canonicalUserIdentity";
+import { resolveCanonicalClerkUserId, resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
 import { generateRedemptionCode } from "./lib/codeGenerators";
 import { canManuallyEditTicket, resolveApprovalStatus } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";

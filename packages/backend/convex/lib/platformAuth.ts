@@ -89,9 +89,7 @@ async function hasStoredCoucouMembership(
 
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_user", (queryBuilder) =>
-      queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-    )
+    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
     .filter((queryBuilder) =>
       queryBuilder.eq(queryBuilder.field("organizationId"), coucouOrganizationId),
     )

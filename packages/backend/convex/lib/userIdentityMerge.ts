@@ -50,10 +50,7 @@ async function replaceRsvpAggregateSafely(
   }
 }
 
-async function loadRsvpsByUser(
-  ctx: DatabaseReader,
-  clerkUserId: string,
-): Promise<Doc<"rsvps">[]> {
+async function loadRsvpsByUser(ctx: DatabaseReader, clerkUserId: string): Promise<Doc<"rsvps">[]> {
   return await ctx.db
     .query("rsvps")
     .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
@@ -103,13 +100,14 @@ export async function buildDuplicatePhoneGroupReport(
   );
   const socialProfiles = (
     await Promise.all(
-      users.map(async (user) =>
-        await ctx.db
-          .query("userSocialProfiles")
-          .withIndex("by_user", (queryBuilder) =>
-            queryBuilder.eq("clerkUserId", requireClerkUserId(user)),
-          )
-          .collect(),
+      users.map(
+        async (user) =>
+          await ctx.db
+            .query("userSocialProfiles")
+            .withIndex("by_user", (queryBuilder) =>
+              queryBuilder.eq("clerkUserId", requireClerkUserId(user)),
+            )
+            .collect(),
       ),
     )
   ).flat();
@@ -131,12 +129,10 @@ export async function buildDuplicatePhoneGroupReport(
       (totalCount, rsvps) => totalCount + rsvps.length,
       0,
     ),
-    rsvpMoveCount: retiredRsvps.filter(
-      (rsvp) => !canonicalEventIds.has(String(rsvp.eventId)),
-    ).length,
-    rsvpCollisionCount: retiredRsvps.filter((rsvp) =>
-      canonicalEventIds.has(String(rsvp.eventId)),
-    ).length,
+    rsvpMoveCount: retiredRsvps.filter((rsvp) => !canonicalEventIds.has(String(rsvp.eventId)))
+      .length,
+    rsvpCollisionCount: retiredRsvps.filter((rsvp) => canonicalEventIds.has(String(rsvp.eventId)))
+      .length,
     profileDuplicateCount: socialProfiles.length - distinctSocialKeys.size,
     historicalSnapshotReferenceCount,
     unresolvedReferenceCount: 0,
@@ -151,10 +147,7 @@ function approvalRank(rsvp: Doc<"rsvps">): number {
   return 0;
 }
 
-function chooseStatusSource(
-  firstRsvp: Doc<"rsvps">,
-  secondRsvp: Doc<"rsvps">,
-): Doc<"rsvps"> {
+function chooseStatusSource(firstRsvp: Doc<"rsvps">, secondRsvp: Doc<"rsvps">): Doc<"rsvps"> {
   const rankDifference = approvalRank(secondRsvp) - approvalRank(firstRsvp);
   if (rankDifference > 0) return secondRsvp;
   if (rankDifference < 0) return firstRsvp;
@@ -354,9 +347,7 @@ async function repointRsvpReferences(
   const approvals = await ctx.db
     .query("approvals")
     .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", input.sourceRsvp.eventId))
-    .filter((queryBuilder) =>
-      queryBuilder.eq(queryBuilder.field("rsvpId"), input.sourceRsvp._id),
-    )
+    .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("rsvpId"), input.sourceRsvp._id))
     .collect();
   for (const approval of approvals) {
     await ctx.db.patch(approval._id, {
@@ -453,7 +444,9 @@ async function mergeRsvpCollision(
     listKey: statusSource.listKey,
     userName: newestRsvp.userName ?? targetRsvp.userName ?? sourceRsvp.userName,
     ticketStatus:
-      ticketStatusFromRedemption(redemption) ?? statusSource.ticketStatus ?? targetRsvp.ticketStatus,
+      ticketStatusFromRedemption(redemption) ??
+      statusSource.ticketStatus ??
+      targetRsvp.ticketStatus,
     shareContact: targetRsvp.shareContact || sourceRsvp.shareContact,
     note: combineDistinctText(targetRsvp.note, sourceRsvp.note),
     attendees: Math.max(targetRsvp.attendees ?? 1, sourceRsvp.attendees ?? 1),
@@ -463,10 +456,9 @@ async function mergeRsvpCollision(
       sourceRsvp.smsConsent,
       consentSourceTimestamp,
     ),
-    smsConsentTimestamp: Math.max(
-      targetRsvp.smsConsentTimestamp ?? 0,
-      sourceRsvp.smsConsentTimestamp ?? 0,
-    ) || undefined,
+    smsConsentTimestamp:
+      Math.max(targetRsvp.smsConsentTimestamp ?? 0, sourceRsvp.smsConsentTimestamp ?? 0) ||
+      undefined,
     smsConsentIpAddress: chooseNewestExplicitValue(
       targetRsvp.smsConsentIpAddress,
       targetConsentTimestamp,
@@ -506,7 +498,8 @@ async function mergeRsvpCollision(
       sourceRsvp.attendanceStatus,
       sourceRsvp.updatedAt,
     ),
-    ticketViewedAt: Math.max(targetRsvp.ticketViewedAt ?? 0, sourceRsvp.ticketViewedAt ?? 0) || undefined,
+    ticketViewedAt:
+      Math.max(targetRsvp.ticketViewedAt ?? 0, sourceRsvp.ticketViewedAt ?? 0) || undefined,
     createdAt: Math.min(targetRsvp.createdAt, sourceRsvp.createdAt),
     updatedAt: Math.max(targetRsvp.updatedAt, sourceRsvp.updatedAt, input.now),
   });
@@ -616,9 +609,7 @@ async function mergeOrganizationMemberships(
   for (const sourceMembership of sourceMemberships) {
     const canonicalMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
       .filter((queryBuilder) =>
         queryBuilder.eq(queryBuilder.field("organizationId"), sourceMembership.organizationId),
       )
@@ -630,8 +621,7 @@ async function mergeOrganizationMemberships(
 
     const sourceWins =
       membershipRoleRank(sourceMembership.role) > membershipRoleRank(canonicalMembership.role) ||
-      (membershipRoleRank(sourceMembership.role) ===
-        membershipRoleRank(canonicalMembership.role) &&
+      (membershipRoleRank(sourceMembership.role) === membershipRoleRank(canonicalMembership.role) &&
         sourceMembership.updatedAt > canonicalMembership.updatedAt);
     await ctx.db.patch(canonicalMembership._id, {
       role: sourceWins ? sourceMembership.role : canonicalMembership.role,
@@ -649,9 +639,7 @@ async function mergeDashboardPreferences(
 ): Promise<void> {
   const sourcePreferences = await ctx.db
     .query("dashboardTablePreferences")
-    .filter((queryBuilder) =>
-      queryBuilder.eq(queryBuilder.field("clerkUserId"), sourceClerkUserId),
-    )
+    .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("clerkUserId"), sourceClerkUserId))
     .collect();
   for (const sourcePreference of sourcePreferences) {
     const canonicalPreference = await ctx.db
@@ -794,11 +782,12 @@ async function mergeSocialProfiles(
 ): Promise<void> {
   const profiles = (
     await Promise.all(
-      [input.canonicalClerkUserId, input.sourceClerkUserId].map(async (clerkUserId) =>
-        await ctx.db
-          .query("userSocialProfiles")
-          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
-          .collect(),
+      [input.canonicalClerkUserId, input.sourceClerkUserId].map(
+        async (clerkUserId) =>
+          await ctx.db
+            .query("userSocialProfiles")
+            .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+            .collect(),
       ),
     )
   ).flat();
@@ -844,11 +833,12 @@ async function mergeProfileFieldValuesAndGrants(
 ): Promise<void> {
   const profileValues = (
     await Promise.all(
-      [input.canonicalClerkUserId, input.sourceClerkUserId].map(async (clerkUserId) =>
-        await ctx.db
-          .query("profileFieldValues")
-          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
-          .collect(),
+      [input.canonicalClerkUserId, input.sourceClerkUserId].map(
+        async (clerkUserId) =>
+          await ctx.db
+            .query("profileFieldValues")
+            .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+            .collect(),
       ),
     )
   ).flat();
@@ -884,11 +874,12 @@ async function mergeProfileFieldValuesAndGrants(
 
   const grants = (
     await Promise.all(
-      [input.canonicalClerkUserId, input.sourceClerkUserId].map(async (clerkUserId) =>
-        await ctx.db
-          .query("workspaceProfileValueGrants")
-          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
-          .collect(),
+      [input.canonicalClerkUserId, input.sourceClerkUserId].map(
+        async (clerkUserId) =>
+          await ctx.db
+            .query("workspaceProfileValueGrants")
+            .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+            .collect(),
       ),
     )
   ).flat();
@@ -987,9 +978,7 @@ async function canonicalizeCommunicationRecords(
   for (const optOut of optOuts) {
     const matchingOptOut = await ctx.db
       .query("smsOptOuts")
-      .withIndex("by_phone", (queryBuilder) =>
-        queryBuilder.eq("phoneNumber", optOut.phoneNumber),
-      )
+      .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneNumber", optOut.phoneNumber))
       .filter((queryBuilder) =>
         queryBuilder.eq(queryBuilder.field("clerkUserId"), input.canonicalClerkUserId),
       )
@@ -1068,9 +1057,7 @@ async function repointUserReferences(
   const allRsvps = await ctx.db.query("rsvps").collect();
   for (const rsvp of allRsvps) {
     const invitedByUserId =
-      rsvp.invitedByUserId === input.sourceUserId
-        ? input.canonicalUserId
-        : rsvp.invitedByUserId;
+      rsvp.invitedByUserId === input.sourceUserId ? input.canonicalUserId : rsvp.invitedByUserId;
     const referrerUserId =
       rsvp.referrerUserId === input.sourceUserId ? input.canonicalUserId : rsvp.referrerUserId;
     const referrerClerkUserId =
@@ -1100,9 +1087,7 @@ async function upsertUserAlias(
   const canonicalClerkUserId = requireClerkUserId(input.canonicalUser);
   const existingAlias = await ctx.db
     .query("userIdentityAliases")
-    .withIndex("by_alias", (queryBuilder) =>
-      queryBuilder.eq("aliasClerkUserId", sourceClerkUserId),
-    )
+    .withIndex("by_alias", (queryBuilder) => queryBuilder.eq("aliasClerkUserId", sourceClerkUserId))
     .first();
   const aliasPatch = {
     canonicalClerkUserId,

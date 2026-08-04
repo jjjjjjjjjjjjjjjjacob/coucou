@@ -22,9 +22,7 @@ export const listForCurrentUser = query({
 
     const profileFieldValues = await ctx.db
       .query("profileFieldValues")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
       .collect();
     const socialProfileFieldValues = profileFieldValues
       .map((profileFieldValue) => {
@@ -65,9 +63,7 @@ export const listForCurrentUser = query({
 
     return await ctx.db
       .query("userSocialProfiles")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
       .collect();
   },
 });
@@ -91,9 +87,7 @@ export const listForCurrentUserInWorkspace = query({
 
     const userRsvps = await ctx.db
       .query("rsvps")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
       .collect();
 
     if (userRsvps.length === 0) return [];

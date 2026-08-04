@@ -292,9 +292,10 @@ describe("guestDirectory.listGuestDirectoryPaginated", () => {
       testBackend.withIdentity(createHostIdentity("host_inviter_history")),
     );
     expect(result.people[0]?.invitedByNames).toEqual(["Bob Promoter", "alice host"]);
-    expect(
-      result.people[0]?.events.map((eventEntry) => eventEntry.invitedByName).sort(),
-    ).toEqual(["Alice Host", "alice host"]);
+    expect(result.people[0]?.events.map((eventEntry) => eventEntry.invitedByName).sort()).toEqual([
+      "Alice Host",
+      "alice host",
+    ]);
   });
 
   it("keys people without phones by clerkUserId and keeps them separate", async () => {

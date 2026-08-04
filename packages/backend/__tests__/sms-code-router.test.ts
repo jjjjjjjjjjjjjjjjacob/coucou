@@ -370,15 +370,14 @@ describe("deterministic SMS code router", () => {
     });
     expect(result.outcome).toBe("submitted");
     expect(result.shouldRespond).toBe(false);
-    const destinationRsvp = await testBackend.run(async (databaseContext) =>
-      await databaseContext.db
-        .query("rsvps")
-        .withIndex("by_event_user", (queryBuilder) =>
-          queryBuilder
-            .eq("eventId", destinationEvent.eventId)
-            .eq("clerkUserId", "user_two"),
-        )
-        .unique(),
+    const destinationRsvp = await testBackend.run(
+      async (databaseContext) =>
+        await databaseContext.db
+          .query("rsvps")
+          .withIndex("by_event_user", (queryBuilder) =>
+            queryBuilder.eq("eventId", destinationEvent.eventId).eq("clerkUserId", "user_two"),
+          )
+          .unique(),
     );
     expect(destinationRsvp?.userName).toBe("Jacob Stein");
   });

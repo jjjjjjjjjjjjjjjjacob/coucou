@@ -144,9 +144,7 @@ export const listForCurrentUser = query({
     const normalizedFieldKeys = normalizeProfileFieldKeySet(fieldKeys);
     const profileFieldValues = await ctx.db
       .query("profileFieldValues")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
       .collect();
 
     return profileFieldValues
@@ -182,9 +180,7 @@ export const listForCurrentUserInWorkspace = query({
     const normalizedFieldKeys = normalizeProfileFieldKeySet(fieldKeys);
     const profileFieldValues = await ctx.db
       .query("profileFieldValues")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
       .collect();
 
     if (profileFieldValues.length === 0) return [];
@@ -371,9 +367,7 @@ export const listAllGrantsForCurrentUser = query({
 
     const grants = await ctx.db
       .query("workspaceProfileValueGrants")
-      .withIndex("by_user", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", canonicalClerkUserId))
       .collect();
 
     const activeGrants = grants.filter((grant) => grant.revokedAt === undefined);

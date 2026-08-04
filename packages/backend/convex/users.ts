@@ -5,12 +5,12 @@ import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { action, internalQuery, mutation, query } from "./functions";
-import { generateReferralCode } from "./lib/codeGenerators";
 import {
   resolveCanonicalRsvpId,
   resolveCanonicalUserById,
   resolveCanonicalUserIdentity,
 } from "./lib/canonicalUserIdentity";
+import { generateReferralCode } from "./lib/codeGenerators";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { resolveApprovalStatus } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope } from "./lib/siteScope";
@@ -945,9 +945,7 @@ export const getOrganizationUserByReference = query({
         "rsvps",
         args.userReference.slice(rsvpReferencePrefix.length),
       );
-      fallbackRsvp = rsvpId
-        ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, rsvpId))
-        : null;
+      fallbackRsvp = rsvpId ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, rsvpId)) : null;
       if (!fallbackRsvp) {
         throw new Error("Guest not found");
       }
