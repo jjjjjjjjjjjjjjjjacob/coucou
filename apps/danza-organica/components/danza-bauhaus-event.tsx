@@ -16,7 +16,7 @@ import { EventPartnerLogos } from "@/components/event-partner-logos";
 import { createBauhausEntranceStyle } from "@/lib/bauhaus-entrance";
 import {
   BAUHAUS_PARTNER_LOGO_SOURCES,
-  type BauhausEventLogoVariant,
+  type BauhausEventDisplaySettings,
   DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS,
   resolveBauhausEventDisplaySettings,
   splitBauhausHostLines,
@@ -25,44 +25,54 @@ import type { EventPartner } from "@/lib/types";
 
 const DISPLAY_COLORS = {
   black: "#0A0A0A",
+  none: "transparent",
+  orange: "#FC7243",
   teal: "#17E1E5",
   white: "#FFFFFF",
 } as const;
 
-const DanzaPartnerLogoVariantContext = createContext<BauhausEventLogoVariant>(
-  DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS.logoVariant,
+const DanzaBauhausDisplayContext = createContext<BauhausEventDisplaySettings>(
+  DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS,
 );
 
 type BauhausPageStyle = CSSProperties & {
   "--danza-bauhaus-text": string;
   "--danza-bauhaus-highlight": string;
+  "--danza-bauhaus-dot": string;
 };
 
 interface DanzaBauhausPageProps {
   children: ReactNode;
+  /** Optional deterministic override for previews and isolated component tests. */
+  displaySettings?: BauhausEventDisplaySettings;
 }
 
-export function DanzaBauhausPage({ children }: DanzaBauhausPageProps) {
+export function DanzaBauhausPage({ children, displaySettings }: DanzaBauhausPageProps) {
   const searchParameters = useSearchParams();
-  const displaySettings = resolveBauhausEventDisplaySettings(searchParameters);
+  const resolvedDisplaySettings =
+    displaySettings ?? resolveBauhausEventDisplaySettings(searchParameters);
   const pageStyle: BauhausPageStyle = {
-    "--danza-bauhaus-text": DISPLAY_COLORS[displaySettings.textColor],
-    "--danza-bauhaus-highlight": DISPLAY_COLORS[displaySettings.highlightColor],
+    "--danza-bauhaus-text": DISPLAY_COLORS[resolvedDisplaySettings.textColor],
+    "--danza-bauhaus-highlight": DISPLAY_COLORS[resolvedDisplaySettings.highlightColor],
+    "--danza-bauhaus-dot": DISPLAY_COLORS[resolvedDisplaySettings.dotColor],
   };
 
   return (
     <div
       className="danza-bauhaus-page"
-      data-position={displaySettings.position}
-      data-text-color={displaySettings.textColor}
-      data-highlight-color={displaySettings.highlightColor}
-      data-logo-variant={displaySettings.logoVariant}
+      data-position={resolvedDisplaySettings.position}
+      data-text-color={resolvedDisplaySettings.textColor}
+      data-highlight-color={resolvedDisplaySettings.highlightColor}
+      data-logo-variant={resolvedDisplaySettings.logoVariant}
+      data-dot-color={resolvedDisplaySettings.dotColor}
+      data-preset={resolvedDisplaySettings.preset}
+      data-info={resolvedDisplaySettings.infoDensity}
       style={pageStyle}
     >
-      <BauhausLineField />
-      <DanzaPartnerLogoVariantContext.Provider value={displaySettings.logoVariant}>
+      <BauhausLineField dotColor={resolvedDisplaySettings.dotColor} />
+      <DanzaBauhausDisplayContext.Provider value={resolvedDisplaySettings}>
         <div className="danza-bauhaus-page__content">{children}</div>
-      </DanzaPartnerLogoVariantContext.Provider>
+      </DanzaBauhausDisplayContext.Provider>
     </div>
   );
 }
@@ -84,26 +94,45 @@ export function DanzaBauhausEvent({
 }: DanzaBauhausEventProps) {
   const compositionReference = useRef<HTMLDivElement>(null);
   const titleReference = useRef<HTMLHeadingElement>(null);
-  const logoVariant = useContext(DanzaPartnerLogoVariantContext);
-  const titleLines = splitEventTitle(event.title);
+  const displaySettings = useContext(DanzaBauhausDisplayContext);
+  const usesSimplePreset = displaySettings.preset === "simple";
+  const showsVerboseInfo = displaySettings.infoDensity === "verbose";
+  const titleLines = usesSimplePreset ? [event.title] : splitEventTitle(event.title);
   const hostLines = splitBauhausHostLines(event.hosts ?? []);
   const normalizedLineup = event.lineup.map((lineupEntry) =>
     typeof lineupEntry === "string" ? { label: lineupEntry } : lineupEntry,
+  );
+  const artistBrandPartners = normalizedLineup.flatMap((lineupEntry) => {
+    const normalizedLineupLabel = normalizePartnerLabel(lineupEntry.label);
+    const matchingPartner = partners?.find(
+      (partner) => normalizePartnerLabel(partner.label) === normalizedLineupLabel,
+    );
+    return matchingPartner ? [matchingPartner] : [];
+  });
+  const marketBrandPartner = [...(partners ?? []), ...(sponsors ?? [])].find(
+    (partner) => normalizePartnerLabel(partner.label) === "the market",
   );
   const rsvpIsClickable = Boolean(event.rsvpHref && !event.rsvpDisabled);
   let nextEntranceSequenceIndex = titleLines.length;
   const subtitleEntranceSequenceIndex = event.subtitle ? nextEntranceSequenceIndex++ : undefined;
   const lineupEntranceSequenceIndex =
     normalizedLineup.length > 0 ? nextEntranceSequenceIndex++ : undefined;
-  const hostEntranceSequenceIndices = hostLines.map(() => nextEntranceSequenceIndex++);
-  const sponsorEntranceSequenceIndex = sponsors?.length ? nextEntranceSequenceIndex++ : undefined;
+  const hostEntranceSequenceIndices = showsVerboseInfo
+    ? hostLines.map(() => nextEntranceSequenceIndex++)
+    : [];
+  const sponsorEntranceSequenceIndex =
+    showsVerboseInfo && sponsors?.length ? nextEntranceSequenceIndex++ : undefined;
   const dateEntranceSequenceIndex = nextEntranceSequenceIndex++;
   const rsvpEntranceSequenceIndex = nextEntranceSequenceIndex++;
   const utilityEntranceSequenceIndex = utilitySlot ? nextEntranceSequenceIndex++ : undefined;
-  const expandedContentEntranceSequenceIndex = expandedContent
+  const expandedContentEntranceSequenceIndex =
+    showsVerboseInfo && expandedContent ? nextEntranceSequenceIndex++ : undefined;
+  const showsPartnerBranding = usesSimplePreset
+    ? Boolean(marketBrandPartner)
+    : Boolean(partners?.length);
+  const partnersEntranceSequenceIndex = showsPartnerBranding
     ? nextEntranceSequenceIndex++
     : undefined;
-  const partnersEntranceSequenceIndex = partners?.length ? nextEntranceSequenceIndex++ : undefined;
 
   useLayoutEffect(() => {
     const composition = compositionReference.current;
@@ -178,7 +207,7 @@ export function DanzaBauhausEvent({
         <div className="danza-bauhaus-event__billing">
           {event.subtitle ? (
             <p
-              className="danza-bauhaus-copy-line danza-bauhaus-enter"
+              className="danza-bauhaus-copy-line danza-bauhaus-copy-line--subtitle danza-bauhaus-enter"
               style={createBauhausEntranceStyle(subtitleEntranceSequenceIndex ?? 0)}
             >
               <span className="danza-bauhaus-highlight">{event.subtitle}</span>
@@ -186,31 +215,46 @@ export function DanzaBauhausEvent({
           ) : null}
 
           {normalizedLineup.length > 0 ? (
-            <p
-              className="danza-bauhaus-copy-line danza-bauhaus-enter"
-              aria-label="Featuring"
+            <div
+              className="danza-bauhaus-copy-line danza-bauhaus-copy-line--lineup danza-bauhaus-enter"
+              aria-label={usesSimplePreset ? "Featured artists" : "Featuring"}
               style={createBauhausEntranceStyle(lineupEntranceSequenceIndex ?? 0)}
             >
-              <span className="danza-bauhaus-highlight">
-                Featuring ·{" "}
-                {normalizedLineup.map((lineupEntry, lineupIndex) => (
-                  <span key={`${lineupEntry.label}-${lineupIndex}`}>
-                    {lineupIndex > 0 ? " · " : ""}
-                    {lineupEntry.href ? (
-                      <a href={lineupEntry.href} target="_blank" rel="noreferrer">
-                        {lineupEntry.label}
-                      </a>
-                    ) : (
-                      lineupEntry.label
-                    )}
-                  </span>
-                ))}
-              </span>
-            </p>
+              {usesSimplePreset && artistBrandPartners.length > 0 ? (
+                <div className="danza-bauhaus-event__artist-brand">
+                  <span className="danza-bauhaus-event__brand-eyebrow">Featuring</span>
+                  <EventPartnerLogos
+                    entries={artistBrandPartners}
+                    ariaLabel="Featured artist brands"
+                    size="compact"
+                    logoSourcesByLabel={BAUHAUS_PARTNER_LOGO_SOURCES[displaySettings.logoVariant]}
+                  />
+                </div>
+              ) : (
+                <span className="danza-bauhaus-highlight">
+                  {usesSimplePreset ? null : "Featuring · "}
+                  {normalizedLineup.map((lineupEntry, lineupIndex) => (
+                    <span key={`${lineupEntry.label}-${lineupIndex}`}>
+                      {lineupIndex > 0 ? " · " : ""}
+                      {lineupEntry.href ? (
+                        <a href={lineupEntry.href} target="_blank" rel="noreferrer">
+                          {lineupEntry.label}
+                        </a>
+                      ) : (
+                        lineupEntry.label
+                      )}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </div>
           ) : null}
 
-          {hostLines.length > 0 ? (
-            <p className="danza-bauhaus-copy-line" aria-label="Hosted by">
+          {showsVerboseInfo && hostLines.length > 0 ? (
+            <p
+              className="danza-bauhaus-copy-line danza-bauhaus-copy-line--hosts"
+              aria-label="Hosted by"
+            >
               {hostLines.map((hostLine, hostLineIndex) => (
                 <span key={`${hostLine}-${hostLineIndex}`}>
                   {hostLineIndex > 0 ? <br /> : null}
@@ -228,9 +272,9 @@ export function DanzaBauhausEvent({
             </p>
           ) : null}
 
-          {sponsors?.length ? (
+          {showsVerboseInfo && sponsors?.length ? (
             <p
-              className="danza-bauhaus-copy-line danza-bauhaus-enter"
+              className="danza-bauhaus-copy-line danza-bauhaus-copy-line--sponsors danza-bauhaus-enter"
               aria-label="Sponsored by"
               style={createBauhausEntranceStyle(sponsorEntranceSequenceIndex ?? 0)}
             >
@@ -257,8 +301,9 @@ export function DanzaBauhausEvent({
             style={createBauhausEntranceStyle(dateEntranceSequenceIndex)}
           >
             <span className="danza-bauhaus-highlight">
-              {event.date}
-              {event.location ? ` · ${event.location}` : ""}
+              {usesSimplePreset ? (event.compactDate ?? event.date) : event.date}
+              {usesSimplePreset && event.location ? <br /> : null}
+              {event.location ? (usesSimplePreset ? event.location : ` · ${event.location}`) : ""}
             </span>
           </p>
 
@@ -292,7 +337,22 @@ export function DanzaBauhausEvent({
             ) : null}
           </div>
 
-          {expandedContent ? (
+          {usesSimplePreset && marketBrandPartner ? (
+            <div
+              className="danza-bauhaus-event__market-brand danza-bauhaus-enter"
+              style={createBauhausEntranceStyle(partnersEntranceSequenceIndex ?? 0)}
+            >
+              <span className="danza-bauhaus-event__brand-eyebrow">Sponsored by</span>
+              <EventPartnerLogos
+                entries={[marketBrandPartner]}
+                ariaLabel="RSVP presented by The Market"
+                size="compact"
+                logoSourcesByLabel={BAUHAUS_PARTNER_LOGO_SOURCES[displaySettings.logoVariant]}
+              />
+            </div>
+          ) : null}
+
+          {showsVerboseInfo && expandedContent ? (
             <div
               className="danza-bauhaus-event__expanded danza-bauhaus-enter"
               style={createBauhausEntranceStyle(expandedContentEntranceSequenceIndex ?? 0)}
@@ -301,7 +361,7 @@ export function DanzaBauhausEvent({
             </div>
           ) : null}
 
-          {partners?.length ? (
+          {!usesSimplePreset && partners?.length ? (
             <div
               className="danza-bauhaus-event__partners danza-bauhaus-enter"
               style={createBauhausEntranceStyle(partnersEntranceSequenceIndex ?? 0)}
@@ -310,7 +370,7 @@ export function DanzaBauhausEvent({
                 entries={partners}
                 ariaLabel="Event partners"
                 size="compact"
-                logoSourcesByLabel={BAUHAUS_PARTNER_LOGO_SOURCES[logoVariant]}
+                logoSourcesByLabel={BAUHAUS_PARTNER_LOGO_SOURCES[displaySettings.logoVariant]}
               />
             </div>
           ) : null}
@@ -318,6 +378,10 @@ export function DanzaBauhausEvent({
       </div>
     </section>
   );
+}
+
+function normalizePartnerLabel(label: string): string {
+  return label.trim().toLowerCase();
 }
 
 function splitEventTitle(title: string): string[] {

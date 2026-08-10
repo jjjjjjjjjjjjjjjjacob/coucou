@@ -24,6 +24,7 @@ export const BAUHAUS_FRAGMENT_SHADER = `
   uniform float uRaymarchMaxDistance;
   uniform vec3 uGradientColor1;
   uniform vec3 uGradientColor2;
+  uniform float uLightingStrength;
   uniform mat4 uViewMatrix;
   uniform mat4 uProjectionMatrix;
   uniform float uNormalPrecision;
@@ -109,7 +110,12 @@ export const BAUHAUS_FRAGMENT_SHADER = `
     float upperLight = 0.5 + 0.5 * dot(normal, normalize(vec3(-0.5, 0.8, 1.0)));
     float gradientPosition = clamp((position.y + 8.0) / 16.0, 0.0, 1.0);
     vec3 baseColor = mix(uGradientColor1, uGradientColor2, gradientPosition);
-    vec3 finalColor = baseColor * mix(0.82, 1.08, upperLight);
+    float lightingMultiplier = mix(
+      1.0,
+      mix(0.82, 1.08, upperLight),
+      uLightingStrength
+    );
+    vec3 finalColor = baseColor * lightingMultiplier;
     gl_FragColor = vec4(finalColor, 1.0);
 
     vec4 clipPosition = uProjectionMatrix * uViewMatrix * vec4(position, 1.0);

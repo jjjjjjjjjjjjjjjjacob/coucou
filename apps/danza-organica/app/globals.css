@@ -471,6 +471,186 @@
   }
 }
 
+/* The simple event preset follows the centered one-screen invitation
+ * hierarchy: one uninterrupted event title, artist wordmark, compact date,
+ * RSVP, and presenting partner. The moving dot field remains the signature. */
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__composition {
+  --danza-bauhaus-title-size: clamp(2.5rem, 7vw, 6.25rem);
+  top: 48%;
+  width: min(74rem, calc(100vw - 3rem));
+  text-align: center;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__title,
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__billing {
+  align-items: center;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__title {
+  line-height: 0.9;
+  letter-spacing: -0.065em;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-title-line {
+  padding: 0;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__billing {
+  gap: clamp(0.65rem, 1.4svh, 1rem);
+  margin-top: clamp(0.8rem, 2.2svh, 1.5rem);
+  font-size: clamp(0.75rem, 1vw, 0.95rem);
+  font-weight: 650;
+  letter-spacing: 0.035em;
+  line-height: 1.2;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-copy-line--subtitle {
+  color: color-mix(in srgb, var(--danza-bauhaus-text) 66%, transparent);
+  font-family: var(--tt-display), var(--font-geist-sans), sans-serif;
+  font-size: clamp(1.6rem, 3.2vw, 2.75rem);
+  font-weight: 780;
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-copy-line--lineup {
+  display: flex;
+  justify-content: center;
+  width: min(100%, 36rem);
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__artist-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__brand-eyebrow {
+  color: var(--danza-bauhaus-text);
+  font-size: clamp(0.62rem, 0.8vw, 0.72rem);
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__artist-brand > div {
+  gap: 0.75rem !important;
+}
+
+.danza-bauhaus-page[data-preset="simple"]
+  .danza-bauhaus-event__artist-brand
+  img[alt="Nothing Radio"] {
+  width: auto !important;
+  max-width: min(32rem, 86vw) !important;
+  height: clamp(7.5rem, 12vw, 10.5rem) !important;
+  object-fit: contain;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-copy-line--hosts,
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-copy-line--sponsors {
+  font-size: 0.68rem;
+  letter-spacing: 0.075em;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-copy-line--date {
+  margin-top: clamp(0.25rem, 1svh, 0.7rem);
+  font-size: clamp(0.95rem, 1.55vw, 1.3rem);
+  font-weight: 650;
+  letter-spacing: 0.015em;
+  line-height: 1.35;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__actions {
+  justify-content: center;
+  margin-top: 0.25rem;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__rsvp {
+  min-height: 2.85rem;
+  padding: 0.65rem 1.15rem;
+  border-radius: 0.65rem;
+  background: #0a0a0a;
+  color: var(--danza-bauhaus-dot);
+  font-size: 0.92rem;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+}
+
+.danza-bauhaus-page[data-preset="simple"][data-text-color="orange"] .danza-bauhaus-event__rsvp {
+  background: #fc7243;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__market-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: min(100%, 30rem);
+  margin-top: 0.1rem;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__market-brand > div {
+  gap: 0 !important;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__market-brand img[alt="The Market"] {
+  width: auto !important;
+  max-width: min(25rem, 78vw) !important;
+  height: clamp(4.25rem, 7vw, 6.25rem) !important;
+  object-fit: contain;
+}
+
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__expanded {
+  align-self: center;
+  text-align: left;
+}
+
+.danza-bauhaus-page[data-highlight-color="none"] .danza-bauhaus-highlight {
+  padding: 0;
+  background: transparent;
+}
+
+@media (max-width: 767px) {
+  .danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__composition {
+    --danza-bauhaus-title-size: clamp(2.25rem, 10.8vw, 3.25rem);
+    top: 49%;
+  }
+
+  .danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__billing {
+    gap: 0.7rem;
+    margin-top: 0.9rem;
+  }
+
+  .danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__artist-brand img[alt] {
+    max-width: 88vw !important;
+    height: 6.75rem !important;
+  }
+
+  .danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__market-brand img[alt] {
+    max-width: 80vw !important;
+    height: 4.5rem !important;
+  }
+
+  .danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__rsvp {
+    min-height: 2.65rem;
+    padding: 0.55rem 0.95rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .danza-bauhaus-enter,
+  .danza-bauhaus-field__canvas--loaded {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Ticket typography carries the same dense, heavy poster voice as the
  * Bauhaus landing while keeping the QR quiet and easy to scan. */
 .danza-ticket-page {

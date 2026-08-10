@@ -400,6 +400,7 @@ export function BauhausLinePrototype() {
           uRaymarchMaxDistance: { value: 6 },
           uGradientColor1: { value: new three.Vector3(0.025, 0.025, 0.025) },
           uGradientColor2: { value: new three.Vector3(0.09, 0.09, 0.085) },
+          uLightingStrength: { value: 1 },
           uViewMatrix: { value: camera.matrixWorldInverse.clone() },
           uProjectionMatrix: { value: camera.projectionMatrix.clone() },
           uNormalPrecision: { value: 0.0008 },

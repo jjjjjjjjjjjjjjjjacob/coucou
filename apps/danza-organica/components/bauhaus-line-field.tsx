@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  type BauhausEventDotColor,
+  DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS,
+} from "@/lib/bauhaus-event-display";
+import {
   BAUHAUS_CAMERA_FIELD_OF_VIEW,
   BAUHAUS_DEFAULT_CAMERA_POSITION,
   BAUHAUS_DEFAULT_CAMERA_TARGET,
@@ -23,12 +27,40 @@ const FROZEN_ROW_SPACING = 1.3;
 const FROZEN_PERSPECTIVE_STRENGTH = 6;
 const FROZEN_CAMERA_ROLL_DEGREES = 1;
 
+export const BAUHAUS_PARTICLE_APPEARANCES: Readonly<
+  Record<
+    BauhausEventDotColor,
+    {
+      start: readonly [number, number, number];
+      end: readonly [number, number, number];
+      lightingStrength: number;
+    }
+  >
+> = {
+  black: {
+    start: [0.025, 0.025, 0.025],
+    end: [0.09, 0.09, 0.085],
+    lightingStrength: 1,
+  },
+  white: {
+    start: [1, 1, 1],
+    end: [1, 1, 1],
+    lightingStrength: 0,
+  },
+};
+
+interface BauhausLineFieldProps {
+  dotColor?: BauhausEventDotColor;
+}
+
 /**
  * The production Danza field uses the approved camera capture as an immutable
  * view. The particles still travel through their lanes, but guest pages expose
  * no orbit, zoom, scroll, or resize-driven camera controls.
  */
-export function BauhausLineField() {
+export function BauhausLineField({
+  dotColor = DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS.dotColor,
+}: BauhausLineFieldProps = {}) {
   const canvasHostReference = useRef<HTMLDivElement>(null);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
@@ -95,6 +127,7 @@ export function BauhausLineField() {
       canvasHost.appendChild(renderer.domElement);
 
       const particleGeometry = new three.BoxGeometry(1, 1, 1);
+      const particleAppearance = BAUHAUS_PARTICLE_APPEARANCES[dotColor];
       const particleMaterial = new three.ShaderMaterial({
         vertexShader: BAUHAUS_VERTEX_SHADER,
         fragmentShader: BAUHAUS_FRAGMENT_SHADER,
@@ -107,8 +140,9 @@ export function BauhausLineField() {
           uRaymarchHitThreshold: { value: 0.001 },
           uRaymarchIterations: { value: 40 },
           uRaymarchMaxDistance: { value: 6 },
-          uGradientColor1: { value: new three.Vector3(0.025, 0.025, 0.025) },
-          uGradientColor2: { value: new three.Vector3(0.09, 0.09, 0.085) },
+          uGradientColor1: { value: new three.Vector3(...particleAppearance.start) },
+          uGradientColor2: { value: new three.Vector3(...particleAppearance.end) },
+          uLightingStrength: { value: particleAppearance.lightingStrength },
           uViewMatrix: { value: camera.matrixWorldInverse.clone() },
           uProjectionMatrix: { value: camera.projectionMatrix.clone() },
           uNormalPrecision: { value: 0.0008 },
@@ -266,7 +300,7 @@ export function BauhausLineField() {
         window.cancelAnimationFrame(fieldRevealAnimationFrameIdentifier);
       }
     };
-  }, [prefersReducedMotion]);
+  }, [dotColor, prefersReducedMotion]);
 
   return (
     <div
@@ -274,6 +308,7 @@ export function BauhausLineField() {
       className="danza-bauhaus-field pointer-events-none fixed inset-0 z-0 bg-[#17E1E5]"
       aria-hidden="true"
       data-bauhaus-camera="frozen"
+      data-dot-color={dotColor}
     />
   );
 }

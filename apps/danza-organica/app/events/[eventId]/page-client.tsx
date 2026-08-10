@@ -11,6 +11,7 @@ import { DanzaPresentationDetails } from "@/components/danza-event-detail-sectio
 import type { DanzaLandingEvent } from "@/components/danza-event-row";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Spinner } from "@/components/ui/spinner";
+import { formatCompactBauhausDate } from "@/lib/bauhaus-event-display";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import { buildRsvpPathForViewport, useRsvpFlowViewport } from "@/lib/rsvp-flow-routing";
 import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
@@ -181,6 +182,10 @@ export default function EventPageClient({ params }: EventPageClientProps) {
           resolvedFocusedEvent.eventDate,
           resolvedFocusedEvent.eventTimezone,
         ),
+        compactDate: formatCompactBauhausDate(
+          resolvedFocusedEvent.eventDate,
+          resolvedFocusedEvent.eventTimezone,
+        ),
         location: resolvedFocusedEvent.location,
         lineup: getPublicEventActs(resolvedFocusedEvent).map((act) => ({
           label: act.displayName,
@@ -215,6 +220,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         subtitle: event.secondaryTitle,
         hosts: event.hosts,
         date: formatExpandedDate(event.eventDate, event.eventTimezone),
+        compactDate: formatCompactBauhausDate(event.eventDate, event.eventTimezone),
         location: event.location,
         lineup: getPublicEventActs(event).map((act) => ({
           label: act.displayName,

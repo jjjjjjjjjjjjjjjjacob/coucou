@@ -13,6 +13,7 @@ import { DanzaPresentationDetails } from "@/components/danza-event-detail-sectio
 import type { DanzaLandingEvent } from "@/components/danza-event-row";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { EventThemeProvider } from "@/components/event-theme-provider";
+import { formatCompactBauhausDate } from "@/lib/bauhaus-event-display";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import {
   buildRsvpPathForViewport,
@@ -204,6 +205,10 @@ function HomeEventRow({
     subtitle: rowSeed.sourceEvent.secondaryTitle,
     hosts: rowSeed.sourceEvent.hosts,
     date: rowSeed.expandedDate,
+    compactDate: formatCompactBauhausDate(
+      rowSeed.sourceEvent.eventDate,
+      rowSeed.sourceEvent.eventTimezone,
+    ),
     location: rowSeed.sourceEvent.location,
     lineup: rowSeed.lineup,
     rsvpHref: brickHref,
