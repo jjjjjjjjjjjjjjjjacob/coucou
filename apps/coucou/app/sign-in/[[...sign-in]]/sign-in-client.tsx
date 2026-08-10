@@ -11,6 +11,7 @@ interface SignInClientProps {
   redirectUrl: string;
   eventThemeBackgroundColor?: string | null;
   eventThemeTextColor?: string | null;
+  eventThemeAccentColor?: string | null;
   preset?: PresetKey;
   siteAuthConfiguration?: SiteAuthConfiguration;
   authBranding?: AuthBrandingOverrides | null;
@@ -36,6 +37,7 @@ export function SignInClient({
   redirectUrl,
   eventThemeBackgroundColor,
   eventThemeTextColor,
+  eventThemeAccentColor,
   preset = siteConfiguration.preset,
   siteAuthConfiguration = siteConfiguration.auth,
   authBranding = null,
@@ -51,12 +53,13 @@ export function SignInClient({
   // server-side page.tsx hands us the event's theme override pair so the
   // entire auth surface picks up the takeover styling.
   const eventThemeOverride = useMemo(() => {
-    if (!eventThemeBackgroundColor && !eventThemeTextColor) return null;
+    if (!eventThemeBackgroundColor && !eventThemeTextColor && !eventThemeAccentColor) return null;
     return {
       themeBackgroundColor: eventThemeBackgroundColor ?? undefined,
       themeTextColor: eventThemeTextColor ?? undefined,
+      themeAccentColor: eventThemeAccentColor ?? undefined,
     };
-  }, [eventThemeBackgroundColor, eventThemeTextColor]);
+  }, [eventThemeAccentColor, eventThemeBackgroundColor, eventThemeTextColor]);
   const isCoucouPlatformAuthentication = siteAuthConfiguration === siteConfiguration.auth;
   const resolvedBrandMarkSlot =
     brandMarkSlot ?? (isCoucouPlatformAuthentication ? <CoucouLogoMark size={64} /> : undefined);

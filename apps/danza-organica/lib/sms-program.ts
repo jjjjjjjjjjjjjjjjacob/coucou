@@ -1,19 +1,23 @@
 export const danzaOrganicaSmsProgram = {
-  brandName: "Danza Organica",
-  messagePrefix: "DANZA ORGANICA:",
-  consentLabel: "I agree to receive recurring SMS messages from Danza Organica.",
+  brandName: "Coucou",
+  registeredLegalName: "Soluo LLC",
+  organizerName: "Danza Organica",
+  messagePrefix: "COUCOU:",
+  consentLabel:
+    "I agree to receive recurring SMS messages from Coucou about Danza Organica events.",
   disclosure:
-    "Danza Organica may send account notifications, RSVP and guest-list updates, tickets or QR codes, event updates, and replies about events or reservations. Messages are delivered via Coucou. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase, RSVP, or admission.",
+    "Coucou may send account notifications, RSVP and guest-list updates, tickets or QR codes, event updates, and replies about Danza Organica events or reservations. Danza Organica supplies the event context; Coucou is the sender and operates this messaging program. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase, RSVP, or admission.",
   confirmationMessage:
-    "DANZA ORGANICA: You’re subscribed to recurring Danza Organica texts about RSVPs, guest-list status, tickets, event updates, and replies to your requests. Message frequency varies. Message and data rates may apply. Reply HELP for help or STOP to opt out.",
+    "COUCOU: You’re subscribed to recurring Coucou texts about Danza Organica RSVPs, guest-list status, tickets, event updates, and replies to your requests. Message frequency varies. Message and data rates may apply. Reply HELP for help or STOP to opt out.",
   optOutMessage:
-    "DANZA ORGANICA: You have been unsubscribed and will receive no more Danza Organica messages. Reply START to resubscribe.",
+    "COUCOU: You have been unsubscribed and will receive no more Coucou messages. Reply START to resubscribe.",
   helpMessage:
-    "DANZA ORGANICA: For help, contact support@danzaorganica.coucou.events or visit https://danzaorganica.coucou.events. Message frequency varies. Message and data rates may apply. Reply STOP to opt out.",
-  supportEmail: "support@danzaorganica.coucou.events",
-  websiteUrl: "https://danzaorganica.coucou.events",
-  termsUrl: "https://danzaorganica.coucou.events/terms",
-  privacyUrl: "https://danzaorganica.coucou.events/privacy",
-  evidenceUrl: "https://danzaorganica.coucou.events/sms",
-  lastUpdated: "July 17, 2026",
+    "COUCOU: For help, contact hello@coucou.events or visit https://coucou.events. Message frequency varies. Message and data rates may apply. Reply STOP to opt out.",
+  supportEmail: "hello@coucou.events",
+  websiteUrl: "https://coucou.events",
+  termsUrl: "https://coucou.events/terms",
+  privacyUrl: "https://coucou.events/privacy",
+  evidenceUrl: "https://coucou.events/sms",
+  exampleOptInUrl: "https://danzaorganica.coucou.events/events/dxhl99v/rsvp/full",
+  lastUpdated: "August 7, 2026",
 } as const;

@@ -41,6 +41,7 @@ import type * as lib_clerkWebhookPayloads from "../lib/clerkWebhookPayloads.js";
 import type * as lib_codeGenerators from "../lib/codeGenerators.js";
 import type * as lib_credentialPasswords from "../lib/credentialPasswords.js";
 import type * as lib_eventMetadata from "../lib/eventMetadata.js";
+import type * as lib_eventPartners from "../lib/eventPartners.js";
 import type * as lib_eventPatch from "../lib/eventPatch.js";
 import type * as lib_eventTiming from "../lib/eventTiming.js";
 import type * as lib_guestIdentity from "../lib/guestIdentity.js";
@@ -148,6 +149,7 @@ declare const fullApi: ApiFromModules<{
   "lib/codeGenerators": typeof lib_codeGenerators;
   "lib/credentialPasswords": typeof lib_credentialPasswords;
   "lib/eventMetadata": typeof lib_eventMetadata;
+  "lib/eventPartners": typeof lib_eventPartners;
   "lib/eventPatch": typeof lib_eventPatch;
   "lib/eventTiming": typeof lib_eventTiming;
   "lib/guestIdentity": typeof lib_guestIdentity;

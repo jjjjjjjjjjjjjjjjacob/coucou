@@ -15,7 +15,7 @@ export default function TermsOfService() {
       intro={
         <>
           These terms govern your use of {siteConfiguration.brandName}, an event management platform
-          for exclusive gatherings and experiences.
+          powered by Coucou, a Soluo LLC event management and messaging service.
         </>
       }
     >
@@ -28,33 +28,32 @@ export default function TermsOfService() {
         </p>
         <p>
           SMS notifications are optional. When you affirmatively select the separate SMS consent
-          checkbox, you consent to receive recurring messages from Danza Organica. Coucou provides
-          Danza Organica&apos;s event-management and messaging technology. You may withhold or
-          withdraw SMS consent at any time without affecting your ability to RSVP, purchase, or
-          attend.
+          checkbox, you consent to receive recurring messages from Coucou about Danza Organica
+          events. Coucou is the sender and messaging-program operator. You may withhold or withdraw
+          SMS consent at any time without affecting your ability to create an account, RSVP,
+          purchase, or attend.
         </p>
       </LegalSection>
 
       <LegalSection title="2. Roles and Responsibilities">
         <p>
-          Danza Organica is the operator and sender of the Danza Organica SMS program. Authorized
-          event organizers may use Danza Organica&apos;s tools to communicate about Danza Organica
-          events, but those organizers do not become separate SMS senders under this program.
+          Soluo LLC operates Coucou and the Coucou messaging program. Danza Organica supplies the
+          event context and may use Coucou&apos;s tools to respond to guest questions, but Danza
+          Organica does not become a separate SMS program merely because its name appears in a
+          Coucou message.
         </p>
         <p>
-          Coucou supplies software, event-management workflows, consent-recording tools, and
-          operational messaging services to Danza Organica. Twilio supplies telecommunications
-          delivery infrastructure. Coucou and Twilio are service providers and are not separate
-          messaging programs that you join.
+          Coucou supplies event-management workflows, consent-recording tools, and operational
+          messaging services. Twilio supplies telecommunications delivery infrastructure.
         </p>
         <ul className="ml-5 list-disc space-y-2">
           <li>
-            <strong>Danza Organica obligations:</strong> Determine the program&apos;s operational
-            message content, publish clear opt-in disclosures, and honor messaging preferences.
+            <strong>Coucou obligations:</strong> Publish clear opt-in disclosures, record consent,
+            operate the messaging program, and honor unsubscribe requests.
           </li>
           <li>
-            <strong>Coucou obligations:</strong> Provide the software used to capture consent,
-            transmit messages, and process messaging preferences on Danza Organica&apos;s behalf.
+            <strong>Danza Organica obligations:</strong> Provide accurate event information and use
+            Coucou messaging only for the operational purposes covered by the guest&apos;s consent.
           </li>
           <li>
             <strong>Twilio obligations:</strong> Provide telecommunications infrastructure for SMS
@@ -80,23 +79,22 @@ export default function TermsOfService() {
         </ul>
       </LegalSection>
 
-      <LegalSection title="5. Danza Organica SMS Program">
+      <LegalSection title="5. Coucou SMS Program">
         <p>
-          Danza Organica offers an optional recurring text messaging program for account
-          notifications, RSVP and guest-list status, tickets or QR codes, event updates, schedule or
-          venue changes, and replies to questions about Danza Organica events or reservations.
+          Coucou offers an optional recurring text messaging program for account notifications, RSVP
+          and guest-list status, tickets or QR codes, event updates, schedule or venue changes, and
+          replies to questions about Danza Organica events or reservations.
         </p>
         <p>
           By affirmatively selecting the separate SMS consent checkbox, you agree to receive these
-          messages from Danza Organica. Coucou provides Danza Organica&apos;s event-management and
-          messaging technology, and Twilio provides message-delivery infrastructure. Coucou and
-          Twilio are service providers and are not separate messaging programs you are joining.
+          messages from Coucou. Danza Organica supplies the event context, Coucou remains the sender
+          and program operator, and Twilio provides message-delivery infrastructure.
         </p>
         <p>
           Message frequency varies based on your account, RSVPs, event activity, and conversations
-          with Danza Organica. Message and data rates may apply. Consent is not a condition of
-          purchase, RSVP, admission, or use of the Danza Organica service. Promotional and marketing
-          messages are not covered by this consent.
+          about Danza Organica events. Message and data rates may apply. Consent is not a condition
+          of account creation, purchase, RSVP, admission, or use of the service. Marketing and
+          promotional offers are not covered by this consent.
         </p>
         <p>
           <strong>Reply STOP to opt out at any time. Reply HELP for assistance.</strong> After
@@ -111,8 +109,8 @@ export default function TermsOfService() {
           be available through every carrier or in every location.
         </p>
         <p>
-          Danza Organica handles mobile information according to its{" "}
-          <a href="/privacy" className="underline">
+          Coucou handles mobile information according to its{" "}
+          <a href={danzaOrganicaSmsProgram.privacyUrl} className="underline">
             Privacy Policy
           </a>
           .

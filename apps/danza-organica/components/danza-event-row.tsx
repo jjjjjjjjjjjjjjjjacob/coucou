@@ -15,6 +15,7 @@ import { useState } from "react";
 export interface DanzaLandingEvent extends ChlorineLandingEvent {
   title: string;
   subtitle?: string | null;
+  hosts?: string[];
   location?: string;
 }
 export type DanzaLineupEntry = ChlorineLineupEntry;
@@ -54,6 +55,14 @@ export interface DanzaEventRowProps {
    */
   expandedContent?: ReactNode;
   /**
+   * Optional sponsor section rendered after hosts and before event timing.
+   */
+  sponsorSlot?: ReactNode;
+  /**
+   * Optional unlabeled partner row rendered at the bottom of expanded details.
+   */
+  partnerSlot?: ReactNode;
+  /**
    * Optional content rendered above the RSVP action.
    */
   topRightSlot?: ReactNode;
@@ -78,6 +87,8 @@ export function DanzaEventRow({
   detailHref,
   detailLabel = "Details",
   expandedContent,
+  sponsorSlot,
+  partnerSlot,
   topRightSlot,
   bottomRightSlot,
 }: DanzaEventRowProps) {
@@ -124,7 +135,7 @@ export function DanzaEventRow({
           fontWeight: 600,
           letterSpacing: "0.08em",
           textTransform: "uppercase",
-          color: "var(--tt-fg-mute)",
+          color: "var(--tt-fg-mute, var(--tt-fg))",
           textDecoration: "none",
           cursor: "pointer",
         }}
@@ -322,6 +333,47 @@ export function DanzaEventRow({
             </div>
           ) : null}
 
+          {event.hosts?.length ? (
+            <div
+              aria-label="Hosted by"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 7,
+                maxWidth: 560,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "var(--tt-text)",
+                  fontSize: 10,
+                  fontWeight: 650,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "var(--tt-fg-mute)",
+                }}
+              >
+                Hosted by
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--tt-display)",
+                  fontSize: mobile ? 14 : 16,
+                  fontWeight: 650,
+                  lineHeight: 1.3,
+                  color: "var(--tt-fg)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.025em",
+                }}
+              >
+                {event.hosts.join(" · ")}
+              </span>
+            </div>
+          ) : null}
+
+          {sponsorSlot}
+
           <div
             style={{
               display: "flex",
@@ -366,6 +418,17 @@ export function DanzaEventRow({
           }}
         >
           {expandedContent}
+        </div>
+      ) : null}
+      {isExpanded && partnerSlot ? (
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 540,
+            paddingTop: mobile ? 4 : 8,
+          }}
+        >
+          {partnerSlot}
         </div>
       ) : null}
     </RowTag>
@@ -416,7 +479,7 @@ function DanzaLineupAnchor({ href, children }: DanzaLineupAnchorProps) {
       onFocus={() => setIsHovered(true)}
       onBlur={() => setIsHovered(false)}
       style={{
-        color: isHovered ? "var(--tt-fg-dim)" : "inherit",
+        color: isHovered ? "var(--tt-fg-dim, var(--tt-fg))" : "inherit",
         display: "inline-block",
         textDecoration: "none",
         width: "fit-content",
@@ -430,8 +493,8 @@ function DanzaLineupAnchor({ href, children }: DanzaLineupAnchorProps) {
 
 export function buildRsvpBrickStyle(mobile: boolean, disabled: boolean): CSSProperties {
   return {
-    background: "var(--tt-fg)",
-    color: "var(--tt-bg)",
+    background: "var(--tt-accent, var(--tt-fg))",
+    color: "var(--tt-fg)",
     fontFamily: "var(--tt-text)",
     fontSize: mobile ? 11 : 12,
     fontWeight: 700,

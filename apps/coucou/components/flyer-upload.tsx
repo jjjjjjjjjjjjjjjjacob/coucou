@@ -16,6 +16,7 @@ export interface StorageImageUploadProps {
   previewAlt: string;
   removeButtonLabel?: string;
   helperText?: React.ReactNode;
+  previewClassName?: string;
 }
 
 export function StorageImageUpload({
@@ -28,6 +29,7 @@ export function StorageImageUpload({
   previewAlt,
   removeButtonLabel = "Remove",
   helperText,
+  previewClassName = "object-cover",
 }: StorageImageUploadProps) {
   const generateUrl = useMutation(api.files.generateUploadUrl);
   const preview = useQuery(
@@ -98,7 +100,7 @@ export function StorageImageUpload({
               <img
                 src={preview.url}
                 alt={previewAlt}
-                className="h-20 w-20 rounded object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+                className={`h-20 w-20 rounded ${previewClassName} outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10`}
                 onError={(event) => {
                   console.error("Failed to load preview image:", preview.url);
                   event.currentTarget.style.display = "none";

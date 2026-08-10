@@ -5,46 +5,52 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { isEventOpenForRsvp, resolveEventRsvpCutoff } from "@coucou/sdk/shared/event-availability";
 import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
-import { useMobile } from "@coucou/ui/tenant-template";
 import { useQuery } from "convex/react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
-import { DanzaEventRow, type DanzaLandingEvent } from "@/components/danza-event-row";
+import { DanzaBauhausEvent, DanzaBauhausPage } from "@/components/danza-bauhaus-event";
+import { DanzaPresentationDetails } from "@/components/danza-event-detail-sections";
+import type { DanzaLandingEvent } from "@/components/danza-event-row";
+import { EventReferralShareButton } from "@/components/event-referral-share-button";
+import { EventThemeProvider } from "@/components/event-theme-provider";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import {
   buildRsvpPathForViewport,
   type RsvpFlowViewport,
   useRsvpFlowViewport,
 } from "@/lib/rsvp-flow-routing";
-import {
-  buildEventDetailPathWithPreservedQuery,
-  buildPathWithPreservedQuery,
-} from "@/lib/rsvp-url-state";
+import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import type { Event as ClubEvent } from "@/lib/types";
 
-function formatLandingDate(timestamp: number, timezone?: string): string {
-  const dateFormatter = new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "2-digit",
-    day: "2-digit",
+function formatExpandedDate(timestamp: number, timezone?: string): string {
+  const date = new Date(timestamp);
+  const day = date.toLocaleDateString("en-US", {
+    weekday: "long",
     timeZone: timezone ?? "UTC",
   });
-  const parts = dateFormatter.formatToParts(new Date(timestamp));
-  const weekday = parts.find((part) => part.type === "weekday")?.value.toUpperCase() ?? "";
-  const month = parts.find((part) => part.type === "month")?.value ?? "";
-  const day = parts.find((part) => part.type === "day")?.value ?? "";
-  return `${weekday} ${month}.${day}`;
+  const formatted = date
+    .toLocaleDateString("en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      year: "2-digit",
+      timeZone: timezone ?? "UTC",
+    })
+    .replace(/\//g, ".");
+  const time = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: timezone ?? "UTC",
+  });
+  return `${day} ${formatted} · ${time}`;
 }
 
 interface LandingRowSeed {
+  sourceEvent: ClubEvent;
   eventId: Id<"events">;
   routeId: string;
-  title: string;
-  subtitle?: string;
-  date: string;
-  location?: string;
+  expandedDate: string;
   lineup: DanzaLandingEvent["lineup"];
   isOpenForRsvp: boolean;
 }
@@ -70,12 +76,10 @@ function HomeContent() {
       .filter((event) => resolveEventRsvpCutoff(event) >= now)
       .sort((firstEvent, secondEvent) => firstEvent.eventDate - secondEvent.eventDate)
       .map((event) => ({
+        sourceEvent: event,
         eventId: event._id,
         routeId: getEventRouteId(event),
-        title: event.name,
-        subtitle: event.secondaryTitle,
-        date: formatLandingDate(event.eventDate, event.eventTimezone),
-        location: event.location,
+        expandedDate: formatExpandedDate(event.eventDate, event.eventTimezone),
         lineup: getPublicEventActs(event).map((act) => ({
           label: act.displayName,
           descriptorBadges: act.descriptorBadges,
@@ -86,8 +90,12 @@ function HomeContent() {
   }, [allEvents]);
 
   const isLoadingEvents = allEvents === undefined;
-  const isMobile = useMobile();
   const rsvpFlowViewport = useRsvpFlowViewport();
+  const takeoverEvent = landingRowSeeds[0]?.sourceEvent;
+  const takeoverIconResponse = useQuery(
+    api.files.getUrl,
+    takeoverEvent?.customIconStorageId ? { storageId: takeoverEvent.customIconStorageId } : "skip",
+  );
 
   if (isLoadingEvents) {
     return null;
@@ -111,42 +119,43 @@ function HomeContent() {
   }
 
   return (
-    <div className="flex flex-col gap-24 py-8">
-      {landingRowSeeds.map((rowSeed, index) => (
-        <HomeEventRow
-          key={rowSeed.eventId}
-          rowSeed={rowSeed}
-          mobile={isMobile}
-          delayMs={index * 140}
-          searchParams={searchParams}
-          rsvpFlowViewport={rsvpFlowViewport}
-        />
-      ))}
-    </div>
+    <EventThemeProvider
+      event={takeoverEvent ?? null}
+      iconUrl={takeoverIconResponse?.url}
+      brandingSourceId={takeoverEvent ? `home-event:${takeoverEvent._id}` : null}
+    >
+      <DanzaBauhausPage>
+        {landingRowSeeds.map((rowSeed, index) => (
+          <HomeEventRow
+            key={rowSeed.eventId}
+            rowSeed={rowSeed}
+            searchParams={searchParams}
+            rsvpFlowViewport={rsvpFlowViewport}
+            isFirstEvent={index === 0}
+          />
+        ))}
+      </DanzaBauhausPage>
+    </EventThemeProvider>
   );
 }
 
 interface HomeEventRowProps {
   rowSeed: LandingRowSeed;
-  mobile: boolean;
-  delayMs: number;
   searchParams: ReturnType<typeof useSearchParams>;
   rsvpFlowViewport: RsvpFlowViewport;
+  isFirstEvent: boolean;
 }
 
 /**
- * Wraps `DanzaEventRow` with the same contextual brick logic as the
- * event detail page: when the user already has an RSVP for this event the
- * brick routes them to their existing ticket / status surface instead of
- * the RSVP form. Each row owns its own RSVP-status subscription so the
- * homepage stays reactive without a batch query.
+ * Adds RSVP-aware actions to each full-screen poster. When a guest already
+ * has an RSVP, the action routes to their ticket or status instead of opening
+ * a fresh form.
  */
 function HomeEventRow({
   rowSeed,
-  mobile,
-  delayMs,
   searchParams,
   rsvpFlowViewport,
+  isFirstEvent,
 }: HomeEventRowProps) {
   const { isSignedIn, isLoaded } = useAuth();
   const rsvpStatus = useQuery(
@@ -191,24 +200,36 @@ function HomeEventRow({
 
   const event: DanzaLandingEvent = {
     id: rowSeed.routeId,
-    title: rowSeed.title,
-    subtitle: rowSeed.subtitle,
-    date: rowSeed.date,
-    location: rowSeed.location,
+    title: rowSeed.sourceEvent.name,
+    subtitle: rowSeed.sourceEvent.secondaryTitle,
+    hosts: rowSeed.sourceEvent.hosts,
+    date: rowSeed.expandedDate,
+    location: rowSeed.sourceEvent.location,
     lineup: rowSeed.lineup,
     rsvpHref: brickHref,
     rsvpLabel: brickLabel,
     rsvpDisabled: brickDisabled,
   };
 
+  const expandedContent =
+    rowSeed.sourceEvent.productionCompany || rowSeed.sourceEvent.description ? (
+      <DanzaPresentationDetails
+        productionCompany={rowSeed.sourceEvent.productionCompany}
+        description={rowSeed.sourceEvent.description}
+      />
+    ) : undefined;
+
   return (
-    <DanzaEventRow
+    <DanzaBauhausEvent
       event={event}
-      mobile={mobile}
-      visible
-      delayMs={delayMs}
-      linkComponent={Link}
-      detailHref={buildEventDetailPathWithPreservedQuery(rowSeed.routeId, searchParams)}
+      sponsors={rowSeed.sourceEvent.sponsors}
+      partners={rowSeed.sourceEvent.eventPartners}
+      expandedContent={expandedContent}
+      utilitySlot={
+        isFirstEvent && isSignedIn ? (
+          <EventReferralShareButton event={rowSeed.sourceEvent} showLabel={false} />
+        ) : undefined
+      }
     />
   );
 }

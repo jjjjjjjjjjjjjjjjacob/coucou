@@ -32,7 +32,7 @@ export interface AuthShellProps {
   brandMarkSlot?: ReactNode;
   /**
    * When the sign-in is reached via redirect from an event page, the event's
-   * themeBackgroundColor/themeTextColor flow through here so the takeover
+   * themeBackgroundColor/themeTextColor/themeAccentColor flow through here so the takeover
    * styling extends to the auth surface (every preset token is re-derived
    * from the override pair).
    */

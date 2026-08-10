@@ -415,7 +415,12 @@ Consent records must capture:
 
 SMS requirements:
 
-- Every opt-in must identify the organizer/end business and the fact that Coucou sends on its behalf.
+- Every opt-in must identify the registered messaging-program sender and the organizer or event context.
+- For the Coucou campaign, the checkbox, policy links, confirmation, and outbound messages must identify Coucou as the sender and Soluo LLC as its operator. The organizer name is event context, not a separate messaging program.
+- A separately registered tenant campaign must instead identify that tenant as the sender across the opt-in flow, policies, and messages.
+- Coucou is an A2P Brand. Danza Organica uses the Coucou sender model: Coucou is the sender and Danza Organica is organizer/event context.
+- Club Chlorine uses the tenant-sender model: its legal owner must be onboarded as a secondary customer Brand before `CLUB CHLORINE:` traffic is activated; Coucou remains Soluo LLC's technology service and does not own Club Chlorine or its events.
+- Dojo remains on its legacy Jeans-backed Twilio configuration during the documentation-only phase. Do not change its generated or delivered SMS content as part of the Coucou or Club Chlorine submissions.
 - STOP/START/HELP behavior must be supported.
 - Twilio opt-out webhooks must update Coucou suppression state.
 - Campaign sending must check both Coucou consent and provider-level opt-out/suppression state.

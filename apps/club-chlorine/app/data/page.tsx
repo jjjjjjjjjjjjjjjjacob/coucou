@@ -108,8 +108,10 @@ export default function DataCollection() {
           <li>Opt-out history and reasons for legal compliance.</li>
         </ul>
         <p style={{ color: "var(--tt-fg-dim)" }}>
-          Club Chlorine is the SMS sender. Coucou provides Club Chlorine&apos;s event-management and
-          messaging technology, and Twilio provides telecommunications delivery infrastructure.
+          Club Chlorine is the independent organizer and SMS sender. Coucou, a service operated by
+          Soluo LLC, provides Club Chlorine&apos;s event-management and messaging technology, and
+          Twilio provides telecommunications delivery infrastructure. Soluo LLC does not own or
+          operate Club Chlorine or its events.
         </p>
       </LegalSection>
 

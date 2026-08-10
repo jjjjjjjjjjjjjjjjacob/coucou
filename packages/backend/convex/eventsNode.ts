@@ -19,6 +19,11 @@ import {
   sanitizeOptionalEventDescription,
 } from "./lib/eventMetadata";
 import {
+  type EventPartnerInput,
+  eventPartnerValidator,
+  sanitizeOptionalEventPartners,
+} from "./lib/eventPartners";
+import {
   primaryFieldConfigFromWorkspaceDefaults,
   primaryFieldConfigValidator,
   sanitizePrimaryFieldConfig,
@@ -51,6 +56,8 @@ const eventUpdatePatchValidator = v.object({
   secondaryTitle: v.optional(v.string()),
   description: v.optional(v.string()),
   acts: v.optional(v.array(eventActValidator)),
+  eventPartners: v.optional(v.array(eventPartnerValidator)),
+  sponsors: v.optional(v.array(eventPartnerValidator)),
   hosts: v.optional(v.array(v.string())),
   productionCompany: v.optional(v.string()),
   location: v.optional(v.string()),
@@ -85,6 +92,7 @@ const eventUpdatePatchValidator = v.object({
   primaryFieldConfig: v.optional(primaryFieldConfigValidator),
   themeBackgroundColor: v.optional(v.string()),
   themeTextColor: v.optional(v.string()),
+  themeAccentColor: v.optional(v.string()),
   approvalMessage: v.optional(v.string()),
   rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
   rsvpConfirmationMessage: v.optional(v.string()),
@@ -244,6 +252,8 @@ export const create = action({
     secondaryTitle: v.optional(v.string()),
     description: v.optional(v.string()),
     acts: v.optional(v.array(eventActValidator)),
+    eventPartners: v.optional(v.array(eventPartnerValidator)),
+    sponsors: v.optional(v.array(eventPartnerValidator)),
     hosts: v.optional(v.array(v.string())),
     productionCompany: v.optional(v.string()),
     location: v.string(),
@@ -288,6 +298,7 @@ export const create = action({
     primaryFieldConfig: v.optional(primaryFieldConfigValidator),
     themeBackgroundColor: v.optional(v.string()),
     themeTextColor: v.optional(v.string()),
+    themeAccentColor: v.optional(v.string()),
     approvalMessage: v.optional(v.string()),
     rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
     rsvpConfirmationMessage: v.optional(v.string()),
@@ -364,6 +375,10 @@ export const create = action({
       args.themeTextColor ?? workspaceEventDefaults?.themeTextColor,
       "Text color",
     );
+    const normalizedThemeAccentColor = normalizeOptionalHexColor(
+      args.themeAccentColor ?? workspaceEventDefaults?.themeAccentColor,
+      "Accent color",
+    );
     const primaryFieldConfig =
       sanitizePrimaryFieldConfig(args.primaryFieldConfig) ??
       primaryFieldConfigFromWorkspaceDefaults(workspaceEventDefaults);
@@ -404,6 +419,8 @@ export const create = action({
       secondaryTitle: args.secondaryTitle,
       description: sanitizeOptionalEventDescription(args.description),
       acts: sanitizeOptionalEventActs(args.acts),
+      eventPartners: sanitizeOptionalEventPartners(args.eventPartners),
+      sponsors: sanitizeOptionalEventPartners(args.sponsors),
       hosts: args.hosts,
       productionCompany: args.productionCompany,
       location: args.location,
@@ -425,6 +442,7 @@ export const create = action({
       primaryFieldConfig,
       themeBackgroundColor: normalizedThemeBackgroundColor,
       themeTextColor: normalizedThemeTextColor,
+      themeAccentColor: normalizedThemeAccentColor,
       approvalMessage: args.approvalMessage,
       rsvpConfirmationMessageEnabled: args.rsvpConfirmationMessageEnabled,
       rsvpConfirmationMessage: sanitizeOptionalRsvpConfirmationMessage(
@@ -491,6 +509,14 @@ export const update = action({
       if (patch.acts !== undefined) {
         sanitizedPatch.acts = sanitizeOptionalEventActs(patch.acts as EventActInput[]) ?? [];
       }
+      if (patch.eventPartners !== undefined) {
+        sanitizedPatch.eventPartners =
+          sanitizeOptionalEventPartners(patch.eventPartners as EventPartnerInput[]) ?? [];
+      }
+      if (patch.sponsors !== undefined) {
+        sanitizedPatch.sponsors =
+          sanitizeOptionalEventPartners(patch.sponsors as EventPartnerInput[]) ?? [];
+      }
       if (patch.themeBackgroundColor !== undefined) {
         sanitizedPatch.themeBackgroundColor = normalizeOptionalHexColor(
           patch.themeBackgroundColor,
@@ -501,6 +527,12 @@ export const update = action({
         sanitizedPatch.themeTextColor = normalizeOptionalHexColor(
           patch.themeTextColor,
           "Text color",
+        );
+      }
+      if (patch.themeAccentColor !== undefined) {
+        sanitizedPatch.themeAccentColor = normalizeOptionalHexColor(
+          patch.themeAccentColor,
+          "Accent color",
         );
       }
       if (patch.approvalMessage !== undefined) {

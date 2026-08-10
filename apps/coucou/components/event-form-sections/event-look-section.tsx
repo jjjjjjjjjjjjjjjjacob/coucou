@@ -1,6 +1,7 @@
 "use client";
 import type { Path } from "react-hook-form";
 import { EventIconUpload } from "@/components/event-icon-upload";
+import { type EventPartnerDraft, EventPartnersEditor } from "@/components/event-partners-editor";
 import { FlyerUpload } from "@/components/flyer-upload";
 import {
   FormControl,
@@ -13,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import {
+  EVENT_THEME_DEFAULT_ACCENT_COLOR,
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
 } from "@/lib/event-theme";
@@ -24,6 +26,10 @@ export interface EventLookSectionProps<FormValues extends BaseEventFormValues> {
   onEventIconChange: (value: string | null) => void;
   flyerStorageId: string | null;
   onFlyerChange: (value: string | null) => void;
+  eventPartners?: EventPartnerDraft[];
+  onEventPartnersChange?: (entries: EventPartnerDraft[]) => void;
+  sponsors?: EventPartnerDraft[];
+  onSponsorsChange?: (entries: EventPartnerDraft[]) => void;
 }
 
 export function EventLookSection<FormValues extends BaseEventFormValues>({
@@ -32,6 +38,10 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
   onEventIconChange,
   flyerStorageId,
   onFlyerChange,
+  eventPartners = [],
+  onEventPartnersChange,
+  sponsors = [],
+  onSponsorsChange,
 }: EventLookSectionProps<FormValues>) {
   return (
     <SectionCard
@@ -39,7 +49,7 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
       description="Theme colors, event icon, flyer, and guest QR appearance."
       contentClassName="space-y-4"
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <FormField
           control={form.control}
           name={"themeBackgroundColor" as Path<FormValues>}
@@ -92,9 +102,34 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
         />
         <FormField
           control={form.control}
+          name={"themeAccentColor" as Path<FormValues>}
+          render={({ field }) => {
+            const { value, onChange } = field;
+            return (
+              <FormItem>
+                <FormLabel>Accent Color</FormLabel>
+                <FormDescription>Used for actions, links, and focus highlights.</FormDescription>
+                <FormControl>
+                  <Input
+                    type="color"
+                    value={
+                      (typeof value === "string" ? value : undefined) ??
+                      EVENT_THEME_DEFAULT_ACCENT_COLOR
+                    }
+                    onChange={(event) => onChange(event.target.value)}
+                    className="h-10 w-full cursor-pointer p-1"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            );
+          }}
+        />
+        <FormField
+          control={form.control}
           name={"customIconStorageId" as Path<FormValues>}
           render={() => (
-            <FormItem className="md:col-span-2">
+            <FormItem className="md:col-span-3">
               <FormLabel>
                 Event Icon <span className="text-sm text-muted-foreground">(optional)</span>
               </FormLabel>
@@ -122,6 +157,32 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
           </FormItem>
         )}
       />
+      {onEventPartnersChange ? (
+        <div className="space-y-3 border-t border-[var(--border-subtle)] pt-4">
+          <div>
+            <div className="text-sm font-medium">Event partners</div>
+            <p className="text-sm text-muted-foreground">
+              Wordmarks shown in tenant-defined placements on the guest experience.
+            </p>
+          </div>
+          <EventPartnersEditor
+            entries={eventPartners}
+            entryName="partner"
+            onChange={onEventPartnersChange}
+          />
+        </div>
+      ) : null}
+      {onSponsorsChange ? (
+        <div className="space-y-3 border-t border-[var(--border-subtle)] pt-4">
+          <div>
+            <div className="text-sm font-medium">Sponsors</div>
+            <p className="text-sm text-muted-foreground">
+              Ordered sponsor marks displayed with event editorial details.
+            </p>
+          </div>
+          <EventPartnersEditor entries={sponsors} entryName="sponsor" onChange={onSponsorsChange} />
+        </div>
+      ) : null}
       <details className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3.5">
         <summary className="cursor-pointer select-none text-sm font-medium text-[var(--text-primary)]">
           Advanced QR appearance

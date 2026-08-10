@@ -3,7 +3,7 @@ import { SignedIn, SignedOut, SignOutButton, useUser } from "@clerk/nextjs";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { Globe02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Cog, DoorOpen, LogIn, LogOut, Settings, User } from "lucide-react";
+import { Cog, DoorOpen, Home, LogIn, LogOut, Settings, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -83,7 +83,7 @@ export default function HeaderClient({ initialSatelliteOrigin }: HeaderClientPro
           <Button
             variant="ghost"
             size="icon"
-            className="aspect-square animate-in fade-in duration-600 pointer-events-auto text-primary hover:text-primary"
+            className="relative size-[26px] animate-in fade-in duration-600 pointer-events-auto rounded-full bg-[#17E1E5] text-[#0A0A0A] after:absolute after:-inset-[9px] hover:bg-[#17E1E5] hover:text-[#0A0A0A] focus-visible:ring-[#0A0A0A]/40"
             aria-label={`${siteConfiguration.brandName} menu`}
           >
             <HugeiconsIcon
@@ -96,6 +96,13 @@ export default function HeaderClient({ initialSatelliteOrigin }: HeaderClientPro
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem asChild>
+            <Link href="/" className="flex items-center gap-2">
+              <Home size={16} />
+              Home
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <SignedIn>
             {isHost && (
               <DropdownMenuItem asChild>

@@ -22,6 +22,12 @@ import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { DateTimePicker } from "@/components/date-time-picker";
 import { EventActsEditor } from "@/components/event-acts-editor";
 import { EventIconUpload } from "@/components/event-icon-upload";
+import {
+  type EventPartnerDraft,
+  EventPartnersEditor,
+  eventPartnersToDrafts,
+  sanitizeEventPartnerDraftsForSubmit,
+} from "@/components/event-partners-editor";
 import { FlyerUpload, StorageImageUpload } from "@/components/flyer-upload";
 import { ListConfirmationTextsSection } from "@/components/list-confirmation-texts-section";
 import {
@@ -56,12 +62,13 @@ import {
 } from "@/lib/date-utils";
 import { formatActSummary, sanitizeEventActsForSubmit } from "@/lib/event-metadata";
 import {
+  EVENT_THEME_DEFAULT_ACCENT_COLOR,
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
   isValidHexColor,
   normalizeHexColorInput,
 } from "@/lib/event-theme";
-import type { ApplicationError, EventAct, EventFormData } from "@/lib/types";
+import type { ApplicationError, EventAct, EventFormData, EventPartner } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +100,8 @@ type DraftEventPatchPayload = {
   secondaryTitle?: string;
   description: string;
   acts: EventAct[];
+  eventPartners: EventPartner[];
+  sponsors: EventPartner[];
   hosts: string[];
   productionCompany?: string;
   location: string;
@@ -107,6 +116,7 @@ type DraftEventPatchPayload = {
   maxAttendees?: number;
   themeBackgroundColor?: string;
   themeTextColor?: string;
+  themeAccentColor?: string;
   qrCodeColor?: string;
   customFields: Array<{
     key: string;
@@ -147,6 +157,7 @@ type DraftPayload = {
 type EventWizardWorkspaceDefaults = {
   themeBackgroundColor?: string | null;
   themeTextColor?: string | null;
+  themeAccentColor?: string | null;
   listKeys?: readonly string[] | null;
   referralSharingEnabled?: boolean | null;
 };
@@ -159,6 +170,7 @@ type EventWizardWorkspace = {
 type EventWizardDefaults = {
   themeBackgroundColor: string;
   themeTextColor: string;
+  themeAccentColor: string;
   listKeys: readonly string[];
   referralSharingEnabled: boolean;
 };
@@ -184,7 +196,7 @@ const STEPS: WizardStep[] = [
     number: "03",
     title: "Branding",
     description: "Choose the event colors and optional icon used across the guest experience.",
-    validate: ["themeBackgroundColor", "themeTextColor"],
+    validate: ["themeBackgroundColor", "themeTextColor", "themeAccentColor"],
   },
   {
     number: "04",
@@ -249,6 +261,9 @@ function validateColors(values: EventFormData): string[] {
   if (values.themeTextColor && !isValidHexColor(values.themeTextColor)) {
     errors.push("Text color must be a valid hex color (e.g. #EF4444)");
   }
+  if (values.themeAccentColor && !isValidHexColor(values.themeAccentColor)) {
+    errors.push("Accent color must be a valid hex color (e.g. #FC7243)");
+  }
   return errors;
 }
 
@@ -273,6 +288,8 @@ function resolveEventWizardDefaults({
     normalizeHexColorInput(eventDefaults?.themeBackgroundColor) ?? resolvedPreset.effective.bg;
   const themeTextColor =
     normalizeHexColorInput(eventDefaults?.themeTextColor) ?? resolvedPreset.effective.fg;
+  const themeAccentColor =
+    normalizeHexColorInput(eventDefaults?.themeAccentColor) ?? themeTextColor;
   const listKeys =
     eventDefaults?.listKeys && eventDefaults.listKeys.length > 0
       ? eventDefaults.listKeys
@@ -281,6 +298,7 @@ function resolveEventWizardDefaults({
   return {
     themeBackgroundColor,
     themeTextColor,
+    themeAccentColor,
     listKeys,
     referralSharingEnabled: eventDefaults?.referralSharingEnabled ?? false,
   };
@@ -352,6 +370,7 @@ function createDefaultEventFormValues(defaults: EventWizardDefaults): EventFormD
     status: "active",
     themeBackgroundColor: defaults.themeBackgroundColor,
     themeTextColor: defaults.themeTextColor,
+    themeAccentColor: defaults.themeAccentColor,
     qrCodeColor: "#000000",
     attendanceQuestionEnabled: false,
     referralSharingEnabled: defaults.referralSharingEnabled,
@@ -414,6 +433,8 @@ export default function EventCreateWizard() {
   );
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>([]);
   const [acts, setActs] = React.useState<EventAct[]>([]);
+  const [eventPartners, setEventPartners] = React.useState<EventPartnerDraft[]>([]);
+  const [sponsors, setSponsors] = React.useState<EventPartnerDraft[]>([]);
   const [usePrimaryFieldDefaults, setUsePrimaryFieldDefaults] = React.useState(true);
   const [primaryFieldConfigDraft, setPrimaryFieldConfigDraft] =
     React.useState<PrimaryFieldConfigDraft>(EMPTY_PRIMARY_FIELD_CONFIG);
@@ -529,6 +550,9 @@ export default function EventCreateWizard() {
     if (!form.getFieldState("themeTextColor").isDirty) {
       form.setValue("themeTextColor", eventWizardDefaults.themeTextColor);
     }
+    if (!form.getFieldState("themeAccentColor").isDirty) {
+      form.setValue("themeAccentColor", eventWizardDefaults.themeAccentColor);
+    }
     if (!form.getFieldState("referralSharingEnabled").isDirty) {
       form.setValue("referralSharingEnabled", eventWizardDefaults.referralSharingEnabled);
     }
@@ -590,6 +614,10 @@ export default function EventCreateWizard() {
         eventWizardDefaults.themeBackgroundColor,
       themeTextColor:
         normalizeHexColorInput(draftEvent.themeTextColor) ?? eventWizardDefaults.themeTextColor,
+      themeAccentColor:
+        normalizeHexColorInput(draftEvent.themeAccentColor) ??
+        normalizeHexColorInput(draftEvent.themeTextColor) ??
+        eventWizardDefaults.themeAccentColor,
       qrCodeColor: draftEvent.qrCodeColor ?? "#000000",
       attendanceQuestionEnabled: draftEvent.attendanceQuestionEnabled ?? false,
       referralSharingEnabled:
@@ -599,6 +627,8 @@ export default function EventCreateWizard() {
     });
 
     setActs(draftEvent.acts && draftEvent.acts.length > 0 ? (draftEvent.acts as EventAct[]) : []);
+    setEventPartners(eventPartnersToDrafts(draftEvent.eventPartners));
+    setSponsors(eventPartnersToDrafts(draftEvent.sponsors));
     setCustomFields(
       draftEvent.customFields && draftEvent.customFields.length > 0
         ? (draftEvent.customFields as CustomFieldDef[])
@@ -741,6 +771,7 @@ export default function EventCreateWizard() {
       eventWizardDefaults.themeBackgroundColor;
     const themeText =
       normalizeHexColorInput(values.themeTextColor) ?? eventWizardDefaults.themeTextColor;
+    const themeAccent = normalizeHexColorInput(values.themeAccentColor) ?? themeText;
     const sanitizedRsvpConfirmationMessage = sanitizeOptionalRsvpConfirmationMessage(
       values.rsvpConfirmationMessage,
     );
@@ -751,6 +782,8 @@ export default function EventCreateWizard() {
       secondaryTitle: trimmedSecondaryTitle || undefined,
       description: values.description?.trim() ?? "",
       acts: sanitizeEventActsForSubmit(acts) ?? [],
+      eventPartners: sanitizeEventPartnerDraftsForSubmit(eventPartners),
+      sponsors: sanitizeEventPartnerDraftsForSubmit(sponsors),
       hosts: hostNames,
       productionCompany: trimmedProductionCompany || undefined,
       location: values.location?.trim() ?? "",
@@ -769,6 +802,7 @@ export default function EventCreateWizard() {
       maxAttendees: values.maxAttendees,
       themeBackgroundColor: themeBackground,
       themeTextColor: themeText,
+      themeAccentColor: themeAccent,
       qrCodeColor: normalizeHexColorInput(values.qrCodeColor) || undefined,
       customFields: customFields.map((field) => ({
         key: field.key.trim(),
@@ -952,11 +986,14 @@ export default function EventCreateWizard() {
         eventWizardDefaults.themeBackgroundColor;
       const themeText =
         normalizeHexColorInput(values.themeTextColor) ?? eventWizardDefaults.themeTextColor;
+      const themeAccent = normalizeHexColorInput(values.themeAccentColor) ?? themeText;
       await create({
         name: values.name.trim(),
         secondaryTitle: trimmedSecondaryTitle || undefined,
         description: values.description?.trim() || undefined,
         acts: sanitizeEventActsForSubmit(acts),
+        eventPartners: sanitizeEventPartnerDraftsForSubmit(eventPartners),
+        sponsors: sanitizeEventPartnerDraftsForSubmit(sponsors),
         hosts: hostNames,
         productionCompany: trimmedProductionCompany || undefined,
         location: values.location.trim(),
@@ -998,6 +1035,7 @@ export default function EventCreateWizard() {
           : draftToPrimaryFieldConfig(primaryFieldConfigDraft),
         themeBackgroundColor: themeBackground,
         themeTextColor: themeText,
+        themeAccentColor: themeAccent,
         qrCodeColor: normalizeHexColorInput(values.qrCodeColor) || undefined,
         ...workspaceScope.queryArgs,
       });
@@ -1034,6 +1072,10 @@ export default function EventCreateWizard() {
               shouldDirty: true,
             })
           }
+          eventPartners={eventPartners}
+          onEventPartnersChange={setEventPartners}
+          sponsors={sponsors}
+          onSponsorsChange={setSponsors}
         />
       )}
       {stepIndex === 3 && (
@@ -1118,6 +1160,8 @@ export default function EventCreateWizard() {
         <StepReview
           values={form.getValues()}
           acts={acts}
+          eventPartners={eventPartners}
+          sponsors={sponsors}
           lists={lists}
           customFields={customFields}
           onJump={goTo}
@@ -1454,17 +1498,26 @@ function StepLook({
   form,
   eventIconStorageId,
   onEventIconChange,
+  eventPartners,
+  onEventPartnersChange,
+  sponsors,
+  onSponsorsChange,
 }: StepFormProps & {
   eventIconStorageId: string | null;
   onEventIconChange: (value: string | null) => void;
+  eventPartners: EventPartnerDraft[];
+  onEventPartnersChange: (entries: EventPartnerDraft[]) => void;
+  sponsors: EventPartnerDraft[];
+  onSponsorsChange: (entries: EventPartnerDraft[]) => void;
 }) {
   const background = form.watch("themeBackgroundColor") ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
   const text = form.watch("themeTextColor") ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
+  const accent = form.watch("themeAccentColor") ?? text;
   const eventName = form.watch("name") || "Your event";
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         <FormField
           control={form.control}
           name="themeBackgroundColor"
@@ -1499,6 +1552,22 @@ function StepLook({
             </FormItem>
           )}
         />
+        <FormField
+          control={form.control}
+          name="themeAccentColor"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Accent color</FormLabel>
+              <FormControl>
+                <ColorRow
+                  value={(field.value as string | undefined) ?? EVENT_THEME_DEFAULT_ACCENT_COLOR}
+                  onChange={field.onChange}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
       </div>
 
       <div
@@ -1508,7 +1577,10 @@ function StepLook({
         <div className="text-xs font-medium opacity-60">Live preview</div>
         <div className="mt-3 text-2xl font-semibold tracking-tight">{eventName}</div>
         <div className="mt-2 text-sm opacity-70">The next night · doors at nine</div>
-        <div className="mt-6 inline-flex items-center gap-2 border-b" style={{ borderColor: text }}>
+        <div
+          className="mt-6 inline-flex items-center gap-2 border-b font-medium"
+          style={{ borderColor: accent, color: accent }}
+        >
           RSVP →
         </div>
       </div>
@@ -1521,6 +1593,30 @@ function StepLook({
           Overrides the favicon and the navigation icon wherever custom theming is applied.
         </p>
         <EventIconUpload value={eventIconStorageId} onChange={onEventIconChange} />
+      </div>
+
+      <div className="space-y-3 border-t border-[var(--border-subtle)] pt-5">
+        <div>
+          <div className="text-sm font-medium text-[var(--text-primary)]">Event partners</div>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Add wordmarks for collaborators shown in tenant-defined guest-page placements.
+          </p>
+        </div>
+        <EventPartnersEditor
+          entries={eventPartners}
+          entryName="partner"
+          onChange={onEventPartnersChange}
+        />
+      </div>
+
+      <div className="space-y-3 border-t border-[var(--border-subtle)] pt-5">
+        <div>
+          <div className="text-sm font-medium text-[var(--text-primary)]">Sponsors</div>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Add ordered sponsor logos and optional destinations.
+          </p>
+        </div>
+        <EventPartnersEditor entries={sponsors} entryName="sponsor" onChange={onSponsorsChange} />
       </div>
     </div>
   );
@@ -1949,12 +2045,16 @@ function StepCustomFields({
 function StepReview({
   values,
   acts,
+  eventPartners,
+  sponsors,
   lists,
   customFields,
   onJump,
 }: {
   values: EventFormData;
   acts: EventAct[];
+  eventPartners: EventPartnerDraft[];
+  sponsors: EventPartnerDraft[];
   lists: ListRow[];
   customFields: CustomFieldDef[];
   onJump: (index: number) => void;
@@ -1999,11 +2099,25 @@ function StepReview({
             className="inline-block h-4 w-4 rounded-sm border border-border/60"
             style={{ background: values.themeTextColor }}
           />
+          <span
+            className="inline-block h-4 w-4 rounded-sm border border-border/60"
+            style={{ background: values.themeAccentColor }}
+          />
           <span>
-            {values.themeBackgroundColor} / {values.themeTextColor}
+            {values.themeBackgroundColor} / {values.themeTextColor} / {values.themeAccentColor}
           </span>
         </span>
       ),
+    },
+    {
+      stepIndex: 2,
+      key: "Event partners",
+      value: eventPartners.filter((partner) => partner.label.trim()).length || "—",
+    },
+    {
+      stepIndex: 2,
+      key: "Sponsors",
+      value: sponsors.filter((sponsor) => sponsor.label.trim()).length || "—",
     },
     {
       stepIndex: 4,

@@ -323,7 +323,7 @@ export const getSmsConsentForApiClient = internalQuery({
       return { eventFound: false as const };
     }
 
-    const smsProgram = await buildApiSmsProgram(ctx, workspace);
+    const smsProgram = buildApiSmsProgram(workspace);
     if (!args.phone?.trim()) {
       return {
         eventFound: true as const,

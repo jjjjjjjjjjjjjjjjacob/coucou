@@ -31,7 +31,7 @@ export function shouldUseClerkSatelliteModeForHost(
   }
 }
 
-const danzaOrganicaIconVersion = "danza-organica-v1";
+const danzaOrganicaIconVersion = "danza-organica-v2";
 
 function buildVersionedDanzaOrganicaIconPath(path: string) {
   return `${path}?v=${danzaOrganicaIconVersion}`;

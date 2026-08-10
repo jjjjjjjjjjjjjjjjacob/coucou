@@ -1,13 +1,10 @@
 import { LegalPage, LegalSection } from "@coucou/ui/tenant-template";
 import { siteConfiguration } from "@/lib/site";
+import { coucouSmsProgram } from "@/lib/sms-program";
 
 export default function PrivacyPolicy() {
   const brandName = siteConfiguration.brandName;
-  const lastUpdated = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const lastUpdated = coucouSmsProgram.lastUpdated;
 
   return (
     <LegalPage
@@ -18,7 +15,7 @@ export default function PrivacyPolicy() {
       intro={
         <>
           Your privacy is important to us. This policy explains how we collect, use, and protect
-          your personal information.
+          your personal information. Coucou is a service operated by Soluo LLC.
         </>
       }
     >
@@ -76,10 +73,10 @@ export default function PrivacyPolicy() {
             <strong>Service Delivery:</strong> Process RSVPs, manage events, send notifications.
           </li>
           <li>
-            <strong>Communication:</strong> Send event updates, confirmations, occasional marketing
-            offers, and important notices via SMS/email from the specific event host you opted in
-            to. Messages are sent by Coucou on behalf of the event host using {brandName} as a
-            messaging platform service provider when you provide explicit consent.
+            <strong>Communication:</strong> Send account notifications, RSVP and guest-list updates,
+            tickets or QR codes, event updates, and replies about events or reservations when you
+            provide explicit consent. Coucou is the sender and messaging-program operator. The event
+            host shown on the RSVP page supplies the event context.
           </li>
           <li>
             <strong>Platform Improvement:</strong> Analyze usage patterns to enhance user
@@ -95,27 +92,33 @@ export default function PrivacyPolicy() {
         </ul>
       </LegalSection>
 
-      <LegalSection title="3. SMS and Communication Privacy">
-        <ul className="ml-5 list-disc space-y-2">
-          <li>Phone numbers are stored for account, RSVP, and SMS delivery features.</li>
-          <li>
-            SMS messages are sent by Coucou on behalf of the event host using {brandName} as a
-            messaging platform service provider, and are delivered through Twilio, a SOC 2 compliant
-            SMS infrastructure provider.
-          </li>
-          <li>
-            We use obfuscated phone numbers for display purposes where full numbers are not required
-            (e.g., ***-***-1234).
-          </li>
-          <li>Message content is not stored beyond delivery confirmation.</li>
-          <li>Opt-out requests are processed immediately and permanently honored.</li>
-          <li>
-            SMS consent is logged with the timestamp and originating IP address for compliance
+      <LegalSection title="3. Mobile Messaging Privacy">
+        <p>
+          When you use Coucou&apos;s SMS features, we may collect your mobile number, messaging
+          consent status, consent timestamp, IP address, associated account and RSVP information,
+          message content, delivery information, and opt-out or help requests. We use this
+          information to operate the Coucou messaging program, deliver requested event
+          communications, respond to questions, maintain security, document consent, and comply with
+          legal obligations.
+        </p>
+        <p>
+          <strong>
+            We do not share, sell, or provide your mobile phone number, mobile opt-in information,
+            or messaging consent data to third parties or affiliates for marketing or promotional
             purposes.
-          </li>
-          <li>SMS consent can be withdrawn at any time by texting STOP.</li>
-          <li>You can manage SMS preferences from your RSVP status page or profile at any time.</li>
-        </ul>
+          </strong>
+        </p>
+        <p>
+          Event organizers may access guest and RSVP information only as needed to operate the event
+          and respond to guest requests. Coucou does not permit organizers or service providers to
+          use Coucou mobile opt-in or consent data for their own marketing or promotional purposes.
+          Coucou does not use purchased, rented, or scraped contact lists.
+        </p>
+        <p>
+          If you opt in, message frequency varies and message and data rates may apply. You may
+          withdraw consent by replying STOP. Reply HELP for assistance. You can also manage SMS
+          preferences from your RSVP status page or profile.
+        </p>
       </LegalSection>
 
       <LegalSection title="4. Data Storage and Security">
@@ -153,8 +156,8 @@ export default function PrivacyPolicy() {
           </li>
           <li>
             <strong>Twilio (SMS Infrastructure):</strong> Provides SMS delivery infrastructure.
-            Messages are sent by Coucou on behalf of the event host using {brandName} as the
-            messaging platform, with Twilio handling the technical delivery.
+            Coucou is the sender and messaging-program operator, and Twilio handles
+            telecommunications delivery as a service provider.
           </li>
           <li>
             <strong>Convex (Database):</strong> Secure, real-time database for application data.
@@ -199,9 +202,9 @@ export default function PrivacyPolicy() {
             <strong>Event Data:</strong> Maintained for historical records and analytics.
           </li>
           <li>
-            <strong>SMS Data:</strong> Phone numbers are deleted when consent is withdrawn, while
-            minimal consent records (timestamp, IP address, and the event host associated with
-            consent) are retained for legal compliance.
+            <strong>SMS Data:</strong> Consent, opt-out, delivery, and messaging records are
+            retained for as long as reasonably necessary to operate the service, honor preferences,
+            resolve disputes, maintain security, and satisfy legal obligations.
           </li>
           <li>
             <strong>Operational Diagnostics:</strong> Retained only as long as needed to investigate
@@ -243,7 +246,11 @@ export default function PrivacyPolicy() {
 
       <LegalSection title="11. Contact">
         <p>
-          For questions about this Privacy Policy or to exercise your rights, visit{" "}
+          For questions about this Privacy Policy or to exercise your rights, email{" "}
+          <a href={`mailto:${coucouSmsProgram.supportEmail}`} className="underline">
+            {coucouSmsProgram.supportEmail}
+          </a>{" "}
+          or visit{" "}
           <a href={siteConfiguration.domain} className="underline" target="_blank" rel="noreferrer">
             {siteConfiguration.domain.replace(/^https?:\/\//, "")}
           </a>{" "}

@@ -98,9 +98,10 @@ export default function SmsProgramPage() {
           reservations. This consent does not cover promotional or marketing messages.
         </p>
         <p>
-          Coucou provides Club Chlorine&apos;s event-management and messaging technology. Twilio
-          provides telecommunications delivery. Club Chlorine remains the sender of the messaging
-          program.
+          Club Chlorine is the independent organizer and sender of the messaging program. Coucou, a
+          service operated by Soluo LLC, provides the event-management and messaging technology.
+          Twilio provides telecommunications delivery. Soluo LLC does not own or operate Club
+          Chlorine or its events.
         </p>
       </LegalSection>
 

@@ -1,13 +1,10 @@
 import { LegalPage, LegalSection } from "@coucou/ui/tenant-template";
 import { siteConfiguration } from "@/lib/site";
+import { coucouSmsProgram } from "@/lib/sms-program";
 
 export default function TermsOfService() {
   const brandName = siteConfiguration.brandName;
-  const lastUpdated = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const lastUpdated = coucouSmsProgram.lastUpdated;
 
   return (
     <LegalPage
@@ -17,8 +14,8 @@ export default function TermsOfService() {
       lastUpdated={lastUpdated}
       intro={
         <>
-          These terms govern your use of {siteConfiguration.brandName}, an event management platform
-          for exclusive gatherings and experiences.
+          These terms govern your use of {siteConfiguration.brandName}, a Soluo LLC event management
+          and messaging service for gatherings and experiences.
         </>
       }
     >
@@ -30,40 +27,36 @@ export default function TermsOfService() {
           the Service.
         </p>
         <p>
-          SMS notifications are optional. When you affirmatively select the SMS opt-in for a
-          specific event, you consent to receive messages from that event&apos;s host (for example,
-          Party Nights Presents). Messages are sent by Coucou on behalf of the event host using{" "}
-          {brandName} as a messaging platform service provider. You may withhold or withdraw that
-          consent at any time.
+          SMS notifications are optional. When you affirmatively select the separate SMS consent
+          checkbox for an event, you consent to receive recurring messages from Coucou about that
+          event and its organizer. Coucou is the sender and messaging-program operator. You may
+          withhold or withdraw SMS consent at any time without affecting your ability to create an
+          account, RSVP, purchase, or attend.
         </p>
       </LegalSection>
 
       <LegalSection title="2. Roles and Responsibilities">
         <p>
-          Coucou operates {brandName} as an Independent Software Vendor (&ldquo;ISV&rdquo;) that
-          supplies communication tooling, event management workflows, and SMS delivery
-          infrastructure. Coucou does not author or control the messaging content that event
-          attendees receive.
+          Soluo LLC operates Coucou and the Coucou messaging program. Coucou provides event
+          management workflows, consent-recording tools, and operational messaging services.
         </p>
         <p>
-          The &ldquo;End Business&rdquo; for each event is the specific host or organizer identified
-          on the RSVP form and event materials. This host brand creates the message content, manages
-          opt-ins, and is the organization you are consenting to hear from when you enable SMS
-          updates.
+          The host or organizer identified on an RSVP page supplies the event context and may use
+          Coucou&apos;s tools to respond to guest questions. The organizer does not become a
+          separate SMS program merely because its event name appears in a Coucou message.
         </p>
         <ul className="ml-5 list-disc space-y-2">
           <li>
-            <strong>End Business obligations:</strong> Provide accurate branding, publish clear
-            opt-in disclosures, and honor unsubscribe requests immediately.
+            <strong>Coucou obligations:</strong> Publish clear opt-in disclosures, record consent,
+            operate the messaging program, and honor unsubscribe requests.
           </li>
           <li>
-            <strong>Coucou (ISV) obligations:</strong> Capture SMS consent records, transmit opt-out
-            commands to the End Business, and deliver messages securely via Twilio while enforcing
-            compliance safeguards.
+            <strong>Organizer obligations:</strong> Provide accurate event information and use
+            Coucou messaging only for the operational purposes covered by the guest&apos;s consent.
           </li>
           <li>
-            Every consent checkbox, dialog, and confirmation screen prominently displays the End
-            Business name so you always know which organization will send SMS messages.
+            <strong>Twilio obligations:</strong> Provide telecommunications delivery infrastructure,
+            subject to carrier availability.
           </li>
         </ul>
       </LegalSection>
@@ -85,38 +78,39 @@ export default function TermsOfService() {
         </ul>
       </LegalSection>
 
-      <LegalSection title="5. SMS and Text Messaging Services">
-        <ul className="ml-5 list-disc space-y-2">
-          <li>
-            SMS consent is captured through an unchecked opt-in checkbox on every RSVP submission,
-            and the End Business brand name appears directly alongside the checkbox.
-          </li>
-          <li>
-            By opting in, you agree to receive RSVP status updates, event reminders, account
-            notifications, and occasional marketing messages from the event host named on the RSVP
-            form (for example, Party Nights Presents). That event host controls message content and
-            frequency.
-          </li>
-          <li>Message frequency varies based on event activity and marketing campaigns.</li>
-          <li>Message and data rates may apply from your wireless carrier.</li>
-          <li>
-            SMS messages are transmitted by Coucou on behalf of the event host using {brandName} as
-            a messaging platform service provider.
-          </li>
-          <li>Reply STOP to cancel SMS messages or HELP for assistance at any time.</li>
-          <li>Consent is not a condition of purchase or admission to any event.</li>
-          <li>
-            We use Twilio as our SMS infrastructure provider to deliver messages securely on behalf
-            of the End Business, facilitated through the {brandName} platform.
-          </li>
-          <li>
-            We do not sell or rent your phone number and only share it with the hosting business as
-            required to deliver SMS services.
-          </li>
-          <li>
-            You can manage your SMS preferences from your RSVP status page or profile at any time.
-          </li>
-        </ul>
+      <LegalSection title="5. Coucou SMS Program">
+        <p>
+          Coucou offers an optional recurring text messaging program for account notifications, RSVP
+          and guest-list status, tickets or QR codes, event schedule or venue updates, and replies
+          to guest-initiated questions about events or reservations.
+        </p>
+        <p>
+          By affirmatively selecting a separate SMS consent checkbox, you agree to receive these
+          messages from Coucou. The checkbox is unchecked by default. The event organizer shown on
+          the page supplies the event context; Coucou remains the sender and program operator.
+        </p>
+        <p>
+          Message frequency varies based on your account, RSVPs, event activity, and conversations.
+          Message and data rates may apply. Consent is not a condition of account creation,
+          purchase, RSVP, admission, or use of the Coucou service. This consent does not cover
+          marketing or promotional offers.
+        </p>
+        <p>
+          <strong>Reply STOP to opt out at any time. Reply HELP for assistance.</strong> After
+          opting out, you may reply START to resubscribe. You can also manage SMS preferences from
+          your RSVP status page or profile.
+        </p>
+        <p>
+          Wireless carriers are not liable for delayed or undelivered messages. SMS delivery may not
+          be available through every carrier or in every location.
+        </p>
+        <p>
+          Coucou handles mobile information according to its{" "}
+          <a href="/privacy" className="underline">
+            Privacy Policy
+          </a>
+          .
+        </p>
       </LegalSection>
 
       <LegalSection title="6. Event Access and Passwords">
@@ -152,7 +146,7 @@ export default function TermsOfService() {
 
       <LegalSection title="9. Intellectual Property">
         <p>
-          The Service and its original content, features, and functionality are owned by {brandName}{" "}
+          The Service and its original content, features, and functionality are owned by Soluo LLC
           and are protected by international copyright, trademark, patent, trade secret, and other
           intellectual property laws.
         </p>
@@ -160,10 +154,10 @@ export default function TermsOfService() {
 
       <LegalSection title="10. Limitation of Liability">
         <p>
-          In no event shall {brandName}, its directors, employees, partners, agents, suppliers, or
-          affiliates be liable for any indirect, incidental, special, consequential, or punitive
-          damages, including without limitation, loss of profits, data, use, goodwill, or other
-          intangible losses.
+          In no event shall Soluo LLC, Coucou, or their directors, employees, partners, agents,
+          suppliers, or affiliates be liable for any indirect, incidental, special, consequential,
+          or punitive damages, including without limitation, loss of profits, data, use, goodwill,
+          or other intangible losses.
         </p>
       </LegalSection>
 
@@ -184,7 +178,11 @@ export default function TermsOfService() {
 
       <LegalSection title="13. Contact">
         <p>
-          If you have questions about these Terms, contact us through our platform or visit{" "}
+          If you have questions about these Terms, email{" "}
+          <a href={`mailto:${coucouSmsProgram.supportEmail}`} className="underline">
+            {coucouSmsProgram.supportEmail}
+          </a>{" "}
+          or visit{" "}
           <a href={siteConfiguration.domain} className="underline" target="_blank" rel="noreferrer">
             {siteConfiguration.domain.replace(/^https?:\/\//, "")}
           </a>

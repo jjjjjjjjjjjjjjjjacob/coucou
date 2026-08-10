@@ -17,6 +17,7 @@
     "./shared/approval-messages": "./src/shared/approval-messages.ts",
     "./shared/event-availability": "./src/shared/event-availability.ts",
     "./shared/event-branding": "./src/shared/event-branding.ts",
+    "./shared/event-partners": "./src/shared/event-partners.ts",
     "./shared/event-routes": "./src/shared/event-routes.ts",
     "./shared/message-template": "./src/shared/message-template.ts",
     "./shared/primary-fields": "./src/shared/primary-fields.ts",

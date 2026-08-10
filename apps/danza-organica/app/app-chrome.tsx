@@ -14,8 +14,14 @@ import HeaderClient from "./header-client";
  * the 650px column so pages stay aligned as users move through the flow.
  */
 export function resolveContentMaxWidthPx(pathname: string | null | undefined): number | undefined {
-  const isWideContentRoute = pathname === "/account" || pathname === "/profile";
+  const isWideContentRoute =
+    pathname === "/account" || pathname === "/profile" || isBauhausEventRoute(pathname);
   return isWideContentRoute ? undefined : 650;
+}
+
+export function isBauhausEventRoute(pathname: string | null | undefined): boolean {
+  if (pathname === "/" || pathname === "/events") return true;
+  return /^\/events\/[^/]+$/.test(pathname ?? "");
 }
 
 /**
@@ -36,6 +42,7 @@ export function AppChrome({
 }) {
   const pathname = usePathname();
   const contentMaxWidthPx = resolveContentMaxWidthPx(pathname);
+  const usesBauhausEventLayout = isBauhausEventRoute(pathname);
 
   return (
     <TenantTemplateProvider
@@ -50,7 +57,7 @@ export function AppChrome({
             width: "100%",
             maxWidth: contentMaxWidthPx,
             margin: "0 auto",
-            padding: "96px 24px",
+            padding: usesBauhausEventLayout ? 0 : "96px 24px",
             boxSizing: "border-box",
           }}
         >

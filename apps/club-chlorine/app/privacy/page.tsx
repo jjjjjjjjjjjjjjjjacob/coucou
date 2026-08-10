@@ -75,8 +75,9 @@ export default function PrivacyPolicy() {
           <li>
             <strong>Communication:</strong> Send account notifications, RSVP and guest-list updates,
             tickets or QR codes, event updates, and replies about Club Chlorine events or
-            reservations when you provide explicit consent. Club Chlorine is the SMS sender, and
-            Coucou provides its event-management and messaging technology.
+            reservations when you provide explicit consent. Club Chlorine is the organizer and SMS
+            sender. Coucou, a service operated by Soluo LLC, provides its event-management and
+            messaging technology.
           </li>
           <li>
             <strong>Platform Improvement:</strong> Analyze usage patterns to enhance user
@@ -108,9 +109,10 @@ export default function PrivacyPolicy() {
           generation.
         </p>
         <p>
-          Coucou and Twilio process mobile information only as service providers necessary to
-          operate and deliver the Club Chlorine messaging program. They may not use Club Chlorine
-          SMS consent data for their own marketing purposes.
+          Soluo LLC, through Coucou, and Twilio process mobile information only as service providers
+          necessary to operate and deliver the Club Chlorine messaging program. Soluo LLC does not
+          own or operate Club Chlorine or its events. These service providers may not use Club
+          Chlorine SMS consent data for their own marketing purposes.
         </p>
         <p>
           If you opt in, message frequency varies and message and data rates may apply. You may
@@ -159,8 +161,8 @@ export default function PrivacyPolicy() {
           </li>
           <li>
             <strong>Twilio (SMS Infrastructure):</strong> Provides SMS delivery infrastructure. Club
-            Chlorine is the sender, Coucou provides the messaging technology, and Twilio handles
-            telecommunications delivery as a service provider.
+            Chlorine is the sender, Coucou is the messaging technology operated by Soluo LLC, and
+            Twilio handles telecommunications delivery as a service provider.
           </li>
           <li>
             <strong>Convex (Database):</strong> Secure, real-time database for application data.

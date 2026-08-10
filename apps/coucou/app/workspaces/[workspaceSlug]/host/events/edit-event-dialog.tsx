@@ -27,6 +27,11 @@ import { EventDetailsSection } from "@/components/event-form-sections/event-deta
 import { EventGuestPageSection } from "@/components/event-form-sections/event-guest-page-section";
 import { EventLookSection } from "@/components/event-form-sections/event-look-section";
 import { EventScheduleSection } from "@/components/event-form-sections/event-schedule-section";
+import {
+  type EventPartnerDraft,
+  eventPartnersToDrafts,
+  sanitizeEventPartnerDraftsForSubmit,
+} from "@/components/event-partners-editor";
 import { LinearTabs, LinearTabsList, LinearTabsTrigger } from "@/components/linear-tabs";
 import { ListConfirmationTextsSection } from "@/components/list-confirmation-texts-section";
 import {
@@ -67,6 +72,7 @@ import {
 } from "@/lib/date-utils";
 import { sanitizeEventActsForSubmit } from "@/lib/event-metadata";
 import {
+  EVENT_THEME_DEFAULT_ACCENT_COLOR,
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
   normalizeHexColorInput,
@@ -77,6 +83,7 @@ import type {
   EditEventFormData,
   Event,
   EventAct,
+  EventPartner,
   ListCredentialEdit,
 } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
@@ -88,6 +95,8 @@ type EventUpdatePatch = {
   secondaryTitle?: string;
   description?: string;
   acts?: EventAct[];
+  eventPartners?: EventPartner[];
+  sponsors?: EventPartner[];
   hosts?: string[];
   productionCompany?: string;
   location?: string;
@@ -107,6 +116,7 @@ type EventUpdatePatch = {
   primaryFieldConfig?: Event["primaryFieldConfig"];
   themeBackgroundColor?: string;
   themeTextColor?: string;
+  themeAccentColor?: string;
   qrCodeColor?: string;
   sendQrOnApproval?: boolean;
   attendanceQuestionEnabled?: boolean;
@@ -175,12 +185,15 @@ const EVENT_EDITOR_PATCH_FIELDS: Record<EventEditorSection, readonly (keyof Even
     "customIconStorageId",
     "themeBackgroundColor",
     "themeTextColor",
+    "themeAccentColor",
     "qrCodeColor",
     "guestPortalImageStorageId",
     "guestPortalLinkLabel",
     "guestPortalLinkUrl",
     "referralSharingEnabled",
     "acts",
+    "eventPartners",
+    "sponsors",
   ],
   confirmations: ["rsvpConfirmationMessageEnabled", "rsvpConfirmationMessage"],
   rsvp: ["sendQrOnApproval", "attendanceQuestionEnabled", "customFields", "primaryFieldConfig"],
@@ -208,6 +221,7 @@ const EVENT_EDITOR_FORM_FIELDS: Record<
     "customIconStorageId",
     "themeBackgroundColor",
     "themeTextColor",
+    "themeAccentColor",
     "qrCodeColor",
     "guestPortalImageStorageId",
     "guestPortalLinkLabel",
@@ -303,6 +317,8 @@ export default function EditEventDialog({
     normalizeHexColorInput(event.themeBackgroundColor) ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
   const normalizedEventTextColor =
     normalizeHexColorInput(event.themeTextColor) ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
+  const normalizedEventAccentColor =
+    normalizeHexColorInput(event.themeAccentColor) ?? normalizedEventTextColor;
   const form = useForm<EditEventFormData>({
     defaultValues: {
       name: event.name || "",
@@ -324,6 +340,7 @@ export default function EditEventDialog({
       status: event.status ?? "inactive",
       themeBackgroundColor: normalizedEventBackgroundColor,
       themeTextColor: normalizedEventTextColor,
+      themeAccentColor: normalizedEventAccentColor,
       qrCodeColor: normalizeHexColorInput(event.qrCodeColor) ?? "#000000",
       sendQrOnApproval:
         typeof event.sendQrOnApproval === "boolean"
@@ -376,6 +393,18 @@ export default function EditEventDialog({
   );
   const [acts, setActs] = React.useState<EventAct[]>(event.acts ?? []);
   const [savedActs, setSavedActs] = React.useState<EventAct[]>(event.acts ?? []);
+  const [eventPartners, setEventPartners] = React.useState<EventPartnerDraft[]>(
+    eventPartnersToDrafts(event.eventPartners),
+  );
+  const [savedEventPartners, setSavedEventPartners] = React.useState<EventPartnerDraft[]>(
+    eventPartnersToDrafts(event.eventPartners),
+  );
+  const [sponsors, setSponsors] = React.useState<EventPartnerDraft[]>(
+    eventPartnersToDrafts(event.sponsors),
+  );
+  const [savedSponsors, setSavedSponsors] = React.useState<EventPartnerDraft[]>(
+    eventPartnersToDrafts(event.sponsors),
+  );
   const workspace = useQuery(
     api.workspaces.getWorkspaceBySlug,
     open && workspaceScope ? { slug: workspaceScope.workspaceSlug } : "skip",
@@ -451,6 +480,9 @@ export default function EditEventDialog({
 
   const listsAreDirty = JSON.stringify(lists) !== JSON.stringify(savedLists);
   const actsAreDirty = JSON.stringify(acts) !== JSON.stringify(savedActs);
+  const eventPartnersAreDirty =
+    JSON.stringify(eventPartners) !== JSON.stringify(savedEventPartners);
+  const sponsorsAreDirty = JSON.stringify(sponsors) !== JSON.stringify(savedSponsors);
   const customFieldsAreDirty = JSON.stringify(customFields) !== JSON.stringify(savedCustomFields);
   const primaryFieldsAreDirty =
     usePrimaryFieldDefaults !== savedUsePrimaryFieldDefaults ||
@@ -462,7 +494,9 @@ export default function EditEventDialog({
         (fieldName) => form.formState.dirtyFields[fieldName] === true,
       );
       if (hasDirtyFormField) return true;
-      if (section === "details") return actsAreDirty;
+      if (section === "details") {
+        return actsAreDirty || eventPartnersAreDirty || sponsorsAreDirty;
+      }
       if (section === "confirmations" || section === "lists") return listsAreDirty;
       if (section === "rsvp") return customFieldsAreDirty || primaryFieldsAreDirty;
       return false;
@@ -470,9 +504,11 @@ export default function EditEventDialog({
     [
       actsAreDirty,
       customFieldsAreDirty,
+      eventPartnersAreDirty,
       form.formState.dirtyFields,
       listsAreDirty,
       primaryFieldsAreDirty,
+      sponsorsAreDirty,
     ],
   );
 
@@ -495,6 +531,8 @@ export default function EditEventDialog({
       setEventIconStorageId(savedEventIconStorageId);
       setGuestPortalImageStorageId(savedGuestPortalImageStorageId);
       setActs(savedActs.map((act) => ({ ...act })));
+      setEventPartners(savedEventPartners.map((partner) => ({ ...partner })));
+      setSponsors(savedSponsors.map((sponsor) => ({ ...sponsor })));
     }
     if (section === "confirmations" || section === "lists") {
       setLists(savedLists.map((list) => ({ ...list })));
@@ -652,6 +690,14 @@ export default function EditEventDialog({
       if (JSON.stringify(sanitizedActs ?? []) !== JSON.stringify(existingSanitizedActs ?? [])) {
         patch.acts = sanitizedActs ?? [];
       }
+      const sanitizedEventPartners = sanitizeEventPartnerDraftsForSubmit(eventPartners);
+      if (JSON.stringify(sanitizedEventPartners) !== JSON.stringify(event.eventPartners ?? [])) {
+        patch.eventPartners = sanitizedEventPartners;
+      }
+      const sanitizedSponsors = sanitizeEventPartnerDraftsForSubmit(sponsors);
+      if (JSON.stringify(sanitizedSponsors) !== JSON.stringify(event.sponsors ?? [])) {
+        patch.sponsors = sanitizedSponsors;
+      }
       const hostArray = values.hosts
         .split(",")
         .map((host) => host.trim())
@@ -703,6 +749,11 @@ export default function EditEventDialog({
         normalizeHexColorInput(values.themeTextColor) ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
       if (nextThemeTextColor !== normalizedEventTextColor) {
         patch.themeTextColor = nextThemeTextColor;
+      }
+      const nextThemeAccentColor =
+        normalizeHexColorInput(values.themeAccentColor) ?? EVENT_THEME_DEFAULT_ACCENT_COLOR;
+      if (nextThemeAccentColor !== normalizedEventAccentColor) {
+        patch.themeAccentColor = nextThemeAccentColor;
       }
       const nextQrCodeColor = normalizeHexColorInput(values.qrCodeColor) ?? "#000000";
       const normalizedEventQrCodeColor = normalizeHexColorInput(event.qrCodeColor) ?? "#000000";
@@ -882,6 +933,8 @@ export default function EditEventDialog({
         setSavedEventIconStorageId(eventIconStorageId);
         setSavedGuestPortalImageStorageId(guestPortalImageStorageId);
         setSavedActs(acts.map((act) => ({ ...act })));
+        setSavedEventPartners(eventPartners.map((partner) => ({ ...partner })));
+        setSavedSponsors(sponsors.map((sponsor) => ({ ...sponsor })));
       }
       if (section === "confirmations" || section === "lists") {
         setSavedLists(lists.map((list) => ({ ...list })));
@@ -1041,6 +1094,10 @@ export default function EditEventDialog({
                     shouldDirty: true,
                   });
                 }}
+                eventPartners={eventPartners}
+                onEventPartnersChange={setEventPartners}
+                sponsors={sponsors}
+                onSponsorsChange={setSponsors}
               />
               <EventGuestPageSection
                 form={form}

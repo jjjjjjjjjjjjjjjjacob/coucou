@@ -8,6 +8,10 @@ import { Share } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  buildEventReferralShareButtonThemeStyle,
+  type EventReferralShareButtonVariant,
+} from "@/lib/event-referral-share-theme";
 import { siteConfiguration } from "@/lib/site";
 
 interface EventReferralShareButtonProps {
@@ -20,7 +24,7 @@ interface EventReferralShareButtonProps {
   };
   className?: string;
   showLabel?: boolean;
-  variant?: "outline" | "prominent";
+  variant?: EventReferralShareButtonVariant;
 }
 
 interface ClipboardCopyResult {
@@ -281,13 +285,14 @@ export function EventReferralShareButton({
   const buttonVariant = isProminent ? "default" : "outline";
   const buttonSize = isProminent ? "lg" : showLabel ? "sm" : "icon";
   const baseClassName = isProminent
-    ? "gap-2 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5"
+    ? "gap-2 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 hover:opacity-90"
     : showLabel
-      ? "rounded-full gap-2"
-      : "size-8 gap-2";
+      ? "rounded-full gap-2 hover:opacity-80"
+      : "size-8 gap-2 hover:opacity-80";
   const iconClassName = "h-4 w-4";
   const prominentLabel = isPreparing ? "Preparing…" : "Share with your friends";
   const subtleLabel = isPreparing ? "Preparing…" : "Share";
+  const buttonThemeStyle = buildEventReferralShareButtonThemeStyle(variant);
 
   return (
     <Button
@@ -295,6 +300,7 @@ export function EventReferralShareButton({
       variant={buttonVariant}
       size={buttonSize}
       className={[baseClassName, className].filter(Boolean).join(" ")}
+      style={buttonThemeStyle}
       onClick={handleShare}
       disabled={isSharing || isPreparing}
       aria-label="Share referral link"

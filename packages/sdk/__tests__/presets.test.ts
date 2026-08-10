@@ -12,7 +12,7 @@ describe("danza preset", () => {
     const danzaPreset = PRESET_DEFINITIONS.danza;
     const dojoPreset = PRESET_DEFINITIONS.dojo;
 
-    expect(danzaPreset.bg).toBe("#2EC4B6");
+    expect(danzaPreset.bg).toBe("#17E1E5");
     expect(danzaPreset.fg).toBe("#0A0A0A");
     expect(danzaPreset.accent).toBe("#0A0A0A");
     expect(danzaPreset.display).toBe(dojoPreset.display);
@@ -26,8 +26,26 @@ describe("danza preset", () => {
     const resolvedPreset = resolvePreset({ siteConfigurationPreset: "danza" });
 
     expect(resolvedPreset.key).toBe("danza");
-    expect(resolvedPreset.styleVars["--tt-bg"]).toBe("#2EC4B6");
+    expect(resolvedPreset.styleVars["--tt-bg"]).toBe("#17E1E5");
     expect(resolvedPreset.styleVars["--tt-fg"]).toBe("#0A0A0A");
+    expect(resolvedPreset.styleVars["--tt-accent"]).toBe("#0A0A0A");
     expect(resolvedPreset.styleVars["--tt-button-radius"]).toBe("8px");
+  });
+
+  it("uses an explicit event accent without changing the event text color", () => {
+    const resolvedPreset = resolvePreset({
+      siteConfigurationPreset: "danza",
+      event: {
+        themeBackgroundColor: "#17e1e5",
+        themeTextColor: "#0a0a0a",
+        themeAccentColor: "#fc7243",
+      },
+    });
+
+    expect(resolvedPreset.styleVars["--tt-bg"]).toBe("#17E1E5");
+    expect(resolvedPreset.styleVars["--tt-fg"]).toBe("#0A0A0A");
+    expect(resolvedPreset.styleVars["--tt-accent"]).toBe("#FC7243");
+    expect(resolvedPreset.styleVars["--primary"]).toBe("#FC7243");
+    expect(resolvedPreset.styleVars["--foreground"]).toBe("#0A0A0A");
   });
 });

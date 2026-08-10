@@ -1,8 +1,13 @@
 import {
   buildEventThemeStyle as baseBuildEventThemeStyle,
   type EventThemeColorSource,
+  getAccessibleTextColor,
+  getEventThemeColors,
+  mixHexColors,
+  normalizeHexColorInput,
 } from "@coucou/sdk/theming/build-event-theme";
 import { PRESET_DEFINITIONS } from "@coucou/sdk/theming/presets";
+import { resolvePreset } from "@coucou/sdk/theming/resolve-preset";
 import type { CSSProperties } from "react";
 
 export {
@@ -38,10 +43,68 @@ function stripNeutralSurfaceOverrides(style: CSSProperties): CSSProperties {
   return Object.fromEntries(filteredEntries) as CSSProperties;
 }
 
+function resolveTenantTemplateThemeStyle(
+  event: EventThemeColorSource | null | undefined,
+  fallbacks?: { backgroundColor?: string; textColor?: string },
+): CSSProperties {
+  const resolvedEvent = fallbacks
+    ? {
+        themeBackgroundColor:
+          normalizeHexColorInput(event?.themeBackgroundColor) ?? fallbacks.backgroundColor,
+        themeTextColor: normalizeHexColorInput(event?.themeTextColor) ?? fallbacks.textColor,
+        themeAccentColor:
+          normalizeHexColorInput(event?.themeAccentColor) ??
+          normalizeHexColorInput(event?.themeTextColor) ??
+          fallbacks.textColor,
+      }
+    : event;
+  const resolvedPresetStyle = resolvePreset({
+    siteConfigurationPreset: danzaPreset.key,
+    event: resolvedEvent,
+  }).styleVars;
+  const tenantTemplateEntries = Object.entries(resolvedPresetStyle).filter(([key]) =>
+    key.startsWith("--tt-"),
+  );
+  return Object.fromEntries(tenantTemplateEntries) as CSSProperties;
+}
+
+/**
+ * Danza uses an event accent as a deliberately scarce editorial color. Keep
+ * shared form, navigation, focus, and feedback tokens tied to the event text
+ * color so setting an orange accent does not recolor the entire application.
+ * Individual Danza compositions opt into `--tt-accent` where it is wanted.
+ */
+function resolveDanzaControlThemeStyle(
+  event: EventThemeColorSource | null | undefined,
+  fallbacks?: { backgroundColor?: string; textColor?: string },
+): CSSProperties {
+  const { backgroundColor, textColor } = getEventThemeColors(event, {
+    backgroundColor: fallbacks?.backgroundColor ?? danzaPreset.bg,
+    textColor: fallbacks?.textColor ?? danzaPreset.fg,
+  });
+  const primaryForegroundColor = getAccessibleTextColor(textColor);
+  const subtleInteractiveSurfaceColor = mixHexColors(backgroundColor, textColor, 0.12);
+
+  return {
+    "--primary": textColor,
+    "--primary-foreground": primaryForegroundColor,
+    "--accent": subtleInteractiveSurfaceColor,
+    "--accent-foreground": textColor,
+    "--destructive": "#B91C1C",
+    "--destructive-foreground": "#FFFFFF",
+    "--ring": textColor,
+    "--sidebar-primary": textColor,
+    "--sidebar-primary-foreground": primaryForegroundColor,
+    "--sidebar-accent": subtleInteractiveSurfaceColor,
+    "--sidebar-accent-foreground": textColor,
+    "--sidebar-ring": textColor,
+  } as CSSProperties;
+}
+
 // Danza Organica ships the danza preset (black on turquoise). Events without
 // explicit theme colors fall back to danza's turquoise/black pair, and event
 // overrides leave the popover/card tokens untouched so dropdowns and cards
-// stay on the white-default brand even when the rest of the page goes dark.
+// stay on the teal-default brand even when the rest of the page goes dark.
 export function buildEventThemeStyle(
   event: EventThemeColorSource | null | undefined,
   fallbacks?: { backgroundColor?: string; textColor?: string },
@@ -50,5 +113,11 @@ export function buildEventThemeStyle(
     backgroundColor: fallbacks?.backgroundColor ?? danzaPreset.bg,
     textColor: fallbacks?.textColor ?? danzaPreset.fg,
   });
-  return stripNeutralSurfaceOverrides(baseStyle);
+  const controlThemeStyle = resolveDanzaControlThemeStyle(event, fallbacks);
+  const tenantTemplateThemeStyle = resolveTenantTemplateThemeStyle(event, fallbacks);
+  return stripNeutralSurfaceOverrides({
+    ...baseStyle,
+    ...controlThemeStyle,
+    ...tenantTemplateThemeStyle,
+  });
 }

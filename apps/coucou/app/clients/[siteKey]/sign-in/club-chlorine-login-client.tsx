@@ -15,6 +15,7 @@ interface ClubChlorineLoginClientProps {
   siteAuthConfiguration: SiteAuthConfiguration;
   eventThemeBackgroundColor?: string | null;
   eventThemeTextColor?: string | null;
+  eventThemeAccentColor?: string | null;
   authBranding?: AuthBrandingOverrides | null;
   allowedRedirectOrigins?: readonly string[];
   initialPhoneNumber?: string | null;
@@ -37,6 +38,7 @@ export function ClubChlorineLoginClient({
   siteAuthConfiguration,
   eventThemeBackgroundColor,
   eventThemeTextColor,
+  eventThemeAccentColor,
   authBranding,
   allowedRedirectOrigins,
   initialPhoneNumber,
@@ -101,6 +103,7 @@ export function ClubChlorineLoginClient({
           siteAuthConfiguration={siteAuthConfiguration}
           eventThemeBackgroundColor={eventThemeBackgroundColor}
           eventThemeTextColor={eventThemeTextColor}
+          eventThemeAccentColor={eventThemeAccentColor}
           authBranding={authBranding}
           allowedRedirectOrigins={allowedRedirectOrigins}
           initialPhoneNumber={initialPhoneNumber}

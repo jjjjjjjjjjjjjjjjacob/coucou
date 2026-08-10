@@ -4,6 +4,7 @@ export * from "./routes";
 export * from "./shared/approval-messages";
 export * from "./shared/event-availability";
 export * from "./shared/event-branding";
+export * from "./shared/event-partners";
 export * from "./shared/event-routes";
 export * from "./shared/message-template";
 export * from "./shared/primary-fields";

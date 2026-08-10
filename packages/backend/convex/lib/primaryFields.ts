@@ -36,6 +36,7 @@ export const primaryFieldConfigValidator = v.object({
 export const workspaceEventDefaultsValidator = v.object({
   themeBackgroundColor: v.optional(v.string()),
   themeTextColor: v.optional(v.string()),
+  themeAccentColor: v.optional(v.string()),
   listKeys: v.optional(v.array(v.string())),
   socialPlatforms: v.optional(v.array(socialPlatformConfigValidator)),
   invitedBy: v.optional(invitedByPrimaryFieldConfigValidator),
@@ -125,6 +126,7 @@ export function sanitizeWorkspaceEventDefaults(
   const invitedBy = sanitizeInvitedByConfig(defaults.invitedBy);
   const themeBackgroundColor = normalizeHexColorInput(defaults.themeBackgroundColor);
   const themeTextColor = normalizeHexColorInput(defaults.themeTextColor);
+  const themeAccentColor = normalizeHexColorInput(defaults.themeAccentColor);
   const referralSharingEnabled =
     typeof defaults.referralSharingEnabled === "boolean"
       ? defaults.referralSharingEnabled
@@ -133,6 +135,7 @@ export function sanitizeWorkspaceEventDefaults(
   if (
     !themeBackgroundColor &&
     !themeTextColor &&
+    !themeAccentColor &&
     listKeys.length === 0 &&
     !socialPlatforms &&
     !invitedBy &&
@@ -144,6 +147,7 @@ export function sanitizeWorkspaceEventDefaults(
   return {
     themeBackgroundColor,
     themeTextColor,
+    themeAccentColor,
     listKeys: listKeys.length > 0 ? listKeys : undefined,
     socialPlatforms,
     invitedBy,

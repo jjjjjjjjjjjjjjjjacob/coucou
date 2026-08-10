@@ -3,7 +3,7 @@
 // A "preset" is the starting visual identity for a tenant site. It supplies
 // typography, button shape, masthead voice, and color defaults. Tenants pick
 // one preset; per-event color overrides
-// (themeBackgroundColor / themeTextColor) layer on top.
+// (themeBackgroundColor / themeTextColor / themeAccentColor) layer on top.
 //
 // Source of truth for the values here is the design handoff bundle's
 // tenant.jsx and auth.jsx. Do not modify these without re-grounding against
@@ -188,8 +188,8 @@ export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
     key: "danza",
     name: "Danza Organica",
     tagline: "",
-    bg: "#2EC4B6",
-    bg2: "#4BD6C9",
+    bg: "#17E1E5",
+    bg2: "#39E6E9",
     fg: "#0A0A0A",
     fgDim: "rgba(10, 10, 10, 0.65)",
     fgMute: "rgba(10, 10, 10, 0.38)",
@@ -204,7 +204,7 @@ export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
     buttonRadius: 8,
     brandMarkStyle: "filled-circle",
     qrFg: "#0A0A0A",
-    qrBg: "#2EC4B6",
+    qrBg: "#17E1E5",
     authCopy: {
       heading: "Sign in to RSVP.",
       sub: "We'll text a code. Use the same number you'll show at the door.",

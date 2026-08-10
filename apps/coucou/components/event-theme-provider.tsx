@@ -7,7 +7,10 @@ import { buildEventThemeStyle } from "@/lib/event-theme";
 import type { Event } from "@/lib/types";
 
 interface EventThemeProviderProps {
-  event: Pick<Event, "themeBackgroundColor" | "themeTextColor"> | null | undefined;
+  event:
+    | Pick<Event, "themeBackgroundColor" | "themeTextColor" | "themeAccentColor">
+    | null
+    | undefined;
   iconUrl?: string | null;
   brandingSourceId?: string | null;
   children: React.ReactNode;
@@ -78,7 +81,7 @@ export function EventThemeProvider({
       delete rootElement.dataset.eventTheme;
       delete bodyElement.dataset.eventTheme;
     };
-  }, [event, event?.themeBackgroundColor, event?.themeTextColor]);
+  }, [event, event?.themeAccentColor, event?.themeBackgroundColor, event?.themeTextColor]);
 
   React.useEffect(() => {
     if (!brandingSourceId) return;

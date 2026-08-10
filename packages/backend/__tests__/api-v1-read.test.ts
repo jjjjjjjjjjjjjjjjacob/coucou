@@ -393,10 +393,11 @@ describe("GET /api/v1/events/{eventRouteId}/rsvps/sms-consent", () => {
       smsConsentTimestamp: null,
       smsProgram: {
         organizerName: "The Night Garden",
-        consentLabel: "I agree to receive recurring SMS messages from The Night Garden.",
+        consentLabel:
+          "I agree to receive recurring SMS messages from Coucou, a Soluo LLC service, about The Night Garden events.",
         disclosure: expect.stringContaining("Consent is not a condition"),
-        termsUrl: "https://events.night-garden.example/terms",
-        privacyUrl: "https://events.night-garden.example/privacy",
+        termsUrl: "https://coucou.events/terms",
+        privacyUrl: "https://coucou.events/privacy",
       },
     });
 

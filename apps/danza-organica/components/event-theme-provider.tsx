@@ -7,7 +7,10 @@ import { buildEventThemeStyle } from "@/lib/event-theme";
 import type { Event } from "@/lib/types";
 
 interface EventThemeProviderProps {
-  event: Pick<Event, "themeBackgroundColor" | "themeTextColor"> | null | undefined;
+  event:
+    | Pick<Event, "themeBackgroundColor" | "themeTextColor" | "themeAccentColor">
+    | null
+    | undefined;
   iconUrl?: string | null;
   brandingSourceId?: string | null;
   children: React.ReactNode;
@@ -25,14 +28,20 @@ export function EventThemeProvider({
 }: EventThemeProviderProps) {
   const themeStyle: CSSProperties = buildEventThemeStyle(event);
   const { applyBranding, clearBranding } = useEventBranding();
+  const themeScopeReference = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
 
     const rootElement = document.documentElement;
     const bodyElement = document.body;
+    const tenantRootElement = themeScopeReference.current?.closest<HTMLElement>(".tt-root") ?? null;
+    const tenantThemeElements = tenantRootElement
+      ? [tenantRootElement, ...tenantRootElement.querySelectorAll<HTMLElement>(".tt-root")]
+      : [];
     const previousRootVariables = new Map<string, string>();
     const previousBodyVariables = new Map<string, string>();
+    const previousTenantVariables = new Map<HTMLElement, Map<string, string>>();
     const previousBodyStyles = new Map<BodyStyleKey, string | null>();
 
     const applyStyleEntry = (key: string, value: unknown) => {
@@ -43,6 +52,13 @@ export function EventThemeProvider({
         previousBodyVariables.set(key, bodyElement.style.getPropertyValue(key));
         rootElement.style.setProperty(key, stringValue);
         bodyElement.style.setProperty(key, stringValue);
+        tenantThemeElements.forEach((tenantThemeElement) => {
+          const previousVariables =
+            previousTenantVariables.get(tenantThemeElement) ?? new Map<string, string>();
+          previousVariables.set(key, tenantThemeElement.style.getPropertyValue(key));
+          previousTenantVariables.set(tenantThemeElement, previousVariables);
+          tenantThemeElement.style.setProperty(key, stringValue);
+        });
       } else if (BODY_STYLE_KEY_SET.has(key as BodyStyleKey)) {
         const typedKey = key as BodyStyleKey;
         previousBodyStyles.set(typedKey, bodyElement.style[typedKey] as string);
@@ -71,6 +87,15 @@ export function EventThemeProvider({
           bodyElement.style.removeProperty(key);
         }
       });
+      previousTenantVariables.forEach((previousVariables, tenantThemeElement) => {
+        previousVariables.forEach((originalValue, key) => {
+          if (originalValue) {
+            tenantThemeElement.style.setProperty(key, originalValue);
+          } else {
+            tenantThemeElement.style.removeProperty(key);
+          }
+        });
+      });
       previousBodyStyles.forEach((originalValue, key) => {
         bodyElement.style[key] = originalValue ?? "";
       });
@@ -78,7 +103,7 @@ export function EventThemeProvider({
       delete rootElement.dataset.eventTheme;
       delete bodyElement.dataset.eventTheme;
     };
-  }, [event, event?.themeBackgroundColor, event?.themeTextColor]);
+  }, [event, event?.themeAccentColor, event?.themeBackgroundColor, event?.themeTextColor]);
 
   React.useEffect(() => {
     if (!brandingSourceId) return;
@@ -108,7 +133,7 @@ export function EventThemeProvider({
   };
 
   return (
-    <div style={transparentThemeStyle} data-event-themed="true">
+    <div ref={themeScopeReference} style={transparentThemeStyle} data-event-themed="true">
       {children}
     </div>
   );

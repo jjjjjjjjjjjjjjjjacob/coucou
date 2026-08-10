@@ -15,7 +15,8 @@ export default function PrivacyPolicy() {
       intro={
         <>
           Your privacy is important to us. This policy explains how we collect, use, and protect
-          your personal information.
+          your personal information when using Danza Organica pages powered by Coucou, a Soluo LLC
+          service.
         </>
       }
     >
@@ -75,8 +76,8 @@ export default function PrivacyPolicy() {
           <li>
             <strong>Communication:</strong> Send account notifications, RSVP and guest-list updates,
             tickets or QR codes, event updates, and replies about Danza Organica events or
-            reservations when you provide explicit consent. Danza Organica is the SMS sender, and
-            Coucou provides its event-management and messaging technology.
+            reservations when you provide explicit consent. Coucou is the SMS sender and
+            messaging-program operator; Danza Organica supplies the event context.
           </li>
           <li>
             <strong>Platform Improvement:</strong> Analyze usage patterns to enhance user
@@ -94,23 +95,24 @@ export default function PrivacyPolicy() {
 
       <LegalSection title="3. Mobile Messaging Privacy">
         <p>
-          When you use Danza Organica&apos;s SMS features, we may collect your mobile number, SMS
-          consent status, consent timestamp, IP address, associated account and RSVP information,
-          message content, delivery information, and opt-out or help requests. We use this
-          information to operate the Danza Organica messaging program, deliver requested event
-          communications, respond to questions, maintain security, document consent, and comply with
-          legal obligations.
+          When you use Coucou&apos;s SMS features, we may collect your mobile number, SMS consent
+          status, consent timestamp, IP address, associated account and RSVP information, message
+          content, delivery information, and opt-out or help requests. We use this information to
+          operate the Coucou messaging program, deliver requested event communications, respond to
+          questions, maintain security, document consent, and comply with legal obligations.
         </p>
         <p>
-          Mobile information, text-messaging originator opt-in data, and consent will not be shared
-          with third parties or affiliates for marketing or promotional purposes. Danza Organica
-          does not sell, rent, purchase, or use this information for third-party marketing or lead
-          generation.
+          <strong>
+            We do not share, sell, or provide your mobile phone number, mobile opt-in information,
+            or messaging consent data to third parties or affiliates for marketing or promotional
+            purposes.
+          </strong>
         </p>
         <p>
-          Coucou and Twilio process mobile information only as service providers necessary to
-          operate and deliver the Danza Organica messaging program. They may not use Danza Organica
-          SMS consent data for their own marketing purposes.
+          Danza Organica may access guest and RSVP information only as needed to operate the event
+          and respond to guest requests. Coucou does not permit Danza Organica, Twilio, or other
+          service providers to use Coucou mobile opt-in or consent data for their own marketing or
+          promotional purposes. Coucou does not use purchased, rented, or scraped contact lists.
         </p>
         <p>
           If you opt in, message frequency varies and message and data rates may apply. You may
@@ -118,9 +120,9 @@ export default function PrivacyPolicy() {
           preferences from your RSVP status page or profile.
         </p>
         <p>
-          Danza Organica retains consent, opt-out, delivery, and messaging records for as long as
-          reasonably necessary to operate the service, honor messaging preferences, resolve
-          disputes, maintain security, and satisfy legal obligations.
+          Coucou retains consent, opt-out, delivery, and messaging records for as long as reasonably
+          necessary to operate the service, honor messaging preferences, resolve disputes, maintain
+          security, and satisfy legal obligations.
         </p>
       </LegalSection>
 
@@ -158,9 +160,9 @@ export default function PrivacyPolicy() {
             securely.
           </li>
           <li>
-            <strong>Twilio (SMS Infrastructure):</strong> Provides SMS delivery infrastructure. Club
-            Danza Organica is the sender, Coucou provides the messaging technology, and Twilio
-            handles telecommunications delivery as a service provider.
+            <strong>Twilio (SMS Infrastructure):</strong> Provides SMS delivery infrastructure.
+            Coucou is the sender and messaging-program operator, Danza Organica supplies the event
+            context, and Twilio handles telecommunications delivery as a service provider.
           </li>
           <li>
             <strong>Convex (Database):</strong> Secure, real-time database for application data.

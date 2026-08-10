@@ -50,40 +50,40 @@
 }
 
 /* Danza Organica ships the danza preset — the Dojo Pomodoro treatment
- * (Geist, uppercase, rounded) recolored to bright turquoise (#2EC4B6)
+ * (Geist, uppercase, rounded) recolored to bright turquoise (#17E1E5)
  * with near-black (#0A0A0A) type. Keep these tokens aligned with the
  * danza entry in packages/sdk/src/theming/presets.ts so shadcn-class
  * pages and the tenant-template components stay in lock-step. */
 :root {
   --radius: 0.5rem;
-  --background: #2ec4b6;
+  --background: #17e1e5;
   --foreground: #0a0a0a;
-  --card: #4bd6c9;
+  --card: #39e6e9;
   --card-foreground: #0a0a0a;
-  --popover: #4bd6c9;
+  --popover: #39e6e9;
   --popover-foreground: #0a0a0a;
   --primary: #0a0a0a;
-  --primary-foreground: #2ec4b6;
-  --secondary: #4bd6c9;
+  --primary-foreground: #ffffff;
+  --secondary: #15c7cb;
   --secondary-foreground: #0a0a0a;
-  --muted: #4bd6c9;
+  --muted: #15c7cb;
   --muted-foreground: rgba(10, 10, 10, 0.65);
-  --accent: #4bd6c9;
-  --accent-foreground: #0a0a0a;
+  --accent: #0a0a0a;
+  --accent-foreground: #ffffff;
   --destructive: #b91c1c;
   --border: rgba(10, 10, 10, 0.2);
   --input: rgba(10, 10, 10, 0.2);
-  --ring: rgba(10, 10, 10, 0.4);
+  --ring: #0a0a0a;
   --chart-1: oklch(0.55 0.27 264);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: #4bd6c9;
+  --sidebar: #15c7cb;
   --sidebar-foreground: #0a0a0a;
   --sidebar-primary: #0a0a0a;
-  --sidebar-primary-foreground: #2ec4b6;
-  --sidebar-accent: #4bd6c9;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #15c7cb;
   --sidebar-accent-foreground: #0a0a0a;
   --sidebar-border: rgba(10, 10, 10, 0.2);
   --sidebar-ring: rgba(10, 10, 10, 0.4);
@@ -92,34 +92,34 @@
 /* Keep the .dark variant pinned to the same teal surface so any
  * component that toggles it doesn't suddenly drop into a dark scheme. */
 .dark {
-  --background: #2ec4b6;
+  --background: #17e1e5;
   --foreground: #0a0a0a;
-  --card: #4bd6c9;
+  --card: #39e6e9;
   --card-foreground: #0a0a0a;
-  --popover: #4bd6c9;
+  --popover: #39e6e9;
   --popover-foreground: #0a0a0a;
   --primary: #0a0a0a;
-  --primary-foreground: #2ec4b6;
-  --secondary: #4bd6c9;
+  --primary-foreground: #ffffff;
+  --secondary: #15c7cb;
   --secondary-foreground: #0a0a0a;
-  --muted: #4bd6c9;
+  --muted: #15c7cb;
   --muted-foreground: rgba(10, 10, 10, 0.65);
-  --accent: #4bd6c9;
-  --accent-foreground: #0a0a0a;
+  --accent: #0a0a0a;
+  --accent-foreground: #ffffff;
   --destructive: #b91c1c;
   --border: rgba(10, 10, 10, 0.2);
   --input: rgba(10, 10, 10, 0.2);
-  --ring: rgba(10, 10, 10, 0.4);
+  --ring: #0a0a0a;
   --chart-1: oklch(0.55 0.27 264);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: #4bd6c9;
+  --sidebar: #15c7cb;
   --sidebar-foreground: #0a0a0a;
   --sidebar-primary: #0a0a0a;
-  --sidebar-primary-foreground: #2ec4b6;
-  --sidebar-accent: #4bd6c9;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #15c7cb;
   --sidebar-accent-foreground: #0a0a0a;
   --sidebar-border: rgba(10, 10, 10, 0.2);
   --sidebar-ring: rgba(10, 10, 10, 0.4);
@@ -144,4 +144,1334 @@
 
 [data-description] {
   color: var(--text-primary) !important;
+}
+
+/* Frozen Bauhaus guest event treatment. The moving field is the signature;
+ * copy stays in compact poster blocks so it remains readable at every phase. */
+.danza-bauhaus-page {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  min-height: 100svh;
+  overflow-x: clip;
+  background: #17e1e5;
+}
+
+.danza-bauhaus-page__content {
+  position: relative;
+  z-index: 1;
+}
+
+.danza-bauhaus-field__canvas {
+  opacity: 0;
+}
+
+.danza-bauhaus-field__canvas--loaded {
+  animation: danza-bauhaus-field-fade-in 700ms cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+.danza-bauhaus-enter {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: danza-bauhaus-enter 460ms cubic-bezier(0.2, 0, 0, 1) forwards;
+  animation-delay: var(--danza-bauhaus-enter-delay, 0ms);
+}
+
+@keyframes danza-bauhaus-field-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes danza-bauhaus-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes danza-bauhaus-frame-enter {
+  to {
+    clip-path: inset(0);
+    opacity: 1;
+  }
+}
+
+@keyframes danza-bauhaus-shadow-enter {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes danza-bauhaus-border-enter {
+  to {
+    border-color: #0a0a0a;
+  }
+}
+
+@keyframes danza-bauhaus-rule-enter {
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.danza-bauhaus-event {
+  position: relative;
+  min-height: 100svh;
+  overflow: hidden;
+}
+
+.danza-bauhaus-event__composition {
+  --danza-bauhaus-title-size: clamp(3rem, min(7vw, 15svh), 8.75rem);
+  position: absolute;
+  container-type: inline-size;
+  top: 50%;
+  width: min(46rem, calc(100vw - 3rem));
+  color: var(--danza-bauhaus-text);
+  text-align: left;
+}
+
+.danza-bauhaus-page[data-position="center"] .danza-bauhaus-event__composition {
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.danza-bauhaus-page[data-position="left"] .danza-bauhaus-event__composition {
+  left: clamp(2.5rem, 6vw, 8rem);
+  transform: translateY(-50%);
+}
+
+.danza-bauhaus-highlight {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.18em 0.38em 0.2em;
+  background: var(--danza-bauhaus-highlight);
+  color: var(--danza-bauhaus-text);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.danza-bauhaus-event__title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 0;
+  font-family: var(--tt-display), var(--font-geist-sans), sans-serif;
+  font-size: var(--danza-bauhaus-title-size);
+  font-weight: 900;
+  line-height: 0.78;
+  letter-spacing: -0.075em;
+  text-transform: uppercase;
+}
+
+.danza-bauhaus-title-line {
+  width: max-content;
+  max-width: none;
+  padding: 0.04em 0.08em 0.08em;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.danza-bauhaus-event__billing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(0.25rem, 1svh, 0.5rem);
+  width: 100%;
+  margin-top: clamp(0.6rem, min(1.8vw, 2.2svh), 1.75rem);
+  font-family: var(--tt-text), var(--font-geist-sans), sans-serif;
+  font-size: clamp(0.68rem, min(0.9vw, 2.8svh), 1rem);
+  font-weight: 750;
+  line-height: 1.18;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.danza-bauhaus-copy-line {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0;
+}
+
+.danza-bauhaus-copy-line > .danza-bauhaus-highlight {
+  line-height: 1.35;
+}
+
+.danza-bauhaus-copy-line a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.danza-bauhaus-copy-line a:hover,
+.danza-bauhaus-copy-line a:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: 0.1em;
+  text-underline-offset: 0.15em;
+}
+
+.danza-bauhaus-copy-line--date {
+  margin-top: 0.35rem;
+}
+
+.danza-bauhaus-event__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.2rem;
+}
+
+.danza-bauhaus-event__utility {
+  display: inline-flex;
+}
+
+.danza-bauhaus-event__rsvp {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.1rem;
+  padding: 0.42rem 0.7rem;
+  font: inherit;
+  letter-spacing: 0.14em;
+  text-decoration: none;
+  text-transform: uppercase;
+  outline-offset: 3px;
+}
+
+.danza-bauhaus-event__rsvp {
+  background: #fc7243;
+  color: #0a0a0a;
+}
+
+.danza-bauhaus-event__rsvp[aria-disabled="true"] {
+  opacity: 0.55;
+}
+
+.danza-bauhaus-event__rsvp:focus-visible {
+  outline: 2px solid #fc7243;
+}
+
+.danza-bauhaus-event__expanded {
+  max-width: 34rem;
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.danza-bauhaus-event__expanded .danza-bauhaus-highlight {
+  padding: 0.65rem 0.8rem;
+}
+
+.danza-bauhaus-event__expanded * {
+  color: inherit !important;
+}
+
+.danza-bauhaus-event__partners {
+  --danza-bauhaus-logo-gap: min(0.75rem, 2cqw);
+  --danza-bauhaus-logo-height: min(clamp(3rem, min(6.75vw, 15.5svh), 6.75rem), 18.95cqw);
+  --danza-bauhaus-nothing-radio-logo-height: min(clamp(4.2rem, min(9vw, 20svh), 8.8rem), 24.8cqw);
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-self: stretch;
+  justify-content: center;
+  width: 100%;
+  margin-top: 0.65rem;
+  pointer-events: auto;
+}
+
+.danza-bauhaus-event__partners > div {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: var(--danza-bauhaus-logo-gap) !important;
+  width: 100% !important;
+}
+
+.danza-bauhaus-event__partners > div > * {
+  box-sizing: border-box;
+  display: flex !important;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+}
+
+.danza-bauhaus-event__partners img[alt="The Market"],
+.danza-bauhaus-event__partners img[alt="Nothing Radio"] {
+  width: auto !important;
+  max-width: none !important;
+  height: var(--danza-bauhaus-logo-height) !important;
+  max-height: none !important;
+  object-fit: contain;
+}
+
+.danza-bauhaus-event__partners img[alt="Nothing Radio"] {
+  height: var(--danza-bauhaus-nothing-radio-logo-height) !important;
+}
+
+@media (max-width: 767px) {
+  .danza-bauhaus-event__composition,
+  .danza-bauhaus-page[data-position="center"] .danza-bauhaus-event__composition,
+  .danza-bauhaus-page[data-position="left"] .danza-bauhaus-event__composition {
+    top: 50%;
+    left: 50%;
+    --danza-bauhaus-title-size: 3.25rem;
+    width: min(30rem, calc(100% - 2rem));
+    max-width: 30rem;
+    transform: translate(-50%, -50%);
+    text-align: left;
+  }
+
+  .danza-bauhaus-event__title {
+    line-height: 0.82;
+  }
+
+  .danza-bauhaus-event__billing {
+    gap: 0.42rem;
+    margin-top: 1rem;
+    font-size: 0.72rem;
+    line-height: 1.2;
+  }
+
+  .danza-bauhaus-copy-line > .danza-bauhaus-highlight {
+    line-height: 1.32;
+  }
+
+  .danza-bauhaus-event__actions {
+    gap: 0.4rem;
+  }
+
+  .danza-bauhaus-event__rsvp {
+    min-height: 1.9rem;
+    padding: 0.34rem 0.58rem;
+  }
+
+  .danza-bauhaus-event__expanded {
+    max-height: 7rem;
+    overflow-y: auto;
+    font-size: 0.7rem;
+  }
+
+  .danza-bauhaus-event__partners {
+    margin-top: 0.55rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .danza-bauhaus-event__composition {
+    --danza-bauhaus-title-size: 2.75rem;
+  }
+
+  .danza-bauhaus-event__billing {
+    font-size: 0.66rem;
+  }
+}
+
+/* Ticket typography carries the same dense, heavy poster voice as the
+ * Bauhaus landing while keeping the QR quiet and easy to scan. */
+.danza-ticket-page {
+  width: 100%;
+}
+
+.danza-ticket-offer-page {
+  width: 100%;
+}
+
+.danza-ticket {
+  width: 100%;
+  color: var(--tt-fg);
+  font-family: var(--tt-text), var(--font-geist-sans), sans-serif;
+}
+
+.danza-ticket__utility {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: clamp(2.75rem, 7vw, 5rem);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.danza-ticket__utility > span {
+  color: var(--tt-fg-dim);
+}
+
+.danza-ticket__utility a {
+  padding: 0.42rem 0.65rem;
+  border: 2px solid var(--tt-fg);
+  color: var(--tt-fg);
+  text-decoration: none;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.danza-ticket__utility a:hover,
+.danza-ticket__utility a:focus-visible {
+  background: var(--tt-fg);
+  color: var(--tt-bg);
+}
+
+.danza-ticket__utility a:focus-visible {
+  outline: 3px solid var(--tt-accent);
+  outline-offset: 3px;
+}
+
+.danza-ticket__header {
+  max-width: 38rem;
+  margin-bottom: clamp(2.5rem, 7vw, 4.5rem);
+  text-align: left;
+}
+
+.danza-ticket__header h1 {
+  max-width: 10ch;
+  margin: 0;
+  font-family: var(--tt-display), var(--font-geist-sans), sans-serif;
+  font-size: clamp(3.4rem, 11vw, 6.75rem);
+  font-weight: 900;
+  line-height: 0.8;
+  letter-spacing: -0.075em;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.danza-ticket__subtitle {
+  width: fit-content;
+  margin: 1.25rem 0 0;
+  padding: 0.2em 0.34em 0.24em;
+  background: var(--tt-accent);
+  color: var(--tt-fg);
+  font-size: clamp(1.35rem, 5vw, 2.25rem);
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.danza-ticket__admission {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(2.75rem, 8vw, 5rem) 1rem;
+  border-block: 2px solid transparent;
+  text-align: center;
+}
+
+.danza-ticket__admission::before,
+.danza-ticket__admission::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: var(--tt-fg);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: danza-bauhaus-rule-enter 460ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation-delay: var(--danza-bauhaus-enter-delay, 0ms);
+}
+
+.danza-ticket__admission::before {
+  top: -2px;
+}
+
+.danza-ticket__admission::after {
+  bottom: -2px;
+}
+
+.danza-ticket__section-label,
+.danza-ticket__code,
+.danza-ticket__door-copy {
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.danza-ticket__section-label {
+  margin-bottom: 1.5rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.danza-ticket__qr {
+  max-width: 100%;
+  filter: drop-shadow(7px 7px 0 var(--tt-accent));
+}
+
+.danza-ticket__code {
+  margin-top: 1.5rem;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.18em;
+}
+
+.danza-ticket__door-copy {
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.danza-ticket__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.danza-ticket__action-item {
+  display: inline-flex;
+}
+
+.danza-ticket__share-button {
+  min-height: 2.5rem;
+  padding-inline: 1rem;
+}
+
+.danza-ticket__details {
+  width: min(100%, 31rem);
+  margin: 3rem auto 0;
+}
+
+.danza-ticket__details > div {
+  position: relative;
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  align-items: baseline;
+  padding: 1rem 0;
+  border-bottom: 2px solid transparent;
+}
+
+.danza-ticket__details > div::after {
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  left: 0;
+  height: 2px;
+  background: var(--tt-fg);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: danza-bauhaus-rule-enter 460ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation-delay: var(--danza-bauhaus-enter-delay, 0ms);
+}
+
+.danza-ticket__details dt,
+.danza-ticket__details dd {
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.danza-ticket__details dt {
+  color: var(--tt-fg-dim);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.danza-ticket__details dd {
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+/* The Market offer is a compact four-beat line drawing: the route draws,
+ * each black-stroke icon lands, then the sequence resets as a single loop. */
+.danza-market-offer {
+  position: relative;
+  width: min(100%, 68rem);
+  margin-inline: auto;
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 3px solid transparent;
+  background: #17e1e5;
+  color: #0a0a0a;
+  font-family: var(--tt-text), var(--font-geist-sans), sans-serif;
+}
+
+.danza-market-offer::before {
+  position: absolute;
+  inset: -3px;
+  border: 3px solid #0a0a0a;
+  clip-path: inset(0 100% 0 0);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  animation: danza-bauhaus-frame-enter 460ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation-delay: var(--danza-bauhaus-enter-delay, 0ms);
+}
+
+.danza-market-offer::after {
+  position: absolute;
+  inset: -3px;
+  box-shadow: 10px 10px 0 #0a0a0a;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  animation: danza-bauhaus-shadow-enter 460ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation-delay: var(--danza-bauhaus-enter-delay, 0ms);
+}
+
+.danza-market-offer__collaboration,
+.danza-market-offer__eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.danza-market-offer__collaboration {
+  display: inline-block;
+  padding: 0.35rem 0.5rem;
+  background: #0a0a0a;
+  color: #17e1e5;
+}
+
+.danza-market-offer__hero {
+  margin-top: clamp(1.35rem, 4vw, 2rem);
+}
+
+.danza-market-offer__headline {
+  margin-top: 0.35rem;
+}
+
+.danza-market-offer h2 {
+  margin: 0;
+  font-family: var(--tt-display), var(--font-geist-sans), sans-serif;
+  font-size: clamp(2.8rem, 7vw, 4rem);
+  font-weight: 900;
+  line-height: 0.82;
+  letter-spacing: -0.075em;
+  text-wrap: balance;
+  text-transform: uppercase;
+}
+
+.danza-market-offer__headline-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16em;
+  white-space: nowrap;
+}
+
+.danza-market-offer__heart {
+  display: block;
+  width: 1em;
+  height: auto;
+  flex: none;
+}
+
+.danza-market-offer__illustration {
+  width: 100%;
+  margin-top: clamp(1rem, 3vw, 1.5rem);
+  overflow: visible;
+}
+
+.danza-market-offer__illustration svg {
+  display: block;
+  width: 100%;
+  max-width: 58rem;
+  height: auto;
+  margin-inline: auto;
+  overflow: visible;
+  fill: none;
+  stroke: #0a0a0a;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 5;
+}
+
+.danza-market-offer__route,
+.danza-market-offer__step > * {
+  vector-effect: non-scaling-stroke;
+}
+
+.danza-market-offer__route {
+  stroke-width: 3;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+}
+
+.danza-market-offer__route--one {
+  animation: danza-market-route-one 7s ease-in-out infinite;
+}
+
+.danza-market-offer__route--two {
+  animation: danza-market-route-two 7s ease-in-out infinite;
+}
+
+.danza-market-offer__route--three {
+  animation: danza-market-route-three 7s ease-in-out infinite;
+}
+
+.danza-market-offer__step {
+  opacity: 0;
+  transform: translateY(10px) scale(0.92);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.danza-market-offer__icon-plate {
+  fill: #17e1e5;
+  stroke: #0a0a0a;
+  stroke-width: 3;
+}
+
+.danza-market-offer__detail-badge {
+  fill: #17e1e5;
+  stroke: #0a0a0a;
+  stroke-width: 3;
+}
+
+.danza-market-offer__micro {
+  opacity: 0;
+  transform: scale(0.25);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.danza-market-offer__micro--download {
+  animation: danza-market-micro-download 7s cubic-bezier(0.2, 0, 0, 1) infinite;
+}
+
+.danza-market-offer__micro--check {
+  animation: danza-market-micro-check 7s cubic-bezier(0.2, 0, 0, 1) infinite;
+}
+
+.danza-market-offer__micro--heart {
+  animation: danza-market-micro-heart 7s cubic-bezier(0.2, 0, 0, 1) infinite;
+}
+
+.danza-market-offer__micro--sparkle {
+  animation: danza-market-micro-sparkle 7s cubic-bezier(0.2, 0, 0, 1) infinite;
+}
+
+.danza-market-offer__step--download {
+  animation: danza-market-step-one 7s ease-in-out infinite;
+}
+
+.danza-market-offer__step--onboard {
+  animation: danza-market-step-two 7s ease-in-out infinite;
+}
+
+.danza-market-offer__step--match {
+  animation: danza-market-step-three 7s ease-in-out infinite;
+}
+
+.danza-market-offer__step--redeem {
+  animation: danza-market-step-four 7s ease-in-out infinite;
+}
+
+.danza-market-offer__steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0.75rem 0 0;
+  padding: 0;
+  border-top: 2px solid #0a0a0a;
+  list-style: none;
+}
+
+.danza-market-offer__steps li {
+  position: relative;
+  min-width: 0;
+  padding: 0.7rem 0.65rem;
+  border-right: 2px solid #0a0a0a;
+  background: transparent;
+}
+
+.danza-market-offer__steps.danza-bauhaus-border-enter,
+.danza-market-offer__steps li.danza-bauhaus-border-enter {
+  border-color: transparent;
+  animation: danza-bauhaus-border-enter 460ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation-delay: var(--danza-bauhaus-enter-delay, 0ms);
+}
+
+.danza-market-offer__text-step::after {
+  position: absolute;
+  z-index: 1;
+  inset: -2px;
+  border: 3px solid transparent;
+  content: "";
+  pointer-events: none;
+}
+
+.danza-market-offer__text-step--download::after {
+  animation: danza-market-text-step-one 7s linear infinite;
+}
+
+.danza-market-offer__text-step--onboard::after {
+  animation: danza-market-text-step-two 7s linear infinite;
+}
+
+.danza-market-offer__text-step--match::after {
+  animation: danza-market-text-step-three 7s linear infinite;
+}
+
+.danza-market-offer__text-step--redeem::after {
+  animation: danza-market-text-step-four 7s linear infinite;
+}
+
+.danza-market-offer__steps li:last-child {
+  border-right: 0;
+}
+
+.danza-market-offer__steps span,
+.danza-market-offer__steps strong {
+  display: block;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.danza-market-offer__steps span {
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+}
+
+.danza-market-offer__steps strong {
+  margin-top: 0.15rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+}
+
+.danza-market-offer__steps p {
+  margin: 0.3rem 0 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.danza-market-offer__actions {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.danza-market-offer__cta,
+.danza-market-offer__ticket-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.9rem;
+  border: 3px solid #0a0a0a;
+  color: #0a0a0a;
+  font-size: 0.9rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.danza-market-offer__cta {
+  background: #fc7243;
+  box-shadow: 5px 5px 0 #0a0a0a;
+}
+
+.danza-market-offer__ticket-link {
+  background: #17e1e5;
+}
+
+.danza-market-offer__cta:hover {
+  box-shadow: 2px 2px 0 #0a0a0a;
+  transform: translate(3px, 3px);
+}
+
+.danza-market-offer__ticket-link:hover {
+  background: #0a0a0a;
+  color: #17e1e5;
+}
+
+.danza-market-offer__cta:focus-visible,
+.danza-market-offer__ticket-link:focus-visible {
+  outline: 3px solid #0a0a0a;
+  outline-offset: 4px;
+}
+
+@keyframes danza-market-route-one {
+  0%,
+  22% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  24% {
+    opacity: 1;
+  }
+  29%,
+  88% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  96%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes danza-market-route-two {
+  0%,
+  39% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  41% {
+    opacity: 1;
+  }
+  46%,
+  88% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  96%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes danza-market-route-three {
+  0%,
+  56% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  58% {
+    opacity: 1;
+  }
+  63%,
+  88% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  96%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes danza-market-step-one {
+  0%,
+  5% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.92);
+  }
+  8% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.035);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.99);
+  }
+  12%,
+  90% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  97%,
+  100% {
+    opacity: 0;
+    transform: translateY(-4px) scale(1);
+  }
+}
+
+@keyframes danza-market-step-two {
+  0%,
+  22% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.92);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.035);
+  }
+  27% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.99);
+  }
+  29%,
+  90% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  97%,
+  100% {
+    opacity: 0;
+    transform: translateY(-4px) scale(1);
+  }
+}
+
+@keyframes danza-market-step-three {
+  0%,
+  39% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.92);
+  }
+  42% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.035);
+  }
+  44% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.99);
+  }
+  46%,
+  90% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  97%,
+  100% {
+    opacity: 0;
+    transform: translateY(-4px) scale(1);
+  }
+}
+
+@keyframes danza-market-step-four {
+  0%,
+  56% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.92);
+  }
+  59% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.035);
+  }
+  61% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.99);
+  }
+  63%,
+  90% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  97%,
+  100% {
+    opacity: 0;
+    transform: translateY(-4px) scale(1);
+  }
+}
+
+@keyframes danza-market-micro-download {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.25);
+  }
+  11% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  14% {
+    opacity: 1;
+    transform: translateY(4px) scale(1);
+  }
+  17%,
+  90% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  97%,
+  100% {
+    opacity: 0;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes danza-market-micro-check {
+  0%,
+  29% {
+    opacity: 0;
+    transform: scale(0.25);
+  }
+  34% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  36% {
+    opacity: 1;
+    transform: scale(0.96);
+  }
+  38%,
+  90% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  97%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes danza-market-micro-heart {
+  0%,
+  46% {
+    opacity: 0;
+    transform: scale(0.25);
+  }
+  51% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  53% {
+    opacity: 1;
+    transform: scale(0.96);
+  }
+  56% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  63%,
+  90% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  97%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes danza-market-micro-sparkle {
+  0%,
+  63% {
+    opacity: 0;
+    transform: rotate(-18deg) scale(0.25);
+  }
+  68% {
+    opacity: 1;
+    transform: rotate(8deg) scale(1.08);
+  }
+  71% {
+    opacity: 1;
+    transform: rotate(-3deg) scale(0.96);
+  }
+  74%,
+  90% {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+  97%,
+  100% {
+    opacity: 0;
+    transform: rotate(0) scale(1);
+  }
+}
+
+@keyframes danza-market-text-step-one {
+  0%,
+  5% {
+    border-color: transparent;
+  }
+  8%,
+  22% {
+    border-color: #0a0a0a;
+  }
+  24%,
+  100% {
+    border-color: transparent;
+  }
+}
+
+@keyframes danza-market-text-step-two {
+  0%,
+  22% {
+    border-color: transparent;
+  }
+  25%,
+  39% {
+    border-color: #0a0a0a;
+  }
+  41%,
+  100% {
+    border-color: transparent;
+  }
+}
+
+@keyframes danza-market-text-step-three {
+  0%,
+  39% {
+    border-color: transparent;
+  }
+  42%,
+  56% {
+    border-color: #0a0a0a;
+  }
+  58%,
+  100% {
+    border-color: transparent;
+  }
+}
+
+@keyframes danza-market-text-step-four {
+  0%,
+  56% {
+    border-color: transparent;
+  }
+  59%,
+  90% {
+    border-color: #0a0a0a;
+  }
+  97%,
+  100% {
+    border-color: transparent;
+  }
+}
+
+@media (min-width: 768px) {
+  .danza-ticket {
+    width: min(100%, 64rem);
+    margin-inline: auto;
+  }
+
+  .danza-ticket__utility {
+    margin-bottom: 1.5rem;
+  }
+
+  .danza-ticket__header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    max-width: none;
+    margin-bottom: 1.5rem;
+    gap: 2rem;
+  }
+
+  .danza-ticket__header h1 {
+    max-width: none;
+    font-size: clamp(2.75rem, 5vw, 4.75rem);
+    white-space: nowrap;
+  }
+
+  .danza-ticket__subtitle {
+    flex: none;
+    margin: 0;
+    font-size: clamp(1.25rem, 2.25vw, 1.75rem);
+  }
+
+  .danza-ticket__admission {
+    padding-block: clamp(2rem, 4vw, 3rem);
+  }
+
+  .danza-ticket__details {
+    width: min(100%, 38rem);
+    margin-top: 2rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .danza-ticket__utility {
+    align-items: flex-start;
+  }
+
+  .danza-ticket__utility a {
+    max-width: 11rem;
+    text-align: center;
+  }
+
+  .danza-ticket__details > div {
+    grid-template-columns: 5.5rem 1fr;
+  }
+
+  .danza-market-offer {
+    box-shadow: none;
+  }
+
+  .danza-market-offer::after {
+    box-shadow: 6px 6px 0 #0a0a0a;
+  }
+
+  .danza-market-offer__steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .danza-market-offer__steps li,
+  .danza-market-offer__steps li:first-child,
+  .danza-market-offer__steps li:last-child {
+    padding: 0.65rem;
+    border-right: 2px solid #0a0a0a;
+    border-bottom: 2px solid #0a0a0a;
+  }
+
+  .danza-market-offer__steps li:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .danza-market-offer__steps li:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .danza-bauhaus-field__canvas,
+  .danza-bauhaus-enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .danza-market-offer__route,
+  .danza-market-offer__step,
+  .danza-market-offer__micro,
+  .danza-market-offer__text-step {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    stroke-dashoffset: 0;
+  }
+
+  .danza-market-offer__text-step::after {
+    animation: none;
+    border-color: transparent;
+  }
+
+  .danza-market-offer::before,
+  .danza-market-offer::after,
+  .danza-ticket__admission::before,
+  .danza-ticket__admission::after,
+  .danza-ticket__details > div::after {
+    animation: none;
+    clip-path: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .danza-market-offer__steps.danza-bauhaus-border-enter,
+  .danza-market-offer__steps li.danza-bauhaus-border-enter {
+    border-color: #0a0a0a;
+    animation: none;
+  }
+
+  .danza-market-offer__cta {
+    transition: none;
+  }
+
+  .danza-market-offer__ticket-link {
+    transition: none;
+  }
 }

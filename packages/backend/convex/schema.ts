@@ -5,6 +5,7 @@ import {
   eventLifecycleValidator,
   eventStatusValidator,
 } from "./lib/eventMetadata";
+import { eventPartnerValidator } from "./lib/eventPartners";
 
 const socialPlatformConfigValidator = v.object({
   platformKey: v.string(),
@@ -29,6 +30,7 @@ const primaryFieldConfigValidator = v.object({
 const workspaceEventDefaultsValidator = v.object({
   themeBackgroundColor: v.optional(v.string()),
   themeTextColor: v.optional(v.string()),
+  themeAccentColor: v.optional(v.string()),
   listKeys: v.optional(v.array(v.string())),
   socialPlatforms: v.optional(v.array(socialPlatformConfigValidator)),
   invitedBy: v.optional(invitedByPrimaryFieldConfigValidator),
@@ -232,6 +234,8 @@ export default defineSchema({
     secondaryTitle: v.optional(v.string()),
     description: v.optional(v.string()),
     acts: v.optional(v.array(eventActValidator)),
+    eventPartners: v.optional(v.array(eventPartnerValidator)),
+    sponsors: v.optional(v.array(eventPartnerValidator)),
     hosts: v.optional(v.array(v.string())), // host names (comma-separated)
     productionCompany: v.optional(v.string()), // production company name that overrides host names in consent messaging
     location: v.string(),
@@ -284,6 +288,7 @@ export default defineSchema({
     primaryFieldConfig: v.optional(primaryFieldConfigValidator),
     themeBackgroundColor: v.optional(v.string()),
     themeTextColor: v.optional(v.string()),
+    themeAccentColor: v.optional(v.string()),
     approvalMessage: v.optional(v.string()), // custom approval message for SMS
     /**
      * Initial SMS reply after an RSVP is submitted through a text reply action.

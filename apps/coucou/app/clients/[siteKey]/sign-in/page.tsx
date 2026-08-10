@@ -26,6 +26,7 @@ type ThemedEvent = {
   _id: Id<"events">;
   themeBackgroundColor?: string | null;
   themeTextColor?: string | null;
+  themeAccentColor?: string | null;
 };
 
 type RsvpHandoffResolution = {
@@ -57,11 +58,13 @@ function mapEventToThemedEvent(event: {
   _id: Id<"events">;
   themeBackgroundColor?: string | null;
   themeTextColor?: string | null;
+  themeAccentColor?: string | null;
 }): ThemedEvent {
   return {
     _id: event._id,
     themeBackgroundColor: event.themeBackgroundColor ?? null,
     themeTextColor: event.themeTextColor ?? null,
+    themeAccentColor: event.themeAccentColor ?? null,
   };
 }
 
@@ -181,6 +184,7 @@ export default async function ClientAuthSignInPage({
         siteAuthConfiguration={siteAuthConfiguration}
         eventThemeBackgroundColor={themedEvent?.themeBackgroundColor ?? null}
         eventThemeTextColor={themedEvent?.themeTextColor ?? null}
+        eventThemeAccentColor={themedEvent?.themeAccentColor ?? null}
         authBranding={loginAuthBranding}
         allowedRedirectOrigins={allowedRedirectOrigins}
         initialPhoneNumber={rsvpHandoff?.phoneNumber ?? null}
@@ -196,6 +200,7 @@ export default async function ClientAuthSignInPage({
       siteAuthConfiguration={siteAuthConfiguration}
       eventThemeBackgroundColor={themedEvent?.themeBackgroundColor ?? null}
       eventThemeTextColor={themedEvent?.themeTextColor ?? null}
+      eventThemeAccentColor={themedEvent?.themeAccentColor ?? null}
       authBranding={loginAuthBranding}
       allowedRedirectOrigins={allowedRedirectOrigins}
       initialPhoneNumber={rsvpHandoff?.phoneNumber ?? null}

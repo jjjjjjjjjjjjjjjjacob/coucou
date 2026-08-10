@@ -12,7 +12,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { use, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { EventPartnerLogos } from "@/components/event-partner-logos";
 import { Spinner } from "@/components/ui/spinner";
+import { BAUHAUS_PARTNER_LOGO_SOURCES } from "@/lib/bauhaus-event-display";
 import { isPostHogConfigured } from "@/lib/posthog";
 import { useRsvpFlowViewport } from "@/lib/rsvp-flow-routing";
 import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
@@ -222,17 +224,29 @@ export function RsvpPageClient({ params }: RsvpPageClientProps) {
   }
 
   return (
-    <RsvpAcceptedForm
-      eventId={canonicalEventId as Id<"events">}
-      eventRouteId={eventRouteId}
-      event={event as Event}
-      submitMode="collect"
-      submitLabel="Submit Request"
-      onCollect={handleInfoCollected}
-      hasNoPasswordList={hasNoPasswordList === true}
-      hasPasswordList={hasPasswordList === true}
-      initialPassword={queryParamPassword}
-      isSignedIn={isSignedIn === true}
-    />
+    <div className="flex w-full flex-col items-center gap-10">
+      <RsvpAcceptedForm
+        eventId={canonicalEventId as Id<"events">}
+        eventRouteId={eventRouteId}
+        event={event as Event}
+        submitMode="collect"
+        submitLabel="Submit Request"
+        onCollect={handleInfoCollected}
+        hasNoPasswordList={hasNoPasswordList === true}
+        hasPasswordList={hasPasswordList === true}
+        initialPassword={queryParamPassword}
+        isSignedIn={isSignedIn === true}
+      />
+      {(event as Event).eventPartners?.length ? (
+        <div className="w-full max-w-[540px] border-t border-[color:var(--tt-border)] pt-8">
+          <EventPartnerLogos
+            entries={(event as Event).eventPartners}
+            ariaLabel="Event partners"
+            size="rsvp"
+            logoSourcesByLabel={BAUHAUS_PARTNER_LOGO_SOURCES.tealblack}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }

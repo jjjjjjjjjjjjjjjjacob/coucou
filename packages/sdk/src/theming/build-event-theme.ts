@@ -2,12 +2,14 @@ import type { CSSProperties } from "react";
 
 export const EVENT_THEME_DEFAULT_BACKGROUND_COLOR = "#FFFFFF";
 export const EVENT_THEME_DEFAULT_TEXT_COLOR = "#EF4444";
+export const EVENT_THEME_DEFAULT_ACCENT_COLOR = EVENT_THEME_DEFAULT_TEXT_COLOR;
 
 const HEX_COLOR_PATTERN = /^#(?:[0-9A-Fa-f]{6})$/;
 
 export interface EventThemeColorSource {
   themeBackgroundColor?: string | null;
   themeTextColor?: string | null;
+  themeAccentColor?: string | null;
 }
 
 function clampHexChannel(channel: string): number {
@@ -75,7 +77,9 @@ export function normalizeHexColorInput(value: string | null | undefined): string
 export function getAccessibleTextColor(hexColor: string): string {
   const normalizedHex = normalizeHexColorInput(hexColor) || "#000000";
   const luminance = calculateRelativeLuminance(normalizedHex);
-  return luminance > 0.5 ? "#000000" : "#FFFFFF";
+  const blackContrastRatio = (luminance + 0.05) / 0.05;
+  const whiteContrastRatio = 1.05 / (luminance + 0.05);
+  return blackContrastRatio >= whiteContrastRatio ? "#000000" : "#FFFFFF";
 }
 
 export function getColorContrastRatio(colorA: string, colorB: string): number {
@@ -90,63 +94,64 @@ export function getColorContrastRatio(colorA: string, colorB: string): number {
 
 export function getEventThemeColors(
   event: EventThemeColorSource | null | undefined,
-  fallbacks?: { backgroundColor?: string; textColor?: string },
+  fallbacks?: { backgroundColor?: string; textColor?: string; accentColor?: string },
 ): {
   backgroundColor: string;
   textColor: string;
+  accentColor: string;
 } {
   const fallbackBackground = fallbacks?.backgroundColor ?? EVENT_THEME_DEFAULT_BACKGROUND_COLOR;
   const fallbackText = fallbacks?.textColor ?? EVENT_THEME_DEFAULT_TEXT_COLOR;
   const normalizedBackground =
     normalizeHexColorInput(event?.themeBackgroundColor) ?? fallbackBackground;
   const normalizedText = normalizeHexColorInput(event?.themeTextColor) ?? fallbackText;
+  const normalizedAccent = normalizeHexColorInput(event?.themeAccentColor) ?? normalizedText;
   return {
     backgroundColor: normalizedBackground,
     textColor: normalizedText,
+    accentColor: normalizedAccent,
   };
 }
 
 export function buildEventThemeStyle(
   event: EventThemeColorSource | null | undefined,
-  fallbacks?: { backgroundColor?: string; textColor?: string },
+  fallbacks?: { backgroundColor?: string; textColor?: string; accentColor?: string },
 ): CSSProperties {
-  const { backgroundColor, textColor } = getEventThemeColors(event, fallbacks);
-  const foregroundColor = getAccessibleTextColor(backgroundColor);
-  const primaryForegroundColor = getAccessibleTextColor(textColor);
+  const { backgroundColor, textColor, accentColor } = getEventThemeColors(event, fallbacks);
+  const primaryForegroundColor = getAccessibleTextColor(accentColor);
   const accentSurfaceColor = mixHexColors(backgroundColor, textColor, 0.12);
-  const mutedForegroundColor = mixHexColors(foregroundColor, backgroundColor, 0.35);
+  const mutedForegroundColor = mixHexColors(textColor, backgroundColor, 0.35);
   const borderColor = mixHexColors(backgroundColor, textColor, 0.24);
-  const accentColor = mixHexColors(textColor, backgroundColor, 0.18);
 
   return {
     "--background": backgroundColor,
-    "--foreground": foregroundColor,
+    "--foreground": textColor,
     "--card": backgroundColor,
-    "--card-foreground": foregroundColor,
+    "--card-foreground": textColor,
     "--popover": backgroundColor,
-    "--popover-foreground": foregroundColor,
-    "--primary": textColor,
+    "--popover-foreground": textColor,
+    "--primary": accentColor,
     "--primary-foreground": primaryForegroundColor,
     "--secondary": accentSurfaceColor,
-    "--secondary-foreground": foregroundColor,
+    "--secondary-foreground": textColor,
     "--muted": accentSurfaceColor,
     "--muted-foreground": mutedForegroundColor,
     "--accent": accentColor,
     "--accent-foreground": primaryForegroundColor,
-    "--destructive": textColor,
+    "--destructive": accentColor,
     "--destructive-foreground": primaryForegroundColor,
     "--border": borderColor,
     "--input": borderColor,
-    "--ring": textColor,
+    "--ring": accentColor,
     "--sidebar": accentSurfaceColor,
-    "--sidebar-foreground": foregroundColor,
-    "--sidebar-primary": textColor,
+    "--sidebar-foreground": textColor,
+    "--sidebar-primary": accentColor,
     "--sidebar-primary-foreground": primaryForegroundColor,
     "--sidebar-accent": accentSurfaceColor,
-    "--sidebar-accent-foreground": foregroundColor,
+    "--sidebar-accent-foreground": textColor,
     "--sidebar-border": borderColor,
-    "--sidebar-ring": textColor,
+    "--sidebar-ring": accentColor,
     backgroundColor,
-    color: foregroundColor,
+    color: textColor,
   } as CSSProperties;
 }

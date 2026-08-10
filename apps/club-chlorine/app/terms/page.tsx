@@ -28,24 +28,23 @@ export default function TermsOfService() {
         </p>
         <p>
           SMS notifications are optional. When you affirmatively select the separate SMS consent
-          checkbox, you consent to receive recurring messages from Club Chlorine. Coucou provides
-          Club Chlorine&apos;s event-management and messaging technology. You may withhold or
-          withdraw SMS consent at any time without affecting your ability to RSVP, purchase, or
-          attend.
+          checkbox, you consent to receive recurring messages from Club Chlorine. Club Chlorine is
+          the organizer and SMS sender. Coucou, a service operated by Soluo LLC, provides the
+          event-management and messaging technology. You may withhold or withdraw SMS consent at any
+          time without affecting your ability to RSVP, purchase, or attend.
         </p>
       </LegalSection>
 
       <LegalSection title="2. Roles and Responsibilities">
         <p>
-          Club Chlorine is the operator and sender of the Club Chlorine SMS program. Authorized
-          event organizers may use Club Chlorine&apos;s tools to communicate about Club Chlorine
-          events, but those organizers do not become separate SMS senders under this program.
+          Club Chlorine is the independent event organizer and sender of the Club Chlorine SMS
+          program. Soluo LLC does not own or operate Club Chlorine or its events.
         </p>
         <p>
-          Coucou supplies software, event-management workflows, consent-recording tools, and
-          operational messaging services to Club Chlorine. Twilio supplies telecommunications
-          delivery infrastructure. Coucou and Twilio are service providers and are not separate
-          messaging programs that you join.
+          Soluo LLC operates Coucou, which supplies software, event-management workflows,
+          consent-recording tools, and operational messaging services to Club Chlorine. Twilio
+          supplies telecommunications delivery infrastructure. Coucou and Twilio are service
+          providers and are not separate messaging programs that you join through this opt-in.
         </p>
         <ul className="ml-5 list-disc space-y-2">
           <li>
@@ -88,9 +87,10 @@ export default function TermsOfService() {
         </p>
         <p>
           By affirmatively selecting the separate SMS consent checkbox, you agree to receive these
-          messages from Club Chlorine. Coucou provides Club Chlorine&apos;s event-management and
-          messaging technology, and Twilio provides message-delivery infrastructure. Coucou and
-          Twilio are service providers and are not separate messaging programs you are joining.
+          messages from Club Chlorine. Coucou, a service operated by Soluo LLC, provides Club
+          Chlorine&apos;s event-management and messaging technology, and Twilio provides
+          message-delivery infrastructure. Coucou and Twilio are service providers and are not
+          separate messaging programs you are joining through this opt-in.
         </p>
         <p>
           Message frequency varies based on your account, RSVPs, event activity, and conversations

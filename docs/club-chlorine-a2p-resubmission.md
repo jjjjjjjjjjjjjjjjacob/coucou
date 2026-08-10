@@ -2,7 +2,13 @@
 
 Use this package only after the public Club Chlorine SMS, Terms, and Privacy pages are deployed.
 Club Chlorine must be the exact approved Brand name or a documented DBA belonging to the legal
-entity in the Twilio Customer Profile.
+entity in the Twilio Customer Profile. Club Chlorine is an independent organizer and SMS sender.
+Coucou is an event-management and messaging service operated by Soluo LLC; Soluo LLC does not own
+or operate Club Chlorine or its events.
+
+This documentation pass does not change production SMS templates or Twilio routing. Do not activate
+Club Chlorine-branded traffic until its secondary customer profile, Brand, Campaign, and sender
+routing are approved and the actual messages match the approved samples.
 
 ## Campaign settings
 
@@ -18,29 +24,41 @@ entity in the Twilio Customer Profile.
 
 ## Campaign description
 
-> Club Chlorine sends recurring operational SMS messages to guests who explicitly opt in on Club Chlorine RSVP pages. Messages include account notifications, RSVP and guest-list confirmations, tickets or QR-code links, event schedule or venue updates, and two-way responses to guest-initiated event or reservation questions. Club Chlorine is the sender; Coucou provides event-management and messaging technology. This campaign does not send marketing or promotional offers and does not use purchased, rented, or scraped lists.
+```text
+Club Chlorine is the sender of this recurring operational event-management SMS program. Messages are sent through Coucou, an event-management and messaging service operated by Soluo LLC, to Club Chlorine guests who enter their mobile number and affirmatively select a separate, optional SMS consent checkbox on a Club Chlorine RSVP page. Consenting guests receive enrollment confirmations, account and RSVP notifications, guest-list status, tickets or QR codes, event schedule, time, or venue changes, and replies from Club Chlorine staff to guest-initiated event or reservation questions. Club Chlorine determines the event content and communicates with its guests; Coucou supplies the software, consent-recording tools, and messaging technology. Messages do not include marketing or promotional offers, and no purchased, rented, or scraped contact lists are used.
+```
 
 ## Sample messages
 
 ### Sample message 1
 
-> CLUB CHLORINE: You’re subscribed to recurring Club Chlorine texts about RSVPs, guest-list status, tickets, event updates, and replies to your requests. Message frequency varies. Message and data rates may apply. Reply HELP for help or STOP to opt out.
+```text
+CLUB CHLORINE: You’re subscribed to recurring Club Chlorine texts about RSVPs, guest-list status, tickets, event updates, and replies to your requests. Message frequency varies. Message and data rates may apply. Reply HELP for help or STOP to opt out.
+```
 
 ### Sample message 2
 
-> CLUB CHLORINE: You’re on the VIP list for [Event Name] on [MM/DD/YYYY]. View your entry QR code: https://clubchlorine.party/redeem/[TicketCode]. Reply STOP to opt out.
+```text
+CLUB CHLORINE: You’re on the VIP list for [Event Name] on [MM/DD/YYYY]. View your entry QR code: https://clubchlorine.party/redeem/[TicketCode]. Reply STOP to opt out.
+```
 
 ### Sample message 3
 
-> CLUB CHLORINE: [Organizer Name] sent you a message about [Event Name]: “[Message Preview].” Reply here or view the conversation at https://clubchlorine.party/events/[EventID]/status. Reply STOP to opt out.
+```text
+CLUB CHLORINE: [Organizer Name] sent you a message about [Event Name]: “[Message Preview].” Reply here or view the conversation at https://clubchlorine.party/events/[EventID]/status. Reply STOP to opt out.
+```
 
 ### Sample message 4
 
-> CLUB CHLORINE: We received your table request for [Event Name] on [MM/DD/YYYY]. A Club Chlorine organizer will follow up with availability and pricing. Reply STOP to opt out.
+```text
+CLUB CHLORINE: We received your table request for [Event Name] on [MM/DD/YYYY]. A Club Chlorine organizer will follow up with availability and pricing. Reply STOP to opt out.
+```
 
 ### Sample message 5
 
-> CLUB CHLORINE: The schedule for [Event Name] has been updated. View the latest event details at https://clubchlorine.party/events/[EventID]. Reply STOP to opt out.
+```text
+CLUB CHLORINE: The schedule for [Event Name] has been updated. View the latest event details at https://clubchlorine.party/events/[EventID]. Reply STOP to opt out.
+```
 
 ## Public URLs
 
@@ -52,7 +70,9 @@ entity in the Twilio Customer Profile.
 
 ## How do end users consent to receive messages?
 
-> End users opt in on Club Chlorine RSVP pages at https://clubchlorine.party. Public opt-in evidence and the complete SMS program disclosure are available at https://clubchlorine.party/sms, with a directly hosted evidence image at https://clubchlorine.party/sms-opt-in-evidence.svg. The user enters a mobile phone number and may affirmatively select a separate optional checkbox that is unchecked by default. The RSVP can be submitted without selecting the checkbox. The checkbox states: “I agree to receive recurring SMS messages from Club Chlorine.” The accompanying disclosure explains that messages may include account notifications, RSVP and guest-list updates, tickets or QR codes, event updates, and replies about events or reservations; that messages are delivered via Coucou; that message frequency varies; that message and data rates may apply; that users may reply STOP to opt out or HELP for help; and that consent is not a condition of purchase, RSVP, or admission. The disclosure links directly to Club Chlorine’s Terms at https://clubchlorine.party/terms and Privacy Policy at https://clubchlorine.party/privacy. Users who opt in receive an immediate confirmation message. Club Chlorine does not use purchased, rented, or scraped lists. Initial enrollment is through the website only; START and UNSTOP are used only to resubscribe after a prior opt-out.
+```text
+End users opt in on Club Chlorine RSVP pages at https://clubchlorine.party. Public opt-in evidence and the complete SMS program disclosure are available at https://clubchlorine.party/sms, with a directly hosted evidence image at https://clubchlorine.party/sms-opt-in-evidence.svg. The user enters a mobile phone number and may affirmatively select a separate optional checkbox that is unchecked by default. The RSVP can be submitted without selecting the checkbox. The checkbox states: “I agree to receive recurring SMS messages from Club Chlorine.” The accompanying disclosure explains that Club Chlorine is the organizer and SMS sender; that Coucou, a service operated by Soluo LLC, provides the event-management and messaging technology; that messages may include account notifications, RSVP and guest-list updates, tickets or QR codes, event updates, and replies about events or reservations; that message frequency varies; that message and data rates may apply; that users may reply STOP to opt out or HELP for help; and that consent is not a condition of purchase, RSVP, or admission. The disclosure links directly to Club Chlorine’s Terms at https://clubchlorine.party/terms and Privacy Policy at https://clubchlorine.party/privacy. Users who opt in receive an immediate confirmation message. Club Chlorine does not use purchased, rented, or scraped lists. Initial enrollment is through the website only; START and UNSTOP are used only to resubscribe after a prior opt-out.
+```
 
 ## Keywords and automatic responses
 
@@ -62,7 +82,9 @@ entity in the Twilio Customer Profile.
 
 ### Opt-in confirmation
 
-> CLUB CHLORINE: You’re subscribed to recurring Club Chlorine texts about RSVPs, guest-list status, tickets, event updates, and replies to your requests. Message frequency varies. Message and data rates may apply. Reply HELP for help or STOP to opt out.
+```text
+CLUB CHLORINE: You’re subscribed to recurring Club Chlorine texts about RSVPs, guest-list status, tickets, event updates, and replies to your requests. Message frequency varies. Message and data rates may apply. Reply HELP for help or STOP to opt out.
+```
 
 ### Opt-out keywords
 
@@ -70,7 +92,9 @@ entity in the Twilio Customer Profile.
 
 ### Opt-out message
 
-> CLUB CHLORINE: You have been unsubscribed and will receive no more Club Chlorine messages. Reply START to resubscribe.
+```text
+CLUB CHLORINE: You have been unsubscribed and will receive no more Club Chlorine messages. Reply START to resubscribe.
+```
 
 ### Help keywords
 
@@ -78,7 +102,9 @@ entity in the Twilio Customer Profile.
 
 ### Help message
 
-> CLUB CHLORINE: For help, contact support@clubchlorine.party or visit https://clubchlorine.party. Message frequency varies. Message and data rates may apply. Reply STOP to opt out.
+```text
+CLUB CHLORINE: For help, contact support@clubchlorine.party or visit https://clubchlorine.party. Message frequency varies. Message and data rates may apply. Reply STOP to opt out.
+```
 
 ## Approval checklist
 

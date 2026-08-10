@@ -3,21 +3,17 @@ import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import { isEventOpenForRsvp, resolveEventRsvpCutoff } from "@coucou/sdk/shared/event-availability";
 import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
-import { useMobile } from "@coucou/ui/tenant-template";
 import { useQuery } from "convex/react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import type React from "react";
 import { use, useMemo } from "react";
-import { DanzaEventRow, type DanzaLandingEvent } from "@/components/danza-event-row";
+import { DanzaBauhausEvent, DanzaBauhausPage } from "@/components/danza-bauhaus-event";
+import { DanzaPresentationDetails } from "@/components/danza-event-detail-sections";
+import type { DanzaLandingEvent } from "@/components/danza-event-row";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Spinner } from "@/components/ui/spinner";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import { buildRsvpPathForViewport, useRsvpFlowViewport } from "@/lib/rsvp-flow-routing";
-import {
-  buildEventDetailPathWithPreservedQuery,
-  buildPathWithPreservedQuery,
-} from "@/lib/rsvp-url-state";
+import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import type { Event as ClubEvent, RSVP } from "@/lib/types";
 
@@ -28,20 +24,6 @@ interface EventPageClientProps {
 type UserEventRsvpStatus = {
   status?: RSVP["status"];
 } | null;
-
-function formatLandingDate(timestamp: number, timezone?: string): string {
-  const dateFormatter = new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: timezone ?? "UTC",
-  });
-  const parts = dateFormatter.formatToParts(new Date(timestamp));
-  const weekday = parts.find((part) => part.type === "weekday")?.value.toUpperCase() ?? "";
-  const month = parts.find((part) => part.type === "month")?.value ?? "";
-  const day = parts.find((part) => part.type === "day")?.value ?? "";
-  return `${weekday} ${month}.${day}`;
-}
 
 function formatExpandedDate(timestamp: number, timezone?: string): string {
   const date = new Date(timestamp);
@@ -66,27 +48,11 @@ function formatExpandedDate(timestamp: number, timezone?: string): string {
   return `${day} ${formatted} · ${time}`;
 }
 
-const textLabelStyle: React.CSSProperties = {
-  fontFamily: "var(--tt-text)",
-  fontSize: 11,
-  letterSpacing: "0.1em",
-  textTransform: "uppercase",
-  color: "var(--tt-fg-mute)",
-};
-
-const textBodyStyle: React.CSSProperties = {
-  fontFamily: "var(--tt-text)",
-  fontSize: 12,
-  letterSpacing: "0.04em",
-  color: "var(--tt-fg-dim)",
-};
-
 export default function EventPageClient({ params }: EventPageClientProps) {
   const { eventId: eventRouteId } = use(params);
   const searchParams = useSearchParams();
   const { isLoaded, isSignedIn } = useAuth();
 
-  const isMobile = useMobile();
   const rsvpFlowViewport = useRsvpFlowViewport();
   const allEvents = useQuery(api.events.listAll, {
     siteKey: siteConfiguration.siteKey,
@@ -178,37 +144,13 @@ export default function EventPageClient({ params }: EventPageClientProps) {
             ? "RSVP"
             : "CLOSED";
 
-  const expandedContent = (
-    <div className="flex flex-col gap-5">
-      <dl className="grid gap-x-6 gap-y-2" style={{ gridTemplateColumns: "min-content 1fr" }}>
-        {resolvedFocusedEvent.hosts && resolvedFocusedEvent.hosts.length > 0 ? (
-          <>
-            <dt style={textLabelStyle}>Hosts</dt>
-            <dd style={textBodyStyle}>{resolvedFocusedEvent.hosts.join(", ")}</dd>
-          </>
-        ) : null}
-        {resolvedFocusedEvent.productionCompany ? (
-          <>
-            <dt style={textLabelStyle}>Presented by</dt>
-            <dd style={textBodyStyle}>{resolvedFocusedEvent.productionCompany}</dd>
-          </>
-        ) : null}
-      </dl>
-
-      {resolvedFocusedEvent.description ? (
-        <p
-          className="m-0 max-w-[540px]"
-          style={{
-            fontSize: 13,
-            lineHeight: 1.65,
-            color: "var(--tt-fg-dim)",
-          }}
-        >
-          {resolvedFocusedEvent.description}
-        </p>
-      ) : null}
-    </div>
-  );
+  const expandedContent =
+    resolvedFocusedEvent.productionCompany || resolvedFocusedEvent.description ? (
+      <DanzaPresentationDetails
+        productionCompany={resolvedFocusedEvent.productionCompany}
+        description={resolvedFocusedEvent.description}
+      />
+    ) : undefined;
 
   // If the focused event is the only thing to show, render just it expanded.
   // Otherwise render every event as a row, expanding the focused one and
@@ -216,6 +158,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   const allRows: Array<{
     landingEvent: DanzaLandingEvent;
     isFocused: boolean;
+    sourceEvent: ClubEvent;
   }> = [];
 
   // The brick on the focused row is contextual: when the user already has
@@ -233,6 +176,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         id: eventRouteId,
         title: resolvedFocusedEvent.name,
         subtitle: resolvedFocusedEvent.secondaryTitle,
+        hosts: resolvedFocusedEvent.hosts,
         date: formatExpandedDate(
           resolvedFocusedEvent.eventDate,
           resolvedFocusedEvent.eventTimezone,
@@ -252,6 +196,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         rsvpDisabled: focusedBrickDisabled,
       },
       isFocused: true,
+      sourceEvent: resolvedFocusedEvent,
     });
   }
 
@@ -268,17 +213,13 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         id: eventRouteIdentifier,
         title: event.name,
         subtitle: event.secondaryTitle,
-        date: isFocused
-          ? formatExpandedDate(event.eventDate, event.eventTimezone)
-          : formatLandingDate(event.eventDate, event.eventTimezone),
+        hosts: event.hosts,
+        date: formatExpandedDate(event.eventDate, event.eventTimezone),
         location: event.location,
         lineup: getPublicEventActs(event).map((act) => ({
           label: act.displayName,
           descriptorBadges: act.descriptorBadges,
-          // Only the focused/expanded row exposes social links — minimized
-          // sibling rows get joined into a single line and would otherwise
-          // nest anchors inside their detailHref wrap.
-          href: isFocused ? act.socialUrl : undefined,
+          href: act.socialUrl,
         })),
         rsvpHref: isFocused ? focusedBrickHref : rsvpFormHref,
         rsvpLabel: isFocused ? focusedBrickLabel : eventIsOpen ? "RSVP" : "CLOSED",
@@ -287,35 +228,26 @@ export default function EventPageClient({ params }: EventPageClientProps) {
           : !eventIsOpen || rsvpFlowViewport === "unknown",
       },
       isFocused,
+      sourceEvent: event,
     });
   }
 
   return (
-    <div>
-      {allRows.map((row, index) => (
-        <div key={row.landingEvent.id}>
-          <DanzaEventRow
-            event={row.landingEvent}
-            mobile={isMobile}
-            visible
-            delayMs={index * 90}
-            linkComponent={Link}
-            variant={row.isFocused ? "expanded" : "minimized"}
-            detailHref={
-              row.isFocused
-                ? buildPathWithPreservedQuery("/", searchParams, ["step"])
-                : buildEventDetailPathWithPreservedQuery(row.landingEvent.id, searchParams)
-            }
-            detailLabel={row.isFocused ? "← Back" : undefined}
-            bottomRightSlot={
-              row.isFocused && isSignedIn ? (
-                <EventReferralShareButton event={resolvedFocusedEvent} showLabel={false} />
-              ) : undefined
-            }
-            expandedContent={row.isFocused ? expandedContent : undefined}
-          />
-        </div>
+    <DanzaBauhausPage>
+      {allRows.map((row) => (
+        <DanzaBauhausEvent
+          key={row.landingEvent.id}
+          event={row.landingEvent}
+          sponsors={row.sourceEvent.sponsors}
+          partners={row.sourceEvent.eventPartners}
+          expandedContent={row.isFocused ? expandedContent : undefined}
+          utilitySlot={
+            row.isFocused && isSignedIn ? (
+              <EventReferralShareButton event={resolvedFocusedEvent} showLabel={false} />
+            ) : undefined
+          }
+        />
       ))}
-    </div>
+    </DanzaBauhausPage>
   );
 }

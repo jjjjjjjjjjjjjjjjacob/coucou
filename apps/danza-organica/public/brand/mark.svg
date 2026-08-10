@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Danza Organica mark">
-  <rect width="512" height="512" fill="#2EC4B6"/>
+  <rect width="512" height="512" fill="#17E1E5"/>
   <circle cx="256" cy="256" r="176" fill="#0A0A0A"/>
-  <text x="256" y="256" fill="#2EC4B6" font-family="Geist, Inter, Helvetica, Arial, sans-serif" font-size="150" font-weight="700" letter-spacing="6" text-anchor="middle" dominant-baseline="central">DO</text>
+  <text x="256" y="256" fill="#17E1E5" font-family="Geist, Inter, Helvetica, Arial, sans-serif" font-size="150" font-weight="700" letter-spacing="6" text-anchor="middle" dominant-baseline="central">DO</text>
 </svg>

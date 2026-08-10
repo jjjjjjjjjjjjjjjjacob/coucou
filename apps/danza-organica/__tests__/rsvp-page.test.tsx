@@ -3,6 +3,7 @@ import type { Id } from "@convex/_generated/dataModel";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { type FunctionReference, getFunctionName } from "convex/server";
 import React, { Suspense } from "react";
+import { EventBrandingProvider } from "@/contexts/event-branding-context";
 import type { Event } from "@/lib/types";
 
 type RsvpStatusValue = {
@@ -165,16 +166,20 @@ mock.module("@coucou/ui/tenant-template", () => ({
 mock.module("@/components/danza-event-row", () => ({
   DanzaEventRow: ({
     event,
+    variant,
   }: {
     event: { id: string; rsvpHref?: string; rsvpLabel?: string; rsvpDisabled?: boolean };
+    variant?: string;
   }) => (
-    <a
-      href={event.rsvpHref ?? ""}
-      aria-disabled={event.rsvpDisabled ? "true" : undefined}
-      data-testid={`rsvp-brick-${event.id}`}
-    >
-      {event.rsvpLabel ?? "RSVP"}
-    </a>
+    <div data-testid={`danza-row-${event.id}`} data-variant={variant}>
+      <a
+        href={event.rsvpHref ?? ""}
+        aria-disabled={event.rsvpDisabled ? "true" : undefined}
+        data-testid={`rsvp-brick-${event.id}`}
+      >
+        {event.rsvpLabel ?? "RSVP"}
+      </a>
+    </div>
   ),
 }));
 
@@ -277,7 +282,11 @@ async function renderRsvpPage() {
 
 async function renderHomePage() {
   await act(async () => {
-    render(<Home />);
+    render(
+      <EventBrandingProvider>
+        <Home />
+      </EventBrandingProvider>,
+    );
   });
 }
 
@@ -388,6 +397,45 @@ describe("RSVP page reservation-status gate", () => {
     expect(routerReplaceCalls).toEqual([]);
   });
 
+  it("renders event partners below the active RSVP form", async () => {
+    eventDocument = createEvent({
+      eventPartners: [
+        {
+          label: "The Market",
+          logoStorageId: "market_logo" as Id<"_storage">,
+        },
+      ],
+    });
+
+    await renderRsvpPage();
+
+    const rsvpForm = screen.getByTestId("rsvp-form");
+    const partnerLogos = screen.getByLabelText("Event partners");
+    expect(
+      rsvpForm.compareDocumentPosition(partnerLogos) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(screen.getByRole("img", { name: "The Market" })).toHaveAttribute(
+      "src",
+      "/partners/the-market-wordmark-teal-black.svg",
+    );
+  });
+
+  it("does not render event partners while redirecting to a status surface", async () => {
+    eventDocument = createEvent({
+      eventPartners: [
+        {
+          label: "The Market",
+          logoStorageId: "market_logo" as Id<"_storage">,
+        },
+      ],
+    });
+    routeRsvpStatus = { status: "approved" };
+
+    await renderRsvpPage();
+
+    expect(screen.queryByLabelText("Event partners")).toBeNull();
+  });
+
   it("submits directly when a signed-in RSVP keeps the Clerk phone", async () => {
     routeRsvpStatus = null;
 
@@ -451,6 +499,23 @@ describe("RSVP page reservation-status gate", () => {
       );
     });
     expect(postHogFeatureFlagCalls).toEqual(["rsvp-flow-route"]);
+  });
+
+  it("takes over the homepage with the first event theme without auto-routing", async () => {
+    const themedEvent = createEvent({
+      themeBackgroundColor: "#17E1E5",
+      themeTextColor: "#0A0A0A",
+      themeAccentColor: "#FC7243",
+    });
+    eventDocument = themedEvent;
+    eventList = [themedEvent];
+
+    await renderHomePage();
+
+    const themedSurface = document.querySelector<HTMLElement>('[data-event-themed="true"]');
+    expect(themedSurface?.style.getPropertyValue("--tt-accent")).toBe("#FC7243");
+    expect(screen.getByTestId("danza-row-club").getAttribute("data-variant")).toBe("expanded");
+    expect(routerReplaceCalls).toEqual([]);
   });
 
   it("does not evaluate the RSVP experiment for a known homepage RSVP", async () => {

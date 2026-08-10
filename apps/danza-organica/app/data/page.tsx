@@ -108,8 +108,9 @@ export default function DataCollection() {
           <li>Opt-out history and reasons for legal compliance.</li>
         </ul>
         <p style={{ color: "var(--tt-fg-dim)" }}>
-          Danza Organica is the SMS sender. Coucou provides Danza Organica&apos;s event-management
-          and messaging technology, and Twilio provides telecommunications delivery infrastructure.
+          Coucou, a Soluo LLC service, is the SMS sender and messaging-program operator. Danza
+          Organica supplies the event context, and Twilio provides telecommunications delivery
+          infrastructure.
         </p>
       </LegalSection>
 
@@ -199,12 +200,20 @@ export default function DataCollection() {
             <strong>Clerk:</strong> User authentication and account management.
           </li>
           <li>
-            <strong>Twilio:</strong> Telecommunications delivery for Danza Organica SMS messages.
+            <strong>Twilio:</strong> Telecommunications delivery for Coucou SMS messages about Danza
+            Organica events.
           </li>
           <li>
             <strong>Convex:</strong> Secure database hosting and real-time features.
           </li>
         </ul>
+        <p className="mt-4">
+          <strong>
+            We do not share, sell, or provide mobile phone numbers, mobile opt-in information, or
+            messaging consent data to third parties or affiliates for marketing or promotional
+            purposes.
+          </strong>
+        </p>
         <p className="mt-4">We never share data for:</p>
         <ul className="ml-5 list-disc space-y-2">
           <li>Marketing by third parties.</li>

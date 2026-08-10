@@ -13,7 +13,7 @@ import { SignInClient } from "./sign-in-client";
 type RawSearchParams = Record<string, string | string[] | undefined>;
 type ThemedEvent = Pick<
   Event,
-  "_id" | "themeBackgroundColor" | "themeTextColor" | "customIconStorageId"
+  "_id" | "themeBackgroundColor" | "themeTextColor" | "themeAccentColor" | "customIconStorageId"
 >;
 
 function ensureString(value: string | string[] | undefined): string | undefined {
@@ -39,12 +39,14 @@ function mapEventToThemedEvent(event: {
   _id: Id<"events">;
   themeBackgroundColor?: string | null;
   themeTextColor?: string | null;
+  themeAccentColor?: string | null;
   customIconStorageId?: Id<"_storage"> | null;
 }): ThemedEvent {
   return {
     _id: event._id,
     themeBackgroundColor: event.themeBackgroundColor ?? undefined,
     themeTextColor: event.themeTextColor ?? undefined,
+    themeAccentColor: event.themeAccentColor ?? undefined,
     customIconStorageId: event.customIconStorageId ?? null,
   };
 }
@@ -108,6 +110,7 @@ export default async function Page({ searchParams }: { searchParams?: Promise<Ra
         redirectUrl={redirectUrl}
         eventThemeBackgroundColor={themedEvent?.themeBackgroundColor ?? null}
         eventThemeTextColor={themedEvent?.themeTextColor ?? null}
+        eventThemeAccentColor={themedEvent?.themeAccentColor ?? null}
       />
     </EventThemeProvider>
   );

@@ -4,12 +4,7 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { resolveQrCodeColors } from "@coucou/sdk/shared/qr-code-colors";
-import {
-  EyebrowPill,
-  TenantButton,
-  Ticket,
-  type TicketDetailRow,
-} from "@coucou/ui/tenant-template";
+import { TenantButton, type TicketDetailRow } from "@coucou/ui/tenant-template";
 import { useMutation } from "@tanstack/react-query";
 import {
   type Preloaded,
@@ -18,23 +13,22 @@ import {
   usePreloadedQuery,
 } from "convex/react";
 import { Check, Download } from "lucide-react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { DanzaMarketDrinksOffer } from "@/components/danza-market-drinks-offer";
+import { DanzaTicket } from "@/components/danza-ticket";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Spinner } from "@/components/ui/spinner";
 import { formatEventTitleInline, hasEventSecondaryTitle } from "@/lib/event-display";
-import {
-  buildEventDetailPathWithPreservedQuery,
-  buildPathWithPreservedQuery,
-} from "@/lib/rsvp-url-state";
+import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import {
   getByNameTicketInstruction,
   getTicketConfirmationToastDescription,
   ticketCopyShouldMentionQr,
 } from "@/lib/ticket-copy";
+import { formatEventDateTime } from "@/lib/utils";
 
 const QR_SVG_ID = "ticket-qr-svg";
 
@@ -101,12 +95,14 @@ interface TicketClientPageProps {
   eventRouteId: string;
   eventPreload: Preloaded<typeof api.events.getByRouteId>;
   statusPreload: Preloaded<typeof api.rsvps.statusForUserEventByRouteId>;
+  view: "offer" | "ticket";
 }
 
 export default function TicketClientPage({
   eventRouteId,
   eventPreload,
   statusPreload,
+  view,
 }: TicketClientPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -118,7 +114,7 @@ export default function TicketClientPage({
 
   const myRedemption = useConvexQuery(
     api.redemptions.forCurrentUserEvent,
-    canonicalEventId
+    canonicalEventId && view === "ticket"
       ? {
           eventId: canonicalEventId as Id<"events">,
           siteKey: siteConfiguration.siteKey,
@@ -135,7 +131,6 @@ export default function TicketClientPage({
     redemptionCode: myRedemption?.code ?? null,
   };
   const shouldMentionQr = ticketCopyShouldMentionQr(ticketCopyInput);
-  const shouldShowReferralSharing = event?.referralSharingEnabled === true;
 
   const eventDisplayName = formatEventTitleInline(event);
   const eventHasSecondaryTitle = hasEventSecondaryTitle(event);
@@ -144,6 +139,14 @@ export default function TicketClientPage({
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   const qrFileName = sanitizedFileName || "ticket";
+  const ticketHref = buildPathWithPreservedQuery(
+    `/events/${eventRouteId}/ticket/pass`,
+    searchParams,
+    ["step"],
+  );
+  const offerHref = buildPathWithPreservedQuery(`/events/${eventRouteId}/ticket`, searchParams, [
+    "step",
+  ]);
 
   const { foregroundColor: qrForegroundColor, backgroundColor: qrBackgroundColor } =
     resolveQrCodeColors({
@@ -161,26 +164,6 @@ export default function TicketClientPage({
         setHasAttemptedGuestRsvpClaim(true);
       });
   }, [claimGuestRsvps, hasAttemptedGuestRsvpClaim]);
-
-  const dateText = useMemo(() => {
-    const timestamp = event?.eventDate;
-    const timezone = event?.eventTimezone;
-    if (!timestamp) return "";
-    const date = new Date(timestamp);
-    const day = date.toLocaleDateString(undefined, {
-      weekday: "long",
-      timeZone: timezone ?? "UTC",
-    });
-    const formattedDate = date
-      .toLocaleDateString("en-US", {
-        month: "2-digit",
-        day: "2-digit",
-        year: "2-digit",
-        timeZone: timezone ?? "UTC",
-      })
-      .replace(/\//g, ".");
-    return `${day} ${formattedDate}`;
-  }, [event?.eventDate, event?.eventTimezone]);
 
   // Auto-redirect off-state RSVPs.
   useEffect(() => {
@@ -201,6 +184,7 @@ export default function TicketClientPage({
   useEffect(() => {
     if (
       event?.name &&
+      view === "ticket" &&
       status?.status === "approved" &&
       !status.ticketViewedAt &&
       !markTicketViewed.isPending &&
@@ -229,6 +213,7 @@ export default function TicketClientPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     event?.name,
+    view,
     status?.status,
     status?.ticketViewedAt,
     canonicalEventId,
@@ -254,6 +239,14 @@ export default function TicketClientPage({
     );
   }
 
+  if (view === "offer") {
+    return (
+      <div className="danza-ticket-offer-page">
+        <DanzaMarketDrinksOffer ticketHref={ticketHref} />
+      </div>
+    );
+  }
+
   // Loading the redemption when we know we should have one.
   const expectingTicket = status?.status === "approved";
   const isLoadingRedemption = expectingTicket && myRedemption === undefined;
@@ -266,13 +259,12 @@ export default function TicketClientPage({
       ? `${window.location.origin}/redeem/${myRedemption.code}`
       : "";
 
-  const ticketDetails: TicketDetailRow[] = [];
-  if (myRedemption?.listKey) {
-    ticketDetails.push({
-      label: "Tier",
-      value: myRedemption.listKey.toUpperCase(),
-    });
-  }
+  const ticketDetails: TicketDetailRow[] = [
+    {
+      label: "When",
+      value: formatEventDateTime(event.eventDate, event.eventTimezone),
+    },
+  ];
   if (event.location) {
     ticketDetails.push({ label: "Where", value: event.location });
   }
@@ -284,84 +276,69 @@ export default function TicketClientPage({
           <Spinner />
         </div>
       ) : (
-        <Ticket
-          noShell
-          eyebrow="Ticket"
-          eyebrowTrailing={
-            <EyebrowPill
-              href={buildEventDetailPathWithPreservedQuery(eventRouteId, searchParams)}
-              linkComponent={Link}
-            >
-              ← Back to event
-            </EyebrowPill>
-          }
-          eventName={event.name}
-          secondaryTitle={eventHasSecondaryTitle ? event.secondaryTitle : null}
-          whenLabel={dateText || null}
-          whereLabel={event.location ?? null}
-          qrValue={qrValue}
-          redemptionCode={myRedemption?.code ?? undefined}
-          qrFgColor={qrForegroundColor}
-          qrBgColor={qrBackgroundColor}
-          qrSvgId={QR_SVG_ID}
-          showQr={showQr}
-          noQrSlot={
-            generatesQr ? (
-              <div className="flex flex-col items-center gap-2">
-                <Spinner />
-                <div className="text-[12px]" style={{ color: "var(--tt-fg-dim)" }}>
-                  Preparing your ticket…
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-2">
-                <div
-                  className="flex items-center gap-1.5 text-[14px] font-medium"
-                  style={{ color: "var(--tt-fg)" }}
-                >
-                  <Check className="h-3.5 w-3.5" aria-hidden />
-                  <span>{status?.listKey?.toUpperCase()} confirmed</span>
-                </div>
-                <div
-                  className="text-[12px] text-center max-w-[280px]"
-                  style={{ color: "var(--tt-fg-dim)" }}
-                >
-                  {getByNameTicketInstruction()}
-                </div>
-              </div>
-            )
-          }
-          actions={
-            showQr || shouldShowReferralSharing ? (
-              <div className="flex flex-col items-center justify-center gap-4">
-                {showQr ? (
-                  <TenantButton
-                    type="button"
-                    onClick={() =>
-                      downloadQRCodeAsImage(QR_SVG_ID, qrFileName, {
-                        foregroundColor: qrForegroundColor,
-                        backgroundColor: qrBackgroundColor,
-                      })
-                    }
-                  >
-                    <Download className="mr-2 h-3.5 w-3.5" />
-                    Download
-                  </TenantButton>
-                ) : null}
-                {shouldShowReferralSharing ? (
-                  <div className="my-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-700">
-                    <EventReferralShareButton
-                      event={event}
-                      variant="prominent"
-                      className="h-auto p-4 text-[15px]"
-                    />
+        <div className="danza-ticket-page">
+          <DanzaTicket
+            backHref={offerHref}
+            backLabel="Back to offer"
+            eventName={event.name}
+            secondaryTitle={eventHasSecondaryTitle ? event.secondaryTitle : null}
+            qrValue={qrValue}
+            redemptionCode={myRedemption?.code ?? undefined}
+            qrFgColor={qrForegroundColor}
+            qrBgColor={qrBackgroundColor}
+            qrSvgId={QR_SVG_ID}
+            showQr={showQr}
+            noQrSlot={
+              generatesQr ? (
+                <div className="flex flex-col items-center gap-2">
+                  <Spinner />
+                  <div className="text-[12px]" style={{ color: "var(--tt-fg-dim)" }}>
+                    Preparing your ticket…
                   </div>
-                ) : null}
-              </div>
-            ) : null
-          }
-          details={ticketDetails}
-        />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <div
+                    className="flex items-center gap-1.5 text-[14px] font-medium"
+                    style={{ color: "var(--tt-fg)" }}
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden />
+                    <span>{status?.listKey?.toUpperCase()} confirmed</span>
+                  </div>
+                  <div
+                    className="text-[12px] text-center max-w-[280px]"
+                    style={{ color: "var(--tt-fg-dim)" }}
+                  >
+                    {getByNameTicketInstruction()}
+                  </div>
+                </div>
+              )
+            }
+            actions={[
+              showQr ? (
+                <TenantButton
+                  key="download-ticket"
+                  type="button"
+                  onClick={() =>
+                    downloadQRCodeAsImage(QR_SVG_ID, qrFileName, {
+                      foregroundColor: qrForegroundColor,
+                      backgroundColor: qrBackgroundColor,
+                    })
+                  }
+                >
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  Download
+                </TenantButton>
+              ) : null,
+              <EventReferralShareButton
+                key="share-ticket"
+                event={event}
+                className="danza-ticket__share-button"
+              />,
+            ]}
+            details={ticketDetails}
+          />
+        </div>
       )}
     </>
   );

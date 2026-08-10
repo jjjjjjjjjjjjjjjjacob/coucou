@@ -63,6 +63,10 @@ function isPublicEventDetailPath(pathname: string): boolean {
   return /^\/events\/[^/]+\/?$/.test(pathname);
 }
 
+function isDevelopmentBauhausLinePreviewPath(pathname: string): boolean {
+  return process.env.NODE_ENV !== "production" && /^\/dev\/bauhaus-line\/?$/.test(pathname);
+}
+
 // The RSVP entry route is intentionally accessible to unauthenticated
 // visitors so social link previews can read the event-specific OpenGraph
 // metadata. The page itself runs a client-side auth gate that bounces
@@ -123,7 +127,12 @@ export default clerkMiddleware(async (auth, req) => {
     return redirectToPrimarySignIn(req, redirectPath);
   }
 
-  if (isPublicRoute(req) || isPublicEventDetailPath(pathname) || isPublicRsvpEntryPath(pathname)) {
+  if (
+    isPublicRoute(req) ||
+    isPublicEventDetailPath(pathname) ||
+    isPublicRsvpEntryPath(pathname) ||
+    isDevelopmentBauhausLinePreviewPath(pathname)
+  ) {
     return NextResponse.next();
   }
 

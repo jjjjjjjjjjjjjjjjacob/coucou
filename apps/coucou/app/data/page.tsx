@@ -1,13 +1,10 @@
 import { LegalPage, LegalSection } from "@coucou/ui/tenant-template";
 import { siteConfiguration } from "@/lib/site";
+import { coucouSmsProgram } from "@/lib/sms-program";
 
 export default function DataCollection() {
   const brandName = siteConfiguration.brandName;
-  const lastUpdated = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const lastUpdated = coucouSmsProgram.lastUpdated;
 
   return (
     <LegalPage
@@ -74,7 +71,7 @@ export default function DataCollection() {
           <li>Process RSVP requests and approvals.</li>
           <li>Generate digital tickets and QR codes.</li>
           <li>Manage event capacity and logistics.</li>
-          <li>Send event updates and reminders from the event host you RSVP&apos;d to.</li>
+          <li>Send Coucou event updates and reminders about the host you RSVP&apos;d to.</li>
           <li>Provide personalized event experiences.</li>
           <li>Document express consent for compliance requirements.</li>
         </ul>
@@ -96,8 +93,9 @@ export default function DataCollection() {
             event operations.
           </li>
           <li>
-            <strong>Deletion:</strong> Phone numbers are permanently deleted when consent is
-            withdrawn, while minimal consent logs are retained for compliance.
+            <strong>Retention:</strong> Phone and messaging records are retained only as long as
+            reasonably necessary to operate the service, honor preferences, and meet legal
+            obligations.
           </li>
         </ul>
         <p className="mt-4">SMS consent tracking:</p>
@@ -110,8 +108,8 @@ export default function DataCollection() {
           <li>Opt-out history and reasons for legal compliance.</li>
         </ul>
         <p style={{ color: "var(--tt-fg-dim)" }}>
-          SMS messages are sent by Coucou on behalf of the event host you RSVP&apos;d to using{" "}
-          {brandName} as a messaging platform service provider, and delivered through Twilio SMS
+          Coucou, a Soluo LLC service, is the SMS sender and messaging-program operator. The event
+          host supplies the event context, and Twilio provides telecommunications delivery
           infrastructure.
         </p>
       </LegalSection>
@@ -170,8 +168,9 @@ export default function DataCollection() {
             analytics. Personal identifiers anonymized after 2 years unless consent is maintained.
           </li>
           <li>
-            <strong>SMS consent and phone data:</strong> Deleted immediately upon consent
-            withdrawal. Opt-out records maintained indefinitely for compliance.
+            <strong>SMS consent and phone data:</strong> Retained for as long as reasonably
+            necessary to operate the service, honor messaging preferences, resolve disputes,
+            maintain security, and satisfy legal obligations.
           </li>
           <li>
             <strong>Operational diagnostics:</strong> Retained only as long as needed to investigate
@@ -201,12 +200,19 @@ export default function DataCollection() {
             <strong>Clerk:</strong> User authentication and account management.
           </li>
           <li>
-            <strong>Twilio:</strong> SMS message delivery on behalf of the hosting business.
+            <strong>Twilio:</strong> Telecommunications delivery for the Coucou SMS program.
           </li>
           <li>
             <strong>Convex:</strong> Secure database hosting and real-time features.
           </li>
         </ul>
+        <p className="mt-4">
+          <strong>
+            We do not share, sell, or provide mobile phone numbers, mobile opt-in information, or
+            messaging consent data to third parties or affiliates for marketing or promotional
+            purposes.
+          </strong>
+        </p>
         <p className="mt-4">We never share data for:</p>
         <ul className="ml-5 list-disc space-y-2">
           <li>Marketing by third parties.</li>

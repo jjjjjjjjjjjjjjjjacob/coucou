@@ -254,7 +254,7 @@ describe("RsvpAcceptedForm draft persistence", () => {
       target: { value: "Arriving late" },
     });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "pool" } });
-    fireEvent.click(screen.getByLabelText(/recurring sms messages from danza organica/i));
+    fireEvent.click(screen.getByLabelText(/recurring sms messages from coucou.*danza organica/i));
 
     await waitFor(() => {
       const rawDraft = window.localStorage.getItem(storageKey);
@@ -294,7 +294,9 @@ describe("RsvpAcceptedForm draft persistence", () => {
         "Arriving late",
       );
       expect(screen.getByLabelText(/password/i)).toHaveValue("pool");
-      expect(screen.getByLabelText(/recurring sms messages from danza organica/i)).toBeChecked();
+      expect(
+        screen.getByLabelText(/recurring sms messages from coucou.*danza organica/i),
+      ).toBeChecked();
     });
   });
 
@@ -447,7 +449,7 @@ describe("RsvpAcceptedForm draft persistence", () => {
       expect(screen.getByLabelText(/instagram/i)).toHaveValue("@database");
       expect(screen.getByLabelText(/invited by/i)).toHaveValue("Database Host");
       expect(
-        screen.getByLabelText(/recurring sms messages from danza organica/i),
+        screen.getByLabelText(/recurring sms messages from coucou.*danza organica/i),
       ).not.toBeChecked();
     });
   });
@@ -463,12 +465,12 @@ describe("RsvpAcceptedForm draft persistence", () => {
       />,
     );
 
-    const smsConsentCheckbox = screen.getByLabelText(/recurring sms messages from danza organica/i);
+    const smsConsentCheckbox = screen.getByLabelText(
+      /recurring sms messages from coucou.*danza organica/i,
+    );
     expect(smsConsentCheckbox).not.toBeChecked();
     expect(
-      screen.getByText(
-        /Danza Organica may send account notifications, RSVP and guest-list updates/i,
-      ),
+      screen.getByText(/Coucou may send account notifications, RSVP and guest-list updates/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Get Event Updates by SMS/i)).not.toBeInTheDocument();
   });
@@ -491,7 +493,9 @@ describe("RsvpAcceptedForm draft persistence", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/recurring sms messages from danza organica/i)).toBeChecked();
+      expect(
+        screen.getByLabelText(/recurring sms messages from coucou.*danza organica/i),
+      ).toBeChecked();
     });
   });
 });

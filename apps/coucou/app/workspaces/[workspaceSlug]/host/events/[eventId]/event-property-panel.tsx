@@ -343,6 +343,10 @@ export function EventPropertyPanel({ event }: EventPropertyPanelProps) {
           <div className="flex flex-wrap gap-3">
             <ColorSwatch color={event.themeBackgroundColor || "#000000"} label="Background" />
             <ColorSwatch color={event.themeTextColor || "#ffffff"} label="Text" />
+            <ColorSwatch
+              color={event.themeAccentColor || event.themeTextColor || "#ffffff"}
+              label="Accent"
+            />
             <ColorSwatch color={event.qrCodeColor || "#000000"} label="QR" />
           </div>
 
@@ -350,6 +354,22 @@ export function EventPropertyPanel({ event }: EventPropertyPanelProps) {
             <PropertyRow icon={<Mic2 className="h-3.5 w-3.5" />} label="Lineup">
               <PropertyValue>
                 {event.acts.length} act{event.acts.length === 1 ? "" : "s"}
+              </PropertyValue>
+            </PropertyRow>
+          ) : null}
+
+          {event.eventPartners && event.eventPartners.length > 0 ? (
+            <PropertyRow icon={<Palette className="h-3.5 w-3.5" />} label="Event partners">
+              <PropertyValue>
+                {event.eventPartners.length} partner{event.eventPartners.length === 1 ? "" : "s"}
+              </PropertyValue>
+            </PropertyRow>
+          ) : null}
+
+          {event.sponsors && event.sponsors.length > 0 ? (
+            <PropertyRow icon={<Palette className="h-3.5 w-3.5" />} label="Sponsors">
+              <PropertyValue>
+                {event.sponsors.length} sponsor{event.sponsors.length === 1 ? "" : "s"}
               </PropertyValue>
             </PropertyRow>
           ) : null}

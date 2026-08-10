@@ -75,13 +75,15 @@ function deriveOverriddenPreset(
 ): PresetDefinition {
   const overrideBackground = normalizeHexColorInput(event?.themeBackgroundColor);
   const overrideText = normalizeHexColorInput(event?.themeTextColor);
+  const overrideAccent = normalizeHexColorInput(event?.themeAccentColor);
 
-  if (!overrideBackground && !overrideText) {
+  if (!overrideBackground && !overrideText && !overrideAccent) {
     return base;
   }
 
   const nextBg = overrideBackground ?? base.bg;
   const nextFg = overrideText ?? base.fg;
+  const nextAccent = overrideAccent ?? nextFg;
 
   // Derive every color token from the override pair so the entire surface
   // (including dim text, hairline rules, mute labels, and the secondary
@@ -92,8 +94,6 @@ function deriveOverriddenPreset(
   const nextFgMute = mixHexColors(nextFg, nextBg, 0.65);
   const nextRule = rgbaForHex(nextFg, 0.16);
   const nextRuleStrong = rgbaForHex(nextFg, 0.32);
-  const nextAccent = nextFg;
-
   return {
     ...base,
     bg: nextBg,
@@ -116,6 +116,7 @@ function buildStyleVars(
   const eventThemeStyle = buildEventThemeStyle(event, {
     backgroundColor: preset.bg,
     textColor: preset.fg,
+    accentColor: preset.accent,
   });
 
   const tenantTemplateVars: Record<string, string | number> = {
@@ -162,10 +163,12 @@ export function resolvePreset(input: ResolvePresetInput): ResolvedPreset {
 export function resolveEventColors(input: ResolvePresetInput): {
   backgroundColor: string;
   textColor: string;
+  accentColor: string;
 } {
   const resolved = resolvePreset(input);
   return getEventThemeColors(input.event, {
-    backgroundColor: resolved.definition.bg,
-    textColor: resolved.definition.fg,
+    backgroundColor: resolved.effective.bg,
+    textColor: resolved.effective.fg,
+    accentColor: resolved.effective.accent,
   });
 }

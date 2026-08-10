@@ -48,6 +48,59 @@ async function getListCredentialsForEvent(testBackend: TestBackend, eventId: Id<
 }
 
 describe("Events Functions", () => {
+  it("creates events with sanitized partner metadata and an explicit accent color", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await seedWorkspace(testBackend);
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+    const [marketLogoStorageId, radioLogoStorageId] = await testBackend.run(
+      async (databaseContext) => {
+        return [
+          await databaseContext.storage.store(new Blob(["market"])),
+          await databaseContext.storage.store(new Blob(["radio"])),
+        ];
+      },
+    );
+
+    const createResult = await hostBackend.action(api.eventsNode.create, {
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "Danza Organica",
+      location: "Main Room",
+      eventDate: Date.now() + 86_400_000,
+      lists: [{ listKey: "guest", password: "" }],
+      themeBackgroundColor: "17e1e5",
+      themeTextColor: "0a0a0a",
+      themeAccentColor: "fc7243",
+      sponsors: [{ label: " The Market ", logoStorageId: marketLogoStorageId }],
+      eventPartners: [
+        {
+          label: " The Market ",
+          logoStorageId: marketLogoStorageId,
+          url: " https://themarket.nyc ",
+        },
+        { label: "Nothing Radio", logoStorageId: radioLogoStorageId },
+      ],
+    });
+    const createdEvent = await hostBackend.query(api.events.get, {
+      eventId: createResult.eventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    expect(createdEvent?.themeAccentColor).toBe("#FC7243");
+    expect(createdEvent?.sponsors).toEqual([
+      { label: "The Market", logoStorageId: marketLogoStorageId },
+    ]);
+    expect(createdEvent?.eventPartners).toEqual([
+      {
+        label: "The Market",
+        logoStorageId: marketLogoStorageId,
+        url: "https://themarket.nyc/",
+      },
+      { label: "Nothing Radio", logoStorageId: radioLogoStorageId },
+    ]);
+  });
+
   it("rejects case-insensitive event code collisions across published events", async () => {
     const testBackend = convexTest(schema, convexModules);
     await seedWorkspace(testBackend);
@@ -134,6 +187,9 @@ describe("Events Functions", () => {
       workspaceSlug: WORKSPACE_SLUG,
       name: "Draft Night",
     });
+    const marketLogoStorageId = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.storage.store(new Blob(["market"]));
+    });
     const eventDate = Date.now() + 86_400_000;
 
     await hostBackend.action(api.eventsNode.updateAndPublish, {
@@ -147,6 +203,8 @@ describe("Events Functions", () => {
         eventTimezone: "America/New_York",
         themeBackgroundColor: "#101820",
         themeTextColor: "#FEE715",
+        themeAccentColor: "#FC7243",
+        sponsors: [{ label: "The Market", logoStorageId: marketLogoStorageId }],
       },
       lists: [
         {
@@ -175,6 +233,10 @@ describe("Events Functions", () => {
     expect(publishedEvent?.eventDate).toBe(eventDate);
     expect(publishedEvent?.themeBackgroundColor).toBe("#101820");
     expect(publishedEvent?.themeTextColor).toBe("#FEE715");
+    expect(publishedEvent?.themeAccentColor).toBe("#FC7243");
+    expect(publishedEvent?.sponsors).toEqual([
+      { label: "The Market", logoStorageId: marketLogoStorageId },
+    ]);
     expect(listCredentials).toHaveLength(1);
     expect(listCredentials[0]?.listKey).toBe("press");
     expect(listCredentials[0]?.password).toBe("blue-door");
@@ -210,6 +272,8 @@ describe("Events Functions", () => {
     await seedWorkspace(testBackend);
     const sourceEventId = await testBackend.run(async (databaseContext) => {
       const now = Date.now();
+      const marketLogoStorageId = await databaseContext.storage.store(new Blob(["market"]));
+      const radioLogoStorageId = await databaseContext.storage.store(new Blob(["radio"]));
       const eventId = await databaseContext.db.insert("events", {
         workspaceSlug: WORKSPACE_SLUG,
         siteKey: SITE_KEY,
@@ -218,6 +282,11 @@ describe("Events Functions", () => {
         secondaryTitle: "Live on the roof",
         description: "An evening event.",
         acts: [{ name: "The Headliner", descriptorBadges: ["Live"] }],
+        eventPartners: [
+          { label: "The Market", logoStorageId: marketLogoStorageId },
+          { label: "Nothing Radio", logoStorageId: radioLogoStorageId },
+        ],
+        sponsors: [{ label: "The Market", logoStorageId: marketLogoStorageId }],
         hosts: ["Coucou"],
         productionCompany: "Coucou Productions",
         location: "Main Room",
@@ -244,6 +313,7 @@ describe("Events Functions", () => {
         ],
         themeBackgroundColor: "#101820",
         themeTextColor: "#FEE715",
+        themeAccentColor: "#FC7243",
         rsvpConfirmationMessageEnabled: true,
         rsvpConfirmationMessage: "We received your RSVP.",
         qrCodeColor: "#123456",
@@ -296,6 +366,12 @@ describe("Events Functions", () => {
     expect(duplicateEvent?.isFeatured).toBeUndefined();
     expect(duplicateEvent?.themeBackgroundColor).toBe("#101820");
     expect(duplicateEvent?.themeTextColor).toBe("#FEE715");
+    expect(duplicateEvent?.themeAccentColor).toBe("#FC7243");
+    expect(duplicateEvent?.eventPartners?.map((partner) => partner.label)).toEqual([
+      "The Market",
+      "Nothing Radio",
+    ]);
+    expect(duplicateEvent?.sponsors?.map((sponsor) => sponsor.label)).toEqual(["The Market"]);
     expect(duplicateEvent?.customFields).toEqual([
       {
         key: "instagram",

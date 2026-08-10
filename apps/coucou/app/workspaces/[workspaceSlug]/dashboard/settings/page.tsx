@@ -88,6 +88,7 @@ export default function WorkspaceDashboardSettingsPage() {
   const [isSavingPrimaryDomain, setIsSavingPrimaryDomain] = useState(false);
   const [themeBackgroundColorDraft, setThemeBackgroundColorDraft] = useState("#FFFFFF");
   const [themeTextColorDraft, setThemeTextColorDraft] = useState("#EF4444");
+  const [themeAccentColorDraft, setThemeAccentColorDraft] = useState("#EF4444");
   const [listKeysDraft, setListKeysDraft] = useState("vip, ga");
   const [referralSharingEnabledDraft, setReferralSharingEnabledDraft] = useState(false);
   const [primaryFieldConfigDraft, setPrimaryFieldConfigDraft] = useState<PrimaryFieldConfigDraft>(
@@ -113,6 +114,9 @@ export default function WorkspaceDashboardSettingsPage() {
     const eventDefaults = workspace?.eventDefaults;
     setThemeBackgroundColorDraft(eventDefaults?.themeBackgroundColor ?? "#FFFFFF");
     setThemeTextColorDraft(eventDefaults?.themeTextColor ?? "#EF4444");
+    setThemeAccentColorDraft(
+      eventDefaults?.themeAccentColor ?? eventDefaults?.themeTextColor ?? "#EF4444",
+    );
     setListKeysDraft((eventDefaults?.listKeys ?? ["vip", "ga"]).join(", "));
     setReferralSharingEnabledDraft(eventDefaults?.referralSharingEnabled ?? false);
     setPrimaryFieldConfigDraft(
@@ -212,6 +216,7 @@ export default function WorkspaceDashboardSettingsPage() {
             eventDefaults: {
               themeBackgroundColor: themeBackgroundColorDraft,
               themeTextColor: themeTextColorDraft,
+              themeAccentColor: themeAccentColorDraft,
               listKeys,
               socialPlatforms: sanitizedConfig.socialPlatforms ?? [],
               invitedBy: sanitizedConfig.invitedBy ?? {
@@ -356,7 +361,7 @@ export default function WorkspaceDashboardSettingsPage() {
         </CardHeader>
         <CardContent>
           <form className="space-y-5" onSubmit={handleDefaultsSubmit}>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="default-background-color">Background color</Label>
                 <Input
@@ -375,6 +380,17 @@ export default function WorkspaceDashboardSettingsPage() {
                   type="color"
                   value={themeTextColorDraft}
                   onChange={(event) => setThemeTextColorDraft(event.target.value)}
+                  disabled={!canWriteSettings || isSavingDefaults}
+                  className="h-10 cursor-pointer p-1"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="default-accent-color">Accent color</Label>
+                <Input
+                  id="default-accent-color"
+                  type="color"
+                  value={themeAccentColorDraft}
+                  onChange={(event) => setThemeAccentColorDraft(event.target.value)}
                   disabled={!canWriteSettings || isSavingDefaults}
                   className="h-10 cursor-pointer p-1"
                 />

@@ -21,10 +21,12 @@ import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
 import {
   CLUB_CHLORINE_BRAND_NAME,
   CLUB_CHLORINE_MESSAGE_PREFIX,
+  DANZA_ORGANICA_MESSAGE_PREFIX,
   formatSmsMessageForSite,
   formatSmsOptInConfirmation,
   formatSmsOptOutConfirmation,
   isClubChlorineSite,
+  isDanzaOrganicaSite,
 } from "./lib/smsProgramCopy";
 
 type ApprovalEventSummary = {
@@ -215,6 +217,9 @@ You're approved for ${eventLabel}. Your QR code will arrive closer to the event.
 function getSmsMessageHeader(event: SmsConsentEventSummary): string {
   if (isClubChlorineSite(event.siteKey)) {
     return CLUB_CHLORINE_MESSAGE_PREFIX.slice(0, -1);
+  }
+  if (isDanzaOrganicaSite(event.siteKey)) {
+    return DANZA_ORGANICA_MESSAGE_PREFIX.slice(0, -1);
   }
 
   // Production company takes precedence

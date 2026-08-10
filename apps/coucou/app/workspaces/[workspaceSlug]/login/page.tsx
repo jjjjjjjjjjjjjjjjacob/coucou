@@ -20,6 +20,7 @@ type ThemedEvent = {
   _id: Id<"events">;
   themeBackgroundColor?: string | null;
   themeTextColor?: string | null;
+  themeAccentColor?: string | null;
 };
 
 interface TenantLoginPageParams {
@@ -55,11 +56,13 @@ function mapEventToThemedEvent(event: {
   _id: Id<"events">;
   themeBackgroundColor?: string | null;
   themeTextColor?: string | null;
+  themeAccentColor?: string | null;
 }): ThemedEvent {
   return {
     _id: event._id,
     themeBackgroundColor: event.themeBackgroundColor ?? null,
     themeTextColor: event.themeTextColor ?? null,
+    themeAccentColor: event.themeAccentColor ?? null,
   };
 }
 
@@ -173,6 +176,7 @@ export default async function TenantLoginPage({
       siteAuthConfiguration={tenantAuthConfiguration}
       eventThemeBackgroundColor={themedEvent?.themeBackgroundColor ?? null}
       eventThemeTextColor={themedEvent?.themeTextColor ?? null}
+      eventThemeAccentColor={themedEvent?.themeAccentColor ?? null}
       authBranding={loginAuthBranding}
       allowedRedirectOrigins={workspaceAllowedRedirectOrigins}
     />

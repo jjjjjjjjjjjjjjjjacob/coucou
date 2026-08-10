@@ -87,8 +87,8 @@ export default function ProfilePage() {
       });
       toast.success(
         !sharedEvent.smsConsent
-          ? "Danza Organica SMS updates enabled."
-          : "Danza Organica SMS updates disabled.",
+          ? "Coucou SMS updates about Danza Organica enabled."
+          : "Coucou SMS updates about Danza Organica disabled.",
       );
     } catch (error) {
       const errorDetails = error as Error;
@@ -340,7 +340,7 @@ export default function ProfilePage() {
                           </p>
                         )}
                         <p className="text-[11px] uppercase tracking-[0.1em] text-primary/60">
-                          SMS sender: Danza Organica (delivered via Coucou)
+                          SMS sender: Coucou (Danza Organica event updates)
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">

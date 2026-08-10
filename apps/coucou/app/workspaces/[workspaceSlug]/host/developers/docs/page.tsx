@@ -162,10 +162,10 @@ const EXAMPLE_SMS_CONSENT_RESPONSE = `{
   "smsConsentTimestamp": null,
   "smsProgram": {
     "organizerName": "Example Events",
-    "consentLabel": "I agree to receive recurring SMS messages from Example Events.",
-    "disclosure": "Example Events may send RSVP, guest-list, ticket, and event updates…",
-    "termsUrl": "https://events.example.com/terms",
-    "privacyUrl": "https://events.example.com/privacy"
+    "consentLabel": "I agree to receive recurring SMS messages from Coucou, a Soluo LLC service, about Example Events.",
+    "disclosure": "Coucou may send RSVP, guest-list, ticket, and event updates about Example Events…",
+    "termsUrl": "https://coucou.events/terms",
+    "privacyUrl": "https://coucou.events/privacy"
   }
 }`;
 

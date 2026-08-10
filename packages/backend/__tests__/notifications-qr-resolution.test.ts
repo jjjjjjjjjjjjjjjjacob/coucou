@@ -116,6 +116,23 @@ describe("approval SMS template variables", () => {
     );
   });
 
+  it("uses the Danza Organica sender instead of event host names", () => {
+    const message = formatDeferredApprovalMessage(
+      {
+        ...event,
+        siteKey: "danza-organica",
+        productionCompany: undefined,
+        hosts: ["Toma Shade", "Luis V", "Alegra", "Kelsey"],
+      },
+      recipient,
+    );
+
+    expect(message).toBe(
+      "DANZA ORGANICA:\n\nYou're approved for Spring Gala. Your QR code will arrive closer to the event.",
+    );
+    expect(message).not.toContain("TOMA SHADE");
+  });
+
   it("uses the fixed Club Chlorine sender without an ongoing opt-out reminder", () => {
     const message = formatApprovalMessage(
       { ...event, siteKey: "club-chlorine" },

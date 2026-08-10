@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { render, screen } from "@testing-library/react";
-import { DanzaEventRow } from "../components/danza-event-row";
+import { buildRsvpBrickStyle, DanzaEventRow } from "../components/danza-event-row";
 
 describe("DanzaEventRow", () => {
   it("presents the complete event identity and artist lineup", () => {
@@ -89,5 +89,56 @@ describe("DanzaEventRow", () => {
     expect(rsvpLink.compareDocumentPosition(backLink) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
       0,
     );
+  });
+
+  it("renders the Danza detail sections in poster order", () => {
+    render(
+      <DanzaEventRow
+        event={{
+          id: "danza-vol-4",
+          title: "Danza Organica",
+          subtitle: "Vol. 4",
+          date: "FRIDAY 08.21.26 · 9:00 PM",
+          location: "Laissez-Faire",
+          lineup: ["Nothing Radio"],
+          hosts: ["Toma Shade", "Luis V"],
+          rsvpHref: "/events/danza-vol-4/rsvp",
+          rsvpLabel: "RSVP",
+        }}
+        mobile={false}
+        visible
+        delayMs={0}
+        variant="expanded"
+        detailHref="/"
+        sponsorSlot={<div aria-label="Sponsored by">The Market sponsor</div>}
+        expandedContent={<div>Remaining presentation details</div>}
+        partnerSlot={<div aria-label="Event partners">Partner wordmarks</div>}
+      />,
+    );
+
+    const orderedElements = [
+      screen.getByLabelText("Featuring"),
+      screen.getByLabelText("Hosted by"),
+      screen.getByLabelText("Sponsored by"),
+      screen.getByText("FRIDAY 08.21.26 · 9:00 PM"),
+      screen.getByRole("link", { name: "RSVP" }),
+      screen.getByRole("link", { name: "Details" }),
+      screen.getByText("Remaining presentation details"),
+      screen.getByLabelText("Event partners"),
+    ];
+
+    for (let elementIndex = 1; elementIndex < orderedElements.length; elementIndex++) {
+      expect(
+        orderedElements[elementIndex - 1].compareDocumentPosition(orderedElements[elementIndex]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).not.toBe(0);
+    }
+  });
+
+  it("assigns RSVP actions to the explicit accent token", () => {
+    expect(buildRsvpBrickStyle(false, false)).toMatchObject({
+      background: "var(--tt-accent, var(--tt-fg))",
+      color: "var(--tt-fg)",
+    });
   });
 });

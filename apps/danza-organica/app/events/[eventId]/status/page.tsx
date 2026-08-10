@@ -131,8 +131,8 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
       await statusQuery.refetch();
       toast.success(
         desiredSmsConsent
-          ? "Danza Organica SMS updates enabled."
-          : "Danza Organica SMS updates disabled.",
+          ? "Coucou SMS updates about Danza Organica enabled."
+          : "Coucou SMS updates about Danza Organica disabled.",
       );
     } catch (error) {
       const errorDetails = error as Error;
@@ -275,7 +275,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
                     style={{ color: "var(--tt-fg)" }}
                   >
                     <CircleDashed className="h-4 w-4" />
-                    <span>Danza Organica SMS is disabled</span>
+                    <span>Coucou SMS about Danza Organica is disabled</span>
                   </div>
                   <Button
                     size="sm"

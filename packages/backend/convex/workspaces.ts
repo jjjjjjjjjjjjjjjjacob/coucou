@@ -53,10 +53,39 @@ interface AccessibleWorkspaceNavigationEntry {
   primaryDomain?: string;
   clerkOrganizationId?: string;
   clerkOrganizationSlug?: string;
-  organizationId: string;
+  organizationId?: string;
   organizationSlug?: string | null;
   membershipRole: string;
   isWorkspaceConfigured: boolean;
+}
+
+const platformWorkspaceNavigationRole = "org:admin";
+
+function buildAccessibleWorkspaceNavigationEntry(
+  workspace: Doc<"workspaces">,
+  {
+    membershipRole,
+    organizationId = workspace.clerkOrganizationId,
+    organizationSlug = workspace.clerkOrganizationSlug,
+  }: {
+    membershipRole: string;
+    organizationId?: string;
+    organizationSlug?: string | null;
+  },
+): AccessibleWorkspaceNavigationEntry {
+  return {
+    _id: workspace._id,
+    workspaceId: workspace._id,
+    slug: workspace.slug,
+    name: workspace.name,
+    primaryDomain: workspace.primaryDomain,
+    clerkOrganizationId: workspace.clerkOrganizationId,
+    clerkOrganizationSlug: workspace.clerkOrganizationSlug,
+    organizationId,
+    organizationSlug,
+    membershipRole,
+    isWorkspaceConfigured: true,
+  };
 }
 
 function normalizeOptionalClerkFrontendApiUrl(value: string | undefined): string | undefined {
@@ -868,41 +897,56 @@ export const listAccessibleWorkspaceNavigationForUser = query({
     const seenWorkspaceSlugs = new Set<string>();
     const tenantWorkspaces: AccessibleWorkspaceNavigationEntry[] = [];
 
-    for (const membership of membershipByOrganizationId.values()) {
-      const organizationSlug = membership.organizationSlug?.toLowerCase();
-      if (
-        organizationSlug === coucouOrganizationSlug ||
-        membership.organizationId === coucouOrganizationId ||
-        !roleHasWorkspaceReadAccess(membership.role)
-      ) {
-        continue;
+    if (hasCoucouOrganizationAccess) {
+      const workspaces = await ctx.db.query("workspaces").collect();
+
+      for (const workspace of workspaces) {
+        if (
+          workspace.kind === "admin" ||
+          workspace.slug === coucouOrganizationSlug ||
+          seenWorkspaceSlugs.has(workspace.slug)
+        ) {
+          continue;
+        }
+
+        seenWorkspaceSlugs.add(workspace.slug);
+        tenantWorkspaces.push(
+          buildAccessibleWorkspaceNavigationEntry(workspace, {
+            membershipRole: platformWorkspaceNavigationRole,
+          }),
+        );
       }
+    } else {
+      for (const membership of membershipByOrganizationId.values()) {
+        const organizationSlug = membership.organizationSlug?.toLowerCase();
+        if (
+          organizationSlug === coucouOrganizationSlug ||
+          membership.organizationId === coucouOrganizationId ||
+          !roleHasWorkspaceReadAccess(membership.role)
+        ) {
+          continue;
+        }
 
-      const workspace = await getWorkspaceForNavigationMembership(ctx, membership);
+        const workspace = await getWorkspaceForNavigationMembership(ctx, membership);
 
-      if (
-        !workspace ||
-        workspace.kind === "admin" ||
-        workspace.slug === coucouOrganizationSlug ||
-        seenWorkspaceSlugs.has(workspace.slug)
-      ) {
-        continue;
+        if (
+          !workspace ||
+          workspace.kind === "admin" ||
+          workspace.slug === coucouOrganizationSlug ||
+          seenWorkspaceSlugs.has(workspace.slug)
+        ) {
+          continue;
+        }
+
+        seenWorkspaceSlugs.add(workspace.slug);
+        tenantWorkspaces.push(
+          buildAccessibleWorkspaceNavigationEntry(workspace, {
+            membershipRole: membership.role,
+            organizationId: membership.organizationId,
+            organizationSlug: membership.organizationSlug,
+          }),
+        );
       }
-
-      seenWorkspaceSlugs.add(workspace.slug);
-      tenantWorkspaces.push({
-        _id: workspace._id,
-        workspaceId: workspace._id,
-        slug: workspace.slug,
-        name: workspace.name,
-        primaryDomain: workspace.primaryDomain,
-        clerkOrganizationId: workspace.clerkOrganizationId,
-        clerkOrganizationSlug: workspace.clerkOrganizationSlug,
-        organizationId: membership.organizationId,
-        organizationSlug: membership.organizationSlug,
-        membershipRole: membership.role,
-        isWorkspaceConfigured: true,
-      });
     }
 
     tenantWorkspaces.sort((leftWorkspace, rightWorkspace) =>

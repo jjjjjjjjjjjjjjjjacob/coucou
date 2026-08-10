@@ -23,8 +23,10 @@ async function resolveRequestOrigin(): Promise<string> {
 
 export default async function TicketServerPage({
   params,
+  view = "offer",
 }: {
   params: Promise<{ eventId: string }>;
+  view?: "offer" | "ticket";
 }) {
   const resolvedParams = await Promise.resolve(params);
   const { eventId: eventRouteId } = resolvedParams;
@@ -38,11 +40,13 @@ export default async function TicketServerPage({
     // the ticket. The proxy would otherwise add an extra hop through the
     // (now-removed) /sign-in route.
     const satelliteOrigin = await resolveRequestOrigin();
+    const ticketPath =
+      view === "ticket" ? `/events/${eventRouteId}/ticket/pass` : `/events/${eventRouteId}/ticket`;
     redirect(
       buildTenantPrimarySignInUrl({
         primaryBaseUrl: coucouBaseUrl,
         siteConfiguration,
-        redirectUrl: buildSatelliteReturnUrl(satelliteOrigin, `/events/${eventRouteId}/ticket`),
+        redirectUrl: buildSatelliteReturnUrl(satelliteOrigin, ticketPath),
       }),
     );
   }
@@ -65,6 +69,7 @@ export default async function TicketServerPage({
       eventRouteId={eventRouteId}
       eventPreload={eventPreload}
       statusPreload={statusPreload}
+      view={view}
     />
   );
 }

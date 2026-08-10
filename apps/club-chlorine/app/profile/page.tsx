@@ -340,7 +340,7 @@ export default function ProfilePage() {
                           </p>
                         )}
                         <p className="text-[11px] uppercase tracking-[0.1em] text-primary/60">
-                          SMS sender: Club Chlorine (delivered via Coucou)
+                          SMS sender: Club Chlorine (using Coucou technology)
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">

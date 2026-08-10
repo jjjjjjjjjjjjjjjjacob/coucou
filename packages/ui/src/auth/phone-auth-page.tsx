@@ -54,7 +54,7 @@ export interface PhoneAuthPageProps {
   /**
    * Optional event-takeover styling. When the user reaches sign-in via
    * redirect from an event page (the layout's `EventThemeProvider` resolved
-   * a custom themeBackgroundColor / themeTextColor), pass that event here
+   * custom theme background, text, or accent colors), pass that event here
    * so the auth surface picks up the same takeover.
    */
   event?: EventThemeColorSource | null;

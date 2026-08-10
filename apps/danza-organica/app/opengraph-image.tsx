@@ -6,7 +6,7 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 // Danza preset colors — bright turquoise backdrop, near-black type.
-const BRAND_BACKGROUND = "#2EC4B6";
+const BRAND_BACKGROUND = "#17E1E5";
 const BRAND_FOREGROUND = "#0A0A0A";
 
 export default async function OpengraphImage() {

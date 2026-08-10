@@ -156,8 +156,9 @@ match by phone hash). 404 if none.
 
 ### `GET /api/v1/events/{eventRouteId}/rsvps/sms-consent?phone=+15551234567` — scope `rsvps:read`
 
-Returns the phone's organizer-wide SMS preference plus the organizer's branded consent
-program. The preference applies across every event in the event's Coucou workspace.
+Returns the phone's organizer-wide SMS preference plus the Coucou-branded consent program
+for that organizer's event context. The preference applies across every event in the event's
+Coucou workspace.
 Omit `phone` to retrieve the program without asserting a known preference; in that case
 `smsConsent` and `smsConsentTimestamp` are `null`.
 
@@ -167,16 +168,15 @@ Omit `phone` to retrieve the program without asserting a known preference; in th
   "smsConsentTimestamp": 1753000000000,
   "smsProgram": {
     "organizerName": "Example Events",
-    "consentLabel": "I agree to receive recurring SMS messages from Example Events.",
-    "disclosure": "Example Events may send account notifications, RSVP and guest-list updates, ...",
-    "termsUrl": "https://events.example.com/terms",
-    "privacyUrl": "https://events.example.com/privacy"
+    "consentLabel": "I agree to receive recurring SMS messages from Coucou, a Soluo LLC service, about Example Events.",
+    "disclosure": "Coucou may send account notifications, RSVP and guest-list updates about Example Events, ...",
+    "termsUrl": "https://coucou.events/terms",
+    "privacyUrl": "https://coucou.events/privacy"
   }
 }
 ```
 
-Program URLs use the workspace's primary public domain, then its configured site domain,
-and finally `https://coucou.events`.
+Program URLs use Coucou's canonical, publicly accessible Terms and Privacy Policy.
 
 ## Write endpoints
 

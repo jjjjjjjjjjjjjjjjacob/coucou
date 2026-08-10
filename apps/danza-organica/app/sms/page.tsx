@@ -13,8 +13,8 @@ export default function SmsProgramPage() {
       lastUpdated={danzaOrganicaSmsProgram.lastUpdated}
       intro={
         <>
-          Public evidence of how guests voluntarily enroll in the Danza Organica recurring SMS
-          program.
+          Public evidence of how guests voluntarily enroll in the Coucou recurring SMS program on a
+          Danza Organica event page.
         </>
       }
     >
@@ -31,7 +31,7 @@ export default function SmsProgramPage() {
             className="text-[13px] uppercase tracking-[0.06em]"
             style={{ color: "var(--tt-fg-mute)" }}
           >
-            Danza Organica RSVP opt-in evidence
+            Coucou-powered Danza Organica RSVP opt-in evidence
           </figcaption>
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="space-y-1 text-sm">
@@ -78,11 +78,11 @@ export default function SmsProgramPage() {
         <a
           href="/sms-opt-in-evidence.svg"
           className="block border"
-          aria-label="Open the full-size Danza Organica SMS opt-in evidence image"
+          aria-label="Open the full-size Coucou SMS opt-in evidence image"
         >
           <Image
             src="/sms-opt-in-evidence.svg"
-            alt="Danza Organica RSVP form showing the optional SMS consent checkbox unchecked"
+            alt="Danza Organica RSVP form showing the optional Coucou SMS consent checkbox unchecked"
             width={1600}
             height={900}
             className="h-auto w-full"
@@ -93,14 +93,13 @@ export default function SmsProgramPage() {
 
       <LegalSection title="Messages guests may receive">
         <p>
-          Danza Organica may send account notifications, RSVP and guest-list updates, tickets or QR
-          codes, event updates, schedule or venue changes, and replies about Danza Organica events
-          or reservations. This consent does not cover promotional or marketing messages.
+          Coucou may send account notifications, RSVP and guest-list updates, tickets or QR codes,
+          event updates, schedule or venue changes, and replies about Danza Organica events or
+          reservations. This consent does not cover promotional or marketing messages.
         </p>
         <p>
-          Coucou provides Danza Organica&apos;s event-management and messaging technology. Twilio
-          provides telecommunications delivery. Danza Organica remains the sender of the messaging
-          program.
+          Danza Organica supplies the event context. Coucou, a Soluo LLC service, is the sender and
+          operator of the messaging program. Twilio provides telecommunications delivery.
         </p>
       </LegalSection>
 
@@ -126,12 +125,12 @@ export default function SmsProgramPage() {
 
       <LegalSection title="Program policies">
         <p>
-          Review the Danza Organica{" "}
-          <a href="/terms" className="underline">
+          Review the Coucou{" "}
+          <a href={danzaOrganicaSmsProgram.termsUrl} className="underline">
             Terms of Service
           </a>{" "}
           and{" "}
-          <a href="/privacy" className="underline">
+          <a href={danzaOrganicaSmsProgram.privacyUrl} className="underline">
             Privacy Policy
           </a>
           . Both pages are public and do not require an account or login.

@@ -1,4 +1,5 @@
 import type { Id } from "@convex/_generated/dataModel";
+import type { EventPartner as SharedEventPartner } from "@coucou/sdk/shared/event-partners";
 import type {
   PrimaryFieldConfig,
   PrimarySocialPlatformConfig,
@@ -6,6 +7,7 @@ import type {
 } from "@coucou/sdk/shared/primary-fields";
 
 export type { PrimaryFieldConfig, PrimarySocialPlatformConfig, WorkspaceEventDefaults };
+export type EventPartner = SharedEventPartner<Id<"_storage">>;
 
 // Core domain interfaces based on Convex schema
 export interface User {
@@ -150,6 +152,8 @@ export interface Event {
   secondaryTitle?: string;
   description?: string;
   acts?: EventAct[];
+  eventPartners?: EventPartner[];
+  sponsors?: EventPartner[];
   hosts: string[];
   productionCompany?: string;
   location: string;
@@ -176,6 +180,7 @@ export interface Event {
   primaryFieldConfig?: PrimaryFieldConfig;
   themeBackgroundColor?: string;
   themeTextColor?: string;
+  themeAccentColor?: string;
   approvalMessage?: string; // deprecated fallback during per-list rollout
   rsvpConfirmationMessageEnabled?: boolean;
   rsvpConfirmationMessage?: string;
@@ -570,6 +575,9 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   status?: EventStatus;
   themeBackgroundColor?: string;
   themeTextColor?: string;
+  themeAccentColor?: string;
+  eventPartners?: EventPartner[];
+  sponsors?: EventPartner[];
   qrCodeColor?: string;
   sendQrOnApproval?: boolean;
   attendanceQuestionEnabled?: boolean;

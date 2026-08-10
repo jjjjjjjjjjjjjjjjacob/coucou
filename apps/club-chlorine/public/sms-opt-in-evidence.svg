@@ -17,15 +17,16 @@
   <rect x="88" y="370" width="28" height="28" fill="#ffffff" stroke="#1b1b1b" stroke-width="3"/>
   <text x="136" y="393" fill="#1b1b1b" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700">I agree to receive recurring SMS messages from Club Chlorine.</text>
 
-  <text x="136" y="438" fill="#52606d" font-family="Arial, Helvetica, sans-serif" font-size="18">
-    <tspan x="136" dy="0">Club Chlorine may send account notifications, RSVP and guest-list updates, tickets or QR codes, event updates,</tspan>
-    <tspan x="136" dy="30">and replies about events or reservations. Messages are delivered via Coucou. Message frequency varies.</tspan>
-    <tspan x="136" dy="30">Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of</tspan>
-    <tspan x="136" dy="30">purchase, RSVP, or admission. Terms and Privacy Policy.</tspan>
+  <text x="136" y="438" fill="#52606d" font-family="Arial, Helvetica, sans-serif" font-size="16">
+    <tspan x="136" dy="0">Club Chlorine may send account notifications, RSVP and guest-list updates, tickets or QR codes, event updates, and</tspan>
+    <tspan x="136" dy="26">replies about events or reservations. Club Chlorine is the organizer and SMS sender. Coucou, a service operated</tspan>
+    <tspan x="136" dy="26">by Soluo LLC, provides the event-management and messaging technology. Message frequency varies. Message and</tspan>
+    <tspan x="136" dy="26">data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase, RSVP, or</tspan>
+    <tspan x="136" dy="26">admission. Terms and Privacy Policy.</tspan>
   </text>
 
-  <text x="136" y="590" fill="#1b5cff" font-family="Arial, Helvetica, sans-serif" font-size="18" text-decoration="underline">https://clubchlorine.party/terms</text>
-  <text x="136" y="624" fill="#1b5cff" font-family="Arial, Helvetica, sans-serif" font-size="18" text-decoration="underline">https://clubchlorine.party/privacy</text>
+  <text x="136" y="600" fill="#1b5cff" font-family="Arial, Helvetica, sans-serif" font-size="18" text-decoration="underline">https://clubchlorine.party/terms</text>
+  <text x="136" y="634" fill="#1b5cff" font-family="Arial, Helvetica, sans-serif" font-size="18" text-decoration="underline">https://clubchlorine.party/privacy</text>
 
   <rect x="1240" y="700" width="272" height="72" rx="6" fill="#1b1b1b"/>
   <text x="1376" y="744" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">SUBMIT RSVP</text>

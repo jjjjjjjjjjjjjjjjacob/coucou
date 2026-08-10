@@ -29,6 +29,7 @@ const isPublicRoute = createRouteMatcher([
   "/docs(.*)",
   "/terms",
   "/privacy",
+  "/sms",
   "/cookies",
   "/data",
 ]);
