@@ -6,6 +6,7 @@ import {
   getDefaultApprovalMessage,
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
+import { DEFAULT_OPEN_GRAPH_IMAGE_SOURCE } from "@coucou/sdk/shared/open-graph";
 import type { PrimaryFieldConfig } from "@coucou/sdk/shared/primary-fields";
 import {
   getDefaultRsvpConfirmationMessage,
@@ -21,6 +22,7 @@ import { type CustomFieldDef, CustomFieldsEditor } from "@/components/custom-fie
 import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { DateTimePicker } from "@/components/date-time-picker";
 import { EventActsEditor } from "@/components/event-acts-editor";
+import { OpenGraphImageSourceField } from "@/components/event-form-sections/open-graph-image-source-field";
 import { EventIconUpload } from "@/components/event-icon-upload";
 import {
   type EventPartnerDraft,
@@ -106,6 +108,7 @@ type DraftEventPatchPayload = {
   productionCompany?: string;
   location: string;
   flyerStorageId?: Id<"_storage">;
+  openGraphImageSource: NonNullable<EventFormData["openGraphImageSource"]>;
   customIconStorageId?: Id<"_storage"> | null;
   guestPortalImageStorageId?: Id<"_storage">;
   guestPortalLinkLabel?: string;
@@ -362,6 +365,7 @@ function createDefaultEventFormValues(defaults: EventWizardDefaults): EventFormD
     endsLate: true,
     eventTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     flyerStorageId: null,
+    openGraphImageSource: DEFAULT_OPEN_GRAPH_IMAGE_SOURCE,
     customIconStorageId: null,
     guestPortalImageStorageId: null,
     guestPortalLinkLabel: "",
@@ -596,6 +600,7 @@ export default function EventCreateWizard() {
       productionCompany: draftEvent.productionCompany ?? "",
       location: draftEvent.location ?? "",
       flyerStorageId: (draftEvent.flyerStorageId as string | undefined) ?? null,
+      openGraphImageSource: draftEvent.openGraphImageSource ?? DEFAULT_OPEN_GRAPH_IMAGE_SOURCE,
       customIconStorageId: (draftEvent.customIconStorageId as string | undefined) ?? null,
       guestPortalImageStorageId:
         (draftEvent.guestPortalImageStorageId as string | undefined) ?? null,
@@ -790,6 +795,7 @@ export default function EventCreateWizard() {
       flyerStorageId: values.flyerStorageId
         ? (values.flyerStorageId as unknown as Id<"_storage">)
         : undefined,
+      openGraphImageSource: values.openGraphImageSource ?? DEFAULT_OPEN_GRAPH_IMAGE_SOURCE,
       customIconStorageId: values.customIconStorageId
         ? (values.customIconStorageId as unknown as Id<"_storage">)
         : null,
@@ -1000,6 +1006,7 @@ export default function EventCreateWizard() {
         flyerStorageId: values.flyerStorageId
           ? (values.flyerStorageId as unknown as Id<"_storage"> | undefined)
           : undefined,
+        openGraphImageSource: values.openGraphImageSource ?? DEFAULT_OPEN_GRAPH_IMAGE_SOURCE,
         customIconStorageId: values.customIconStorageId
           ? (values.customIconStorageId as unknown as Id<"_storage"> | null)
           : null,
@@ -1080,8 +1087,10 @@ export default function EventCreateWizard() {
       )}
       {stepIndex === 3 && (
         <StepFlyer
+          form={form}
           flyerStorageId={flyerStorageId}
           onFlyerChange={(value) => form.setValue("flyerStorageId", value, { shouldDirty: true })}
+          showOpenGraphImageSource={workspaceScope?.workspaceSlug === "danza-organica"}
         />
       )}
       {stepIndex === 4 && (
@@ -1644,15 +1653,19 @@ function ColorRow({ value, onChange }: { value: string; onChange: (value: string
 // ─── Step 04 — Flyer ────────────────────────────────────────────
 
 function StepFlyer({
+  form,
   flyerStorageId,
   onFlyerChange,
-}: {
+  showOpenGraphImageSource,
+}: StepFormProps & {
   flyerStorageId: string | null;
   onFlyerChange: (value: string | null) => void;
+  showOpenGraphImageSource: boolean;
 }) {
   return (
-    <div>
+    <div className="space-y-6">
       <FlyerUpload value={flyerStorageId} onChange={onFlyerChange} />
+      {showOpenGraphImageSource ? <OpenGraphImageSourceField form={form} /> : null}
     </div>
   );
 }

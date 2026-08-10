@@ -5,6 +5,7 @@ import {
   getDefaultApprovalMessage,
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
+import { DEFAULT_OPEN_GRAPH_IMAGE_SOURCE } from "@coucou/sdk/shared/open-graph";
 import {
   getDefaultRsvpConfirmationMessage,
   sanitizeOptionalRsvpConfirmationMessage,
@@ -83,6 +84,7 @@ export default function NewEventClient() {
       eventTime: "19:00",
       eventTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       flyerStorageId: null,
+      openGraphImageSource: DEFAULT_OPEN_GRAPH_IMAGE_SOURCE,
       customIconStorageId: null,
       guestPortalImageStorageId: null,
       guestPortalLinkLabel: "",
@@ -225,6 +227,7 @@ export default function NewEventClient() {
         flyerStorageId: values.flyerStorageId
           ? (values.flyerStorageId as unknown as Id<"_storage"> | undefined)
           : undefined,
+        openGraphImageSource: values.openGraphImageSource ?? DEFAULT_OPEN_GRAPH_IMAGE_SOURCE,
         customIconStorageId: values.customIconStorageId
           ? (values.customIconStorageId as unknown as Id<"_storage"> | null)
           : null,
@@ -298,6 +301,7 @@ export default function NewEventClient() {
           onEventIconChange={(value) =>
             form.setValue("customIconStorageId", value, { shouldDirty: true })
           }
+          showOpenGraphImageSource={workspaceScope?.workspaceSlug === "danza-organica"}
           guestPortalImageStorageId={guestPortalImageStorageId}
           onGuestPortalImageChange={(value) =>
             form.setValue("guestPortalImageStorageId", value, {

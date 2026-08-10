@@ -1,13 +1,16 @@
 import { ImageResponse } from "next/og";
+import {
+  BAUHAUS_DISPLAY_COLORS,
+  DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS,
+} from "@/lib/bauhaus-event-display";
 import { siteConfiguration } from "@/lib/site";
 
 export const alt = siteConfiguration.brandName;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-// Danza preset colors — bright turquoise backdrop, near-black type.
-const BRAND_BACKGROUND = "#17E1E5";
-const BRAND_FOREGROUND = "#0A0A0A";
+const BRAND_BACKGROUND = BAUHAUS_DISPLAY_COLORS.teal;
+const BRAND_GLOBE_COLOR = BAUHAUS_DISPLAY_COLORS[DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS.textColor];
 
 export default async function OpengraphImage() {
   return new ImageResponse(
@@ -16,42 +19,41 @@ export default async function OpengraphImage() {
         width: "100%",
         height: "100%",
         display: "flex",
-        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 24,
         backgroundColor: BRAND_BACKGROUND,
-        color: BRAND_FOREGROUND,
-        fontFamily: "system-ui, -apple-system, sans-serif",
       }}
     >
-      <div
-        style={{
-          width: 96,
-          height: 96,
-          borderRadius: 9999,
-          backgroundColor: BRAND_FOREGROUND,
-          color: BRAND_BACKGROUND,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 40,
-          fontWeight: 700,
-          letterSpacing: "0.04em",
-        }}
+      <svg
+        width={300}
+        height={300}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-label="Danza Organica globe"
       >
-        {siteConfiguration.accentMark}
-      </div>
-      <div
-        style={{
-          fontSize: 88,
-          fontWeight: 700,
-          letterSpacing: "0.03em",
-          textTransform: "uppercase",
-        }}
-      >
-        {siteConfiguration.brandName}
-      </div>
+        <circle cx="12" cy="12" r="10" stroke={BRAND_GLOBE_COLOR} strokeWidth="1.5" />
+        <path
+          d="M8 12C8 18 12 22 12 22C12 22 16 18 16 12C16 6 12 2 12 2C12 2 8 6 8 12Z"
+          stroke={BRAND_GLOBE_COLOR}
+          strokeLinejoin="round"
+          strokeWidth="1.5"
+        />
+        <path
+          d="M21 15H3"
+          stroke={BRAND_GLOBE_COLOR}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.5"
+        />
+        <path
+          d="M21 9H3"
+          stroke={BRAND_GLOBE_COLOR}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.5"
+        />
+      </svg>
     </div>,
     { ...size },
   );

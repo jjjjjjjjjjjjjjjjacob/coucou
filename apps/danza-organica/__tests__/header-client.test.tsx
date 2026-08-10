@@ -9,7 +9,10 @@ describe("HeaderClient navigation", () => {
     renderWithProviders(<HeaderClient />);
 
     const triggerButton = screen.getByRole("button", { name: /Danza Organica menu/i });
-    expect(triggerButton.querySelector("svg")).toHaveAttribute("data-icon", "globe-02");
+    const globeIcon = triggerButton.querySelector("svg");
+    expect(globeIcon).toHaveAttribute("data-icon", "globe-02");
+    expect(globeIcon).toHaveAttribute("data-text-color", "orange");
+    expect(globeIcon).toHaveStyle({ color: "#FC7243" });
     expect(triggerButton.className).toContain("rounded-full");
     expect(triggerButton.className).toContain("size-[26px]");
     expect(triggerButton.className).toContain("after:-inset-[9px]");

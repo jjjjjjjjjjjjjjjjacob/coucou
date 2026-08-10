@@ -5,6 +5,7 @@ import {
   getDefaultApprovalMessage,
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
+import { DEFAULT_OPEN_GRAPH_IMAGE_SOURCE } from "@coucou/sdk/shared/open-graph";
 import {
   getDefaultRsvpConfirmationMessage,
   sanitizeOptionalRsvpConfirmationMessage,
@@ -102,6 +103,7 @@ type EventUpdatePatch = {
   location?: string;
   flyerUrl?: string;
   flyerStorageId?: Id<"_storage">;
+  openGraphImageSource?: Event["openGraphImageSource"];
   customIconStorageId?: Id<"_storage"> | null;
   guestPortalImageStorageId?: Id<"_storage">;
   guestPortalLinkLabel?: string;
@@ -182,6 +184,7 @@ const EVENT_EDITOR_PATCH_FIELDS: Record<EventEditorSection, readonly (keyof Even
     "maxAttendees",
     "status",
     "flyerStorageId",
+    "openGraphImageSource",
     "customIconStorageId",
     "themeBackgroundColor",
     "themeTextColor",
@@ -218,6 +221,7 @@ const EVENT_EDITOR_FORM_FIELDS: Record<
     "maxAttendees",
     "status",
     "flyerStorageId",
+    "openGraphImageSource",
     "customIconStorageId",
     "themeBackgroundColor",
     "themeTextColor",
@@ -328,6 +332,7 @@ export default function EditEventDialog({
       productionCompany: event.productionCompany ?? "",
       location: event.location || "",
       flyerStorageId: event.flyerStorageId ?? null,
+      openGraphImageSource: event.openGraphImageSource ?? DEFAULT_OPEN_GRAPH_IMAGE_SOURCE,
       customIconStorageId: event.customIconStorageId ?? null,
       guestPortalImageStorageId: event.guestPortalImageStorageId ?? null,
       guestPortalLinkLabel: event.guestPortalLinkLabel ?? "",
@@ -724,6 +729,13 @@ export default function EditEventDialog({
           unsetFields.push("flyerStorageId");
         }
       }
+      const nextOpenGraphImageSource =
+        values.openGraphImageSource ?? DEFAULT_OPEN_GRAPH_IMAGE_SOURCE;
+      const previousOpenGraphImageSource =
+        event.openGraphImageSource ?? DEFAULT_OPEN_GRAPH_IMAGE_SOURCE;
+      if (nextOpenGraphImageSource !== previousOpenGraphImageSource) {
+        patch.openGraphImageSource = nextOpenGraphImageSource;
+      }
       if ((eventIconStorageId ?? null) !== (event.customIconStorageId ?? null)) {
         patch.customIconStorageId = (eventIconStorageId as Id<"_storage">) ?? null;
       }
@@ -1094,6 +1106,7 @@ export default function EditEventDialog({
                     shouldDirty: true,
                   });
                 }}
+                showOpenGraphImageSource={workspaceScope?.workspaceSlug === "danza-organica"}
                 eventPartners={eventPartners}
                 onEventPartnersChange={setEventPartners}
                 sponsors={sponsors}

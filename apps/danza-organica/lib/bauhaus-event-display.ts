@@ -16,6 +16,17 @@ export interface BauhausEventDisplaySettings {
   infoDensity: BauhausEventInfoDensity;
 }
 
+export const BAUHAUS_DISPLAY_COLORS = {
+  black: "#0A0A0A",
+  none: "transparent",
+  orange: "#FC7243",
+  teal: "#17E1E5",
+  white: "#FFFFFF",
+} as const satisfies Record<
+  BauhausEventTextColor | BauhausEventHighlightColor | BauhausEventDotColor,
+  string
+>;
+
 interface SearchParametersReader {
   get(name: string): string | null;
 }

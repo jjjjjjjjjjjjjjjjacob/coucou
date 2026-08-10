@@ -17,6 +17,8 @@ export const eventStatusValidator = v.union(
 
 export const eventLifecycleValidator = v.union(v.literal("draft"), v.literal("published"));
 
+export const openGraphImageSourceValidator = v.union(v.literal("logo"), v.literal("thumbnail"));
+
 export const eventActValidator = v.object({
   name: v.string(),
   descriptorBadges: v.optional(v.array(v.string())),

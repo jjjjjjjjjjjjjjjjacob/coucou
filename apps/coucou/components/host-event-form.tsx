@@ -18,6 +18,7 @@ export interface HostEventFormProps<FormValues extends BaseEventFormValues> {
   onFlyerChange: (value: string | null) => void;
   eventIconStorageId: string | null;
   onEventIconChange: (value: string | null) => void;
+  showOpenGraphImageSource?: boolean;
   guestPortalImageStorageId: string | null;
   onGuestPortalImageChange: (value: string | null) => void;
   listsSection?: React.ReactNode;
@@ -36,6 +37,7 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
   onFlyerChange,
   eventIconStorageId,
   onEventIconChange,
+  showOpenGraphImageSource = false,
   guestPortalImageStorageId,
   onGuestPortalImageChange,
   listsSection,
@@ -60,6 +62,7 @@ export function HostEventForm<FormValues extends BaseEventFormValues>({
           onEventIconChange={onEventIconChange}
           flyerStorageId={flyerStorageId}
           onFlyerChange={onFlyerChange}
+          showOpenGraphImageSource={showOpenGraphImageSource}
         />
         {listsSection}
         {customFieldsSection}

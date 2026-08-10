@@ -1,5 +1,6 @@
 import type { Id } from "@convex/_generated/dataModel";
 import type { EventPartner as SharedEventPartner } from "@coucou/sdk/shared/event-partners";
+import type { OpenGraphImageSource } from "@coucou/sdk/shared/open-graph";
 import type {
   PrimaryFieldConfig,
   PrimarySocialPlatformConfig,
@@ -99,6 +100,7 @@ export interface Event {
   location: string;
   flyerUrl?: string;
   flyerStorageId?: Id<"_storage">;
+  openGraphImageSource?: OpenGraphImageSource;
   customIconStorageId?: Id<"_storage"> | null;
   guestPortalImageStorageId?: Id<"_storage"> | null;
   guestPortalLinkLabel?: string;
@@ -380,6 +382,7 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   productionCompany?: string;
   location: string;
   flyerStorageId?: string | null;
+  openGraphImageSource?: OpenGraphImageSource;
   customIconStorageId?: string | null;
   guestPortalImageStorageId?: string | null;
   guestPortalLinkLabel?: string;

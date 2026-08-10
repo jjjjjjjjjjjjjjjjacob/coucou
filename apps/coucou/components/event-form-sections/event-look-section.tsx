@@ -19,6 +19,7 @@ import {
   EVENT_THEME_DEFAULT_TEXT_COLOR,
 } from "@/lib/event-theme";
 import type { BaseEventFormValues, UseFormReturn } from "@/lib/types";
+import { OpenGraphImageSourceField } from "./open-graph-image-source-field";
 
 export interface EventLookSectionProps<FormValues extends BaseEventFormValues> {
   form: UseFormReturn<FormValues>;
@@ -26,6 +27,7 @@ export interface EventLookSectionProps<FormValues extends BaseEventFormValues> {
   onEventIconChange: (value: string | null) => void;
   flyerStorageId: string | null;
   onFlyerChange: (value: string | null) => void;
+  showOpenGraphImageSource?: boolean;
   eventPartners?: EventPartnerDraft[];
   onEventPartnersChange?: (entries: EventPartnerDraft[]) => void;
   sponsors?: EventPartnerDraft[];
@@ -38,6 +40,7 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
   onEventIconChange,
   flyerStorageId,
   onFlyerChange,
+  showOpenGraphImageSource = false,
   eventPartners = [],
   onEventPartnersChange,
   sponsors = [],
@@ -157,6 +160,7 @@ export function EventLookSection<FormValues extends BaseEventFormValues>({
           </FormItem>
         )}
       />
+      {showOpenGraphImageSource ? <OpenGraphImageSourceField form={form} /> : null}
       {onEventPartnersChange ? (
         <div className="space-y-3 border-t border-[var(--border-subtle)] pt-4">
           <div>

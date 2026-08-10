@@ -15,6 +15,7 @@ import type { DanzaLandingEvent } from "@/components/danza-event-row";
 import { EventPartnerLogos } from "@/components/event-partner-logos";
 import { createBauhausEntranceStyle } from "@/lib/bauhaus-entrance";
 import {
+  BAUHAUS_DISPLAY_COLORS,
   BAUHAUS_PARTNER_LOGO_SOURCES,
   type BauhausEventDisplaySettings,
   DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS,
@@ -22,14 +23,6 @@ import {
   splitBauhausHostLines,
 } from "@/lib/bauhaus-event-display";
 import type { EventPartner } from "@/lib/types";
-
-const DISPLAY_COLORS = {
-  black: "#0A0A0A",
-  none: "transparent",
-  orange: "#FC7243",
-  teal: "#17E1E5",
-  white: "#FFFFFF",
-} as const;
 
 const DanzaBauhausDisplayContext = createContext<BauhausEventDisplaySettings>(
   DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS,
@@ -52,9 +45,9 @@ export function DanzaBauhausPage({ children, displaySettings }: DanzaBauhausPage
   const resolvedDisplaySettings =
     displaySettings ?? resolveBauhausEventDisplaySettings(searchParameters);
   const pageStyle: BauhausPageStyle = {
-    "--danza-bauhaus-text": DISPLAY_COLORS[resolvedDisplaySettings.textColor],
-    "--danza-bauhaus-highlight": DISPLAY_COLORS[resolvedDisplaySettings.highlightColor],
-    "--danza-bauhaus-dot": DISPLAY_COLORS[resolvedDisplaySettings.dotColor],
+    "--danza-bauhaus-text": BAUHAUS_DISPLAY_COLORS[resolvedDisplaySettings.textColor],
+    "--danza-bauhaus-highlight": BAUHAUS_DISPLAY_COLORS[resolvedDisplaySettings.highlightColor],
+    "--danza-bauhaus-dot": BAUHAUS_DISPLAY_COLORS[resolvedDisplaySettings.dotColor],
   };
 
   return (

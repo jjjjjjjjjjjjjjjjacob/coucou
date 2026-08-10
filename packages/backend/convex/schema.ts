@@ -241,6 +241,7 @@ export default defineSchema({
     location: v.string(),
     flyerUrl: v.optional(v.string()),
     flyerStorageId: v.optional(v.id("_storage")),
+    openGraphImageSource: v.optional(v.union(v.literal("logo"), v.literal("thumbnail"))),
     customIconStorageId: v.optional(v.union(v.id("_storage"), v.null())),
     guestPortalImageStorageId: v.optional(v.id("_storage")),
     guestPortalLinkLabel: v.optional(v.string()),

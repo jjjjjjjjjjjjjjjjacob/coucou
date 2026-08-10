@@ -367,6 +367,7 @@ import {
   eventActValidator,
   eventLifecycleValidator,
   eventStatusValidator,
+  openGraphImageSourceValidator,
 } from "./lib/eventMetadata";
 import { eventPartnerValidator } from "./lib/eventPartners";
 
@@ -518,6 +519,7 @@ export const insertWithCreds = mutation({
     location: v.string(),
     flyerUrl: v.optional(v.string()),
     flyerStorageId: v.optional(v.id("_storage")),
+    openGraphImageSource: v.optional(openGraphImageSourceValidator),
     customIconStorageId: v.optional(v.union(v.id("_storage"), v.null())),
     guestPortalImageStorageId: v.optional(v.id("_storage")),
     guestPortalLinkLabel: v.optional(v.string()),
@@ -593,6 +595,7 @@ export const insertWithCreds = mutation({
       location: args.location,
       flyerUrl: args.flyerUrl,
       flyerStorageId: args.flyerStorageId,
+      openGraphImageSource: args.openGraphImageSource,
       customIconStorageId: args.customIconStorageId ?? null,
       guestPortalImageStorageId: args.guestPortalImageStorageId,
       guestPortalLinkLabel: args.guestPortalLinkLabel,
@@ -806,6 +809,7 @@ export const duplicateToDraft = mutation({
       location: sourceEvent.location,
       flyerUrl: sourceEvent.flyerUrl,
       flyerStorageId: sourceEvent.flyerStorageId,
+      openGraphImageSource: sourceEvent.openGraphImageSource,
       customIconStorageId: sourceEvent.customIconStorageId,
       guestPortalImageStorageId: sourceEvent.guestPortalImageStorageId,
       guestPortalLinkLabel: sourceEvent.guestPortalLinkLabel,
@@ -998,6 +1002,7 @@ export const update = mutation({
     location: v.optional(v.string()),
     flyerUrl: v.optional(v.string()),
     flyerStorageId: v.optional(v.id("_storage")),
+    openGraphImageSource: v.optional(openGraphImageSourceValidator),
     eventDate: v.optional(v.number()),
     eventEndDate: v.optional(v.number()),
     eventTimezone: v.optional(v.string()),
@@ -1095,6 +1100,7 @@ export const update = mutation({
       "location",
       "flyerUrl",
       "flyerStorageId",
+      "openGraphImageSource",
       "customIconStorageId",
       "guestPortalImageStorageId",
       "guestPortalLinkLabel",

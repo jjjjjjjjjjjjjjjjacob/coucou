@@ -64,6 +64,7 @@ export type EventPatch = Partial<
     | "location"
     | "flyerUrl"
     | "flyerStorageId"
+    | "openGraphImageSource"
     | "customIconStorageId"
     | "guestPortalImageStorageId"
     | "guestPortalLinkLabel"

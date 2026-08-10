@@ -6,6 +6,7 @@ import type React from "react";
 import { cache } from "react";
 import { EventThemeProvider } from "@/components/event-theme-provider";
 import { formatEventDisplayName } from "@/lib/event-display";
+import { resolveDanzaOpenGraphImageUrl } from "@/lib/event-open-graph";
 import { danzaOrganicaIconPaths, siteConfiguration } from "@/lib/site";
 
 type LayoutParams = Promise<{ eventId: string }>;
@@ -68,16 +69,21 @@ export async function generateMetadata({ params }: { params: LayoutParams }): Pr
     timeZone: eventTimezone,
   })} at ${event.location}`;
 
-  const flyerImageUrl = event.flyerStorageId ? await loadStorageUrl(event.flyerStorageId) : null;
+  const flyerImageUrl =
+    event.openGraphImageSource !== "logo" && event.flyerStorageId
+      ? await loadStorageUrl(event.flyerStorageId)
+      : null;
   const eventIconUrl = event.customIconStorageId
     ? await loadStorageUrl(event.customIconStorageId)
     : null;
 
-  // Prefer the event's flyer poster when available so a shared event /
-  // rsvp link previews with the actual artwork. Fall back to the dynamic
-  // /opengraph-image route — the blue swimmer brand mark — so we never
-  // surface the legacy Dojo Pomodoro tomato or render an empty card.
-  const ogImageUrl = flyerImageUrl ?? "/opengraph-image";
+  // Legacy events default to the thumbnail. Events set to "logo" always use
+  // the Danza globe card, while thumbnail events fall back to that card when
+  // they do not have uploaded artwork.
+  const ogImageUrl = resolveDanzaOpenGraphImageUrl({
+    source: event.openGraphImageSource,
+    thumbnailUrl: flyerImageUrl,
+  });
 
   const iconEntries = eventIconUrl
     ? [{ url: eventIconUrl }]

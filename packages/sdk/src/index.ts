@@ -7,6 +7,7 @@ export * from "./shared/event-branding";
 export * from "./shared/event-partners";
 export * from "./shared/event-routes";
 export * from "./shared/message-template";
+export * from "./shared/open-graph";
 export * from "./shared/primary-fields";
 export * from "./shared/qr-code-colors";
 export * from "./shared/redemption-code";

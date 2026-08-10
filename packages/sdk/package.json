@@ -20,6 +20,7 @@
     "./shared/event-partners": "./src/shared/event-partners.ts",
     "./shared/event-routes": "./src/shared/event-routes.ts",
     "./shared/message-template": "./src/shared/message-template.ts",
+    "./shared/open-graph": "./src/shared/open-graph.ts",
     "./shared/primary-fields": "./src/shared/primary-fields.ts",
     "./shared/qr-code-colors": "./src/shared/qr-code-colors.ts",
     "./shared/redemption-code": "./src/shared/redemption-code.ts",
