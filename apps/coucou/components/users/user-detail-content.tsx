@@ -381,8 +381,8 @@ export function UserDetailContent({
   ) as UserRsvpHistoryEntry[] | undefined;
 
   const threads = useQuery(
-    api.smsConversations.listThreadsByPhone,
-    user?.phone && workspaceScope ? { phone: user.phone, ...workspaceScope.queryArgs } : "skip",
+    api.smsConversations.listThreadsByUserReference,
+    workspaceScope ? { userReference, ...workspaceScope.queryArgs } : "skip",
   ) as UserSmsThreadHistoryEntry[] | undefined;
 
   if (!user) {

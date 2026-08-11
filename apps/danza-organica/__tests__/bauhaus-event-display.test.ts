@@ -99,6 +99,31 @@ describe("Bauhaus event display settings", () => {
     });
   });
 
+  it("uses the same native stroke width for The Market icon and wordmark", async () => {
+    const partnerLogoAssetTreatments = [
+      { fileName: "the-market-danza.svg", strokeColor: "#F05F22" },
+      { fileName: "the-market-wordmark-black-orange.svg", strokeColor: "#FC7243" },
+      { fileName: "the-market-wordmark-black-white.svg", strokeColor: "white" },
+      { fileName: "the-market-wordmark-teal-black.svg", strokeColor: "black" },
+    ] as const;
+
+    for (const partnerLogoAssetTreatment of partnerLogoAssetTreatments) {
+      const partnerLogoAssetSource = await Bun.file(
+        new URL(`../public/partners/${partnerLogoAssetTreatment.fileName}`, import.meta.url),
+      ).text();
+
+      expect(partnerLogoAssetSource).toContain(
+        `stroke="${partnerLogoAssetTreatment.strokeColor}" stroke-width="4" stroke-linecap="round"`,
+      );
+      expect(partnerLogoAssetSource).toContain(
+        `mask[id^="path-7-outside"] + path { stroke: ${partnerLogoAssetTreatment.strokeColor}; stroke-width: 4;`,
+      );
+      expect(partnerLogoAssetSource).toContain(
+        'path[mask^="url(#path-7-outside"] { display: none; }',
+      );
+    }
+  });
+
   it("keeps the Vol. 4 host break between Kelsey and Elsb3th", () => {
     expect(
       splitBauhausHostLines([

@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, query } from "./functions";
+import { resolveCanonicalRsvpId, resolveCanonicalUserById } from "./lib/canonicalUserIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolveStoredUserDisplayName } from "./lib/rsvpUserName";
@@ -15,7 +16,11 @@ import {
   upsertSmsConversationThread,
 } from "./lib/smsConversationRecords";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
-import { requireWorkspaceHost, requireWorkspaceRead } from "./lib/workspaceAuth";
+import {
+  type ResolvedWorkspaceAuthScope,
+  requireWorkspaceHost,
+  requireWorkspaceRead,
+} from "./lib/workspaceAuth";
 
 const smsConversationDirectionValidator = v.union(
   v.literal("inbound"),
@@ -790,45 +795,143 @@ export const listThreadsByPhone = query({
       workspaceSlug: args.workspaceSlug,
     });
 
-    const { phoneHash } = await normalizeAndHashPhoneNumber(args.phone);
+    let phoneHash: string;
+    try {
+      ({ phoneHash } = await normalizeAndHashPhoneNumber(args.phone));
+    } catch {
+      // Older clients may still pass the obfuscated phone shown for RSVP-only
+      // guests. Treat display-only values as having no directly lookupable
+      // thread instead of taking down the user detail page.
+      return [];
+    }
 
-    const threads = await ctx.db
-      .query("smsConversationThreads")
-      .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
-      .collect();
+    return await listWorkspaceThreadsByPhoneHashes(ctx, workspaceScope, [phoneHash]);
+  },
+});
 
-    const workspaceEvents = await ctx.db
-      .query("events")
-      .withIndex("by_workspaceSlug", (queryBuilder) =>
-        queryBuilder.eq("workspaceSlug", workspaceScope.workspaceSlug),
+async function resolveUserPhoneHash(user: Doc<"users"> | null): Promise<string | null> {
+  if (user?.phoneHash) {
+    return user.phoneHash;
+  }
+
+  if (!user?.phone) {
+    return null;
+  }
+
+  try {
+    return (await normalizeAndHashPhoneNumber(user.phone)).phoneHash;
+  } catch {
+    return null;
+  }
+}
+
+async function resolvePhoneHashesForUserReference(
+  ctx: Pick<QueryCtx, "db">,
+  userReference: string,
+  workspaceScope: ResolvedWorkspaceAuthScope,
+): Promise<string[]> {
+  const rsvpReferencePrefix = "rsvp~";
+  if (userReference.startsWith(rsvpReferencePrefix)) {
+    const rsvpId = ctx.db.normalizeId("rsvps", userReference.slice(rsvpReferencePrefix.length));
+    const rsvp = rsvpId ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, rsvpId)) : null;
+    if (!rsvp) {
+      throw new Error("Guest not found");
+    }
+
+    await ensureEventInSiteScope(ctx, rsvp.eventId, {
+      siteKey: workspaceScope.siteKey,
+      workspaceSlug: workspaceScope.workspaceSlug,
+    });
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", rsvp.clerkUserId),
       )
-      .collect();
-
-    const eventMap = new Map(workspaceEvents.map((event) => [event._id, event]));
-    const workspaceEventIds = new Set(workspaceEvents.map((event) => event._id));
-
-    const enrichedThreads = await Promise.all(
-      threads
-        .filter((thread) => workspaceEventIds.has(thread.eventId))
-        .map(async (thread) => {
-          const participants = await summarizeThreadParticipants(ctx, thread);
-          const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
-          const event = eventMap.get(thread.eventId);
-          return {
-            ...thread,
-            eventName: event?.name ?? "Unknown Event",
-            eventDate: event?.eventDate ?? 0,
-            participantName: participants.displayName,
-            canSend: sendReadiness.state === "ready",
-            sendDisabledReason: sendReadiness.state === "ready" ? undefined : sendReadiness.reason,
-          };
-        }),
+      .unique();
+    const userPhoneHash = await resolveUserPhoneHash(user);
+    return Array.from(
+      new Set([userPhoneHash, rsvp.guestPhoneHash].filter((value): value is string => !!value)),
     );
+  }
 
-    return enrichedThreads.sort(
-      (firstThread, secondThread) =>
-        (secondThread.lastMessageAt ?? secondThread.updatedAt) -
-        (firstThread.lastMessageAt ?? firstThread.updatedAt),
+  const userId = ctx.db.normalizeId("users", userReference);
+  const user = userId ? await resolveCanonicalUserById(ctx, userId) : null;
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const phoneHash = await resolveUserPhoneHash(user);
+  return phoneHash ? [phoneHash] : [];
+}
+
+async function listWorkspaceThreadsByPhoneHashes(
+  ctx: Pick<QueryCtx, "db">,
+  workspaceScope: ResolvedWorkspaceAuthScope,
+  phoneHashes: string[],
+) {
+  const threadCollections = await Promise.all(
+    phoneHashes.map(async (phoneHash) => {
+      return await ctx.db
+        .query("smsConversationThreads")
+        .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
+        .collect();
+    }),
+  );
+  const threads = Array.from(
+    new Map(threadCollections.flat().map((thread) => [thread._id, thread])).values(),
+  );
+
+  const workspaceEvents = await ctx.db
+    .query("events")
+    .withIndex("by_workspaceSlug", (queryBuilder) =>
+      queryBuilder.eq("workspaceSlug", workspaceScope.workspaceSlug),
+    )
+    .collect();
+
+  const eventMap = new Map(workspaceEvents.map((event) => [event._id, event]));
+  const workspaceEventIds = new Set(workspaceEvents.map((event) => event._id));
+
+  const enrichedThreads = await Promise.all(
+    threads
+      .filter((thread) => workspaceEventIds.has(thread.eventId))
+      .map(async (thread) => {
+        const participants = await summarizeThreadParticipants(ctx, thread);
+        const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
+        const event = eventMap.get(thread.eventId);
+        return {
+          ...thread,
+          eventName: event?.name ?? "Unknown Event",
+          eventDate: event?.eventDate ?? 0,
+          participantName: participants.displayName,
+          canSend: sendReadiness.state === "ready",
+          sendDisabledReason: sendReadiness.state === "ready" ? undefined : sendReadiness.reason,
+        };
+      }),
+  );
+
+  return enrichedThreads.sort(
+    (firstThread, secondThread) =>
+      (secondThread.lastMessageAt ?? secondThread.updatedAt) -
+      (firstThread.lastMessageAt ?? firstThread.updatedAt),
+  );
+}
+
+export const listThreadsByUserReference = query({
+  args: {
+    userReference: v.string(),
+    ...scopeArgs,
+  },
+  handler: async (ctx, args) => {
+    const workspaceScope = await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const phoneHashes = await resolvePhoneHashesForUserReference(
+      ctx,
+      args.userReference,
+      workspaceScope,
     );
+    return await listWorkspaceThreadsByPhoneHashes(ctx, workspaceScope, phoneHashes);
   },
 });

@@ -365,6 +365,57 @@ describe("sms conversations", () => {
     expect(threads[0]?.participantName).toBe("Jordan Ben-Shmuel");
   });
 
+  it("loads threads for an RSVP-only guest reference without rehashing its obfuscated phone", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const phone = "555-111-7878";
+    const phoneResolution = await normalizeAndHashPhoneNumber(phone);
+    const rsvpId = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.insert("rsvps", {
+        eventId,
+        clerkUserId: `guest:${phoneResolution.phoneHash}`,
+        listKey: "ga",
+        userName: "RSVP Only Guest",
+        guestPhoneHash: phoneResolution.phoneHash,
+        guestPhoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
+        shareContact: true,
+        status: "pending",
+        approvalStatus: "pending",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+    const threadId = await seedThreadMessage(testBackend, {
+      eventId,
+      phone,
+      clerkUserIds: [],
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_rsvp_only"));
+
+    const threads = await hostBackend.query(api.smsConversations.listThreadsByUserReference, {
+      userReference: `rsvp~${rsvpId}`,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    expect(threads.map((thread) => thread._id)).toEqual([threadId]);
+  });
+
+  it("does not throw when an older client passes an obfuscated phone", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_obfuscated_phone"));
+
+    const threads = await hostBackend.query(api.smsConversations.listThreadsByPhone, {
+      phone: "***-***-7878",
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    expect(threads).toEqual([]);
+  });
+
   it("records inbound webhook messages on existing threads", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);

@@ -8,5 +8,5 @@ import { siteConfiguration } from "@/lib/site";
  * carries the legal nav.
  */
 export function Footer() {
-  return <TenantLegalFooter preset={siteConfiguration.preset} showBrand={false} />;
+  return <TenantLegalFooter preset={siteConfiguration.preset} showBrand={false} highlightContent />;
 }
