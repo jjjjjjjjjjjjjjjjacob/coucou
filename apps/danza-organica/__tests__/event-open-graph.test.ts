@@ -11,7 +11,7 @@ describe("Danza event Open Graph image", () => {
     ).toBe("https://images.example/event.jpg");
   });
 
-  it("uses the globe image when selected even if a thumbnail exists", () => {
+  it("uses the disco-ball image when selected even if a thumbnail exists", () => {
     expect(
       resolveDanzaOpenGraphImageUrl({
         source: "logo",
@@ -20,7 +20,7 @@ describe("Danza event Open Graph image", () => {
     ).toBe(DANZA_LOGO_OPEN_GRAPH_IMAGE_URL);
   });
 
-  it("falls back to the globe image when a thumbnail is unavailable", () => {
+  it("falls back to the disco-ball image when a thumbnail is unavailable", () => {
     expect(resolveDanzaOpenGraphImageUrl({ source: "thumbnail", thumbnailUrl: null })).toBe(
       DANZA_LOGO_OPEN_GRAPH_IMAGE_URL,
     );

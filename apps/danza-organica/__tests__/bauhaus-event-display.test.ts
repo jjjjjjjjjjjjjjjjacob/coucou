@@ -8,7 +8,7 @@ import {
 } from "@/lib/bauhaus-event-display";
 
 describe("Bauhaus event display settings", () => {
-  it("defaults to the centered orange simple invitation", () => {
+  it("defaults to the centered orange invitation with black dots", () => {
     expect(resolveBauhausEventDisplaySettings(new URLSearchParams())).toEqual(
       DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS,
     );
@@ -17,7 +17,7 @@ describe("Bauhaus event display settings", () => {
       textColor: "orange",
       highlightColor: "none",
       logoVariant: "tealorange",
-      dotColor: "white",
+      dotColor: "black",
       preset: "simple",
       infoDensity: "minimal",
     });

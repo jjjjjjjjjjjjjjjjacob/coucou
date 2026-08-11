@@ -1,11 +1,10 @@
 "use client";
 import { SignedIn, SignedOut, SignOutButton, useUser } from "@clerk/nextjs";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
-import { Globe02Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { DanzaOrganicaMark } from "@coucou/ui/tenant-template";
 import { Cog, DoorOpen, Home, LogIn, LogOut, Settings, User } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,10 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  BAUHAUS_DISPLAY_COLORS,
-  resolveBauhausEventDisplaySettings,
-} from "@/lib/bauhaus-event-display";
 import { siteConfiguration } from "@/lib/site";
 
 const workspaceSlug = "danza-organica";
@@ -62,9 +57,6 @@ function useRoleFlags() {
 export default function HeaderClient({ initialSatelliteOrigin }: HeaderClientProps) {
   const { isHost, isDoor } = useRoleFlags();
   const pathname = usePathname();
-  const searchParameters = useSearchParams();
-  const displaySettings = resolveBauhausEventDisplaySettings(searchParameters);
-  const globeColor = BAUHAUS_DISPLAY_COLORS[displaySettings.textColor];
   const [satelliteOrigin, setSatelliteOrigin] = useState<string>(
     initialSatelliteOrigin ?? fallbackSatelliteOrigin,
   );
@@ -93,14 +85,10 @@ export default function HeaderClient({ initialSatelliteOrigin }: HeaderClientPro
             className="relative size-[26px] animate-in fade-in duration-600 pointer-events-auto rounded-full bg-[#17E1E5] text-[#0A0A0A] after:absolute after:-inset-[9px] hover:bg-[#17E1E5] hover:text-[#0A0A0A] focus-visible:ring-[#0A0A0A]/40"
             aria-label={`${siteConfiguration.brandName} menu`}
           >
-            <HugeiconsIcon
+            <DanzaOrganicaMark
               aria-hidden="true"
-              className="size-5"
-              data-icon="globe-02"
-              data-text-color={displaySettings.textColor}
-              icon={Globe02Icon}
+              className="size-5 -translate-y-[1.5px]"
               size={20}
-              style={{ color: globeColor }}
             />
           </Button>
         </DropdownMenuTrigger>

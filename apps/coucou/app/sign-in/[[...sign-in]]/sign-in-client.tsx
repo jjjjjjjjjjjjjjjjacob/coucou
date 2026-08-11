@@ -3,6 +3,7 @@
 import { getClientSiteRedirectOrigins, type PresetKey } from "@coucou/sdk";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import { type AuthBrandingOverrides, PhoneAuthPage, type PhoneAuthStep } from "@coucou/ui/auth";
+import { DanzaOrganicaMark } from "@coucou/ui/tenant-template";
 import { type ReactNode, useMemo } from "react";
 import { CoucouLogoMark } from "@/components/coucou-logo";
 import { siteConfiguration } from "@/lib/site";
@@ -61,8 +62,14 @@ export function SignInClient({
     };
   }, [eventThemeAccentColor, eventThemeBackgroundColor, eventThemeTextColor]);
   const isCoucouPlatformAuthentication = siteAuthConfiguration === siteConfiguration.auth;
+  const isDanzaOrganicaAuthentication = siteAuthConfiguration.siteKey === "danza-organica";
   const resolvedBrandMarkSlot =
-    brandMarkSlot ?? (isCoucouPlatformAuthentication ? <CoucouLogoMark size={64} /> : undefined);
+    brandMarkSlot ??
+    (isCoucouPlatformAuthentication ? (
+      <CoucouLogoMark size={64} />
+    ) : isDanzaOrganicaAuthentication ? (
+      <DanzaOrganicaMark size={64} aria-label="Danza Organica disco ball" />
+    ) : undefined);
   const allowedRedirectOrigins = useMemo(() => {
     if (allowedRedirectOriginsOverride && allowedRedirectOriginsOverride.length > 0) {
       // Merge with the default client-site origins so satellites still

@@ -36,7 +36,7 @@ export const DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS: BauhausEventDisplaySettings
   textColor: "orange",
   highlightColor: "none",
   logoVariant: "tealorange",
-  dotColor: "white",
+  dotColor: "black",
   preset: "simple",
   infoDensity: "minimal",
 };

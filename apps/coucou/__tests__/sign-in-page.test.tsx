@@ -136,6 +136,22 @@ describe("SignInClient", () => {
     expect(screen.getByRole("link", { name: "Powered by Coucou" })).toBeTruthy();
   });
 
+  it("renders the Danza disco ball without the generated DO mark", () => {
+    const danzaSiteConfiguration = siteConfigurations["danza-organica"];
+
+    render(
+      <SignInClient
+        redirectUrl="https://danzaorganica.coucou.events/events/sample/ticket"
+        preset={danzaSiteConfiguration.preset}
+        siteAuthConfiguration={danzaSiteConfiguration.auth}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Danza Organica disco ball" })).toBeTruthy();
+    expect(screen.queryByText("DO")).toBeNull();
+    expect(document.querySelector('[data-preset="danza"]')).toBeTruthy();
+  });
+
   it("renders the redirected Club Chlorine login inside the chlorine shell", () => {
     const clubChlorineSiteConfiguration = siteConfigurations["club-chlorine"];
 
