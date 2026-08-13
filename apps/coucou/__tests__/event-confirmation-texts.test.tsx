@@ -17,6 +17,7 @@ type ListPayload = {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
 };
 
 type CreateEventActionArgs = {
@@ -45,6 +46,7 @@ type CredentialQueryResult = Array<{
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
   autoApprovedCount?: number;
 }>;
 
@@ -414,6 +416,7 @@ describe("event confirmation texts", () => {
         sendQrOnApproval: true,
         approvalMessage: "Press approved.",
         autoApproveLimit: 25,
+        autoApproveDelayMinutes: 0,
       },
     ];
 
@@ -446,6 +449,7 @@ describe("event confirmation texts", () => {
         sendQrOnApproval: true,
         approvalMessage: "Press approved.",
         autoApproveLimit: 25,
+        autoApproveDelayMinutes: 0,
       });
     });
   });
@@ -514,6 +518,7 @@ describe("event confirmation texts", () => {
         sendQrOnApproval: true,
         approvalMessage: "Press approved.",
         autoApproveLimit: 25,
+        autoApproveDelayMinutes: 0,
       });
     });
     expect(actionCalls.some((actionCall) => actionCall.actionName === "update")).toBe(false);
@@ -604,6 +609,7 @@ describe("event confirmation texts", () => {
         approvalMessage:
           "Hi {{ firstName }}, approved for {{eventName}} at {{eventLocation}} on {{eventDate}}. Ticket: {{qrCodeUrl}}",
         autoApproveLimit: 50,
+        autoApproveDelayMinutes: 0,
       });
     });
   });
@@ -636,9 +642,12 @@ describe("event confirmation texts", () => {
       hosts: ["Host One"],
       location: "Main Room",
       eventDate: Date.now() + 60_000,
+      smsOptInConfirmationMessage: "Welcome to {{eventName}} texts, {{firstName}}.",
+      smsOptOutConfirmationMessage: "{{firstName}}, texts are off for {{eventName}}.",
       rsvpConfirmationMessageEnabled: false,
       rsvpConfirmationMessage: "Submitted for {{eventName}}.",
       approvalMessage: "Legacy {{eventLocation}} copy.",
+      qrDeliveryMessage: "Ticket for {{eventName}}: {{qrCodeUrl}}",
       createdAt: Date.now(),
       updatedAt: Date.now(),
     } as unknown as Event;
@@ -651,6 +660,13 @@ describe("event confirmation texts", () => {
       expect(
         screen.getByDisplayValue("Hi {{firstName}}, VIP for {{eventName}}."),
       ).toBeInTheDocument();
+      expect(
+        screen.getByDisplayValue("Welcome to {{eventName}} texts, {{firstName}}."),
+      ).toBeInTheDocument();
+      expect(screen.getByText("DOJO: Welcome to Spring Gala texts, John.")).toBeInTheDocument();
+      expect(
+        screen.getByDisplayValue("{{firstName}}, texts are off for {{eventName}}."),
+      ).toBeInTheDocument();
       expect(screen.getByLabelText("Send initial confirmation text")).not.toBeChecked();
       expect(screen.getByDisplayValue("Submitted for {{eventName}}.")).toBeInTheDocument();
       expect(screen.getByText("No initial confirmation text will send.")).toBeInTheDocument();
@@ -660,10 +676,80 @@ describe("event confirmation texts", () => {
       expect(screen.getAllByLabelText("Attach generated QR code")[0]).toBeChecked();
       expect(screen.getAllByLabelText("Include ticket link")[0]).not.toBeChecked();
       expect(screen.getByDisplayValue("40")).toBeInTheDocument();
+      expect(
+        screen.getByDisplayValue("Ticket for {{eventName}}: {{qrCodeUrl}}"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Ticket for Spring Gala: https://example.com/ticket"),
+      ).toBeInTheDocument();
     });
   });
 
-  it("saves an updated per-list auto-approve limit", async () => {
+  it("saves subscription and ticket-delivery templates from the event Messages tab", async () => {
+    actionHookFallbackHandlers = [mockUpdateActionHandler, mockGetStoredPasswordsActionHandler];
+    actionHookFallbackIndex = 0;
+    credentialQueryResult = [
+      {
+        _id: "credential_vip",
+        listKey: "vip",
+        hasPassword: false,
+        generateQR: true,
+      },
+    ];
+
+    const event = {
+      _id: "event_1",
+      name: "Spring Gala",
+      hosts: ["Host One"],
+      location: "Main Room",
+      eventDate: Date.now() + 60_000,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    } as unknown as Event;
+
+    render(
+      <EditEventDialog
+        event={event}
+        open
+        initialTab="confirmations"
+        onOpenChange={() => {}}
+        showTrigger={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subscribed copy")).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByLabelText("Subscribed copy"), {
+      target: { value: "Welcome {{firstName}} to {{eventName}} texts." },
+    });
+    fireEvent.change(screen.getByLabelText("Unsubscribed copy"), {
+      target: { value: "Texts are off for {{eventName}}. Reply START anytime." },
+    });
+    fireEvent.change(screen.getByLabelText("Ticket copy"), {
+      target: { value: "Your {{eventName}} ticket: {{qrCodeUrl}}" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Messages" }));
+
+    await waitFor(() => {
+      const updateCall = actionCalls.find((actionCall) => actionCall.actionName === "update");
+      expect(updateCall).toBeDefined();
+      const updateArgs = updateCall?.args as {
+        patch: {
+          smsOptInConfirmationMessage?: string;
+          smsOptOutConfirmationMessage?: string;
+          qrDeliveryMessage?: string;
+        };
+      };
+      expect(updateArgs.patch).toMatchObject({
+        smsOptInConfirmationMessage: "Welcome {{firstName}} to {{eventName}} texts.",
+        smsOptOutConfirmationMessage: "Texts are off for {{eventName}}. Reply START anytime.",
+        qrDeliveryMessage: "Your {{eventName}} ticket: {{qrCodeUrl}}",
+      });
+    });
+  });
+
+  it("saves an updated per-list auto-approve limit and delay", async () => {
     actionHookFallbackHandlers = [mockUpdateActionHandler, mockGetStoredPasswordsActionHandler];
     actionHookFallbackIndex = 0;
     credentialQueryResult = [
@@ -673,6 +759,7 @@ describe("event confirmation texts", () => {
         hasPassword: false,
         generateQR: false,
         autoApproveLimit: 10,
+        autoApproveDelayMinutes: 120,
       },
     ];
     const event = {
@@ -697,9 +784,14 @@ describe("event confirmation texts", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("Auto-approve first")).toHaveValue(10);
+      expect(screen.getByLabelText("Approval timing")).toHaveValue(2);
+      expect(screen.getByLabelText("Auto-approve delay unit for vip")).toHaveValue("hours");
     });
     fireEvent.change(screen.getByLabelText("Auto-approve first"), {
       target: { value: "50" },
+    });
+    fireEvent.change(screen.getByLabelText("Approval timing"), {
+      target: { value: "3" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save Lists & Access" }));
 
@@ -712,6 +804,7 @@ describe("event confirmation texts", () => {
           id: "credential_vip",
           listKey: "vip",
           autoApproveLimit: 50,
+          autoApproveDelayMinutes: 180,
         }),
       );
     });

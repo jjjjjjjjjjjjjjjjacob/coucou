@@ -4,7 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { internalMutation, mutation, query } from "./functions";
-import { validateAutoApproveLimit } from "./lib/autoApproval";
+import { validateAutoApproveDelayMinutes, validateAutoApproveLimit } from "./lib/autoApproval";
 import { generateEventShortId } from "./lib/codeGenerators";
 import { applyEventUnsetFields } from "./lib/eventPatch";
 import {
@@ -386,6 +386,9 @@ const eventUnsetFieldValidator = v.union(
   v.literal("guestPortalLinkUrl"),
   v.literal("primaryFieldConfig"),
   v.literal("rsvpConfirmationMessage"),
+  v.literal("smsOptInConfirmationMessage"),
+  v.literal("smsOptOutConfirmationMessage"),
+  v.literal("qrDeliveryMessage"),
 );
 
 const publicInstagramDevSeedSocialPlatform = {
@@ -549,6 +552,9 @@ export const insertWithCreds = mutation({
     approvalMessage: v.optional(v.string()),
     rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
     rsvpConfirmationMessage: v.optional(v.string()),
+    smsOptInConfirmationMessage: v.optional(v.string()),
+    smsOptOutConfirmationMessage: v.optional(v.string()),
+    qrDeliveryMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()),
     defersQrDelivery: v.optional(v.boolean()),
     sendQrOnApproval: v.optional(v.boolean()),
@@ -565,6 +571,7 @@ export const insertWithCreds = mutation({
         includeTicketLinkOnApproval: v.optional(v.boolean()),
         approvalMessage: v.optional(v.string()),
         autoApproveLimit: v.optional(v.number()),
+        autoApproveDelayMinutes: v.optional(v.number()),
       }),
     ),
   },
@@ -575,6 +582,7 @@ export const insertWithCreds = mutation({
     });
     for (const credential of args.creds) {
       validateAutoApproveLimit(credential.autoApproveLimit);
+      validateAutoApproveDelayMinutes(credential.autoApproveDelayMinutes);
     }
 
     const now = Date.now();
@@ -619,6 +627,9 @@ export const insertWithCreds = mutation({
       approvalMessage: args.approvalMessage,
       rsvpConfirmationMessageEnabled: args.rsvpConfirmationMessageEnabled,
       rsvpConfirmationMessage: args.rsvpConfirmationMessage,
+      smsOptInConfirmationMessage: args.smsOptInConfirmationMessage,
+      smsOptOutConfirmationMessage: args.smsOptOutConfirmationMessage,
+      qrDeliveryMessage: args.qrDeliveryMessage,
       qrCodeColor: args.qrCodeColor,
       createdAt: now,
       updatedAt: now,
@@ -834,6 +845,9 @@ export const duplicateToDraft = mutation({
       approvalMessage: sourceEvent.approvalMessage,
       rsvpConfirmationMessageEnabled: sourceEvent.rsvpConfirmationMessageEnabled,
       rsvpConfirmationMessage: sourceEvent.rsvpConfirmationMessage,
+      smsOptInConfirmationMessage: sourceEvent.smsOptInConfirmationMessage,
+      smsOptOutConfirmationMessage: sourceEvent.smsOptOutConfirmationMessage,
+      qrDeliveryMessage: sourceEvent.qrDeliveryMessage,
       qrCodeColor: sourceEvent.qrCodeColor,
       createdAt: now,
       updatedAt: now,
@@ -856,6 +870,7 @@ export const duplicateToDraft = mutation({
         includeTicketLinkOnApproval: sourceCredential.includeTicketLinkOnApproval,
         approvalMessage: sourceCredential.approvalMessage,
         autoApproveLimit: sourceCredential.autoApproveLimit,
+        autoApproveDelayMinutes: sourceCredential.autoApproveDelayMinutes,
         createdAt: now,
       });
     }
@@ -1038,6 +1053,9 @@ export const update = mutation({
     approvalMessage: v.optional(v.string()),
     rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
     rsvpConfirmationMessage: v.optional(v.string()),
+    smsOptInConfirmationMessage: v.optional(v.string()),
+    smsOptOutConfirmationMessage: v.optional(v.string()),
+    qrDeliveryMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()),
     customIconStorageId: v.optional(v.union(v.id("_storage"), v.null())),
     unsetFields: v.optional(v.array(eventUnsetFieldValidator)),
@@ -1125,6 +1143,9 @@ export const update = mutation({
       "approvalMessage",
       "rsvpConfirmationMessageEnabled",
       "rsvpConfirmationMessage",
+      "smsOptInConfirmationMessage",
+      "smsOptOutConfirmationMessage",
+      "qrDeliveryMessage",
       "qrCodeColor",
     ] as const;
 
@@ -1221,9 +1242,11 @@ export const addListCredential = mutation({
     includeTicketLinkOnApproval: v.optional(v.boolean()),
     approvalMessage: v.optional(v.string()),
     autoApproveLimit: v.optional(v.number()),
+    autoApproveDelayMinutes: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     validateAutoApproveLimit(args.autoApproveLimit);
+    validateAutoApproveDelayMinutes(args.autoApproveDelayMinutes);
     await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
@@ -1247,6 +1270,7 @@ export const addListCredential = mutation({
       includeTicketLinkOnApproval: args.includeTicketLinkOnApproval,
       approvalMessage: args.approvalMessage,
       autoApproveLimit: args.autoApproveLimit,
+      autoApproveDelayMinutes: args.autoApproveDelayMinutes,
       createdAt: now,
     });
     const credentials = await ctx.db
@@ -1273,10 +1297,12 @@ export const updateListCredential = mutation({
       includeTicketLinkOnApproval: v.optional(v.boolean()),
       approvalMessage: v.optional(v.string()),
       autoApproveLimit: v.optional(v.number()),
+      autoApproveDelayMinutes: v.optional(v.number()),
     }),
   },
   handler: async (ctx, { id, patch, siteKey, workspaceSlug }) => {
     validateAutoApproveLimit(patch.autoApproveLimit);
+    validateAutoApproveDelayMinutes(patch.autoApproveDelayMinutes);
     const credential = await ctx.db.get(id);
     if (!credential) throw new NotFoundError("List credential");
 
@@ -1364,10 +1390,12 @@ export const updateListCredentialWithCascade = mutation({
       includeTicketLinkOnApproval: v.optional(v.boolean()),
       approvalMessage: v.optional(v.string()),
       autoApproveLimit: v.optional(v.number()),
+      autoApproveDelayMinutes: v.optional(v.number()),
     }),
   },
   handler: async (ctx, { id, patch, siteKey, workspaceSlug }) => {
     validateAutoApproveLimit(patch.autoApproveLimit);
+    validateAutoApproveDelayMinutes(patch.autoApproveDelayMinutes);
     const credential = await ctx.db.get(id);
     if (!credential) throw new NotFoundError("List credential");
 

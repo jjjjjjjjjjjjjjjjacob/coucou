@@ -297,6 +297,9 @@ export default defineSchema({
      */
     rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
     rsvpConfirmationMessage: v.optional(v.string()),
+    smsOptInConfirmationMessage: v.optional(v.string()),
+    smsOptOutConfirmationMessage: v.optional(v.string()),
+    qrDeliveryMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()), // legacy QR code color field retained for compatibility
     webhookOriginApiClientId: v.optional(v.id("apiClients")),
     webhookOriginMutationId: v.optional(v.string()),
@@ -344,6 +347,12 @@ export default defineSchema({
      * Undefined or zero disables automatic approval.
      */
     autoApproveLimit: v.optional(v.number()),
+    /**
+     * Minutes to wait before using a reserved automatic-approval slot.
+     * The approval runs at event start when that occurs sooner. Undefined or
+     * zero preserves the legacy immediate behavior.
+     */
+    autoApproveDelayMinutes: v.optional(v.number()),
     /**
      * Lifetime number of automatic-approval slots consumed for this list.
      * Manual approvals and later RSVP status changes never modify this counter.

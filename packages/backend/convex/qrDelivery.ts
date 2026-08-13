@@ -1,3 +1,10 @@
+import { resolveQrDeliveryMessage } from "@coucou/sdk/shared/automated-event-messages";
+import {
+  applyMessageTemplateVariables,
+  formatEventDateForMessageTemplate,
+  formatEventTitleForMessageTemplate,
+  resolveMessageTemplateFirstName,
+} from "@coucou/sdk/shared/message-template";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
@@ -14,6 +21,41 @@ type QrBatchResult = {
   failed: number;
   skipped: number;
 };
+
+type QrDeliveryEvent = Pick<
+  Doc<"events">,
+  | "name"
+  | "secondaryTitle"
+  | "siteKey"
+  | "location"
+  | "eventDate"
+  | "eventTimezone"
+  | "qrDeliveryMessage"
+>;
+
+type QrDeliveryRecipient = {
+  firstName?: string | null;
+  lastName?: string | null;
+};
+
+export function formatQrDeliveryMessage(
+  event: QrDeliveryEvent,
+  recipient: QrDeliveryRecipient,
+  ticketUrl: string,
+): string {
+  const recipientFullName = [recipient.firstName, recipient.lastName].filter(Boolean).join(" ");
+  const message = applyMessageTemplateVariables(resolveQrDeliveryMessage(event), {
+    firstName: resolveMessageTemplateFirstName({
+      firstName: recipient.firstName,
+      fullName: recipientFullName,
+    }),
+    eventName: formatEventTitleForMessageTemplate(event),
+    eventDate: formatEventDateForMessageTemplate(event.eventDate, event.eventTimezone),
+    eventLocation: event.location?.trim() ?? "",
+    qrCodeUrl: ticketUrl,
+  });
+  return formatSmsMessageForSite(event.siteKey, message);
+}
 
 export const listPendingDeferredRecipients = query({
   args: {
@@ -60,6 +102,8 @@ export const listPendingDeferredRecipients = query({
       listKey: string;
       code: string;
       phone: string;
+      firstName?: string;
+      lastName?: string;
     }> = [];
     for (const redemption of eligibleRedemptions) {
       const userRecord = await ctx.db
@@ -72,6 +116,8 @@ export const listPendingDeferredRecipients = query({
         listKey: redemption.listKey,
         code: redemption.code,
         phone: userRecord.phone,
+        firstName: userRecord.firstName,
+        lastName: userRecord.lastName,
       });
     }
     return recipients;
@@ -167,6 +213,8 @@ export const sendDeferredQrBatch = action({
       listKey: string;
       code: string;
       phone: string;
+      firstName?: string;
+      lastName?: string;
     }>;
 
     let sent = 0;
@@ -192,12 +240,7 @@ export const sendDeferredQrBatch = action({
           continue;
         }
 
-        const message = formatSmsMessageForSite(
-          event.siteKey,
-          `Your QR code for ${event.name?.trim() || "the event"}.
-
-View your ticket here: ${ticketUrl}`,
-        );
+        const message = formatQrDeliveryMessage(event, recipient, ticketUrl);
         const phoneResolution = await normalizeAndHashPhoneNumber(recipient.phone);
 
         const notificationId = await ctx.runMutation(internal.sms.createNotification, {

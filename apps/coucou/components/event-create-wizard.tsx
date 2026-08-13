@@ -55,7 +55,13 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { parseAutoApproveLimitInput } from "@/lib/auto-approval";
+import {
+  type AutoApproveDelayUnit,
+  formatAutoApproveDelay,
+  parseAutoApproveDelayInput,
+  parseAutoApproveLimitInput,
+  splitAutoApproveDelayMinutes,
+} from "@/lib/auto-approval";
 import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
 import {
   createTimestamp,
@@ -86,6 +92,8 @@ type ListRow = {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage: string;
   autoApproveLimit: string;
+  autoApproveDelay: string;
+  autoApproveDelayUnit: AutoApproveDelayUnit;
 };
 
 type WizardField = Path<EventFormData>;
@@ -149,6 +157,7 @@ type DraftListPayload = {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
 };
 
 type DraftPayload = {
@@ -245,14 +254,22 @@ function validateLists(lists: ListRow[]): string[] {
     return ["Add at least one list before continuing"];
   }
   return filtered.flatMap((list) => {
+    const validationErrors: string[] = [];
     try {
       parseAutoApproveLimitInput(list.autoApproveLimit);
-      return [];
     } catch {
-      return [
+      validationErrors.push(
         `${list.listKey.trim() || "List"} auto-approve limit must be a positive whole number`,
-      ];
+      );
     }
+    try {
+      parseAutoApproveDelayInput(list.autoApproveDelay, list.autoApproveDelayUnit);
+    } catch {
+      validationErrors.push(
+        `${list.listKey.trim() || "List"} auto-approve delay must be a positive whole number`,
+      );
+    }
+    return validationErrors;
   });
 }
 
@@ -315,6 +332,8 @@ function createListRows(listKeys: readonly string[]): ListRow[] {
     includeTicketLinkOnApproval: true,
     approvalMessage: "",
     autoApproveLimit: "",
+    autoApproveDelay: "",
+    autoApproveDelayUnit: "hours",
   }));
 }
 
@@ -328,7 +347,9 @@ function areListRowsPristine(currentLists: readonly ListRow[], defaultListKeys: 
       list.sendQrOnApprovalOverride === undefined &&
       list.includeTicketLinkOnApproval === true &&
       list.approvalMessage === "" &&
-      list.autoApproveLimit === ""
+      list.autoApproveLimit === "" &&
+      list.autoApproveDelay === "" &&
+      list.autoApproveDelayUnit === "hours"
     );
   });
 }
@@ -659,23 +680,28 @@ export default function EventCreateWizard() {
     }
     if (draftCredentials.length > 0) {
       setLists(
-        draftCredentials.map((credential) => ({
-          listKey: credential.listKey,
-          password: credential.password ?? "",
-          shouldGenerateQrCode: credential.generateQR ?? false,
-          sendQrOnApprovalOverride:
-            typeof credential.sendQrOnApproval === "boolean"
-              ? credential.sendQrOnApproval
-              : typeof credential.defersQrDelivery === "boolean"
-                ? !credential.defersQrDelivery
-                : undefined,
-          includeTicketLinkOnApproval: credential.includeTicketLinkOnApproval,
-          approvalMessage: credential.approvalMessage ?? "",
-          autoApproveLimit:
-            typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
-              ? String(credential.autoApproveLimit)
-              : "",
-        })),
+        draftCredentials.map((credential) => {
+          const autoApproveDelay = splitAutoApproveDelayMinutes(credential.autoApproveDelayMinutes);
+          return {
+            listKey: credential.listKey,
+            password: credential.password ?? "",
+            shouldGenerateQrCode: credential.generateQR ?? false,
+            sendQrOnApprovalOverride:
+              typeof credential.sendQrOnApproval === "boolean"
+                ? credential.sendQrOnApproval
+                : typeof credential.defersQrDelivery === "boolean"
+                  ? !credential.defersQrDelivery
+                  : undefined,
+            includeTicketLinkOnApproval: credential.includeTicketLinkOnApproval,
+            approvalMessage: credential.approvalMessage ?? "",
+            autoApproveLimit:
+              typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
+                ? String(credential.autoApproveLimit)
+                : "",
+            autoApproveDelay: autoApproveDelay.value,
+            autoApproveDelayUnit: autoApproveDelay.unit,
+          };
+        }),
       );
     } else {
       setLists(createListRows(eventWizardDefaults.listKeys));
@@ -848,6 +874,10 @@ export default function EventCreateWizard() {
         const listKey = list.listKey.trim();
         const trimmedPassword = list.password?.trim() ?? "";
         const autoApproveLimit = parseAutoApproveLimitInput(list.autoApproveLimit);
+        const autoApproveDelayMinutes = parseAutoApproveDelayInput(
+          list.autoApproveDelay,
+          list.autoApproveDelayUnit,
+        );
         return {
           id: credentialIdByKey.get(listKey),
           listKey,
@@ -857,6 +887,7 @@ export default function EventCreateWizard() {
           includeTicketLinkOnApproval: list.includeTicketLinkOnApproval,
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
           autoApproveLimit: autoApproveLimit ?? 0,
+          autoApproveDelayMinutes: autoApproveDelayMinutes ?? 0,
         };
       });
 
@@ -976,6 +1007,10 @@ export default function EventCreateWizard() {
       const listsFiltered = lists
         .map((list) => {
           const autoApproveLimit = parseAutoApproveLimitInput(list.autoApproveLimit);
+          const autoApproveDelayMinutes = parseAutoApproveDelayInput(
+            list.autoApproveDelay,
+            list.autoApproveDelayUnit,
+          );
           return {
             listKey: list.listKey.trim(),
             password: list.password.trim(),
@@ -984,6 +1019,7 @@ export default function EventCreateWizard() {
             includeTicketLinkOnApproval: list.includeTicketLinkOnApproval,
             approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
             autoApproveLimit: autoApproveLimit ?? 0,
+            autoApproveDelayMinutes: autoApproveDelayMinutes ?? 0,
           };
         })
         .filter((list) => list.listKey);
@@ -1880,6 +1916,8 @@ function StepLists({
         includeTicketLinkOnApproval: true,
         approvalMessage: "",
         autoApproveLimit: "",
+        autoApproveDelay: "",
+        autoApproveDelayUnit: "hours",
       },
     ]);
 
@@ -1976,6 +2014,47 @@ function StepLists({
               </Button>
             </div>
           </div>
+          {list.autoApproveLimit.trim() ? (
+            <div className="grid gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center sm:gap-4">
+              <div className="space-y-1">
+                <label
+                  htmlFor={`auto-approve-delay-${index}`}
+                  className="text-xs font-medium text-foreground"
+                >
+                  Approval timing
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Approve at event start if it comes sooner.
+                </p>
+              </div>
+              <div className="flex max-w-sm gap-2">
+                <Input
+                  id={`auto-approve-delay-${index}`}
+                  type="number"
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  aria-label={`Auto-approve delay for ${list.listKey.trim() || `list ${index + 1}`}`}
+                  placeholder="Immediately"
+                  value={list.autoApproveDelay}
+                  onChange={(event) => update(index, "autoApproveDelay", event.target.value)}
+                  className="h-10 min-w-0 flex-1 tabular-nums"
+                />
+                <Select
+                  aria-label={`Auto-approve delay unit for ${list.listKey.trim() || `list ${index + 1}`}`}
+                  value={list.autoApproveDelayUnit}
+                  onValueChange={(value) =>
+                    update(index, "autoApproveDelayUnit", value as AutoApproveDelayUnit)
+                  }
+                  className="h-10 w-32 shrink-0"
+                >
+                  <SelectOption value="minutes">Minutes</SelectOption>
+                  <SelectOption value="hours">Hours</SelectOption>
+                  <SelectOption value="days">Days</SelectOption>
+                </Select>
+              </div>
+            </div>
+          ) : null}
           {list.shouldGenerateQrCode ? (
             <div className="grid gap-1 sm:grid-cols-[200px_minmax(0,1fr)] sm:items-center sm:gap-4">
               <label className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
@@ -2148,7 +2227,13 @@ function StepReview({
       value:
         filteredLists
           .filter((list) => list.autoApproveLimit.trim())
-          .map((list) => `${list.listKey}: first ${list.autoApproveLimit}`)
+          .map(
+            (list) =>
+              `${list.listKey}: first ${list.autoApproveLimit}, ${formatAutoApproveDelay(
+                list.autoApproveDelay,
+                list.autoApproveDelayUnit,
+              )}`,
+          )
           .join(", ") || "Off",
     },
     {

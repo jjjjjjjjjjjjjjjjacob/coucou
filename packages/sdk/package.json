@@ -14,6 +14,7 @@
     "./auth-domains": "./src/auth-domains.ts",
     "./site-config": "./src/site-config.ts",
     "./routes": "./src/routes.ts",
+    "./shared/automated-event-messages": "./src/shared/automated-event-messages.ts",
     "./shared/approval-messages": "./src/shared/approval-messages.ts",
     "./shared/event-availability": "./src/shared/event-availability.ts",
     "./shared/event-branding": "./src/shared/event-branding.ts",

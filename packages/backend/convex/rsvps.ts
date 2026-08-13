@@ -25,7 +25,7 @@ import {
   insertRsvpIntoAggregate,
   updateRsvpInAggregate,
 } from "./lib/rsvpAggregate";
-import { applyApprovalStatusTransition } from "./lib/rsvpApproval";
+import { AUTOMATIC_APPROVAL_ACTOR, applyApprovalStatusTransition } from "./lib/rsvpApproval";
 import { formatRsvpConfirmationMessage } from "./lib/rsvpConfirmationMessages";
 import {
   buildRsvpFuzzySearchTerms,
@@ -1305,6 +1305,33 @@ export const claimGuestRsvpsForClerkPhoneInternal = internalMutation({
     return await claimGuestRsvpsForPhone(ctx, {
       clerkUserId: canonicalClerkUserId,
       phoneNumber: phone,
+    });
+  },
+});
+
+export const runScheduledAutoApproval = internalMutation({
+  args: {
+    rsvpId: v.id("rsvps"),
+    listCredentialId: v.id("listCredentials"),
+  },
+  handler: async (ctx, { rsvpId, listCredentialId }): Promise<boolean> => {
+    const rsvp = await ctx.db.get(rsvpId);
+    const listCredential = await ctx.db.get(listCredentialId);
+    if (
+      !rsvp ||
+      !listCredential ||
+      rsvp.eventId !== listCredential.eventId ||
+      rsvp.listKey !== listCredential.listKey ||
+      resolveApprovalStatus(rsvp) !== "pending"
+    ) {
+      return false;
+    }
+
+    return await applyApprovalStatusTransition(ctx, {
+      rsvp,
+      nextApprovalStatus: "approved",
+      decidedBy: AUTOMATIC_APPROVAL_ACTOR,
+      now: Date.now(),
     });
   },
 });

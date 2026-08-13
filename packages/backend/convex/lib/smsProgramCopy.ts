@@ -1,3 +1,7 @@
+import {
+  getDefaultSmsOptInConfirmationMessage,
+  getDefaultSmsOptOutConfirmationMessage,
+} from "@coucou/sdk/shared/automated-event-messages";
 import { formatOrganizerSmsMessage } from "@coucou/sdk/shared/event-branding";
 
 export const CLUB_CHLORINE_SITE_KEY = "club-chlorine";
@@ -11,7 +15,7 @@ export function formatSmsOptInConfirmation(organizerName: string): string {
   const trimmedOrganizerName = organizerName.trim();
   return formatOrganizerSmsMessage(
     trimmedOrganizerName,
-    `You’re subscribed to recurring ${trimmedOrganizerName} texts about RSVPs, guest-list status, tickets, event updates, and replies to your requests. Message frequency varies. Message and data rates may apply. Reply HELP for help or STOP to opt out.`,
+    getDefaultSmsOptInConfirmationMessage(trimmedOrganizerName),
   );
 }
 
@@ -19,7 +23,7 @@ export function formatSmsOptOutConfirmation(organizerName: string): string {
   const trimmedOrganizerName = organizerName.trim();
   return formatOrganizerSmsMessage(
     trimmedOrganizerName,
-    `You have been unsubscribed and will receive no more ${trimmedOrganizerName} messages. Reply START to resubscribe.`,
+    getDefaultSmsOptOutConfirmationMessage(trimmedOrganizerName),
   );
 }
 

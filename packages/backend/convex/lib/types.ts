@@ -83,6 +83,9 @@ export type EventPatch = Partial<
     | "approvalMessage"
     | "rsvpConfirmationMessageEnabled"
     | "rsvpConfirmationMessage"
+    | "smsOptInConfirmationMessage"
+    | "smsOptOutConfirmationMessage"
+    | "qrDeliveryMessage"
     | "qrCodeColor"
     | "defersQrDelivery"
     | "sendQrOnApproval"
@@ -100,7 +103,10 @@ export type EventUnsetField =
   | "guestPortalLinkLabel"
   | "guestPortalLinkUrl"
   | "primaryFieldConfig"
-  | "rsvpConfirmationMessage";
+  | "rsvpConfirmationMessage"
+  | "smsOptInConfirmationMessage"
+  | "smsOptOutConfirmationMessage"
+  | "qrDeliveryMessage";
 
 /**
  * List credential patch type
@@ -117,6 +123,7 @@ export type ListCredentialPatch = Partial<
     | "includeTicketLinkOnApproval"
     | "approvalMessage"
     | "autoApproveLimit"
+    | "autoApproveDelayMinutes"
   >
 >;
 
@@ -131,6 +138,7 @@ export type ListUpdate = {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
 };
 
 /**
@@ -149,4 +157,5 @@ export type CredentialData = {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
 };

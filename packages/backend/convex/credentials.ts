@@ -16,6 +16,7 @@ function toPublicCredential(credential: {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
   autoApprovedCount?: number;
   createdAt: number;
 }) {
@@ -44,6 +45,7 @@ function toHostCredential(credential: {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
   autoApprovedCount?: number;
   createdAt: number;
 }) {
@@ -51,6 +53,7 @@ function toHostCredential(credential: {
     ...toPublicCredential(credential),
     password: credential.password,
     autoApproveLimit: credential.autoApproveLimit,
+    autoApproveDelayMinutes: credential.autoApproveDelayMinutes,
     autoApprovedCount: credential.autoApprovedCount,
   };
 }

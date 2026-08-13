@@ -371,6 +371,90 @@ describe("guest RSVP handoff", () => {
     });
   });
 
+  it("keeps an RSVP pending until its configured auto-approval delay elapses", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    const listCredentialId = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "ga",
+        autoApproveLimit: 1,
+        autoApproveDelayMinutes: 15,
+        createdAt: Date.now(),
+      });
+    });
+
+    const submission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Delayed",
+      lastName: "Guest",
+      phone: "+13104996281",
+      shareContact: false,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    expect((await getRsvp(testBackend, submission.rsvpId))?.approvalStatus).toBe("pending");
+    expect(
+      await testBackend.run(async (databaseContext) => {
+        return (await databaseContext.db.get(listCredentialId))?.autoApprovedCount;
+      }),
+    ).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+    await settleScheduledFunctionWork();
+    await testBackend.finishInProgressScheduledFunctions();
+    expect((await getRsvp(testBackend, submission.rsvpId))?.approvalStatus).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    await settleScheduledFunctionWork();
+    await testBackend.finishInProgressScheduledFunctions();
+
+    const approvedRsvp = await getRsvp(testBackend, submission.rsvpId);
+    expect(approvedRsvp?.approvalStatus).toBe("approved");
+    expect(approvedRsvp?.ticketStatus).toBe("issued");
+  });
+
+  it("caps a delayed auto-approval at the event start time", async () => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedActiveEvent(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "ga",
+        autoApproveLimit: 1,
+        autoApproveDelayMinutes: 120,
+        createdAt: Date.now(),
+      });
+    });
+
+    const submission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      eventId,
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Event",
+      lastName: "Start",
+      phone: "+13104996282",
+      shareContact: false,
+      attendees: 1,
+      customFields: {},
+      socialProfiles: [],
+    });
+
+    await vi.advanceTimersByTimeAsync(59 * 60 * 1000);
+    await settleScheduledFunctionWork();
+    await testBackend.finishInProgressScheduledFunctions();
+    expect((await getRsvp(testBackend, submission.rsvpId))?.approvalStatus).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    await settleScheduledFunctionWork();
+    await testBackend.finishInProgressScheduledFunctions();
+    expect((await getRsvp(testBackend, submission.rsvpId))?.approvalStatus).toBe("approved");
+  });
+
   it("does not reopen an automatic-approval slot when an approved RSVP is deleted", async () => {
     const testBackend = setupTestBackend();
     const eventId = await seedActiveEvent(testBackend);

@@ -3,7 +3,14 @@ import {
   resolveApprovalMessageText,
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
-import { resolveEventMessagingBrandName } from "@coucou/sdk/shared/event-branding";
+import {
+  resolveSmsOptInConfirmationMessage,
+  resolveSmsOptOutConfirmationMessage,
+} from "@coucou/sdk/shared/automated-event-messages";
+import {
+  formatOrganizerSmsMessage,
+  resolveEventMessagingBrandName,
+} from "@coucou/sdk/shared/event-branding";
 import {
   applyMessageTemplateVariables,
   formatEventDateForMessageTemplate,
@@ -23,8 +30,6 @@ import {
   CLUB_CHLORINE_MESSAGE_PREFIX,
   DANZA_ORGANICA_MESSAGE_PREFIX,
   formatSmsMessageForSite,
-  formatSmsOptInConfirmation,
-  formatSmsOptOutConfirmation,
   isClubChlorineSite,
   isDanzaOrganicaSite,
 } from "./lib/smsProgramCopy";
@@ -53,6 +58,11 @@ type SmsConsentEventSummary = {
   hosts?: Array<string | null | undefined> | null;
   eventHostNames?: Array<string | null | undefined> | null;
   productionCompany?: string | null | undefined;
+  location?: string | null | undefined;
+  eventDate?: number | null | undefined;
+  eventTimezone?: string | null | undefined;
+  smsOptInConfirmationMessage?: string | null | undefined;
+  smsOptOutConfirmationMessage?: string | null | undefined;
 };
 
 type TwilioSendResult = {
@@ -257,9 +267,10 @@ function getSmsMessageHeader(event: SmsConsentEventSummary): string {
   return `${allButLast.join(", ")}, & ${last}`;
 }
 
-function formatSmsConsentMessage(
+export function formatSmsConsentMessage(
   event: SmsConsentEventSummary,
   consentEnabled: boolean,
+  recipient: ApprovalRecipientSummary,
   organizerName?: string,
 ): string {
   const resolvedOrganizerName =
@@ -267,9 +278,16 @@ function formatSmsConsentMessage(
     (isClubChlorineSite(event.siteKey)
       ? CLUB_CHLORINE_BRAND_NAME
       : resolveEventMessagingBrandName(event));
-  return consentEnabled
-    ? formatSmsOptInConfirmation(resolvedOrganizerName)
-    : formatSmsOptOutConfirmation(resolvedOrganizerName);
+  const messageTemplate = consentEnabled
+    ? resolveSmsOptInConfirmationMessage(event, resolvedOrganizerName)
+    : resolveSmsOptOutConfirmationMessage(event, resolvedOrganizerName);
+  return formatOrganizerSmsMessage(
+    resolvedOrganizerName,
+    applyMessageTemplateVariables(messageTemplate, {
+      ...buildApprovalTemplateVariables(event as ApprovalEventSummary, recipient, ""),
+      qrCodeUrl: "",
+    }),
+  );
 }
 
 export const sendApprovalSms = action({
@@ -579,6 +597,7 @@ export const sendSmsConsentStatusMessage = action({
       const message = formatSmsConsentMessage(
         event as SmsConsentEventSummary,
         args.consentEnabled,
+        (userRecord ?? {}) as ApprovalRecipientSummary,
         args.organizerName,
       );
       const phoneResolution = await normalizeAndHashPhoneNumber(recipientPhoneNumber);

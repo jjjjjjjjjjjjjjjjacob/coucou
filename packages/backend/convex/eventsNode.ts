@@ -1,5 +1,6 @@
 "use node";
 import { sanitizeOptionalApprovalMessage } from "@coucou/sdk/shared/approval-messages";
+import { sanitizeOptionalAutomatedEventMessage } from "@coucou/sdk/shared/automated-event-messages";
 import type { WorkspaceEventDefaults } from "@coucou/sdk/shared/primary-fields";
 import { sanitizeOptionalRsvpConfirmationMessage } from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import { v } from "convex/values";
@@ -7,7 +8,7 @@ import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action } from "./_generated/server";
-import { validateAutoApproveLimit } from "./lib/autoApproval";
+import { validateAutoApproveDelayMinutes, validateAutoApproveLimit } from "./lib/autoApproval";
 import { normalizeCredentialPassword } from "./lib/credentialPasswords";
 import {
   type EventActInput,
@@ -50,6 +51,9 @@ const eventUnsetFieldValidator = v.union(
   v.literal("guestPortalLinkUrl"),
   v.literal("primaryFieldConfig"),
   v.literal("rsvpConfirmationMessage"),
+  v.literal("smsOptInConfirmationMessage"),
+  v.literal("smsOptOutConfirmationMessage"),
+  v.literal("qrDeliveryMessage"),
 );
 
 const eventUpdatePatchValidator = v.object({
@@ -98,6 +102,9 @@ const eventUpdatePatchValidator = v.object({
   approvalMessage: v.optional(v.string()),
   rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
   rsvpConfirmationMessage: v.optional(v.string()),
+  smsOptInConfirmationMessage: v.optional(v.string()),
+  smsOptOutConfirmationMessage: v.optional(v.string()),
+  qrDeliveryMessage: v.optional(v.string()),
   qrCodeColor: v.optional(v.string()),
 });
 
@@ -111,6 +118,7 @@ const listUpdateValidator = v.object({
   includeTicketLinkOnApproval: v.optional(v.boolean()),
   approvalMessage: v.optional(v.string()),
   autoApproveLimit: v.optional(v.number()),
+  autoApproveDelayMinutes: v.optional(v.number()),
 });
 
 const eventUpdateActionArgs = {
@@ -134,6 +142,7 @@ type HostCredentialData = {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
   autoApprovedCount?: number;
   createdAt: number;
 };
@@ -283,6 +292,7 @@ export const create = action({
         includeTicketLinkOnApproval: v.optional(v.boolean()),
         approvalMessage: v.optional(v.string()),
         autoApproveLimit: v.optional(v.number()),
+        autoApproveDelayMinutes: v.optional(v.number()),
       }),
     ),
     customFields: v.optional(
@@ -305,6 +315,9 @@ export const create = action({
     approvalMessage: v.optional(v.string()),
     rsvpConfirmationMessageEnabled: v.optional(v.boolean()),
     rsvpConfirmationMessage: v.optional(v.string()),
+    smsOptInConfirmationMessage: v.optional(v.string()),
+    smsOptOutConfirmationMessage: v.optional(v.string()),
+    qrDeliveryMessage: v.optional(v.string()),
     qrCodeColor: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ eventId: Id<"events"> }> => {
@@ -345,8 +358,10 @@ export const create = action({
         includeTicketLinkOnApproval,
         approvalMessage,
         autoApproveLimit,
+        autoApproveDelayMinutes,
       }) => {
         validateAutoApproveLimit(autoApproveLimit);
+        validateAutoApproveDelayMinutes(autoApproveDelayMinutes);
         const trimmedPassword = password.trim();
         const hasPassword = trimmedPassword.length > 0;
         return {
@@ -360,6 +375,7 @@ export const create = action({
           includeTicketLinkOnApproval,
           approvalMessage: sanitizeOptionalApprovalMessage(approvalMessage),
           autoApproveLimit,
+          autoApproveDelayMinutes,
         };
       },
     );
@@ -452,6 +468,13 @@ export const create = action({
       rsvpConfirmationMessage: sanitizeOptionalRsvpConfirmationMessage(
         args.rsvpConfirmationMessage,
       ),
+      smsOptInConfirmationMessage: sanitizeOptionalAutomatedEventMessage(
+        args.smsOptInConfirmationMessage,
+      ),
+      smsOptOutConfirmationMessage: sanitizeOptionalAutomatedEventMessage(
+        args.smsOptOutConfirmationMessage,
+      ),
+      qrDeliveryMessage: sanitizeOptionalAutomatedEventMessage(args.qrDeliveryMessage),
       qrCodeColor: normalizeOptionalHexColor(args.qrCodeColor, "QR code color"),
       creds: derivedCredentials,
     });
@@ -545,6 +568,21 @@ export const update = action({
       if (patch.rsvpConfirmationMessage !== undefined) {
         sanitizedPatch.rsvpConfirmationMessage = sanitizeOptionalRsvpConfirmationMessage(
           patch.rsvpConfirmationMessage,
+        );
+      }
+      if (patch.smsOptInConfirmationMessage !== undefined) {
+        sanitizedPatch.smsOptInConfirmationMessage = sanitizeOptionalAutomatedEventMessage(
+          patch.smsOptInConfirmationMessage,
+        );
+      }
+      if (patch.smsOptOutConfirmationMessage !== undefined) {
+        sanitizedPatch.smsOptOutConfirmationMessage = sanitizeOptionalAutomatedEventMessage(
+          patch.smsOptOutConfirmationMessage,
+        );
+      }
+      if (patch.qrDeliveryMessage !== undefined) {
+        sanitizedPatch.qrDeliveryMessage = sanitizeOptionalAutomatedEventMessage(
+          patch.qrDeliveryMessage,
         );
       }
       if (patch.qrCodeColor !== undefined) {
@@ -647,6 +685,7 @@ export const update = action({
 
     for (const list of lists) {
       validateAutoApproveLimit(list.autoApproveLimit);
+      validateAutoApproveDelayMinutes(list.autoApproveDelayMinutes);
       const currentCredential = list.id ? existingById.get(list.id) : undefined;
       const trimmedPassword = list.password?.trim() ?? "";
       const wantsPasswordUpdate = list.password !== undefined;
@@ -656,6 +695,7 @@ export const update = action({
       const nextIncludeTicketLinkOnApproval = list.includeTicketLinkOnApproval;
       const nextApprovalMessage = sanitizeOptionalApprovalMessage(list.approvalMessage);
       const nextAutoApproveLimit = list.autoApproveLimit;
+      const nextAutoApproveDelayMinutes = list.autoApproveDelayMinutes;
       const credentialPatch: ListCredentialPatch = {};
 
       if (currentCredential) {
@@ -691,6 +731,9 @@ export const update = action({
         if (nextAutoApproveLimit !== currentCredential.autoApproveLimit) {
           credentialPatch.autoApproveLimit = nextAutoApproveLimit;
         }
+        if (nextAutoApproveDelayMinutes !== currentCredential.autoApproveDelayMinutes) {
+          credentialPatch.autoApproveDelayMinutes = nextAutoApproveDelayMinutes;
+        }
         if (Object.keys(credentialPatch).length > 0) {
           await ctx.runMutation(api.events.updateListCredential, {
             id: currentCredential._id,
@@ -716,6 +759,7 @@ export const update = action({
           includeTicketLinkOnApproval: nextIncludeTicketLinkOnApproval,
           approvalMessage: nextApprovalMessage,
           autoApproveLimit: nextAutoApproveLimit,
+          autoApproveDelayMinutes: nextAutoApproveDelayMinutes,
         });
       }
     }

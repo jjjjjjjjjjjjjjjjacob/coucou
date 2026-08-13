@@ -571,8 +571,10 @@ function PartnerApiDocumentation({
                 </>,
                 <>
                   New RSVPs start as <InlineCode>approvalStatus: "pending"</InlineCode> unless the
-                  selected list still has automatic approvals available. Automatic approvals return
-                  the issued ticket in the same response.
+                  selected list still has automatic approvals available. Immediate automatic
+                  approvals return the issued ticket in the same response; delayed automatic
+                  approvals remain pending until their configured time or the event start, whichever
+                  comes first.
                 </>,
                 <>
                   <InlineCode>smsConsent: true</InlineCode> enrolls in Coucou SMS; false revokes

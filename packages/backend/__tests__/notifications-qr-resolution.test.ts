@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   formatApprovalMessage,
   formatDeferredApprovalMessage,
+  formatSmsConsentMessage,
   resolveSendQrOnApproval,
 } from "../convex/notifications";
+import { formatQrDeliveryMessage } from "../convex/qrDelivery";
 
 // Resolution precedence (top wins):
 //   1. List `sendQrOnApproval`
@@ -144,6 +146,59 @@ describe("approval SMS template variables", () => {
 
     expect(message).toBe(
       "CLUB CHLORINE:\n\nYou are approved for Spring Gala: After Dark. https://clubchlorine.party/redeem/ticket-code",
+    );
+  });
+});
+
+describe("event-level automated SMS templates", () => {
+  const event = {
+    name: "Spring Gala",
+    secondaryTitle: "After Dark",
+    productionCompany: "Coucou",
+    location: "Main Room",
+    eventDate: Date.UTC(2030, 4, 1, 16),
+    eventTimezone: "America/New_York",
+  };
+  const recipient = { firstName: "Riley", lastName: "Stone" };
+
+  it("uses customized subscribed and unsubscribed copy with event variables", () => {
+    expect(
+      formatSmsConsentMessage(
+        {
+          ...event,
+          smsOptInConfirmationMessage:
+            "Hi {{firstName}}, texts are on for {{eventName}} at {{eventLocation}}.",
+        },
+        true,
+        recipient,
+      ),
+    ).toBe("COUCOU: Hi Riley, texts are on for Spring Gala: After Dark at Main Room.");
+
+    expect(
+      formatSmsConsentMessage(
+        {
+          ...event,
+          smsOptOutConfirmationMessage: "Texts are off for {{eventName}}. Reply START anytime.",
+        },
+        false,
+        recipient,
+      ),
+    ).toBe("COUCOU: Texts are off for Spring Gala: After Dark. Reply START anytime.");
+  });
+
+  it("uses customized ticket-delivery copy with the generated ticket URL", () => {
+    const message = formatQrDeliveryMessage(
+      {
+        ...event,
+        siteKey: "dojo",
+        qrDeliveryMessage: "Hi {{firstName}}, your {{eventName}} ticket is ready: {{qrCodeUrl}}",
+      },
+      recipient,
+      "https://dojo.test/redeem/ticket-code",
+    );
+
+    expect(message).toBe(
+      "Hi Riley, your Spring Gala: After Dark ticket is ready: https://dojo.test/redeem/ticket-code",
     );
   });
 });

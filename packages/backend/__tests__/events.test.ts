@@ -215,6 +215,7 @@ describe("Events Functions", () => {
           includeTicketLinkOnApproval: false,
           approvalMessage: "Press approved.",
           autoApproveLimit: 50,
+          autoApproveDelayMinutes: 120,
         },
       ],
     });
@@ -245,6 +246,7 @@ describe("Events Functions", () => {
     expect(listCredentials[0]?.includeTicketLinkOnApproval).toBe(false);
     expect(listCredentials[0]?.approvalMessage).toBe("Press approved.");
     expect(listCredentials[0]?.autoApproveLimit).toBe(50);
+    expect(listCredentials[0]?.autoApproveDelayMinutes).toBe(120);
     expect(listCredentials[0]?.autoApprovedCount).toBeUndefined();
   });
 
@@ -316,6 +318,9 @@ describe("Events Functions", () => {
         themeAccentColor: "#FC7243",
         rsvpConfirmationMessageEnabled: true,
         rsvpConfirmationMessage: "We received your RSVP.",
+        smsOptInConfirmationMessage: "Welcome to event texts.",
+        smsOptOutConfirmationMessage: "Event texts are off. Reply START anytime.",
+        qrDeliveryMessage: "Your ticket: {{qrCodeUrl}}",
         qrCodeColor: "#123456",
         createdAt: now,
         updatedAt: now,
@@ -330,6 +335,7 @@ describe("Events Functions", () => {
         includeTicketLinkOnApproval: false,
         approvalMessage: "Press approved.",
         autoApproveLimit: 50,
+        autoApproveDelayMinutes: 1_440,
         autoApprovedCount: 12,
         createdAt: now,
       });
@@ -367,6 +373,11 @@ describe("Events Functions", () => {
     expect(duplicateEvent?.themeBackgroundColor).toBe("#101820");
     expect(duplicateEvent?.themeTextColor).toBe("#FEE715");
     expect(duplicateEvent?.themeAccentColor).toBe("#FC7243");
+    expect(duplicateEvent?.smsOptInConfirmationMessage).toBe("Welcome to event texts.");
+    expect(duplicateEvent?.smsOptOutConfirmationMessage).toBe(
+      "Event texts are off. Reply START anytime.",
+    );
+    expect(duplicateEvent?.qrDeliveryMessage).toBe("Your ticket: {{qrCodeUrl}}");
     expect(duplicateEvent?.eventPartners?.map((partner) => partner.label)).toEqual([
       "The Market",
       "Nothing Radio",
@@ -390,6 +401,7 @@ describe("Events Functions", () => {
     expect(duplicateCredentials[0]?.includeTicketLinkOnApproval).toBe(false);
     expect(duplicateCredentials[0]?.approvalMessage).toBe("Press approved.");
     expect(duplicateCredentials[0]?.autoApproveLimit).toBe(50);
+    expect(duplicateCredentials[0]?.autoApproveDelayMinutes).toBe(1_440);
     expect(duplicateCredentials[0]?.autoApprovedCount).toBeUndefined();
   });
 

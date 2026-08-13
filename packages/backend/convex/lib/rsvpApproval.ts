@@ -1,11 +1,11 @@
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { generateRedemptionCode } from "./codeGenerators";
 import { updateRsvpInAggregate } from "./rsvpAggregate";
 import { type ApprovalStatus, resolveApprovalStatus } from "./rsvpStatus";
 
-const AUTOMATIC_APPROVAL_ACTOR = "system:auto-approve";
+export const AUTOMATIC_APPROVAL_ACTOR = "system:auto-approve";
 
 async function getRedemptionForRsvp(ctx: MutationCtx, rsvp: Doc<"rsvps">) {
   return ctx.db
@@ -188,6 +188,36 @@ export async function tryAutoApproveRsvp(ctx: MutationCtx, rsvp: Doc<"rsvps">): 
     return false;
   }
 
+  const now = Date.now();
+  const autoApproveDelayMinutes = listCredential.autoApproveDelayMinutes;
+  if (
+    typeof autoApproveDelayMinutes === "number" &&
+    Number.isSafeInteger(autoApproveDelayMinutes) &&
+    autoApproveDelayMinutes > 0
+  ) {
+    const event = await ctx.db.get(rsvp.eventId);
+    if (!event) {
+      return false;
+    }
+
+    const delayMilliseconds = autoApproveDelayMinutes * 60 * 1000;
+    const scheduledApprovalTimestamp = Math.min(now + delayMilliseconds, event.eventDate);
+    if (scheduledApprovalTimestamp > now) {
+      await ctx.db.patch(listCredential._id, {
+        autoApprovedCount: autoApprovedCount + 1,
+      });
+      await ctx.scheduler.runAt(
+        scheduledApprovalTimestamp,
+        internal.rsvps.runScheduledAutoApproval,
+        {
+          rsvpId: rsvp._id,
+          listCredentialId: listCredential._id,
+        },
+      );
+      return false;
+    }
+  }
+
   await ctx.db.patch(listCredential._id, {
     autoApprovedCount: autoApprovedCount + 1,
   });
@@ -196,6 +226,6 @@ export async function tryAutoApproveRsvp(ctx: MutationCtx, rsvp: Doc<"rsvps">): 
     rsvp,
     nextApprovalStatus: "approved",
     decidedBy: AUTOMATIC_APPROVAL_ACTOR,
-    now: Date.now(),
+    now,
   });
 }

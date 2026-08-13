@@ -6,6 +6,7 @@ import type {
   PrimarySocialPlatformConfig,
   WorkspaceEventDefaults,
 } from "@coucou/sdk/shared/primary-fields";
+import type { AutoApproveDelayUnit } from "@/lib/auto-approval";
 
 export type { PrimaryFieldConfig, PrimarySocialPlatformConfig, WorkspaceEventDefaults };
 export type EventPartner = SharedEventPartner<Id<"_storage">>;
@@ -186,6 +187,9 @@ export interface Event {
   approvalMessage?: string; // deprecated fallback during per-list rollout
   rsvpConfirmationMessageEnabled?: boolean;
   rsvpConfirmationMessage?: string;
+  smsOptInConfirmationMessage?: string;
+  smsOptOutConfirmationMessage?: string;
+  qrDeliveryMessage?: string;
   qrCodeColor?: string;
   createdAt: number;
   updatedAt: number;
@@ -203,6 +207,7 @@ export interface ListCredential {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
   autoApprovedCount?: number;
   createdAt: number;
 }
@@ -525,6 +530,8 @@ export interface ListCredentialEdit {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage: string;
   autoApproveLimit: string;
+  autoApproveDelay: string;
+  autoApproveDelayUnit: AutoApproveDelayUnit;
 }
 
 // Credential from API response
@@ -540,6 +547,7 @@ export interface CredentialResponse {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
   autoApprovedCount?: number;
 }
 
@@ -587,6 +595,9 @@ export interface BaseEventFormValues extends Record<string, unknown> {
   referralSharingEnabled?: boolean;
   rsvpConfirmationMessageEnabled?: boolean;
   rsvpConfirmationMessage?: string;
+  smsOptInConfirmationMessage?: string;
+  smsOptOutConfirmationMessage?: string;
+  qrDeliveryMessage?: string;
 }
 
 export interface EventFormData extends BaseEventFormValues {
@@ -619,6 +630,7 @@ export interface ListCredentialInput {
   includeTicketLinkOnApproval?: boolean;
   approvalMessage?: string;
   autoApproveLimit?: number;
+  autoApproveDelayMinutes?: number;
 }
 
 // API response types

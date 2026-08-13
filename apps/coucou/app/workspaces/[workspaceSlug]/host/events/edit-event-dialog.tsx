@@ -5,6 +5,7 @@ import {
   getDefaultApprovalMessage,
   sanitizeOptionalApprovalMessage,
 } from "@coucou/sdk/shared/approval-messages";
+import { sanitizeOptionalAutomatedEventMessage } from "@coucou/sdk/shared/automated-event-messages";
 import { DEFAULT_OPEN_GRAPH_IMAGE_SOURCE } from "@coucou/sdk/shared/open-graph";
 import {
   getDefaultRsvpConfirmationMessage,
@@ -22,6 +23,10 @@ import {
 import React, { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import {
+  QrDeliveryTextSection,
+  SmsSubscriptionTextsSection,
+} from "@/components/automated-event-texts-section";
 import { type CustomFieldDef, CustomFieldsEditor } from "@/components/custom-fields-builder";
 import { EventActsEditor } from "@/components/event-acts-editor";
 import { EventDetailsSection } from "@/components/event-form-sections/event-details-section";
@@ -63,8 +68,14 @@ import {
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
+import { Select, SelectOption } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { parseAutoApproveLimitInput } from "@/lib/auto-approval";
+import {
+  type AutoApproveDelayUnit,
+  parseAutoApproveDelayInput,
+  parseAutoApproveLimitInput,
+  splitAutoApproveDelayMinutes,
+} from "@/lib/auto-approval";
 import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
 import {
   createTimestamp,
@@ -125,6 +136,9 @@ type EventUpdatePatch = {
   referralSharingEnabled?: boolean;
   rsvpConfirmationMessageEnabled?: boolean;
   rsvpConfirmationMessage?: string;
+  smsOptInConfirmationMessage?: string;
+  smsOptOutConfirmationMessage?: string;
+  qrDeliveryMessage?: string;
 };
 
 type EventUnsetField =
@@ -136,7 +150,10 @@ type EventUnsetField =
   | "guestPortalLinkLabel"
   | "guestPortalLinkUrl"
   | "primaryFieldConfig"
-  | "rsvpConfirmationMessage";
+  | "rsvpConfirmationMessage"
+  | "smsOptInConfirmationMessage"
+  | "smsOptOutConfirmationMessage"
+  | "qrDeliveryMessage";
 
 function sanitizeCustomFieldsForSubmit(customFields: CustomFieldDef[]): Event["customFields"] {
   return customFields.map((field) => ({
@@ -198,7 +215,13 @@ const EVENT_EDITOR_PATCH_FIELDS: Record<EventEditorSection, readonly (keyof Even
     "eventPartners",
     "sponsors",
   ],
-  confirmations: ["rsvpConfirmationMessageEnabled", "rsvpConfirmationMessage"],
+  confirmations: [
+    "smsOptInConfirmationMessage",
+    "smsOptOutConfirmationMessage",
+    "rsvpConfirmationMessageEnabled",
+    "rsvpConfirmationMessage",
+    "qrDeliveryMessage",
+  ],
   rsvp: ["sendQrOnApproval", "attendanceQuestionEnabled", "customFields", "primaryFieldConfig"],
   lists: [],
 };
@@ -232,7 +255,13 @@ const EVENT_EDITOR_FORM_FIELDS: Record<
     "guestPortalLinkUrl",
     "referralSharingEnabled",
   ],
-  confirmations: ["rsvpConfirmationMessageEnabled", "rsvpConfirmationMessage"],
+  confirmations: [
+    "smsOptInConfirmationMessage",
+    "smsOptOutConfirmationMessage",
+    "rsvpConfirmationMessageEnabled",
+    "rsvpConfirmationMessage",
+    "qrDeliveryMessage",
+  ],
   rsvp: ["sendQrOnApproval", "attendanceQuestionEnabled"],
   lists: [],
 };
@@ -246,7 +275,12 @@ const EVENT_EDITOR_UNSET_FIELDS: Record<EventEditorSection, readonly EventUnsetF
     "guestPortalLinkLabel",
     "guestPortalLinkUrl",
   ],
-  confirmations: ["rsvpConfirmationMessage"],
+  confirmations: [
+    "smsOptInConfirmationMessage",
+    "smsOptOutConfirmationMessage",
+    "rsvpConfirmationMessage",
+    "qrDeliveryMessage",
+  ],
   rsvp: ["primaryFieldConfig"],
   lists: [],
 };
@@ -357,6 +391,9 @@ export default function EditEventDialog({
       referralSharingEnabled: event.referralSharingEnabled ?? false,
       rsvpConfirmationMessageEnabled: event.rsvpConfirmationMessageEnabled ?? true,
       rsvpConfirmationMessage: event.rsvpConfirmationMessage ?? "",
+      smsOptInConfirmationMessage: event.smsOptInConfirmationMessage ?? "",
+      smsOptOutConfirmationMessage: event.smsOptOutConfirmationMessage ?? "",
+      qrDeliveryMessage: event.qrDeliveryMessage ?? "",
     },
   });
   const [flyerStorageId, setFlyerStorageId] = React.useState<string | null>(
@@ -458,6 +495,9 @@ export default function EditEventDialog({
   const currentRsvpConfirmationMessageEnabled =
     form.watch("rsvpConfirmationMessageEnabled") ?? true;
   const currentRsvpConfirmationMessage = form.watch("rsvpConfirmationMessage") ?? "";
+  const currentSmsOptInConfirmationMessage = form.watch("smsOptInConfirmationMessage") ?? "";
+  const currentSmsOptOutConfirmationMessage = form.watch("smsOptOutConfirmationMessage") ?? "";
+  const currentQrDeliveryMessage = form.watch("qrDeliveryMessage") ?? "";
   const defaultApprovalMessage = getDefaultApprovalMessage(currentEventName);
   const defaultRsvpConfirmationMessage = getDefaultRsvpConfirmationMessage({
     name: currentEventName,
@@ -551,26 +591,31 @@ export default function EditEventDialog({
 
   useEffect(() => {
     if (open && creds && workspaceScope) {
-      const nextLists = creds.map((credential) => ({
-        id: credential._id,
-        listKey: credential.listKey,
-        password: "",
-        passwordEdited: false,
-        requirePassword: credential.hasPassword ?? false,
-        generateQR: credential.generateQR ?? false,
-        sendQrOnApprovalOverride:
-          typeof credential.sendQrOnApproval === "boolean"
-            ? credential.sendQrOnApproval
-            : typeof credential.defersQrDelivery === "boolean"
-              ? !credential.defersQrDelivery
-              : undefined,
-        includeTicketLinkOnApproval: credential.includeTicketLinkOnApproval,
-        approvalMessage: credential.approvalMessage ?? event.approvalMessage ?? "",
-        autoApproveLimit:
-          typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
-            ? String(credential.autoApproveLimit)
-            : "",
-      }));
+      const nextLists = creds.map((credential) => {
+        const autoApproveDelay = splitAutoApproveDelayMinutes(credential.autoApproveDelayMinutes);
+        return {
+          id: credential._id,
+          listKey: credential.listKey,
+          password: "",
+          passwordEdited: false,
+          requirePassword: credential.hasPassword ?? false,
+          generateQR: credential.generateQR ?? false,
+          sendQrOnApprovalOverride:
+            typeof credential.sendQrOnApproval === "boolean"
+              ? credential.sendQrOnApproval
+              : typeof credential.defersQrDelivery === "boolean"
+                ? !credential.defersQrDelivery
+                : undefined,
+          includeTicketLinkOnApproval: credential.includeTicketLinkOnApproval,
+          approvalMessage: credential.approvalMessage ?? event.approvalMessage ?? "",
+          autoApproveLimit:
+            typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
+              ? String(credential.autoApproveLimit)
+              : "",
+          autoApproveDelay: autoApproveDelay.value,
+          autoApproveDelayUnit: autoApproveDelay.unit,
+        };
+      });
       setLists(nextLists);
       setSavedLists(nextLists.map((list) => ({ ...list })));
       // Fetch stored passwords for display.
@@ -607,6 +652,8 @@ export default function EditEventDialog({
         includeTicketLinkOnApproval: true,
         approvalMessage: "",
         autoApproveLimit: "",
+        autoApproveDelay: "",
+        autoApproveDelayUnit: "hours",
       },
     ]);
   const setList = <Key extends keyof ListCredentialEdit>(
@@ -880,6 +927,21 @@ export default function EditEventDialog({
           unsetFields.push("rsvpConfirmationMessage");
         }
       }
+      const automatedMessageFields = [
+        "smsOptInConfirmationMessage",
+        "smsOptOutConfirmationMessage",
+        "qrDeliveryMessage",
+      ] as const;
+      for (const fieldName of automatedMessageFields) {
+        const nextMessage = sanitizeOptionalAutomatedEventMessage(values[fieldName]);
+        const previousMessage = sanitizeOptionalAutomatedEventMessage(event[fieldName]);
+        if (nextMessage === previousMessage) continue;
+        if (nextMessage) {
+          patch[fieldName] = nextMessage;
+        } else {
+          unsetFields.push(fieldName);
+        }
+      }
       const outgoingLists = lists.map((list) => {
         let password: string | undefined;
         if (!list.requirePassword) {
@@ -890,6 +952,10 @@ export default function EditEventDialog({
           password = undefined;
         }
         const autoApproveLimit = parseAutoApproveLimitInput(list.autoApproveLimit);
+        const autoApproveDelayMinutes = parseAutoApproveDelayInput(
+          list.autoApproveDelay,
+          list.autoApproveDelayUnit,
+        );
         return {
           id: list.id as Id<"listCredentials"> | undefined,
           listKey: list.listKey.trim(),
@@ -899,6 +965,7 @@ export default function EditEventDialog({
           includeTicketLinkOnApproval: list.includeTicketLinkOnApproval,
           approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
           autoApproveLimit: autoApproveLimit ?? 0,
+          autoApproveDelayMinutes: autoApproveDelayMinutes ?? 0,
         };
       });
       const nextCustomFields = sanitizeCustomFieldsForSubmit(customFields);
@@ -1132,6 +1199,31 @@ export default function EditEventDialog({
 
             <TabsContent value="confirmations" className="pt-5">
               <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                    Event text templates
+                  </h3>
+                  <p className="text-pretty text-sm text-[var(--text-secondary)]">
+                    Customize each reusable message in the order guests may receive it. Text blasts
+                    and direct replies are edited when you compose them.
+                  </p>
+                </div>
+                <SmsSubscriptionTextsSection
+                  organizerName={workspace?.name ?? workspaceScope?.workspaceSlug ?? "Event Host"}
+                  smsOptInConfirmationMessage={currentSmsOptInConfirmationMessage}
+                  smsOptOutConfirmationMessage={currentSmsOptOutConfirmationMessage}
+                  onSmsOptInConfirmationMessageChange={(message) =>
+                    form.setValue("smsOptInConfirmationMessage", message, {
+                      shouldDirty: true,
+                    })
+                  }
+                  onSmsOptOutConfirmationMessageChange={(message) =>
+                    form.setValue("smsOptOutConfirmationMessage", message, {
+                      shouldDirty: true,
+                    })
+                  }
+                  previewVariables={confirmationPreviewVariables}
+                />
                 <RsvpConfirmationTextSection
                   organizerName={workspace?.name ?? workspaceScope?.workspaceSlug ?? "Event Host"}
                   rsvpConfirmationMessageEnabled={currentRsvpConfirmationMessageEnabled}
@@ -1162,6 +1254,15 @@ export default function EditEventDialog({
                     (!list.generateQR || (list.sendQrOnApprovalOverride ?? currentSendQrOnApproval))
                   }
                   onTicketLinkChange={setListTicketLinkEnabled}
+                  previewVariables={confirmationPreviewVariables}
+                />
+                <QrDeliveryTextSection
+                  qrDeliveryMessage={currentQrDeliveryMessage}
+                  onQrDeliveryMessageChange={(message) =>
+                    form.setValue("qrDeliveryMessage", message, {
+                      shouldDirty: true,
+                    })
+                  }
                   previewVariables={confirmationPreviewVariables}
                 />
               </div>
@@ -1288,6 +1389,58 @@ export default function EditEventDialog({
                           className="w-24 shrink-0 text-right tabular-nums"
                         />
                       </Field>
+                      {listPassword.autoApproveLimit.trim() ? (
+                        <Field
+                          orientation="horizontal"
+                          className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3.5"
+                        >
+                          <FieldContent>
+                            <FieldTitle>
+                              <label
+                                htmlFor={`edit-list-auto-approve-delay-${index}`}
+                                className="cursor-pointer"
+                              >
+                                Approval timing
+                              </label>
+                            </FieldTitle>
+                            <FieldDescription>
+                              Wait after the RSVP, or approve at event start if it comes sooner.
+                              Leave blank to approve immediately.
+                            </FieldDescription>
+                          </FieldContent>
+                          <div className="flex w-64 shrink-0 gap-2">
+                            <Input
+                              id={`edit-list-auto-approve-delay-${index}`}
+                              type="number"
+                              min={1}
+                              step={1}
+                              inputMode="numeric"
+                              placeholder="Immediately"
+                              value={listPassword.autoApproveDelay}
+                              onChange={(event) =>
+                                setList(index, "autoApproveDelay", event.target.value)
+                              }
+                              className="min-w-0 flex-1 text-right tabular-nums"
+                            />
+                            <Select
+                              aria-label={`Auto-approve delay unit for ${listPassword.listKey || `list ${index + 1}`}`}
+                              value={listPassword.autoApproveDelayUnit}
+                              onValueChange={(value) =>
+                                setList(
+                                  index,
+                                  "autoApproveDelayUnit",
+                                  value as AutoApproveDelayUnit,
+                                )
+                              }
+                              className="w-28 shrink-0"
+                            >
+                              <SelectOption value="minutes">Minutes</SelectOption>
+                              <SelectOption value="hours">Hours</SelectOption>
+                              <SelectOption value="days">Days</SelectOption>
+                            </Select>
+                          </div>
+                        </Field>
+                      ) : null}
                       <FieldSwitchRow
                         title="Generate QR codes"
                         description="Approved guests on this list receive a scannable door QR code."
