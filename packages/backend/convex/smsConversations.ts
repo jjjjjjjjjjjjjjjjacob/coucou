@@ -6,6 +6,7 @@ import { action, internalMutation, internalQuery, query } from "./functions";
 import { resolveCanonicalRsvpId, resolveCanonicalUserById } from "./lib/canonicalUserIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
+import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
 import { resolveStoredUserDisplayName } from "./lib/rsvpUserName";
 import { ensureEventInSiteScope, eventMatchesSiteScope } from "./lib/siteScope";
 import {
@@ -15,12 +16,14 @@ import {
   updateSmsConversationProviderStatus,
   upsertSmsConversationThread,
 } from "./lib/smsConversationRecords";
+import { getSmsErrorDetails } from "./lib/smsErrorDetails";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
 import {
   type ResolvedWorkspaceAuthScope,
   requireWorkspaceHost,
   requireWorkspaceRead,
 } from "./lib/workspaceAuth";
+import { formatQrDeliveryMessage } from "./qrDelivery";
 
 const smsConversationDirectionValidator = v.union(
   v.literal("inbound"),
@@ -69,6 +72,18 @@ type SendReadiness =
   | { state: "ambiguous"; reason: string }
   | { state: "no_phone"; reason: string };
 
+type QrAttachmentReadiness =
+  | {
+      state: "ready";
+      event: Doc<"events">;
+      redemption: Doc<"redemptions">;
+      recipient: {
+        firstName?: string;
+        lastName?: string;
+      };
+    }
+  | { state: "unavailable"; reason: string; qrDeliveredAt?: number };
+
 type ThreadParticipantSummary = {
   displayName: string;
   clerkUserIds: string[];
@@ -79,6 +94,9 @@ type SendSmsInternalResult = {
   messageId?: string;
   error?: string;
   skipped?: string;
+  errorCode?: string;
+  errorDetails?: string;
+  errorStack?: string;
 };
 
 function getErrorMessage(error: unknown): string {
@@ -91,6 +109,8 @@ async function sendManualMessageToReadyThread(
     thread: Doc<"smsConversationThreads">;
     phoneNumber: string;
     body: string;
+    mediaUrl?: string;
+    qrCodeSent?: boolean;
     siteKey?: string;
     adminClerkUserId: string;
   },
@@ -113,10 +133,11 @@ async function sendManualMessageToReadyThread(
       eventId: args.thread.eventId,
       phoneNumber: args.phoneNumber,
       message: formattedBody,
+      mediaUrl: args.mediaUrl,
       messageType: "Transactional",
     })) as SendSmsInternalResult;
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
+    const errorDetails = getSmsErrorDetails(error);
     await ctx.runMutation(internal.smsConversations.recordMessage, {
       eventId: args.thread.eventId,
       phoneHash: args.thread.phoneHash,
@@ -125,10 +146,13 @@ async function sendManualMessageToReadyThread(
       direction: "outbound",
       kind: "manual",
       body: formattedBody,
+      mediaUrls: args.mediaUrl ? [args.mediaUrl] : undefined,
+      qrCodeSent: args.qrCodeSent,
       providerStatus: "failed",
+      ...errorDetails,
       adminClerkUserId: args.adminClerkUserId,
     });
-    return { sent: false, failureReason: errorMessage };
+    return { sent: false, failureReason: errorDetails.errorMessage };
   }
 
   const sent = sendResult.success === true;
@@ -141,8 +165,14 @@ async function sendManualMessageToReadyThread(
     direction: "outbound",
     kind: "manual",
     body: formattedBody,
+    mediaUrls: args.mediaUrl ? [args.mediaUrl] : undefined,
+    qrCodeSent: args.qrCodeSent,
     providerMessageId: sendResult.messageId,
     providerStatus: sent ? "sent" : "failed",
+    errorMessage: sent ? undefined : failureReason,
+    errorCode: sent ? undefined : sendResult.errorCode,
+    errorDetails: sent ? undefined : sendResult.errorDetails,
+    errorStack: sent ? undefined : sendResult.errorStack,
     adminClerkUserId: args.adminClerkUserId,
   });
 
@@ -308,6 +338,77 @@ async function resolveThreadSendReadiness(
   };
 }
 
+async function resolveThreadQrAttachmentReadiness(
+  ctx: Pick<QueryCtx, "db">,
+  thread: Doc<"smsConversationThreads">,
+  sendReadiness: SendReadiness,
+): Promise<QrAttachmentReadiness> {
+  if (sendReadiness.state !== "ready") {
+    return { state: "unavailable", reason: sendReadiness.reason };
+  }
+  const [event, rsvp, redemption, user] = await Promise.all([
+    ctx.db.get(thread.eventId),
+    ctx.db
+      .query("rsvps")
+      .withIndex("by_event_user", (queryBuilder) =>
+        queryBuilder.eq("eventId", thread.eventId).eq("clerkUserId", sendReadiness.clerkUserId),
+      )
+      .first(),
+    ctx.db
+      .query("redemptions")
+      .withIndex("by_event_user", (queryBuilder) =>
+        queryBuilder.eq("eventId", thread.eventId).eq("clerkUserId", sendReadiness.clerkUserId),
+      )
+      .first(),
+    getUserByClerkUserId(ctx, sendReadiness.clerkUserId),
+  ]);
+  if (!event || !redemption || redemption.disabledAt) {
+    return { state: "unavailable", reason: "This guest does not have an active QR ticket." };
+  }
+  if (!rsvp || rsvp.smsConsent !== true) {
+    return {
+      state: "unavailable",
+      reason: "QR delivery requires recorded SMS consent for this event.",
+      qrDeliveredAt: redemption.qrDeliveredAt,
+    };
+  }
+  const listCredential = await ctx.db
+    .query("listCredentials")
+    .withIndex("by_event_key", (queryBuilder) =>
+      queryBuilder.eq("eventId", thread.eventId).eq("listKey", redemption.listKey),
+    )
+    .first();
+  if (listCredential?.generateQR !== true) {
+    return {
+      state: "unavailable",
+      reason: "QR codes are not enabled for this guest list.",
+      qrDeliveredAt: redemption.qrDeliveredAt,
+    };
+  }
+  const activeOptOut = await ctx.db
+    .query("smsOptOuts")
+    .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneNumber", thread.phoneHash))
+    .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("reOptInAt"), undefined))
+    .first();
+  if (activeOptOut) {
+    return {
+      state: "unavailable",
+      reason: "This phone number has opted out of SMS.",
+      qrDeliveredAt: redemption.qrDeliveredAt,
+    };
+  }
+
+  return {
+    state: "ready",
+    event,
+    redemption,
+    recipient: {
+      firstName: user?.firstName,
+      lastName: user?.lastName,
+    },
+  };
+}
+
 async function getThreadInScope(
   ctx: Pick<QueryCtx, "db">,
   threadId: Id<"smsConversationThreads">,
@@ -353,6 +454,10 @@ export const recordMessage = internalMutation({
     qrCodeSent: v.optional(v.boolean()),
     providerMessageId: v.optional(v.string()),
     providerStatus: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    errorCode: v.optional(v.string()),
+    errorDetails: v.optional(v.string()),
+    errorStack: v.optional(v.string()),
     smsNotificationId: v.optional(v.id("smsNotifications")),
     textBlastId: v.optional(v.id("textBlasts")),
     textBlastRecipientId: v.optional(v.id("textBlastRecipients")),
@@ -375,6 +480,10 @@ export const updateProviderStatus = internalMutation({
     providerMessageId: v.string(),
     providerStatus: v.string(),
     smsNotificationId: v.optional(v.id("smsNotifications")),
+    errorMessage: v.optional(v.string()),
+    errorCode: v.optional(v.string()),
+    errorDetails: v.optional(v.string()),
+    errorStack: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<number> => {
     return await updateSmsConversationProviderStatus(ctx, args);
@@ -510,6 +619,29 @@ export const getThreadSendTargetInternal = internalQuery({
     });
     const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
     return { thread, sendReadiness };
+  },
+});
+
+export const getThreadQrAttachmentTargetInternal = internalQuery({
+  args: {
+    threadId: v.id("smsConversationThreads"),
+    ...scopeArgs,
+  },
+  handler: async (ctx, args) => {
+    const thread = await getThreadInScope(ctx, args.threadId, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
+    const qrAttachmentReadiness = await resolveThreadQrAttachmentReadiness(
+      ctx,
+      thread,
+      sendReadiness,
+    );
+    if (qrAttachmentReadiness.state !== "ready") {
+      throw new Error(qrAttachmentReadiness.reason);
+    }
+    return qrAttachmentReadiness;
   },
 });
 
@@ -650,6 +782,11 @@ export const getThread = query({
     const event = await ctx.db.get(thread.eventId);
     const participants = await summarizeThreadParticipants(ctx, thread);
     const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
+    const qrAttachmentReadiness = await resolveThreadQrAttachmentReadiness(
+      ctx,
+      thread,
+      sendReadiness,
+    );
     const messages = await ctx.db
       .query("smsConversationMessages")
       .withIndex("by_thread_created", (queryBuilder) => queryBuilder.eq("threadId", thread._id))
@@ -661,6 +798,13 @@ export const getThread = query({
         participantName: participants.displayName,
         canSend: sendReadiness.state === "ready",
         sendDisabledReason: sendReadiness.state === "ready" ? undefined : sendReadiness.reason,
+        canAttachQr: qrAttachmentReadiness.state === "ready",
+        qrAttachmentDisabledReason:
+          qrAttachmentReadiness.state === "unavailable" ? qrAttachmentReadiness.reason : undefined,
+        qrDeliveredAt:
+          qrAttachmentReadiness.state === "ready"
+            ? qrAttachmentReadiness.redemption.qrDeliveredAt
+            : qrAttachmentReadiness.qrDeliveredAt,
       },
       event,
       messages,
@@ -672,6 +816,7 @@ export const sendManualMessage = action({
   args: {
     threadId: v.id("smsConversationThreads"),
     body: v.string(),
+    includeQrCode: v.optional(v.boolean()),
     ...scopeArgs,
   },
   handler: async (
@@ -689,8 +834,8 @@ export const sendManualMessage = action({
       workspaceSlug: args.workspaceSlug,
     });
 
-    const body = args.body.trim();
-    if (!body) {
+    let body = args.body.trim();
+    if (!body && args.includeQrCode !== true) {
       throw new Error("Message body is required");
     }
     if (body.length > 1600) {
@@ -706,13 +851,76 @@ export const sendManualMessage = action({
       throw new Error(target.sendReadiness.reason);
     }
 
-    return await sendManualMessageToReadyThread(ctx, {
+    let qrCodeMediaUrl: string | undefined;
+    if (args.includeQrCode === true) {
+      const qrTarget = await ctx.runQuery(
+        internal.smsConversations.getThreadQrAttachmentTargetInternal,
+        {
+          threadId: args.threadId,
+          siteKey: args.siteKey,
+          workspaceSlug: args.workspaceSlug,
+        },
+      );
+      const validatedBaseUrl = resolvePublicBaseUrlForEvent(qrTarget.event);
+      if (!validatedBaseUrl) {
+        throw new Error("Missing public base URL for event site");
+      }
+      const ticketUrl = `${validatedBaseUrl}/redeem/${qrTarget.redemption.code}`;
+      if (!body) {
+        body = formatQrDeliveryMessage(qrTarget.event, qrTarget.recipient, ticketUrl);
+      }
+
+      try {
+        const qrCodeStorageId = await ctx.runAction(
+          internal.lib.qrCodeGenerator.generateAndUploadQrCode,
+          {
+            value: ticketUrl,
+            foregroundColor: qrTarget.event.themeTextColor,
+            backgroundColor: qrTarget.event.themeBackgroundColor,
+          },
+        );
+        qrCodeMediaUrl =
+          (await ctx.runAction(internal.lib.qrCodeGenerator.getQrCodeUrl, {
+            storageId: qrCodeStorageId,
+          })) ?? undefined;
+        if (!qrCodeMediaUrl) {
+          throw new Error("Generated QR image URL was unavailable");
+        }
+      } catch (error) {
+        const errorDetails = getSmsErrorDetails(error);
+        await ctx.runMutation(internal.smsConversations.recordMessage, {
+          eventId: target.thread.eventId,
+          phoneHash: target.thread.phoneHash,
+          phoneObfuscated: target.thread.phoneObfuscated,
+          participantClerkUserIds: target.thread.participantClerkUserIds,
+          direction: "outbound",
+          kind: "manual",
+          body: formatSmsMessageForSite(args.siteKey ?? args.workspaceSlug, body),
+          providerStatus: "failed",
+          qrCodeSent: false,
+          adminClerkUserId: identity.subject,
+          ...errorDetails,
+        });
+        return { sent: false, failureReason: errorDetails.errorMessage };
+      }
+    }
+
+    const result = await sendManualMessageToReadyThread(ctx, {
       thread: target.thread,
       phoneNumber: target.sendReadiness.phoneNumber,
       body,
+      mediaUrl: qrCodeMediaUrl,
+      qrCodeSent: qrCodeMediaUrl !== undefined,
       siteKey: args.siteKey ?? args.workspaceSlug,
       adminClerkUserId: identity.subject,
     });
+    if (result.sent && qrCodeMediaUrl) {
+      await ctx.runMutation(internal.qrDelivery.markRedemptionDelivered, {
+        eventId: target.thread.eventId,
+        clerkUserId: target.sendReadiness.clerkUserId,
+      });
+    }
+    return result;
   },
 });
 

@@ -183,6 +183,60 @@ describe("sms conversations", () => {
     expect(detail.messages[0]?.qrCodeSent).toBe(true);
   });
 
+  it("reports when a manual thread can attach the guest's generated QR", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    await seedUser(testBackend, {
+      clerkUserId: "user_qr_attachment",
+      phone: "555-111-3434",
+      firstName: "Jordan",
+    });
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "vip",
+        generateQR: true,
+        createdAt: Date.now(),
+      });
+      await databaseContext.db.insert("rsvps", {
+        eventId,
+        clerkUserId: "user_qr_attachment",
+        listKey: "vip",
+        userName: "Jordan",
+        shareContact: true,
+        smsConsent: true,
+        status: "approved",
+        approvalStatus: "approved",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await databaseContext.db.insert("redemptions", {
+        eventId,
+        clerkUserId: "user_qr_attachment",
+        listKey: "vip",
+        code: "qr-attachment-code",
+        unredeemHistory: [],
+        createdAt: Date.now(),
+      });
+    });
+    const threadId = await seedThreadMessage(testBackend, {
+      eventId,
+      phone: "555-111-3434",
+      clerkUserIds: ["user_qr_attachment"],
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+
+    const detail = await hostBackend.query(api.smsConversations.getThread, {
+      threadId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    expect(detail.thread.canAttachQr).toBe(true);
+    expect(detail.thread.qrDeliveredAt).toBeUndefined();
+  });
+
   it("lists all workspace event threads with event metadata, global sorting, and event search", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
@@ -560,6 +614,8 @@ describe("sms conversations", () => {
 
     expect(messages[messages.length - 1]?.body).toBe("Manual hello");
     expect(messages[messages.length - 1]?.providerStatus).toBe("failed");
+    expect(messages[messages.length - 1]?.errorMessage).toContain("Twilio disabled");
+    expect(messages[messages.length - 1]?.errorCode).toBe("TWILIO_DISABLED");
   });
 
   it("blocks manual sends for ambiguous phone ownership", async () => {

@@ -69,6 +69,7 @@ function buildThread(
     outboundCount: 1,
     systemCount: 0,
     canSend: true,
+    canAttachQr: true,
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,
     ...patch,
@@ -305,5 +306,59 @@ describe("TextsPage", () => {
     expect(screen.getByText("No linked guest phone is available for this thread.")).toBeTruthy();
     expect(screen.getByPlaceholderText("Resolve this thread before sending")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+  });
+
+  it("sends a generated QR attachment with an optional manual message", async () => {
+    const thread = buildThread();
+    currentThreads = [thread];
+    currentThreadDetail = {
+      thread,
+      event: eventRecord,
+      messages: [buildMessage()],
+    };
+
+    render(<TextsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Attach QR" }));
+    expect(
+      screen.getByText("The guest's generated event QR will be attached as an image."),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => {
+      expect(actionCalls).toHaveLength(1);
+    });
+    expect(actionCalls[0]?.args).toMatchObject({
+      threadId: "thread_1",
+      body: "",
+      includeQrCode: true,
+    });
+  });
+
+  it("shows provider failure messages and traces on failed texts", () => {
+    const thread = buildThread();
+    currentThreads = [thread];
+    currentThreadDetail = {
+      thread,
+      event: eventRecord,
+      messages: [
+        buildMessage({
+          direction: "outbound",
+          providerStatus: "failed",
+          errorMessage: "Carrier rejected the destination",
+          errorCode: "30007",
+          errorDetails: "Twilio delivery status: undelivered",
+          errorStack: "Error: carrier rejection\n    at sendSms",
+        }),
+      ],
+    };
+
+    render(<TextsPage />);
+
+    expect(screen.getByText("Delivery error details")).toBeTruthy();
+    fireEvent.click(screen.getByText("Delivery error details"));
+    expect(screen.getByText("Carrier rejected the destination")).toBeTruthy();
+    expect(screen.getByText("Code: 30007")).toBeTruthy();
+    expect(screen.getByText("Twilio delivery status: undelivered")).toBeTruthy();
   });
 });

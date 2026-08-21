@@ -90,6 +90,9 @@ export function SmsConversationMessageBubble({ message }: { message: SmsConversa
   }
 
   const isOutbound = message.direction === "outbound";
+  const hasErrorDetails = Boolean(
+    message.errorMessage || message.errorCode || message.errorDetails || message.errorStack,
+  );
   return (
     <div className={cn("flex", isOutbound ? "justify-end" : "justify-start")}>
       <div
@@ -143,6 +146,37 @@ export function SmsConversationMessageBubble({ message }: { message: SmsConversa
             <span className="max-w-[12rem] truncate">id: {message.providerMessageId}</span>
           ) : null}
         </div>
+        {hasErrorDetails ? (
+          <details
+            className={cn(
+              "mt-3 rounded-md text-xs",
+              isOutbound
+                ? "bg-black/15 text-primary-foreground"
+                : "bg-[var(--status-denied-bg)] text-[var(--status-denied)]",
+            )}
+          >
+            <summary className="flex min-h-10 cursor-pointer items-center gap-2 px-3 py-2 font-medium">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              Delivery error details
+            </summary>
+            <div className="space-y-2 px-3 pb-3">
+              {message.errorMessage ? (
+                <p className="whitespace-pre-wrap">{message.errorMessage}</p>
+              ) : null}
+              {message.errorCode ? <p>Code: {message.errorCode}</p> : null}
+              {message.errorDetails ? (
+                <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px]">
+                  {message.errorDetails}
+                </pre>
+              ) : null}
+              {message.errorStack ? (
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+                  {message.errorStack}
+                </pre>
+              ) : null}
+            </div>
+          </details>
+        ) : null}
       </div>
     </div>
   );

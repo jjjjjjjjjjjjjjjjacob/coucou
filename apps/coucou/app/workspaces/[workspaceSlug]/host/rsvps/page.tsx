@@ -25,6 +25,7 @@ import {
   Link,
   MoreHorizontal,
   QrCode,
+  Send,
   Share,
   Trash2,
 } from "lucide-react";
@@ -516,6 +517,7 @@ export function GuestManager({
   const setFeaturedEventMutation = useConvexReactMutation(api.events.setFeaturedEvent);
   const removeCurrentEventMutation = useConvexReactMutation(api.events.remove);
   const sendDeferredQrBatchAction = useAction(api.qrDelivery.sendDeferredQrBatch);
+  const sendQrToRsvpAction = useAction(api.qrDelivery.sendQrToRsvp);
   const pendingDeferredQrCount = useQuery(
     api.qrDelivery.countPendingDeferredRecipients,
     currentEvent && workspaceScope
@@ -524,6 +526,7 @@ export function GuestManager({
   );
   const [showDeleteEventDialog, setShowDeleteEventDialog] = React.useState(false);
   const [isSendingQrBatch, setIsSendingQrBatch] = React.useState(false);
+  const [sendingQrRsvpIds, setSendingQrRsvpIds] = React.useState<Set<Id<"rsvps">>>(new Set());
 
   const currentEventInlineTitle = currentEvent ? formatEventTitleInline(currentEvent) : "";
   const isCurrentEventDraft = (currentEvent?.lifecycle ?? "published") === "draft";
@@ -620,13 +623,49 @@ export function GuestManager({
         sendQrResult.failed > 0
           ? `Sent ${sendQrResult.sent} QR codes (${sendQrResult.failed} failed, ${sendQrResult.skipped} skipped)`
           : `Sent ${sendQrResult.sent} QR codes`;
-      toast.success(successMessage);
+      if (sendQrResult.failed > 0) {
+        toast.error(
+          `${successMessage}. ${sendQrResult.failures[0]?.message ?? "Open the text thread for delivery details."}`,
+        );
+      } else {
+        toast.success(successMessage);
+      }
     } catch (sendQrError) {
       toast.error((sendQrError as Error).message || "Failed to send QR codes");
     } finally {
       setIsSendingQrBatch(false);
     }
   }, [currentEvent, pendingDeferredQrCount, sendDeferredQrBatchAction, workspaceScope]);
+
+  const handleSendIndividualQrCode = React.useCallback(
+    async (rsvp: HostRsvp) => {
+      if (!currentEvent || !workspaceScope) return;
+      setSendingQrRsvpIds((currentRsvpIds) => new Set(currentRsvpIds).add(rsvp.id));
+      try {
+        const sendResult = await sendQrToRsvpAction({
+          eventId: currentEvent._id,
+          rsvpId: rsvp.id,
+          ...workspaceScope.queryArgs,
+        });
+        if (sendResult.sent) {
+          toast.success(
+            `QR code ${rsvp.qrDeliveredAt === undefined ? "sent" : "resent"} to ${rsvp.name || "guest"}`,
+          );
+        } else {
+          toast.error(sendResult.failureReason ?? "QR code was not sent");
+        }
+      } catch (sendQrError) {
+        toast.error(sendQrError instanceof Error ? sendQrError.message : "Failed to send QR code");
+      } finally {
+        setSendingQrRsvpIds((currentRsvpIds) => {
+          const nextRsvpIds = new Set(currentRsvpIds);
+          nextRsvpIds.delete(rsvp.id);
+          return nextRsvpIds;
+        });
+      }
+    },
+    [currentEvent, sendQrToRsvpAction, workspaceScope],
+  );
   const currentEventSocialPlatforms = React.useMemo(
     () => currentEvent?.primaryFieldConfig?.socialPlatforms ?? [],
     [currentEvent?.primaryFieldConfig?.socialPlatforms],
@@ -3021,6 +3060,7 @@ export function GuestManager({
       : "";
     const currentTicketStatus = normalizeTicketStatus(rsvp.redemptionStatus);
     const canViewQrCode = canShowRsvpQrCode(rsvp);
+    const isSendingIndividualQrCode = sendingQrRsvpIds.has(rsvp.id);
     const isUpdatingList = contextActionRsvps.some((targetRsvp) =>
       loadingListUpdates.has(targetRsvp.id),
     );
@@ -3233,6 +3273,21 @@ export function GuestManager({
             <ContextMenuItem onSelect={() => openRsvpQrCode(rsvp)}>
               <QrCode className="h-4 w-4" />
               View QR Code
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={rsvp.smsConsent !== true || isSendingIndividualQrCode}
+              onSelect={() => void handleSendIndividualQrCode(rsvp)}
+            >
+              {isSendingIndividualQrCode ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              {rsvp.smsConsent === true
+                ? isSendingIndividualQrCode
+                  ? `${rsvp.qrDeliveredAt === undefined ? "Sending" : "Resending"} QR Code...`
+                  : `${rsvp.qrDeliveredAt === undefined ? "Send" : "Resend"} QR Code`
+                : "QR Send Requires SMS Consent"}
             </ContextMenuItem>
           </>
         )}

@@ -25,6 +25,7 @@ import { action } from "./_generated/server";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import { getSmsErrorDetails } from "./lib/smsErrorDetails";
 import {
   CLUB_CHLORINE_BRAND_NAME,
   CLUB_CHLORINE_MESSAGE_PREFIX,
@@ -66,8 +67,11 @@ type SmsConsentEventSummary = {
 };
 
 type TwilioSendResult = {
-  messageId: string;
-  phone: string;
+  success?: boolean;
+  messageId?: string;
+  phone?: string;
+  error?: string;
+  skipped?: string;
 };
 
 type SmsActionSuccess = {
@@ -358,26 +362,6 @@ export const sendApprovalSms = action({
       const shouldIncludeTicketLink =
         matchingCredential?.includeTicketLinkOnApproval ?? (!generateQrCode || sendNow);
 
-      let qrCodeMediaUrl: string | undefined;
-      if (shouldIncludeQrCode) {
-        // Generate QR code image
-        const ticketUrl = `${validatedBaseUrl}/redeem/${args.code}`;
-        const qrCodeStorageId = await ctx.runAction(
-          internal.lib.qrCodeGenerator.generateAndUploadQrCode,
-          {
-            value: ticketUrl,
-            foregroundColor: event.themeTextColor,
-            backgroundColor: event.themeBackgroundColor,
-          },
-        );
-
-        // Get publicly accessible URL for the QR code
-        const qrCodeUrl = await ctx.runAction(internal.lib.qrCodeGenerator.getQrCodeUrl, {
-          storageId: qrCodeStorageId,
-        });
-        qrCodeMediaUrl = qrCodeUrl || undefined;
-      }
-
       // Format approval message — when QR generation is enabled but we're
       // waiting to blast it later, send a copy that promises the QR
       // closer to the event so guests don't expect an immediate ticket.
@@ -408,6 +392,51 @@ export const sendApprovalSms = action({
         message: approvalMessage,
       });
 
+      let qrCodeMediaUrl: string | undefined;
+      if (shouldIncludeQrCode) {
+        try {
+          const ticketUrl = `${validatedBaseUrl}/redeem/${args.code}`;
+          const qrCodeStorageId = await ctx.runAction(
+            internal.lib.qrCodeGenerator.generateAndUploadQrCode,
+            {
+              value: ticketUrl,
+              foregroundColor: event.themeTextColor,
+              backgroundColor: event.themeBackgroundColor,
+            },
+          );
+          const qrCodeUrl = await ctx.runAction(internal.lib.qrCodeGenerator.getQrCodeUrl, {
+            storageId: qrCodeStorageId,
+          });
+          if (!qrCodeUrl) {
+            throw new Error("Generated QR image URL was unavailable");
+          }
+          qrCodeMediaUrl = qrCodeUrl;
+        } catch (error: unknown) {
+          const qrPreparationError = getSmsErrorDetails(error);
+          await ctx.runMutation(internal.sms.updateNotificationStatus, {
+            notificationId,
+            status: "failed",
+            ...qrPreparationError,
+          });
+          await ctx.runMutation(internal.smsConversations.recordMessage, {
+            eventId: args.eventId,
+            phoneHash: phoneResolution.phoneHash,
+            phoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
+            participantClerkUserIds: [args.clerkUserId],
+            direction: "outbound",
+            kind: "approval",
+            body: approvalMessage,
+            providerStatus: "failed",
+            smsNotificationId: notificationId,
+            ...qrPreparationError,
+          });
+          return {
+            skipped: "send_failed",
+            error: qrPreparationError.errorMessage,
+          };
+        }
+      }
+
       // Send SMS/MMS via Twilio
       const result = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
         eventId: args.eventId,
@@ -417,6 +446,13 @@ export const sendApprovalSms = action({
         mediaUrl: qrCodeMediaUrl,
         messageType: "Transactional",
       })) as TwilioSendResult;
+
+      if (result.success !== true || !result.messageId || !result.phone) {
+        return {
+          skipped: "send_failed",
+          error: result.error ?? result.skipped ?? "Approval SMS was not sent",
+        };
+      }
 
       if (shouldIncludeQrCode) {
         await ctx.runMutation(internal.qrDelivery.markRedemptionDelivered, {
@@ -498,6 +534,13 @@ export const sendRsvpConfirmationSms = action({
         messageType: "Transactional",
       })) as TwilioSendResult;
 
+      if (result.success !== true || !result.messageId || !result.phone) {
+        return {
+          skipped: "send_failed",
+          error: result.error ?? result.skipped ?? "RSVP confirmation SMS was not sent",
+        };
+      }
+
       return {
         success: true,
         messageId: result.messageId,
@@ -575,6 +618,13 @@ export const sendSmsConsentStatusMessage = action({
         notificationId,
         messageType: "Transactional",
       })) as TwilioSendResult;
+
+      if (result.success !== true || !result.messageId || !result.phone) {
+        return {
+          skipped: "send_failed",
+          error: result.error ?? result.skipped ?? "SMS consent confirmation was not sent",
+        };
+      }
 
       // If user enabled SMS consent and they have an approved RSVP, send approval message
       if (args.consentEnabled) {

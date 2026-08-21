@@ -329,6 +329,18 @@ export interface TextBlast {
   replyActionCount?: number;
 }
 
+export interface TextBlastDeliveryFailure {
+  _id: Id<"textBlastRecipients">;
+  recipientName: string;
+  phoneObfuscated: string;
+  providerMessageId?: string;
+  errorMessage: string;
+  errorCode?: string;
+  errorDetails?: string;
+  errorStack?: string;
+  failedAt: number;
+}
+
 export type SmsConversationDirection = "inbound" | "outbound" | "system";
 
 export type SmsConversationFilterState =
@@ -368,6 +380,9 @@ export interface SmsConversationThread {
   lastOutboundAt?: number;
   canSend: boolean;
   sendDisabledReason?: string;
+  canAttachQr?: boolean;
+  qrAttachmentDisabledReason?: string;
+  qrDeliveredAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -389,6 +404,10 @@ export interface SmsConversationMessage {
   qrCodeSent?: boolean;
   providerMessageId?: string;
   providerStatus?: string;
+  errorMessage?: string;
+  errorCode?: string;
+  errorDetails?: string;
+  errorStack?: string;
   smsNotificationId?: Id<"smsNotifications">;
   textBlastId?: Id<"textBlasts">;
   textBlastRecipientId?: Id<"textBlastRecipients">;
@@ -473,6 +492,7 @@ export interface HostRsvp {
   redemptionCode?: string;
   createdAt: number;
   smsConsent?: boolean;
+  qrDeliveredAt?: number;
 }
 
 export interface UserTicket {

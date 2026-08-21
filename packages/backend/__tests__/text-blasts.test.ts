@@ -189,7 +189,12 @@ async function seedRsvp(
   });
 }
 
-async function seedTextBlast(testBackend: TestBackend, eventId: Id<"events">, name: string) {
+async function seedTextBlast(
+  testBackend: TestBackend,
+  eventId: Id<"events">,
+  name: string,
+  sentBy = "host_1",
+) {
   return await testBackend.run(async (databaseContext) => {
     return await databaseContext.db.insert("textBlasts", {
       eventId,
@@ -202,8 +207,24 @@ async function seedTextBlast(testBackend: TestBackend, eventId: Id<"events">, na
       recipientCount: 0,
       sentCount: 0,
       failedCount: 0,
-      sentBy: "host_1",
+      sentBy,
       status: "sent",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+async function seedWorkspaceMembership(
+  testBackend: TestBackend,
+  clerkUserId: string,
+  role: string,
+) {
+  await testBackend.run(async (databaseContext) => {
+    await databaseContext.db.insert("orgMemberships", {
+      clerkUserId,
+      organizationId: CLERK_ORGANIZATION_ID,
+      role,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -383,6 +404,115 @@ async function seedMultiEventRecipients(testBackend: TestBackend) {
     retryRsvpId,
   };
 }
+
+describe("text blast visibility", () => {
+  it("lets workspace hosts list and open blasts created by other users", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend, "Shared blast event");
+    await seedUser(testBackend, "host_1", "+15551110001", "Alex");
+    await seedUser(testBackend, "host_2", "+15551110002", "Bailey");
+    const firstBlastId = await seedTextBlast(testBackend, eventId, "First admin blast", "host_1");
+    const secondBlastId = await seedTextBlast(testBackend, eventId, "Second admin blast", "host_2");
+    await seedWorkspaceMembership(testBackend, "host_viewer", "org:host");
+
+    const workspaceHostBackend = testBackend.withIdentity({
+      subject: "host_viewer",
+      org_id: CLERK_ORGANIZATION_ID,
+    } as unknown as Partial<UserIdentity>);
+    const visibleBlasts = await workspaceHostBackend.query(
+      api.textBlasts.getBlastsByWorkspaceWithSenderNames,
+      {
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+      },
+    );
+
+    expect(new Set(visibleBlasts.map((blast) => blast._id))).toEqual(
+      new Set([firstBlastId, secondBlastId]),
+    );
+    expect(new Set(visibleBlasts.map((blast) => blast.sentByName))).toEqual(
+      new Set(["Alex", "Bailey"]),
+    );
+    await expect(
+      workspaceHostBackend.query(api.textBlasts.getBlastById, {
+        blastId: secondBlastId,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+      }),
+    ).resolves.toMatchObject({
+      _id: secondBlastId,
+      sentBy: "host_2",
+    });
+  });
+
+  it("returns recipient-level provider errors and traces for failed deliveries", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend, "Failure detail event");
+    await seedUser(testBackend, "failed_guest", "+15551110003", "Casey");
+    const rsvpId = await seedRsvp(testBackend, {
+      eventId,
+      clerkUserId: "failed_guest",
+      listKey: "vip",
+    });
+    const blastId = await seedTextBlast(testBackend, eventId, "Failed blast");
+    const phoneResolution = await normalizeAndHashPhoneNumber("+15551110003");
+    await testBackend.run(async (databaseContext) => {
+      const deliveryId = await databaseContext.db.insert("textBlastRecipients", {
+        textBlastId: blastId,
+        phoneHash: phoneResolution.phoneHash,
+        status: "failed",
+        sourceEventIds: [eventId],
+        sourceRsvpIds: [rsvpId],
+        sourceListKeys: ["vip"],
+        recipientClerkUserIds: ["failed_guest"],
+        errorMessage: "Carrier rejected the destination",
+        errorCode: "30007",
+        errorDetails: "Twilio delivery status: undelivered",
+        errorStack: "Error: carrier rejection\n    at sendSms",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const notificationId = await databaseContext.db.insert("smsNotifications", {
+        eventId,
+        recipientClerkUserId: "failed_guest",
+        recipientPhoneObfuscated: "***-***-0003",
+        recipientPhoneHash: phoneResolution.phoneHash,
+        type: "blast",
+        message: "Test blast",
+        status: "failed",
+        textBlastId: blastId,
+        textBlastRecipientId: deliveryId,
+        errorMessage: "Carrier rejected the destination",
+        errorCode: "30007",
+        createdAt: Date.now(),
+      });
+      await databaseContext.db.patch(deliveryId, { smsNotificationId: notificationId });
+    });
+    await seedWorkspaceMembership(testBackend, "host_viewer", "org:host");
+    const workspaceHostBackend = testBackend.withIdentity({
+      subject: "host_viewer",
+      org_id: CLERK_ORGANIZATION_ID,
+    } as unknown as Partial<UserIdentity>);
+
+    const failures = await workspaceHostBackend.query(api.textBlasts.getBlastDeliveryFailures, {
+      blastId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      recipientName: "Casey",
+      phoneObfuscated: "***-***-0003",
+      errorMessage: "Carrier rejected the destination",
+      errorCode: "30007",
+      errorDetails: "Twilio delivery status: undelivered",
+      errorStack: "Error: carrier rejection\n    at sendSms",
+    });
+  });
+});
 
 describe("text blast recipient selection", () => {
   it("filters recipients by whether their event QR code was received", async () => {

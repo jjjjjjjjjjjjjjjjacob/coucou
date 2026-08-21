@@ -3,7 +3,7 @@
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useAction, useQuery } from "convex/react";
-import { AlertCircle, Filter, MessageSquare, RefreshCw, Search, Send } from "lucide-react";
+import { AlertCircle, Filter, MessageSquare, QrCode, RefreshCw, Search, Send } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -108,6 +108,7 @@ export default function TextsPage() {
     null,
   );
   const [messageDraft, setMessageDraft] = useState("");
+  const [attachQrCode, setAttachQrCode] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
   const events = useQuery(api.events.listAll, {
@@ -173,10 +174,17 @@ export default function TextsPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [threadDetail?.messages]);
 
+  useEffect(() => {
+    setAttachQrCode(false);
+    setMessageDraft("");
+  }, [selectedThreadId]);
+
   const selectedThread = threadDetail?.thread ?? null;
   const requiredMessagePrefix =
     workspaceScope?.siteKey === "club-chlorine" ? "CLUB CHLORINE:" : null;
-  const canSendMessage = Boolean(selectedThread?.canSend && messageDraft.trim() && !isSending);
+  const canSendMessage = Boolean(
+    selectedThread?.canSend && (messageDraft.trim() || attachQrCode) && !isSending,
+  );
   const hasConversationFilters =
     searchQuery.trim().length > 0 || selectedConversationStates.length > 0;
 
@@ -193,17 +201,19 @@ export default function TextsPage() {
   }
 
   async function handleSendMessage() {
-    if (!selectedThreadId || !workspaceScope || !messageDraft.trim()) return;
+    if (!selectedThreadId || !workspaceScope || (!messageDraft.trim() && !attachQrCode)) return;
     const body = messageDraft.trim();
     setIsSending(true);
     try {
       const result = await sendManualMessage({
         threadId: selectedThreadId,
         body,
+        includeQrCode: attachQrCode,
         ...workspaceScope.queryArgs,
       });
       if (result.sent) {
         setMessageDraft("");
+        setAttachQrCode(false);
         toast.success("Message sent");
       } else {
         toast.error(result.failureReason ?? "Message was not sent");
@@ -448,20 +458,44 @@ export default function TextsPage() {
               </div>
 
               <div className="shrink-0 border-t border-[var(--border-subtle)] p-3">
-                <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
                   <span>
                     Manual Twilio SMS
                     {requiredMessagePrefix
                       ? " · Brand prefix and STOP reminder added automatically"
                       : ""}
                   </span>
-                  <span>{messageDraft.trim().length}/1600</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant={attachQrCode ? "secondary" : "outline"}
+                      size="sm"
+                      className="h-9 active:scale-[0.96] transition-transform"
+                      disabled={!selectedThread.canAttachQr || isSending}
+                      title={selectedThread.qrAttachmentDisabledReason}
+                      onClick={() => setAttachQrCode((isAttached) => !isAttached)}
+                    >
+                      <QrCode className="h-4 w-4" />
+                      {attachQrCode
+                        ? "QR attached"
+                        : selectedThread.qrDeliveredAt
+                          ? "Attach QR again"
+                          : "Attach QR"}
+                    </Button>
+                    <span className="tabular-nums">{messageDraft.trim().length}/1600</span>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <div className="flex min-w-0 flex-1 flex-col gap-2">
                     {requiredMessagePrefix ? (
                       <div className="w-fit rounded border border-border bg-muted px-2 py-1 font-medium text-xs">
                         {requiredMessagePrefix}
+                      </div>
+                    ) : null}
+                    {attachQrCode ? (
+                      <div className="flex items-center gap-2 rounded-md bg-[var(--surface-3)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-[inset_0_0_0_1px_var(--border-subtle)]">
+                        <QrCode className="h-4 w-4 shrink-0 text-[var(--text-primary)]" />
+                        The guest&apos;s generated event QR will be attached as an image.
                       </div>
                     ) : null}
                     <Textarea
@@ -476,7 +510,9 @@ export default function TextsPage() {
                       disabled={!selectedThread.canSend || isSending}
                       placeholder={
                         selectedThread.canSend
-                          ? "Write a direct message..."
+                          ? attachQrCode
+                            ? "Add an optional message for the QR..."
+                            : "Write a direct message..."
                           : "Resolve this thread before sending"
                       }
                       rows={2}

@@ -4,6 +4,7 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
+  AlertTriangle,
   CheckCircle,
   Clock,
   Copy,
@@ -35,6 +36,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -44,7 +52,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectOption } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatEventTitleInline } from "@/lib/event-display";
-import type { Event, TextBlast, TextBlastStatus } from "@/lib/types";
+import type { Event, TextBlast, TextBlastDeliveryFailure, TextBlastStatus } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { formatEventDateTime } from "@/lib/utils";
 import TextBlastDialog from "./text-blast-dialog";
@@ -149,6 +157,16 @@ export default function TextBlastsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"full" | "replyActions">("full");
   const [sendingBlastId, setSendingBlastId] = useState<Id<"textBlasts"> | null>(null);
+  const [selectedBlastForFailures, setSelectedBlastForFailures] = useState<Id<"textBlasts"> | null>(
+    null,
+  );
+  const deliveryFailures = useQuery(
+    api.textBlasts.getBlastDeliveryFailures,
+    selectedBlastForFailures && workspaceScope
+      ? { blastId: selectedBlastForFailures, ...workspaceScope.queryArgs }
+      : "skip",
+  ) as TextBlastDeliveryFailure[] | undefined;
+  const failureBlast = textBlasts?.find((blast) => blast._id === selectedBlastForFailures);
 
   const uniqueSenders = useMemo(() => {
     if (!textBlasts) return [];
@@ -498,6 +516,15 @@ export default function TextBlastsPage() {
                           <MessageSquare className="mr-2 h-4 w-4" />
                           Manage Reply Actions
                         </DropdownMenuItem>
+                        {blast.failedCount > 0 ? (
+                          <DropdownMenuItem
+                            onSelect={() => setSelectedBlastForFailures(blast._id)}
+                            className="focus:bg-[var(--surface-3)] focus:text-[var(--text-primary)]"
+                          >
+                            <AlertTriangle className="mr-2 h-4 w-4 text-[var(--status-denied)]" />
+                            View Delivery Errors
+                          </DropdownMenuItem>
+                        ) : null}
                         <DropdownMenuItem
                           onSelect={() => handleDuplicateBlast(blast._id)}
                           className="focus:bg-[var(--surface-3)] focus:text-[var(--text-primary)]"
@@ -618,6 +645,84 @@ export default function TextBlastsPage() {
         blastId={selectedBlastForDialog}
         mode={dialogMode}
       />
+      <Dialog
+        open={selectedBlastForFailures !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setSelectedBlastForFailures(null);
+        }}
+      >
+        <DialogContent className="max-h-[88vh] overflow-hidden sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Delivery Errors</DialogTitle>
+            <DialogDescription>
+              {failureBlast
+                ? `${failureBlast.name}: ${failureBlast.failedCount} failed recipient${failureBlast.failedCount === 1 ? "" : "s"}.`
+                : "Per-recipient SMS provider failures and traces."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
+            {deliveryFailures === undefined ? (
+              <p className="py-8 text-center text-sm text-[var(--text-secondary)]">
+                Loading delivery errors...
+              </p>
+            ) : deliveryFailures.length === 0 ? (
+              <p className="py-8 text-center text-sm text-[var(--text-secondary)]">
+                No failed delivery records remain for this blast.
+              </p>
+            ) : (
+              deliveryFailures.map((failure) => (
+                <article
+                  key={failure._id}
+                  className="rounded-lg bg-[var(--surface-1)] p-4 shadow-[inset_0_0_0_1px_var(--border-subtle)]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-medium text-[var(--text-primary)]">
+                        {failure.recipientName}
+                      </h3>
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        {failure.phoneObfuscated} · {formatEventDateTime(failure.failedAt)}
+                      </p>
+                    </div>
+                    {failure.errorCode ? (
+                      <Badge variant="destructive" className="font-mono text-[11px]">
+                        {failure.errorCode}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--status-denied)]">
+                    {failure.errorMessage}
+                  </p>
+                  {failure.providerMessageId ? (
+                    <p className="mt-2 break-all font-mono text-[11px] text-[var(--text-tertiary)]">
+                      Provider ID: {failure.providerMessageId}
+                    </p>
+                  ) : null}
+                  {failure.errorDetails || failure.errorStack ? (
+                    <details className="mt-2 rounded-md bg-[var(--surface-2)] text-xs">
+                      <summary className="flex min-h-10 cursor-pointer items-center px-3 py-2 font-medium">
+                        Error details and trace
+                      </summary>
+                      <div className="space-y-3 px-3 pb-3">
+                        {failure.errorDetails ? (
+                          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px]">
+                            {failure.errorDetails}
+                          </pre>
+                        ) : null}
+                        {failure.errorStack ? (
+                          <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+                            {failure.errorStack}
+                          </pre>
+                        ) : null}
+                      </div>
+                    </details>
+                  ) : null}
+                </article>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -72,6 +72,7 @@ import {
   recordSmsConversationMessage,
   type SmsConversationKind,
 } from "./lib/smsConversationRecords";
+import { getSmsErrorDetails, type SmsErrorDetails } from "./lib/smsErrorDetails";
 import { resolveSmsOrganizerPreference } from "./lib/smsOrganizerPreferences";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
@@ -910,6 +911,7 @@ type SmsRecipientPayload = {
   notificationId: Id<"smsNotifications">;
   personalizedMessage: string;
   mediaUrl?: string;
+  preparationError?: SmsErrorDetails;
 };
 
 type BulkSmsSendResult = {
@@ -924,6 +926,9 @@ type BulkSmsSendResult = {
     success: boolean;
     messageId?: string;
     error?: string;
+    errorCode?: string;
+    errorDetails?: string;
+    errorStack?: string;
     messageLength?: number;
     messageType?: string;
     estimatedCost?: number;
@@ -940,6 +945,9 @@ const queuedBlastSendResultValidator = v.object({
   success: v.boolean(),
   messageId: v.optional(v.string()),
   error: v.optional(v.string()),
+  errorCode: v.optional(v.string()),
+  errorDetails: v.optional(v.string()),
+  errorStack: v.optional(v.string()),
   messageLength: v.optional(v.number()),
   messageType: v.optional(v.string()),
   estimatedCost: v.optional(v.number()),
@@ -1296,28 +1304,46 @@ async function createSmsRecipientsForBlast(args: {
   for (const recipient of args.recipients) {
     let qrCodeMediaUrl: string | undefined;
     let redemptionLink: string | undefined;
+    let preparationError: SmsErrorDetails | undefined;
 
-    if (args.includeQrCodes && recipient.redemptionCode && baseUrl) {
-      try {
-        const ticketUrl = `${baseUrl}/redeem/${recipient.redemptionCode}`;
-        redemptionLink = ticketUrl;
-        const storageId = await args.ctx.runAction(
-          internal.lib.qrCodeGenerator.generateAndUploadQrCode,
-          {
-            value: ticketUrl,
-            foregroundColor: args.primaryEvent.themeTextColor,
-            backgroundColor: args.primaryEvent.themeBackgroundColor,
-          },
-        );
-        const qrCodeUrl = await args.ctx.runAction(internal.lib.qrCodeGenerator.getQrCodeUrl, {
-          storageId,
-        });
+    if (args.includeQrCodes) {
+      if (!recipient.redemptionCode) {
+        preparationError = {
+          errorMessage: "Guest does not have an active QR ticket code",
+          errorCode: "QR_TICKET_NOT_AVAILABLE",
+        };
+      } else if (!baseUrl) {
+        preparationError = {
+          errorMessage: "Missing public base URL for event site",
+          errorCode: "QR_PUBLIC_URL_NOT_CONFIGURED",
+        };
+      } else {
+        try {
+          const ticketUrl = `${baseUrl}/redeem/${recipient.redemptionCode}`;
+          redemptionLink = ticketUrl;
+          const storageId = await args.ctx.runAction(
+            internal.lib.qrCodeGenerator.generateAndUploadQrCode,
+            {
+              value: ticketUrl,
+              foregroundColor: args.primaryEvent.themeTextColor,
+              backgroundColor: args.primaryEvent.themeBackgroundColor,
+            },
+          );
+          const qrCodeUrl = await args.ctx.runAction(internal.lib.qrCodeGenerator.getQrCodeUrl, {
+            storageId,
+          });
 
-        if (qrCodeUrl) {
+          if (!qrCodeUrl) {
+            throw new Error("Generated QR image URL was unavailable");
+          }
           qrCodeMediaUrl = qrCodeUrl;
+        } catch (error) {
+          preparationError = getSmsErrorDetails(error);
+          console.error(
+            `Failed to generate QR code for recipient ${recipient.clerkUserId}:`,
+            error,
+          );
         }
-      } catch (error) {
-        console.error(`Failed to generate QR code for recipient ${recipient.clerkUserId}:`, error);
       }
     }
 
@@ -1366,6 +1392,7 @@ async function createSmsRecipientsForBlast(args: {
       notificationId: notificationId as Id<"smsNotifications">,
       personalizedMessage,
       mediaUrl: qrCodeMediaUrl,
+      preparationError,
     });
   }
 
@@ -1689,9 +1716,28 @@ export const processQueuedBlastSend = internalAction({
           phoneHash: recipient.phoneHash,
           success: false,
           error: "User has opted out of SMS notifications",
+          errorCode: "SMS_OPTED_OUT",
+        }));
+      const preparationFailureResults = smsRecipients
+        .filter(
+          (recipient) =>
+            !optedOutPhoneHashes.has(recipient.phoneHash) &&
+            recipient.preparationError !== undefined,
+        )
+        .map((recipient) => ({
+          notificationId: recipient.notificationId,
+          textBlastRecipientId: recipient.textBlastRecipientId,
+          clerkUserId: recipient.clerkUserId,
+          phoneHash: recipient.phoneHash,
+          success: false,
+          error: recipient.preparationError?.errorMessage,
+          errorCode: recipient.preparationError?.errorCode,
+          errorDetails: recipient.preparationError?.errorDetails,
+          errorStack: recipient.preparationError?.errorStack,
         }));
       const sendableRecipients = smsRecipients.filter(
-        (recipient) => !optedOutPhoneHashes.has(recipient.phoneHash),
+        (recipient) =>
+          !optedOutPhoneHashes.has(recipient.phoneHash) && recipient.preparationError === undefined,
       );
 
       let bulkSendResult: BulkSmsSendResult = {
@@ -1704,15 +1750,23 @@ export const processQueuedBlastSend = internalAction({
         try {
           bulkSendResult = (await ctx.runAction(internal.smsActions.sendBulkSmsInternal, {
             eventId: blast.eventId,
-            recipients: sendableRecipients,
+            recipients: sendableRecipients.map((recipient) => ({
+              phoneNumber: recipient.phoneNumber,
+              clerkUserId: recipient.clerkUserId,
+              phoneHash: recipient.phoneHash,
+              textBlastRecipientId: recipient.textBlastRecipientId,
+              notificationId: recipient.notificationId,
+              personalizedMessage: recipient.personalizedMessage,
+              mediaUrl: recipient.mediaUrl,
+            })),
             message: blast.message,
             batchSize: 10,
             messageType: "Promotional",
           })) as BulkSmsSendResult;
         } catch (error) {
-          const errorMessage = getErrorMessage(error);
+          const errorDetails = getSmsErrorDetails(error);
           console.error(
-            `[processQueuedBlastSend] Bulk SMS send failed for text blast ${args.blastId}: ${errorMessage}`,
+            `[processQueuedBlastSend] Bulk SMS send failed for text blast ${args.blastId}: ${errorDetails.errorMessage}`,
           );
           bulkSendResult = {
             totalRecipients: sendableRecipients.length,
@@ -1724,13 +1778,20 @@ export const processQueuedBlastSend = internalAction({
               clerkUserId: recipient.clerkUserId,
               phoneHash: recipient.phoneHash,
               success: false,
-              error: errorMessage,
+              error: errorDetails.errorMessage,
+              errorCode: errorDetails.errorCode,
+              errorDetails: errorDetails.errorDetails,
+              errorStack: errorDetails.errorStack,
             })),
           };
         }
       }
 
-      const completedSendResults = [...optedOutResults, ...bulkSendResult.results];
+      const completedSendResults = [
+        ...optedOutResults,
+        ...preparationFailureResults,
+        ...bulkSendResult.results,
+      ];
       for (
         let batchStart = 0;
         batchStart < completedSendResults.length;
@@ -1836,23 +1897,15 @@ export const getBlastsByEvent = query({
     status: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<Doc<"textBlasts">[]> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
-    // Verify user is host of this event (using org:admin role)
     await ensureEventInSiteScope(ctx, args.eventId, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-
-    if (!identityHasHostRole(identityWithRole)) {
-      throw new Error("Not authorized for this event");
-    }
 
     const allBlasts = await ctx.db.query("textBlasts").collect();
     const blasts = allBlasts
@@ -1880,22 +1933,15 @@ export const getBlastsByEventWithSenderNames = query({
     ctx,
     args,
   ): Promise<(Doc<"textBlasts"> & { sentByName: string; replyActionCount: number })[]> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     await ensureEventInSiteScope(ctx, args.eventId, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-
-    if (!identityHasHostRole(identityWithRole)) {
-      throw new Error("Not authorized for this event");
-    }
 
     const allBlasts = await ctx.db.query("textBlasts").collect();
     const blasts = allBlasts
@@ -1941,17 +1987,10 @@ export const getBlastsByWorkspaceWithSenderNames = query({
     ctx,
     args,
   ): Promise<(Doc<"textBlasts"> & { sentByName: string; replyActionCount: number })[]> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
-
-    if (!identityHasHostRole(identityWithRole)) {
-      throw new Error("Not authorized for this workspace");
-    }
 
     const scopedEvents = (await ctx.db.query("events").collect()).filter((event) =>
       eventMatchesSiteScope(event, {
@@ -2034,13 +2073,10 @@ export const getBlastById = query({
     ctx,
     args,
   ): Promise<(Doc<"textBlasts"> & { replyActions: Doc<"textBlastReplyActions">[] }) | null> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
     await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     const blastRecord = await getTextBlastInSiteScope(ctx, args.blastId, {
       siteKey: args.siteKey,
@@ -2049,14 +2085,67 @@ export const getBlastById = query({
     if (!blastRecord) return null;
     const { blast } = blastRecord;
 
-    if (!identityCanManageBlast(identityWithRole, blast.sentBy)) {
-      throw new Error("Not authorized to view this text blast");
-    }
-
     return {
       ...blast,
       replyActions: await listReplyActionsForBlast(ctx, blast._id),
     };
+  },
+});
+
+export const getBlastDeliveryFailures = query({
+  args: {
+    blastId: v.id("textBlasts"),
+    siteKey: v.optional(v.string()),
+    workspaceSlug: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireWorkspaceHost(ctx, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    const blastRecord = await getTextBlastInSiteScope(ctx, args.blastId, {
+      siteKey: args.siteKey,
+      workspaceSlug: args.workspaceSlug,
+    });
+    if (!blastRecord) return [];
+
+    const failedDeliveries = await ctx.db
+      .query("textBlastRecipients")
+      .withIndex("by_text_blast_status", (queryBuilder) =>
+        queryBuilder.eq("textBlastId", args.blastId).eq("status", "failed"),
+      )
+      .collect();
+
+    return await Promise.all(
+      failedDeliveries.map(async (delivery) => {
+        const notification = delivery.smsNotificationId
+          ? await ctx.db.get(delivery.smsNotificationId)
+          : null;
+        const clerkUserId = notification?.recipientClerkUserId ?? delivery.recipientClerkUserIds[0];
+        const user = clerkUserId
+          ? await ctx.db
+              .query("users")
+              .withIndex("by_clerkUserId", (queryBuilder) =>
+                queryBuilder.eq("clerkUserId", clerkUserId),
+              )
+              .unique()
+          : null;
+        const recipientName = [user?.firstName, user?.lastName].filter(Boolean).join(" ");
+
+        return {
+          _id: delivery._id,
+          recipientName: recipientName || "Unknown guest",
+          phoneObfuscated: notification?.recipientPhoneObfuscated ?? "Phone unavailable",
+          providerMessageId: delivery.messageId ?? notification?.messageId,
+          errorMessage:
+            delivery.errorMessage ?? notification?.errorMessage ?? "Unknown SMS delivery failure",
+          errorCode: delivery.errorCode ?? notification?.errorCode,
+          errorDetails: delivery.errorDetails ?? notification?.errorDetails,
+          errorStack: delivery.errorStack ?? notification?.errorStack,
+          failedAt: delivery.updatedAt,
+        };
+      }),
+    );
   },
 });
 
@@ -3049,6 +3138,9 @@ async function finalizeQueuedBlastResultBatchWithContext(
         status,
         messageId: result.success ? (result.messageId ?? notification.messageId) : undefined,
         errorMessage: result.success ? undefined : (result.error ?? "SMS send failed"),
+        errorCode: result.success ? undefined : result.errorCode,
+        errorDetails: result.success ? undefined : result.errorDetails,
+        errorStack: result.success ? undefined : result.errorStack,
         sentAt: sentAt ?? notification.sentAt,
       });
     }
@@ -3059,6 +3151,9 @@ async function finalizeQueuedBlastResultBatchWithContext(
         status,
         messageId: result.success ? (result.messageId ?? delivery.messageId) : undefined,
         errorMessage: result.success ? undefined : (result.error ?? "SMS send failed"),
+        errorCode: result.success ? undefined : result.errorCode,
+        errorDetails: result.success ? undefined : result.errorDetails,
+        errorStack: result.success ? undefined : result.errorStack,
         sentAt: sentAt ?? delivery.sentAt,
         updatedAt: now,
       });
@@ -3096,6 +3191,10 @@ async function finalizeQueuedBlastResultBatchWithContext(
         qrCodeSent: qrCodeSent || undefined,
         providerMessageId: result.messageId ?? notification.messageId ?? delivery?.messageId,
         providerStatus: status,
+        errorMessage: result.success ? undefined : (result.error ?? "SMS send failed"),
+        errorCode: result.success ? undefined : result.errorCode,
+        errorDetails: result.success ? undefined : result.errorDetails,
+        errorStack: result.success ? undefined : result.errorStack,
         createdAt: sentAt ?? notification.createdAt,
       });
     }

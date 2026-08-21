@@ -158,7 +158,7 @@ export const handleDeliveryStatus = httpAction(async (ctx, request) => {
   }
   const messageSid = params.get("MessageSid");
   const messageStatus = params.get("MessageStatus");
-  const _errorCode = params.get("ErrorCode");
+  const errorCode = params.get("ErrorCode");
   const errorMessage = params.get("ErrorMessage");
 
   if (!messageSid || !messageStatus) {
@@ -171,6 +171,9 @@ export const handleDeliveryStatus = httpAction(async (ctx, request) => {
       messageId: messageSid,
       status: mapTwilioStatus(messageStatus),
       errorMessage: errorMessage || undefined,
+      errorCode: errorCode || undefined,
+      errorDetails:
+        errorCode || errorMessage ? `Twilio delivery status: ${messageStatus}` : undefined,
     });
 
     // Log delivery for cost tracking if delivered

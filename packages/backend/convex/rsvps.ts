@@ -2259,6 +2259,8 @@ type EnrichedRsvp = {
   referredByName?: string;
   redemptionStatus: "none" | "issued" | "redeemed" | "disabled";
   redemptionCode?: string;
+  qrDeliveredAt?: number;
+  smsConsent?: boolean;
   createdAt: number;
   updatedAt: number;
 };
@@ -2395,6 +2397,7 @@ async function enrichSelectedHostRsvps(
       referredByName: rsvpRecord.referredByName,
       redemptionStatus,
       redemptionCode: redemption?.code,
+      qrDeliveredAt: redemption?.qrDeliveredAt,
       createdAt: rsvpRecord.createdAt,
       updatedAt: rsvpRecord.updatedAt ?? rsvpRecord.createdAt,
       smsConsent: rsvpRecord.smsConsent ?? undefined,
@@ -2737,6 +2740,7 @@ export const listForEventPaginated = query({
         referredByName: rsvp.referredByName,
         redemptionStatus,
         redemptionCode: redemption?.code,
+        qrDeliveredAt: redemption?.qrDeliveredAt,
         createdAt: rsvp.createdAt,
         updatedAt: rsvp.updatedAt ?? rsvp.createdAt,
         smsConsent: rsvp.smsConsent ?? undefined,

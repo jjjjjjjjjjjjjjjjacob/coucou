@@ -202,7 +202,13 @@ export default function EventCardClient({
         result.failed > 0
           ? `Sent ${result.sent} QR codes (${result.failed} failed, ${result.skipped} skipped)`
           : `Sent ${result.sent} QR codes`;
-      toast.success(successMessage);
+      if (result.failed > 0) {
+        toast.error(
+          `${successMessage}. ${result.failures[0]?.message ?? "Open the text thread for delivery details."}`,
+        );
+      } else {
+        toast.success(successMessage);
+      }
       router.refresh();
     } catch (error: unknown) {
       posthog.captureException(error);

@@ -94,6 +94,10 @@ export async function recordSmsConversationMessage(
     qrCodeSent?: boolean;
     providerMessageId?: string;
     providerStatus?: string;
+    errorMessage?: string;
+    errorCode?: string;
+    errorDetails?: string;
+    errorStack?: string;
     smsNotificationId?: Id<"smsNotifications">;
     textBlastId?: Id<"textBlasts">;
     textBlastRecipientId?: Id<"textBlastRecipients">;
@@ -125,6 +129,10 @@ export async function recordSmsConversationMessage(
         providerMessageId: args.providerMessageId ?? existingNotificationMessage.providerMessageId,
         providerStatus: args.providerStatus ?? existingNotificationMessage.providerStatus,
         qrCodeSent: args.qrCodeSent ?? existingNotificationMessage.qrCodeSent,
+        errorMessage: args.errorMessage ?? existingNotificationMessage.errorMessage,
+        errorCode: args.errorCode ?? existingNotificationMessage.errorCode,
+        errorDetails: args.errorDetails ?? existingNotificationMessage.errorDetails,
+        errorStack: args.errorStack ?? existingNotificationMessage.errorStack,
         updatedAt: Date.now(),
       });
       return existingNotificationMessage._id;
@@ -145,6 +153,10 @@ export async function recordSmsConversationMessage(
         providerStatus: args.providerStatus ?? existingProviderMessage.providerStatus,
         smsNotificationId: args.smsNotificationId ?? existingProviderMessage.smsNotificationId,
         qrCodeSent: args.qrCodeSent ?? existingProviderMessage.qrCodeSent,
+        errorMessage: args.errorMessage ?? existingProviderMessage.errorMessage,
+        errorCode: args.errorCode ?? existingProviderMessage.errorCode,
+        errorDetails: args.errorDetails ?? existingProviderMessage.errorDetails,
+        errorStack: args.errorStack ?? existingProviderMessage.errorStack,
         updatedAt: Date.now(),
       });
       return existingProviderMessage._id;
@@ -162,6 +174,10 @@ export async function recordSmsConversationMessage(
     qrCodeSent: args.qrCodeSent,
     providerMessageId: args.providerMessageId,
     providerStatus: args.providerStatus,
+    errorMessage: args.errorMessage,
+    errorCode: args.errorCode,
+    errorDetails: args.errorDetails,
+    errorStack: args.errorStack,
     smsNotificationId: args.smsNotificationId,
     textBlastId: args.textBlastId,
     textBlastRecipientId: args.textBlastRecipientId,
@@ -195,6 +211,10 @@ export async function updateSmsConversationProviderStatus(
     providerMessageId: string;
     providerStatus: string;
     smsNotificationId?: Id<"smsNotifications">;
+    errorMessage?: string;
+    errorCode?: string;
+    errorDetails?: string;
+    errorStack?: string;
   },
 ): Promise<number> {
   const messages = await ctx.db
@@ -203,11 +223,16 @@ export async function updateSmsConversationProviderStatus(
       queryBuilder.eq("providerMessageId", args.providerMessageId),
     )
     .collect();
+  const shouldClearErrors = args.providerStatus === "sent" || args.providerStatus === "delivered";
 
   for (const message of messages) {
     await ctx.db.patch(message._id, {
       providerStatus: args.providerStatus,
       smsNotificationId: args.smsNotificationId ?? message.smsNotificationId,
+      errorMessage: args.errorMessage ?? (shouldClearErrors ? undefined : message.errorMessage),
+      errorCode: args.errorCode ?? (shouldClearErrors ? undefined : message.errorCode),
+      errorDetails: args.errorDetails ?? (shouldClearErrors ? undefined : message.errorDetails),
+      errorStack: args.errorStack ?? (shouldClearErrors ? undefined : message.errorStack),
       updatedAt: Date.now(),
     });
   }

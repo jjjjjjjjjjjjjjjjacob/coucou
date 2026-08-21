@@ -31,6 +31,9 @@ export const createNotification = internalMutation({
       createdAt: Date.now(),
       messageId: undefined,
       errorMessage: undefined,
+      errorCode: undefined,
+      errorDetails: undefined,
+      errorStack: undefined,
       sentAt: undefined,
     });
     return notification;
@@ -46,6 +49,9 @@ export const updateNotificationStatus = internalMutation({
     status: v.string(),
     messageId: v.optional(v.string()),
     errorMessage: v.optional(v.string()),
+    errorCode: v.optional(v.string()),
+    errorDetails: v.optional(v.string()),
+    errorStack: v.optional(v.string()),
     sentAt: v.optional(v.number()),
   },
   async handler(ctx, args) {
@@ -57,7 +63,12 @@ export const updateNotificationStatus = internalMutation({
     const updateData: Partial<Doc<"smsNotifications">> = {
       status: args.status,
       messageId: args.messageId ?? notification.messageId,
-      errorMessage: args.errorMessage ?? notification.errorMessage,
+      errorMessage:
+        args.errorMessage ?? (args.status === "sent" ? undefined : notification.errorMessage),
+      errorCode: args.errorCode ?? (args.status === "sent" ? undefined : notification.errorCode),
+      errorDetails:
+        args.errorDetails ?? (args.status === "sent" ? undefined : notification.errorDetails),
+      errorStack: args.errorStack ?? (args.status === "sent" ? undefined : notification.errorStack),
       sentAt: args.sentAt ?? notification.sentAt,
     };
 
@@ -69,6 +80,10 @@ export const updateNotificationStatus = internalMutation({
         providerMessageId,
         providerStatus: args.status,
         smsNotificationId: args.notificationId,
+        errorMessage: args.errorMessage,
+        errorCode: args.errorCode,
+        errorDetails: args.errorDetails,
+        errorStack: args.errorStack,
       });
     }
 
@@ -76,7 +91,13 @@ export const updateNotificationStatus = internalMutation({
       await ctx.db.patch(notification.textBlastRecipientId, {
         status: args.status,
         messageId: args.messageId ?? notification.messageId,
-        errorMessage: args.errorMessage ?? notification.errorMessage,
+        errorMessage:
+          args.errorMessage ?? (args.status === "sent" ? undefined : notification.errorMessage),
+        errorCode: args.errorCode ?? (args.status === "sent" ? undefined : notification.errorCode),
+        errorDetails:
+          args.errorDetails ?? (args.status === "sent" ? undefined : notification.errorDetails),
+        errorStack:
+          args.errorStack ?? (args.status === "sent" ? undefined : notification.errorStack),
         sentAt: args.sentAt ?? notification.sentAt,
         updatedAt: Date.now(),
       });
@@ -145,6 +166,9 @@ export const updateNotificationByMessageId = internalMutation({
     messageId: v.string(),
     status: v.string(),
     errorMessage: v.optional(v.string()),
+    errorCode: v.optional(v.string()),
+    errorDetails: v.optional(v.string()),
+    errorStack: v.optional(v.string()),
   },
   async handler(ctx, args) {
     const notification = await ctx.db
@@ -158,14 +182,65 @@ export const updateNotificationByMessageId = internalMutation({
 
     const updateData: Partial<Doc<"smsNotifications">> = {
       status: args.status,
-      errorMessage: args.errorMessage ?? notification.errorMessage,
+      errorMessage:
+        args.errorMessage ?? (args.status === "sent" ? undefined : notification.errorMessage),
+      errorCode: args.errorCode ?? (args.status === "sent" ? undefined : notification.errorCode),
+      errorDetails:
+        args.errorDetails ?? (args.status === "sent" ? undefined : notification.errorDetails),
+      errorStack: args.errorStack ?? (args.status === "sent" ? undefined : notification.errorStack),
     };
 
     await ctx.db.patch(notification._id, updateData);
+    if (notification.textBlastRecipientId) {
+      const textBlastRecipient = await ctx.db.get(notification.textBlastRecipientId);
+      if (textBlastRecipient) {
+        const recipientStatus =
+          args.status === "pending" && textBlastRecipient.status === "sent" ? "sent" : args.status;
+        await ctx.db.patch(textBlastRecipient._id, {
+          status: recipientStatus,
+          messageId: args.messageId,
+          errorMessage:
+            args.errorMessage ??
+            (args.status === "sent" ? undefined : textBlastRecipient.errorMessage),
+          errorCode:
+            args.errorCode ?? (args.status === "sent" ? undefined : textBlastRecipient.errorCode),
+          errorDetails:
+            args.errorDetails ??
+            (args.status === "sent" ? undefined : textBlastRecipient.errorDetails),
+          errorStack:
+            args.errorStack ?? (args.status === "sent" ? undefined : textBlastRecipient.errorStack),
+          updatedAt: Date.now(),
+        });
+      }
+    }
+    if (notification.textBlastId) {
+      const blast = await ctx.db.get(notification.textBlastId);
+      if (blast) {
+        const deliveries = await ctx.db
+          .query("textBlastRecipients")
+          .withIndex("by_text_blast", (queryBuilder) =>
+            queryBuilder.eq("textBlastId", notification.textBlastId as Id<"textBlasts">),
+          )
+          .collect();
+        const sentCount = deliveries.filter((delivery) => delivery.status === "sent").length;
+        const failedCount = deliveries.filter((delivery) => delivery.status === "failed").length;
+        const pendingCount = deliveries.length - sentCount - failedCount;
+        await ctx.db.patch(blast._id, {
+          sentCount,
+          failedCount,
+          status: pendingCount > 0 ? blast.status : sentCount > 0 ? "sent" : "failed",
+          updatedAt: Date.now(),
+        });
+      }
+    }
     await updateSmsConversationProviderStatus(ctx, {
       providerMessageId: args.messageId,
       providerStatus: args.status,
       smsNotificationId: notification._id,
+      errorMessage: args.errorMessage,
+      errorCode: args.errorCode,
+      errorDetails: args.errorDetails,
+      errorStack: args.errorStack,
     });
   },
 });

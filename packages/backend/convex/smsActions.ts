@@ -11,6 +11,7 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalAction } from "./_generated/server";
 import { formatPhoneNumberForSms, obfuscatePhoneNumber } from "./lib/phoneUtils";
+import { getSmsErrorDetails, type SmsErrorDetails } from "./lib/smsErrorDetails";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -83,6 +84,10 @@ async function recordNotificationConversationMessage(
     providerMessageId?: string;
     providerStatus: string;
     qrCodeSent?: boolean;
+    errorMessage?: string;
+    errorCode?: string;
+    errorDetails?: string;
+    errorStack?: string;
     createdAt?: number;
   },
 ) {
@@ -111,6 +116,10 @@ async function recordNotificationConversationMessage(
     qrCodeSent: args.qrCodeSent,
     providerMessageId: args.providerMessageId ?? mirrorContext.providerMessageId,
     providerStatus: args.providerStatus,
+    errorMessage: args.errorMessage,
+    errorCode: args.errorCode,
+    errorDetails: args.errorDetails,
+    errorStack: args.errorStack,
     createdAt: args.createdAt ?? Date.now(),
   });
 }
@@ -141,7 +150,33 @@ export const sendSmsInternal = internalAction({
   },
   handler: async (ctx, args) => {
     // Validate credentials (throws error in production if missing, returns null in dev if disabled)
-    const credentials = await resolveTwilioCredentials(ctx, args.eventId);
+    let credentials: ResolvedTwilioCredentials | null;
+    try {
+      credentials = await resolveTwilioCredentials(ctx, args.eventId);
+    } catch (error) {
+      const errorDetails = getSmsErrorDetails(error);
+      if (args.notificationId) {
+        await ctx.runMutation(internal.sms.updateNotificationStatus, {
+          notificationId: args.notificationId,
+          status: "failed",
+          ...errorDetails,
+        });
+        await recordNotificationConversationMessage(ctx, {
+          notificationId: args.notificationId,
+          providerStatus: "failed",
+          ...errorDetails,
+        });
+      }
+      return {
+        success: false,
+        messageId: undefined,
+        phone: obfuscatePhoneNumber(args.phoneNumber),
+        error: errorDetails.errorMessage,
+        errorCode: errorDetails.errorCode,
+        errorDetails: errorDetails.errorDetails,
+        errorStack: errorDetails.errorStack,
+      };
+    }
 
     if (!credentials) {
       // Dev mode with SMS disabled - update notification status and return gracefully
@@ -152,10 +187,13 @@ export const sendSmsInternal = internalAction({
           notificationId: args.notificationId,
           status: "failed",
           errorMessage,
+          errorCode: "TWILIO_DISABLED",
         });
         await recordNotificationConversationMessage(ctx, {
           notificationId: args.notificationId,
           providerStatus: "failed",
+          errorMessage,
+          errorCode: "TWILIO_DISABLED",
         });
       }
       return {
@@ -163,6 +201,7 @@ export const sendSmsInternal = internalAction({
         messageId: undefined,
         phone: obfuscatePhoneNumber(args.phoneNumber),
         error: errorMessage,
+        errorCode: "TWILIO_DISABLED",
       };
     }
 
@@ -173,26 +212,34 @@ export const sendSmsInternal = internalAction({
     try {
       formattedPhone = formatPhoneNumberForSms(args.phoneNumber);
     } catch (error) {
-      const errorMessage = `Invalid phone number format: ${getErrorMessage(error)}`;
+      const errorDetails: SmsErrorDetails = {
+        ...getSmsErrorDetails(error),
+        errorMessage: `Invalid phone number format: ${getErrorMessage(error)}`,
+        errorCode: "INVALID_PHONE_NUMBER",
+      };
       console.error(
-        `[sendSmsInternal] Phone formatting failed for ${obfuscatePhoneNumber(args.phoneNumber)}: ${errorMessage}`,
+        `[sendSmsInternal] Phone formatting failed for ${obfuscatePhoneNumber(args.phoneNumber)}: ${errorDetails.errorMessage}`,
       );
       if (args.notificationId) {
         await ctx.runMutation(internal.sms.updateNotificationStatus, {
           notificationId: args.notificationId,
           status: "failed",
-          errorMessage,
+          ...errorDetails,
         });
         await recordNotificationConversationMessage(ctx, {
           notificationId: args.notificationId,
           providerStatus: "failed",
+          ...errorDetails,
         });
       }
       return {
         success: false,
         messageId: undefined,
         phone: obfuscatePhoneNumber(args.phoneNumber),
-        error: errorMessage,
+        error: errorDetails.errorMessage,
+        errorCode: errorDetails.errorCode,
+        errorDetails: errorDetails.errorDetails,
+        errorStack: errorDetails.errorStack,
       };
     }
 
@@ -214,8 +261,28 @@ export const sendSmsInternal = internalAction({
         // Continue without opt-out check - better to send than to fail silently
         hasOptedOut = false;
       } else {
-        // Re-throw other errors
-        throw error;
+        const errorDetails = getSmsErrorDetails(error);
+        if (args.notificationId) {
+          await ctx.runMutation(internal.sms.updateNotificationStatus, {
+            notificationId: args.notificationId,
+            status: "failed",
+            ...errorDetails,
+          });
+          await recordNotificationConversationMessage(ctx, {
+            notificationId: args.notificationId,
+            providerStatus: "failed",
+            ...errorDetails,
+          });
+        }
+        return {
+          success: false,
+          messageId: undefined,
+          phone: obfuscatePhoneNumber(formattedPhone),
+          error: errorDetails.errorMessage,
+          errorCode: errorDetails.errorCode,
+          errorDetails: errorDetails.errorDetails,
+          errorStack: errorDetails.errorStack,
+        };
       }
     }
 
@@ -228,10 +295,13 @@ export const sendSmsInternal = internalAction({
           notificationId: args.notificationId,
           status: "failed",
           errorMessage,
+          errorCode: "SMS_OPTED_OUT",
         });
         await recordNotificationConversationMessage(ctx, {
           notificationId: args.notificationId,
           providerStatus: "failed",
+          errorMessage,
+          errorCode: "SMS_OPTED_OUT",
         });
       }
       return {
@@ -240,6 +310,7 @@ export const sendSmsInternal = internalAction({
         phone: obfuscatePhoneNumber(formattedPhone),
         skipped: "opted_out",
         error: errorMessage,
+        errorCode: "SMS_OPTED_OUT",
       };
     }
 
@@ -321,24 +392,33 @@ export const sendSmsInternal = internalAction({
       };
     } catch (error) {
       // Update notification status with error if ID provided
-      const errorMessage = getErrorMessage(error);
+      const errorDetails = getSmsErrorDetails(error);
       console.error(
-        `[sendSmsInternal] Failed to send SMS to ${obfuscatePhoneNumber(formattedPhone)}: ${errorMessage}`,
+        `[sendSmsInternal] Failed to send SMS to ${obfuscatePhoneNumber(formattedPhone)}: ${errorDetails.errorMessage}`,
         error,
       );
       if (args.notificationId) {
         await ctx.runMutation(internal.sms.updateNotificationStatus, {
           notificationId: args.notificationId,
           status: "failed",
-          errorMessage,
+          ...errorDetails,
         });
         await recordNotificationConversationMessage(ctx, {
           notificationId: args.notificationId,
           providerStatus: "failed",
+          ...errorDetails,
         });
       }
 
-      throw new Error(`SMS send failed: ${errorMessage}`);
+      return {
+        success: false,
+        messageId: undefined,
+        phone: obfuscatePhoneNumber(formattedPhone),
+        error: errorDetails.errorMessage,
+        errorCode: errorDetails.errorCode,
+        errorDetails: errorDetails.errorDetails,
+        errorStack: errorDetails.errorStack,
+      };
     }
   },
 });
@@ -386,6 +466,7 @@ export const sendBulkSmsInternal = internalAction({
           phoneHash: recipient.phoneHash,
           success: false,
           error: "Twilio disabled in development (DEV_TWILIO_ENABLED=false)",
+          errorCode: "TWILIO_DISABLED",
         })),
       };
     }
@@ -405,6 +486,9 @@ export const sendBulkSmsInternal = internalAction({
       success: boolean;
       messageId?: string;
       error?: string;
+      errorCode?: string;
+      errorDetails?: string;
+      errorStack?: string;
       messageLength?: number;
       messageType?: string;
       estimatedCost?: number;
@@ -439,15 +523,22 @@ export const sendBulkSmsInternal = internalAction({
             try {
               formattedPhone = formatPhoneNumberForSms(recipient.phoneNumber);
             } catch (error) {
-              const errorMessage = `Invalid phone number format: ${getErrorMessage(error)}`;
+              const errorDetails: SmsErrorDetails = {
+                ...getSmsErrorDetails(error),
+                errorMessage: `Invalid phone number format: ${getErrorMessage(error)}`,
+                errorCode: "INVALID_PHONE_NUMBER",
+              };
               console.error(
-                `[sendBulkSmsInternal] Phone formatting failed for ${obfuscatePhoneNumber(recipient.phoneNumber)}: ${errorMessage}`,
+                `[sendBulkSmsInternal] Phone formatting failed for ${obfuscatePhoneNumber(recipient.phoneNumber)}: ${errorDetails.errorMessage}`,
               );
               return {
                 success: false,
                 messageId: undefined,
                 phone: obfuscatePhoneNumber(recipient.phoneNumber),
-                error: errorMessage,
+                error: errorDetails.errorMessage,
+                errorCode: errorDetails.errorCode,
+                errorDetails: errorDetails.errorDetails,
+                errorStack: errorDetails.errorStack,
               };
             }
 
@@ -487,9 +578,9 @@ export const sendBulkSmsInternal = internalAction({
             };
           } catch (error) {
             // Handle Twilio API errors
-            const errorMessage = getErrorMessage(error);
+            const errorDetails = getSmsErrorDetails(error);
             console.error(
-              `[sendBulkSmsInternal] Failed to send SMS to ${obfuscatePhoneNumber(recipient.phoneNumber)}: ${errorMessage}`,
+              `[sendBulkSmsInternal] Failed to send SMS to ${obfuscatePhoneNumber(recipient.phoneNumber)}: ${errorDetails.errorMessage}`,
               error,
             );
 
@@ -497,7 +588,10 @@ export const sendBulkSmsInternal = internalAction({
               success: false,
               messageId: undefined,
               phone: obfuscatePhoneNumber(recipient.phoneNumber),
-              error: errorMessage,
+              error: errorDetails.errorMessage,
+              errorCode: errorDetails.errorCode,
+              errorDetails: errorDetails.errorDetails,
+              errorStack: errorDetails.errorStack,
             };
           }
         }),
@@ -535,6 +629,9 @@ export const sendBulkSmsInternal = internalAction({
               phoneHash: recipient.phoneHash,
               success: false,
               error: errorMessage,
+              errorCode: result.value.errorCode,
+              errorDetails: result.value.errorDetails,
+              errorStack: result.value.errorStack,
             });
           }
         } else {
@@ -543,6 +640,7 @@ export const sendBulkSmsInternal = internalAction({
             result.reason instanceof Error
               ? result.reason.message
               : String(result.reason ?? "Unknown error");
+          const errorDetails = getSmsErrorDetails(result.reason);
           console.error(
             `[sendBulkSmsInternal] Exception sending SMS to user ${recipient.clerkUserId}: ${errorMessage}`,
           );
@@ -553,6 +651,9 @@ export const sendBulkSmsInternal = internalAction({
             phoneHash: recipient.phoneHash,
             success: false,
             error: errorMessage,
+            errorCode: errorDetails.errorCode,
+            errorDetails: errorDetails.errorDetails,
+            errorStack: errorDetails.errorStack,
           });
         }
       });
