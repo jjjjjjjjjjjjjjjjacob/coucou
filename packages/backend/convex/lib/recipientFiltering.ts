@@ -18,6 +18,8 @@ export type RecipientFilterConfig =
   | { type: "all" }
   | { type: "approved_no_approval_sms" }
   | { type: "approved_with_approval_sms" }
+  | { type: "qr_code_received" }
+  | { type: "qr_code_not_received" }
   | { type: "status"; status: RsvpStatus }
   | { type: "custom_field_missing"; fieldKey: string }
   | { type: "rsvp_before"; timestamp: number }
@@ -57,6 +59,14 @@ export const parseRecipientFilter = (
     return { type: "approved_with_approval_sms" };
   }
 
+  if (rawFilter === "qr_code_received") {
+    return { type: "qr_code_received" };
+  }
+
+  if (rawFilter === "qr_code_not_received") {
+    return { type: "qr_code_not_received" };
+  }
+
   try {
     const parsed = JSON.parse(rawFilter) as Partial<RecipientFilterConfig>;
     if (!parsed || typeof parsed !== "object" || typeof parsed.type !== "string") {
@@ -70,6 +80,10 @@ export const parseRecipientFilter = (
         return { type: "approved_no_approval_sms" };
       case "approved_with_approval_sms":
         return { type: "approved_with_approval_sms" };
+      case "qr_code_received":
+        return { type: "qr_code_received" };
+      case "qr_code_not_received":
+        return { type: "qr_code_not_received" };
       case "status":
         if (
           typeof parsed.status === "string" &&
@@ -120,6 +134,8 @@ export const statusesForFilter = (filter: RecipientFilterConfig): RsvpStatus[] =
     case "all":
     case "approved_no_approval_sms":
     case "approved_with_approval_sms":
+    case "qr_code_received":
+    case "qr_code_not_received":
       return DEFAULT_APPROVED_STATUSES;
     case "status":
       return [filter.status];
@@ -161,6 +177,20 @@ export async function rsvpHasSentApprovalSms(
     .first();
 
   return approvalSms !== null;
+}
+
+export async function rsvpHasReceivedQrCode(
+  ctx: Pick<QueryCtx, "db">,
+  rsvp: Doc<"rsvps">,
+): Promise<boolean> {
+  const redemption = await ctx.db
+    .query("redemptions")
+    .withIndex("by_event_user", (queryBuilder) =>
+      queryBuilder.eq("eventId", rsvp.eventId).eq("clerkUserId", rsvp.clerkUserId),
+    )
+    .unique();
+
+  return redemption?.qrDeliveredAt !== undefined;
 }
 
 export async function hasSentDeliveryForAnyBlast(

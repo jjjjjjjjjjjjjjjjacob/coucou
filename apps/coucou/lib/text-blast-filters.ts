@@ -4,6 +4,8 @@ export type RecipientFilterType =
   | "all"
   | "approved_no_approval_sms"
   | "approved_with_approval_sms"
+  | "qr_code_received"
+  | "qr_code_not_received"
   | "status"
   | "custom_field_missing"
   | "rsvp_before"
@@ -13,6 +15,8 @@ export type RecipientFilterState =
   | { type: "all" }
   | { type: "approved_no_approval_sms" }
   | { type: "approved_with_approval_sms" }
+  | { type: "qr_code_received" }
+  | { type: "qr_code_not_received" }
   | { type: "status"; status: RecipientApprovalStatus }
   | { type: "custom_field_missing"; fieldKey: string }
   | { type: "rsvp_before"; isoDateTime: string }
@@ -29,6 +33,8 @@ export const RECIPIENT_FILTER_LABELS: Record<RecipientFilterType, string> = {
   all: "All Approved",
   approved_no_approval_sms: "Approved but No Approval SMS Sent",
   approved_with_approval_sms: "Approved with Approval SMS Sent",
+  qr_code_received: "QR Code Received",
+  qr_code_not_received: "QR Code Not Received",
   status: "Filter by RSVP Status",
   custom_field_missing: "Missing Custom Field",
   rsvp_before: "RSVP Before Date/Time",
@@ -59,6 +65,10 @@ export const encodeRecipientFilter = (state: RecipientFilterState): string | und
       return "approved_no_approval_sms";
     case "approved_with_approval_sms":
       return "approved_with_approval_sms";
+    case "qr_code_received":
+      return "qr_code_received";
+    case "qr_code_not_received":
+      return "qr_code_not_received";
     case "status":
       return JSON.stringify({ type: "status", status: state.status });
     case "custom_field_missing":
@@ -97,6 +107,14 @@ export const decodeRecipientFilter = (value: string | null | undefined): Recipie
     return { type: "approved_with_approval_sms" };
   }
 
+  if (value === "qr_code_received") {
+    return { type: "qr_code_received" };
+  }
+
+  if (value === "qr_code_not_received") {
+    return { type: "qr_code_not_received" };
+  }
+
   try {
     const parsed: unknown = JSON.parse(value);
     if (!parsed || typeof parsed !== "object") {
@@ -114,6 +132,10 @@ export const decodeRecipientFilter = (value: string | null | undefined): Recipie
         return { type: "approved_no_approval_sms" };
       case "approved_with_approval_sms":
         return { type: "approved_with_approval_sms" };
+      case "qr_code_received":
+        return { type: "qr_code_received" };
+      case "qr_code_not_received":
+        return { type: "qr_code_not_received" };
       case "status": {
         const status = candidate.status;
         if (typeof status === "string" && ["pending", "approved", "denied"].includes(status)) {
@@ -169,6 +191,10 @@ export const describeRecipientFilter = (
       return "Approved RSVPs without an approval SMS";
     case "approved_with_approval_sms":
       return "Approved RSVPs with an approval SMS";
+    case "qr_code_received":
+      return "Approved RSVPs that received a QR code";
+    case "qr_code_not_received":
+      return "Approved RSVPs that have not received a QR code";
     case "status":
       return `RSVP status: ${state.status}`;
     case "custom_field_missing": {

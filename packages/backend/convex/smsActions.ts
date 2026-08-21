@@ -82,6 +82,7 @@ async function recordNotificationConversationMessage(
     notificationId?: Id<"smsNotifications">;
     providerMessageId?: string;
     providerStatus: string;
+    qrCodeSent?: boolean;
     createdAt?: number;
   },
 ) {
@@ -107,6 +108,7 @@ async function recordNotificationConversationMessage(
     smsNotificationId: mirrorContext.smsNotificationId,
     textBlastId: mirrorContext.textBlastId,
     textBlastRecipientId: mirrorContext.textBlastRecipientId,
+    qrCodeSent: args.qrCodeSent,
     providerMessageId: args.providerMessageId ?? mirrorContext.providerMessageId,
     providerStatus: args.providerStatus,
     createdAt: args.createdAt ?? Date.now(),
@@ -307,6 +309,7 @@ export const sendSmsInternal = internalAction({
           notificationId: args.notificationId,
           providerMessageId: message.sid,
           providerStatus: "sent",
+          qrCodeSent: args.mediaUrl !== undefined,
           createdAt: Date.now(),
         });
       }
@@ -406,6 +409,7 @@ export const sendBulkSmsInternal = internalAction({
       messageType?: string;
       estimatedCost?: number;
       sentAt?: number;
+      mediaIncluded?: boolean;
     }> = [];
 
     console.log(
@@ -516,6 +520,7 @@ export const sendBulkSmsInternal = internalAction({
               messageType: result.value.messageType,
               estimatedCost: result.value.estimatedCost,
               sentAt: result.value.sentAt,
+              mediaIncluded: recipient.mediaUrl !== undefined,
             });
           } else {
             // Promise fulfilled but SMS wasn't sent (e.g., opted out, invalid phone, Twilio error)

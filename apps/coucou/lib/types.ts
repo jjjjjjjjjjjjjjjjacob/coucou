@@ -386,6 +386,7 @@ export interface SmsConversationMessage {
   kind: SmsConversationKind;
   body?: string;
   mediaUrls?: string[];
+  qrCodeSent?: boolean;
   providerMessageId?: string;
   providerStatus?: string;
   smsNotificationId?: Id<"smsNotifications">;

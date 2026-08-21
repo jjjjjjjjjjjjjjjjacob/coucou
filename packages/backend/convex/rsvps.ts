@@ -32,7 +32,10 @@ import {
   collectRsvpsMatchingFilters,
   fieldValuesMatchRsvpFuzzySearchTerms,
   filtersRequireDirectRsvpCount,
+  matchesQrDeliveryFilter,
+  normalizeQrDeliveryFilter,
   normalizeTicketStatusFilter,
+  type QrDeliveryFilter,
   type ValidRsvpStatus,
   validRsvpStatuses,
 } from "./lib/rsvpFilters";
@@ -2007,6 +2010,9 @@ export const countForEventFiltered = query({
     listFilter: v.optional(v.string()),
     guestSearch: v.optional(v.string()),
     redemptionFilter: v.optional(v.string()),
+    qrDeliveryFilter: v.optional(
+      v.union(v.literal("all"), v.literal("received"), v.literal("not-received")),
+    ),
     socialPlatformFilter: v.optional(v.string()),
     socialSearch: v.optional(v.string()),
     invitedBySearch: v.optional(v.string()),
@@ -2021,6 +2027,7 @@ export const countForEventFiltered = query({
       listFilter = "all",
       guestSearch = "",
       redemptionFilter = "all",
+      qrDeliveryFilter = "all",
       socialPlatformFilter = "all",
       socialSearch = "",
       invitedBySearch = "",
@@ -2030,6 +2037,7 @@ export const countForEventFiltered = query({
     await ensureEventInSiteScope(ctx, eventId, { siteKey, workspaceSlug });
 
     const ticketStatusFilter = normalizeTicketStatusFilter(redemptionFilter);
+    const normalizedQrDeliveryFilter = normalizeQrDeliveryFilter(qrDeliveryFilter);
 
     const needsPrimaryFieldFiltering =
       socialPlatformFilter !== "all" ||
@@ -2037,7 +2045,11 @@ export const countForEventFiltered = query({
       invitedBySearch.trim().length > 0;
 
     if (
-      filtersRequireDirectRsvpCount({ guestSearch, ticketStatusFilter }) ||
+      filtersRequireDirectRsvpCount({
+        guestSearch,
+        ticketStatusFilter,
+        qrDeliveryFilter: normalizedQrDeliveryFilter,
+      }) ||
       needsPrimaryFieldFiltering
     ) {
       let matchingRsvps = await collectRsvpsMatchingFilters(ctx, {
@@ -2047,6 +2059,12 @@ export const countForEventFiltered = query({
         listFilter,
         ticketStatusFilter,
       });
+      matchingRsvps = await filterRsvpsByQrDelivery(
+        ctx,
+        eventId,
+        matchingRsvps,
+        normalizedQrDeliveryFilter,
+      );
       matchingRsvps = await filterRsvpsByPrimaryFields(ctx, matchingRsvps, {
         unifiedSearch: guestSearch,
         socialPlatformFilter,
@@ -2061,6 +2079,32 @@ export const countForEventFiltered = query({
     return countRsvpsWithAggregate(ctx, eventId, approvalFilter, listFilter);
   },
 });
+
+async function filterRsvpsByQrDelivery(
+  ctx: QueryCtx,
+  eventId: Id<"events">,
+  rsvps: Array<Doc<"rsvps">>,
+  qrDeliveryFilter: QrDeliveryFilter | null,
+): Promise<Array<Doc<"rsvps">>> {
+  if (!qrDeliveryFilter) {
+    return rsvps;
+  }
+
+  const redemptions = await ctx.db
+    .query("redemptions")
+    .withIndex("by_event_user", (queryBuilder) => queryBuilder.eq("eventId", eventId))
+    .collect();
+  const qrDeliveryTimestampByClerkUserId = new Map(
+    redemptions.map((redemption) => [redemption.clerkUserId, redemption.qrDeliveredAt]),
+  );
+
+  return rsvps.filter((rsvp) =>
+    matchesQrDeliveryFilter(
+      qrDeliveryTimestampByClerkUserId.get(rsvp.clerkUserId),
+      qrDeliveryFilter,
+    ),
+  );
+}
 
 async function filterRsvpsByPrimaryFields(
   ctx: QueryCtx,
@@ -2414,6 +2458,9 @@ export const listForEventPaginated = query({
     ),
     listFilter: v.optional(v.string()), // Filter by list key
     redemptionFilter: v.optional(v.string()),
+    qrDeliveryFilter: v.optional(
+      v.union(v.literal("all"), v.literal("received"), v.literal("not-received")),
+    ),
     socialPlatformFilter: v.optional(v.string()),
     socialSearch: v.optional(v.string()),
     invitedBySearch: v.optional(v.string()),
@@ -2432,6 +2479,7 @@ export const listForEventPaginated = query({
       approvalFilter = "all",
       listFilter = "all",
       redemptionFilter = "all",
+      qrDeliveryFilter = "all",
       socialPlatformFilter = "all",
       socialSearch = "",
       invitedBySearch = "",
@@ -2441,10 +2489,11 @@ export const listForEventPaginated = query({
   ): Promise<PaginatedRsvpResult> => {
     // Debug logging for sorting
     console.log(
-      `[RSVP_PAGINATED] Sort params: sortBy=${sortBy}, sortOrder=${sortOrder}, search="${guestSearch}", filters: approval=${approvalFilter}, list=${listFilter}, redemption=${redemptionFilter}`,
+      `[RSVP_PAGINATED] Sort params: sortBy=${sortBy}, sortOrder=${sortOrder}, search="${guestSearch}", filters: approval=${approvalFilter}, list=${listFilter}, redemption=${redemptionFilter}, qrDelivery=${qrDeliveryFilter}`,
     );
 
     const ticketStatusFilter = normalizeTicketStatusFilter(redemptionFilter);
+    const normalizedQrDeliveryFilter = normalizeQrDeliveryFilter(qrDeliveryFilter);
 
     // Fetch event once since all RSVPs are for the same event
     await requireWorkspaceRead(ctx, { siteKey, workspaceSlug });
@@ -2460,6 +2509,12 @@ export const listForEventPaginated = query({
       listFilter,
       ticketStatusFilter,
     });
+    allMatchingRsvps = await filterRsvpsByQrDelivery(
+      ctx,
+      eventId,
+      allMatchingRsvps,
+      normalizedQrDeliveryFilter,
+    );
     allMatchingRsvps = await filterRsvpsByPrimaryFields(ctx, allMatchingRsvps, {
       unifiedSearch: guestSearch,
       socialPlatformFilter,

@@ -91,6 +91,7 @@ export async function recordSmsConversationMessage(
     kind: SmsConversationKind;
     body?: string;
     mediaUrls?: readonly string[];
+    qrCodeSent?: boolean;
     providerMessageId?: string;
     providerStatus?: string;
     smsNotificationId?: Id<"smsNotifications">;
@@ -123,6 +124,7 @@ export async function recordSmsConversationMessage(
       await ctx.db.patch(existingNotificationMessage._id, {
         providerMessageId: args.providerMessageId ?? existingNotificationMessage.providerMessageId,
         providerStatus: args.providerStatus ?? existingNotificationMessage.providerStatus,
+        qrCodeSent: args.qrCodeSent ?? existingNotificationMessage.qrCodeSent,
         updatedAt: Date.now(),
       });
       return existingNotificationMessage._id;
@@ -142,6 +144,7 @@ export async function recordSmsConversationMessage(
       await ctx.db.patch(existingProviderMessage._id, {
         providerStatus: args.providerStatus ?? existingProviderMessage.providerStatus,
         smsNotificationId: args.smsNotificationId ?? existingProviderMessage.smsNotificationId,
+        qrCodeSent: args.qrCodeSent ?? existingProviderMessage.qrCodeSent,
         updatedAt: Date.now(),
       });
       return existingProviderMessage._id;
@@ -156,6 +159,7 @@ export async function recordSmsConversationMessage(
     kind: args.kind,
     body: args.body,
     mediaUrls: args.mediaUrls ? [...args.mediaUrls] : undefined,
+    qrCodeSent: args.qrCodeSent,
     providerMessageId: args.providerMessageId,
     providerStatus: args.providerStatus,
     smsNotificationId: args.smsNotificationId,

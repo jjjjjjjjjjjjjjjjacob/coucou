@@ -137,6 +137,7 @@ type PaginatedHostRsvpResult = {
 
 type ApprovalFilterOption = "all" | ApprovalStatusOption;
 type ExportableApprovalStatusOption = "pending" | "approved" | "denied";
+type QrDeliveryFilterOption = "all" | "received" | "not-received";
 
 const DEFAULT_EXPORT_STATUS_OPTIONS: ExportableApprovalStatusOption[] = ["approved"];
 
@@ -427,6 +428,7 @@ export function GuestManager({
   const [approvalFilter, setApprovalFilter] = React.useState<ApprovalFilterOption>("all");
   const [listFilter, setListFilter] = React.useState<string>("all");
   const [redemptionFilter, setRedemptionFilter] = React.useState<string>("all");
+  const [qrDeliveryFilter, setQrDeliveryFilter] = React.useState<QrDeliveryFilterOption>("all");
   const [socialPlatformFilter, setSocialPlatformFilter] = React.useState<string>("all");
   const [sortBy, setSortBy] = React.useState<string>("createdAt");
   const [sortOrder, setSortOrder] = React.useState<"asc" | "desc">("desc");
@@ -442,6 +444,7 @@ export function GuestManager({
     approvalFilter,
     listFilter,
     redemptionFilter,
+    qrDeliveryFilter,
     socialPlatformFilter,
     sortBy,
     sortOrder,
@@ -459,6 +462,7 @@ export function GuestManager({
           approvalFilter,
           listFilter,
           redemptionFilter,
+          qrDeliveryFilter,
           socialPlatformFilter,
           sortBy,
           sortOrder,
@@ -477,6 +481,7 @@ export function GuestManager({
           approvalFilter,
           listFilter,
           redemptionFilter,
+          qrDeliveryFilter,
           socialPlatformFilter,
         }
       : "skip",
@@ -1692,6 +1697,7 @@ export function GuestManager({
     setApprovalFilter("all");
     setListFilter("all");
     setRedemptionFilter("all");
+    setQrDeliveryFilter("all");
     setSocialPlatformFilter("all");
     setSortBy("createdAt");
     setSortOrder("desc");
@@ -1703,6 +1709,7 @@ export function GuestManager({
     approvalFilter !== "all" ||
     listFilter !== "all" ||
     redemptionFilter !== "all" ||
+    qrDeliveryFilter !== "all" ||
     (shouldShowSocialPlatformFilter && socialPlatformFilter !== "all");
 
   // Drag-aware selection handlers — pointerdown on the select cell starts a paint drag.
@@ -1856,7 +1863,15 @@ export function GuestManager({
   // Clear selection when filters change or page changes
   React.useEffect(() => {
     setSelectedRows(new Set());
-  }, [debouncedGuest, approvalFilter, listFilter, redemptionFilter, socialPlatformFilter, cursor]);
+  }, [
+    debouncedGuest,
+    approvalFilter,
+    listFilter,
+    redemptionFilter,
+    qrDeliveryFilter,
+    socialPlatformFilter,
+    cursor,
+  ]);
 
   // Calculate pagination info for cursor-based pagination
   const currentPage = cursorHistory.length + 1;
@@ -3512,6 +3527,8 @@ export function GuestManager({
           setListFilter={setListFilter}
           redemptionFilter={redemptionFilter}
           setRedemptionFilter={setRedemptionFilter}
+          qrDeliveryFilter={qrDeliveryFilter}
+          setQrDeliveryFilter={setQrDeliveryFilter}
           socialPlatformFilter={socialPlatformFilter}
           setSocialPlatformFilter={setSocialPlatformFilter}
           sortBy={sortBy}

@@ -48,6 +48,24 @@ describe("text blast filters", () => {
     );
   });
 
+  it("encodes, decodes, and describes QR delivery filters", () => {
+    expect(encodeRecipientFilter({ type: "qr_code_received" })).toBe("qr_code_received");
+    expect(decodeRecipientFilter("qr_code_received")).toEqual({ type: "qr_code_received" });
+    expect(describeRecipientFilter({ type: "qr_code_received" })).toBe(
+      "Approved RSVPs that received a QR code",
+    );
+    expect(RECIPIENT_FILTER_LABELS.qr_code_received).toBe("QR Code Received");
+
+    expect(encodeRecipientFilter({ type: "qr_code_not_received" })).toBe("qr_code_not_received");
+    expect(decodeRecipientFilter("qr_code_not_received")).toEqual({
+      type: "qr_code_not_received",
+    });
+    expect(describeRecipientFilter({ type: "qr_code_not_received" })).toBe(
+      "Approved RSVPs that have not received a QR code",
+    );
+    expect(RECIPIENT_FILTER_LABELS.qr_code_not_received).toBe("QR Code Not Received");
+  });
+
   it("encodes, decodes, describes, and validates previous-event RSVP exclusions", () => {
     const encodedFilter = encodeRecipientFilter({
       type: "previous_approved_not_rsvped",

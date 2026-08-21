@@ -23,6 +23,7 @@ import {
   passesRecipientHistoryFilter,
   type RecipientFilterConfig,
   recipientHistoryFilterValidator,
+  rsvpHasReceivedQrCode,
   rsvpHasSentApprovalSms,
   statusesForFilter,
 } from "./lib/recipientFiltering";
@@ -542,6 +543,22 @@ async function personMatchesSegmentFilter(
     case "approved_with_approval_sms": {
       for (const rsvp of candidateRsvps) {
         if (await rsvpHasSentApprovalSms(ctx, rsvp)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    case "qr_code_received": {
+      for (const rsvp of candidateRsvps) {
+        if (await rsvpHasReceivedQrCode(ctx, rsvp)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    case "qr_code_not_received": {
+      for (const rsvp of candidateRsvps) {
+        if (!(await rsvpHasReceivedQrCode(ctx, rsvp))) {
           return true;
         }
       }

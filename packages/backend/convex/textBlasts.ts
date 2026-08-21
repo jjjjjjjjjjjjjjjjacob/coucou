@@ -43,6 +43,7 @@ import {
   type RecipientFilterConfig,
   type RecipientHistoryFilterConfig,
   recipientHistoryFilterValidator,
+  rsvpHasReceivedQrCode,
   rsvpHasSentApprovalSms,
   type SiteScopeArgs,
   statusesForFilter,
@@ -927,6 +928,7 @@ type BulkSmsSendResult = {
     messageType?: string;
     estimatedCost?: number;
     sentAt?: number;
+    mediaIncluded?: boolean;
   }>;
 };
 
@@ -942,6 +944,7 @@ const queuedBlastSendResultValidator = v.object({
   messageType: v.optional(v.string()),
   estimatedCost: v.optional(v.number()),
   sentAt: v.optional(v.number()),
+  mediaIncluded: v.optional(v.boolean()),
 });
 
 type ApprovedRsvpForList = Doc<"rsvps">;
@@ -1111,6 +1114,30 @@ async function getFilteredRsvpsForTargeting(
       );
 
       filteredRsvps = filteredWithApprovalSmsStatus.filter(
+        (rsvp): rsvp is (typeof filteredRsvps)[0] => rsvp !== null,
+      );
+      break;
+    }
+    case "qr_code_received": {
+      const filteredWithQrDeliveryStatus = await Promise.all(
+        filteredRsvps.map(async (rsvp) => {
+          return (await rsvpHasReceivedQrCode(ctx, rsvp)) ? rsvp : null;
+        }),
+      );
+
+      filteredRsvps = filteredWithQrDeliveryStatus.filter(
+        (rsvp): rsvp is (typeof filteredRsvps)[0] => rsvp !== null,
+      );
+      break;
+    }
+    case "qr_code_not_received": {
+      const filteredWithQrDeliveryStatus = await Promise.all(
+        filteredRsvps.map(async (rsvp) => {
+          return (await rsvpHasReceivedQrCode(ctx, rsvp)) ? null : rsvp;
+        }),
+      );
+
+      filteredRsvps = filteredWithQrDeliveryStatus.filter(
         (rsvp): rsvp is (typeof filteredRsvps)[0] => rsvp !== null,
       );
       break;
@@ -3006,6 +3033,7 @@ async function finalizeQueuedBlastResultBatchWithContext(
     );
   }
   const now = Date.now();
+  const blast = await ctx.db.get(args.blastId);
   await finalizeReplyActionClaims(ctx, {
     textBlastId: args.blastId,
     results: args.results,
@@ -3036,6 +3064,20 @@ async function finalizeQueuedBlastResultBatchWithContext(
       });
     }
 
+    const qrCodeSent =
+      result.success && result.mediaIncluded === true && blast?.includeQrCodes === true;
+    if (qrCodeSent && blast) {
+      const redemption = await ctx.db
+        .query("redemptions")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder.eq("eventId", blast.eventId).eq("clerkUserId", result.clerkUserId),
+        )
+        .unique();
+      if (redemption && redemption.qrDeliveredAt === undefined) {
+        await ctx.db.patch(redemption._id, { qrDeliveredAt: sentAt ?? now });
+      }
+    }
+
     const conversationPhoneHash = notification?.recipientPhoneHash ?? delivery?.phoneHash;
     if (notification && conversationPhoneHash) {
       await recordSmsConversationMessage(ctx, {
@@ -3051,6 +3093,7 @@ async function finalizeQueuedBlastResultBatchWithContext(
         smsNotificationId: notification._id,
         textBlastId: notification.textBlastId,
         textBlastRecipientId: notification.textBlastRecipientId,
+        qrCodeSent: qrCodeSent || undefined,
         providerMessageId: result.messageId ?? notification.messageId ?? delivery?.messageId,
         providerStatus: status,
         createdAt: sentAt ?? notification.createdAt,

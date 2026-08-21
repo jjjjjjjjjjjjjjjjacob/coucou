@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, Clock, Info } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Info, QrCode } from "lucide-react";
 import type {
   SmsConversationDirection,
   SmsConversationKind,
@@ -126,6 +126,12 @@ export function SmsConversationMessageBubble({ message }: { message: SmsConversa
         >
           <span>{getConversationDirectionLabel(message.direction)}</span>
           <span>{formatConversationKindLabel(message.kind)}</span>
+          {message.qrCodeSent ? (
+            <span className="inline-flex items-center gap-1 font-medium">
+              <QrCode className="h-3.5 w-3.5" />
+              QR sent
+            </span>
+          ) : null}
           <span>{formatConversationFullTimestamp(message.createdAt)}</span>
           {message.providerStatus ? (
             <span className="inline-flex items-center gap-1">

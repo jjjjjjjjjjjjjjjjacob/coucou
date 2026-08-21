@@ -119,6 +119,7 @@ describe("UserTextHistory", () => {
             kind: "manual",
             body: "Yes, add them at the door.",
             providerStatus: "sent",
+            qrCodeSent: true,
           }),
         ],
       },
@@ -143,6 +144,7 @@ describe("UserTextHistory", () => {
     await waitFor(() => {
       expect(screen.getByText("Yes, add them at the door.")).toBeTruthy();
     });
+    expect(screen.getByText("QR sent")).toBeTruthy();
     expect(screen.getAllByText("Can I bring a friend?").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: /Late Night Session/ }));

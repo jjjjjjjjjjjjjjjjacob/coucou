@@ -5,6 +5,8 @@ import {
   buildRsvpFuzzySearchTerms,
   fieldValuesMatchRsvpFuzzySearchTerms,
   filtersRequireDirectRsvpCount,
+  matchesQrDeliveryFilter,
+  normalizeQrDeliveryFilter,
   normalizeTicketStatusFilter,
 } from "../convex/lib/rsvpFilters";
 
@@ -143,8 +145,26 @@ describe("RSVP filtering helpers", () => {
       filtersRequireDirectRsvpCount({
         guestSearch: "",
         ticketStatusFilter: null,
+        qrDeliveryFilter: normalizeQrDeliveryFilter("received"),
+      }),
+    ).toBe(true);
+
+    expect(
+      filtersRequireDirectRsvpCount({
+        guestSearch: "",
+        ticketStatusFilter: null,
       }),
     ).toBe(false);
+  });
+
+  it("matches RSVP QR delivery timestamps against received and not-received filters", () => {
+    expect(matchesQrDeliveryFilter(123_456, normalizeQrDeliveryFilter("received"))).toBe(true);
+    expect(matchesQrDeliveryFilter(undefined, normalizeQrDeliveryFilter("received"))).toBe(false);
+    expect(matchesQrDeliveryFilter(undefined, normalizeQrDeliveryFilter("not-received"))).toBe(
+      true,
+    );
+    expect(matchesQrDeliveryFilter(123_456, normalizeQrDeliveryFilter("not-received"))).toBe(false);
+    expect(normalizeQrDeliveryFilter("all")).toBeNull();
   });
 
   it("builds RSVP fuzzy search terms for social handles with @ prefixes", () => {

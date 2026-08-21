@@ -350,6 +350,7 @@ export const recordMessage = internalMutation({
     kind: smsConversationKindValidator,
     body: v.optional(v.string()),
     mediaUrls: v.optional(v.array(v.string())),
+    qrCodeSent: v.optional(v.boolean()),
     providerMessageId: v.optional(v.string()),
     providerStatus: v.optional(v.string()),
     smsNotificationId: v.optional(v.id("smsNotifications")),

@@ -259,6 +259,7 @@ describe("TextsPage", () => {
           body: "Yes, just add them at the door.",
           providerStatus: "sent",
           providerMessageId: "SM_outbound",
+          qrCodeSent: true,
         }),
       ],
     };
@@ -269,6 +270,7 @@ describe("TextsPage", () => {
     expect(screen.getAllByText("Dojo Night").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Can I bring a friend?").length).toBeGreaterThan(0);
     expect(screen.getByText("Yes, just add them at the door.")).toBeTruthy();
+    expect(screen.getByText("QR sent")).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText("Write a direct message..."), {
       target: { value: "See you tonight." },

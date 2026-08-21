@@ -325,6 +325,7 @@ async function seedRedemption(
     clerkUserId: string;
     listKey: string;
     code: string;
+    qrDeliveredAt?: number;
   },
 ) {
   return await testBackend.run(async (databaseContext) => {
@@ -333,6 +334,7 @@ async function seedRedemption(
       clerkUserId: args.clerkUserId,
       listKey: args.listKey,
       code: args.code,
+      qrDeliveredAt: args.qrDeliveredAt,
       unredeemHistory: [],
       createdAt: Date.now(),
     });
@@ -383,6 +385,61 @@ async function seedMultiEventRecipients(testBackend: TestBackend) {
 }
 
 describe("text blast recipient selection", () => {
+  it("filters recipients by whether their event QR code was received", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend, "QR Filter Event");
+    await seedUser(testBackend, "user_received", "555-100-0001", "Rhea");
+    await seedUser(testBackend, "user_not_received", "555-100-0002", "Noah");
+    await seedRsvp(testBackend, {
+      eventId,
+      clerkUserId: "user_received",
+      listKey: "vip",
+    });
+    await seedRsvp(testBackend, {
+      eventId,
+      clerkUserId: "user_not_received",
+      listKey: "vip",
+    });
+    await seedRedemption(testBackend, {
+      eventId,
+      clerkUserId: "user_received",
+      listKey: "vip",
+      code: "received-code",
+      qrDeliveredAt: Date.now(),
+    });
+    await seedRedemption(testBackend, {
+      eventId,
+      clerkUserId: "user_not_received",
+      listKey: "vip",
+      code: "not-received-code",
+    });
+
+    const receivedRecipients = await testBackend.action(
+      internal.textBlasts.getRecipientsWithPhonesInternal,
+      {
+        eventId,
+        targetEventIds: [eventId],
+        targetLists: ["vip"],
+        recipientFilter: "qr_code_received",
+      },
+    );
+    const notReceivedRecipients = await testBackend.action(
+      internal.textBlasts.getRecipientsWithPhonesInternal,
+      {
+        eventId,
+        targetEventIds: [eventId],
+        targetLists: ["vip"],
+        recipientFilter: "qr_code_not_received",
+      },
+    );
+
+    expect(receivedRecipients.map((recipient) => recipient.clerkUserId)).toEqual(["user_received"]);
+    expect(notReceivedRecipients.map((recipient) => recipient.clerkUserId)).toEqual([
+      "user_not_received",
+    ]);
+  });
+
   it("stores reply actions on a draft and rejects reserved reply codes", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
@@ -1628,10 +1685,17 @@ describe("text blast recipient selection", () => {
       clerkUserId: "user_finalizer",
       listKey: "vip",
     });
+    const redemptionId = await seedRedemption(testBackend, {
+      eventId,
+      clerkUserId: "user_finalizer",
+      listKey: "vip",
+      code: "finalizer-code",
+    });
     const textBlastId = await seedQueuedTextBlast(testBackend, {
       eventId,
       name: "Finalizer blast",
       message: "Hello",
+      includeQrCodes: true,
       recipientCount: 1,
     });
     const { phoneHash } = await normalizeAndHashPhoneNumber("555-123-4567");
@@ -1677,6 +1741,7 @@ describe("text blast recipient selection", () => {
       messageType: "Promotional",
       estimatedCost: 0.00645,
       sentAt: 123_456,
+      mediaIncluded: true,
     };
     await testBackend.mutation(internal.textBlasts.finalizeQueuedBlastSend, {
       blastId: textBlastId,
@@ -1693,11 +1758,12 @@ describe("text blast recipient selection", () => {
       const blast = await databaseContext.db.get(textBlastId);
       const notification = await databaseContext.db.get(notificationId);
       const delivery = await databaseContext.db.get(textBlastRecipientId);
+      const redemption = await databaseContext.db.get(redemptionId);
       const usageLogs = await databaseContext.db.query("smsUsageLogs").collect();
       const conversationMessages = await databaseContext.db
         .query("smsConversationMessages")
         .collect();
-      return { blast, notification, delivery, usageLogs, conversationMessages };
+      return { blast, notification, delivery, redemption, usageLogs, conversationMessages };
     });
 
     expect(finalizedState.blast?.status).toBe("sent");
@@ -1707,8 +1773,10 @@ describe("text blast recipient selection", () => {
     expect(finalizedState.notification?.messageId).toBe("SM_success");
     expect(finalizedState.delivery?.status).toBe("sent");
     expect(finalizedState.delivery?.messageId).toBe("SM_success");
+    expect(finalizedState.redemption?.qrDeliveredAt).toBe(123_456);
     expect(finalizedState.usageLogs).toHaveLength(1);
     expect(finalizedState.conversationMessages).toHaveLength(1);
+    expect(finalizedState.conversationMessages[0]?.qrCodeSent).toBe(true);
     expect(finalizedState.usageLogs[0]).toMatchObject({
       messageId: "SM_success",
       phoneNumber: phoneHash,

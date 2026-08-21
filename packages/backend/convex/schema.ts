@@ -576,7 +576,7 @@ export default defineSchema({
     createdAt: v.number(),
     disabledAt: v.optional(v.number()),
     redeemedAt: v.optional(v.number()),
-    qrDeliveredAt: v.optional(v.number()), // when QR was delivered (deferred delivery flow)
+    qrDeliveredAt: v.optional(v.number()), // when the QR was successfully sent to the guest
     redeemedByClerkUserId: v.optional(v.string()), // clerkUserId of redeemer (host/door)
     unredeemHistory: v.array(
       v.object({
@@ -848,6 +848,7 @@ export default defineSchema({
     ),
     body: v.optional(v.string()),
     mediaUrls: v.optional(v.array(v.string())),
+    qrCodeSent: v.optional(v.boolean()),
     providerMessageId: v.optional(v.string()),
     providerStatus: v.optional(v.string()),
     smsNotificationId: v.optional(v.id("smsNotifications")),

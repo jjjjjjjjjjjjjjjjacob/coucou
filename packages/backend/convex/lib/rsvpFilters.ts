@@ -13,6 +13,7 @@ export const validRsvpStatuses = ALL_APPROVAL_STATUSES;
 export type ValidRsvpStatus = (typeof ALL_APPROVAL_STATUSES)[number];
 
 export type TicketStatusFilter = "not-issued" | "issued" | "disabled" | "redeemed";
+export type QrDeliveryFilter = "received" | "not-received";
 
 export type CollectedRsvpFilterOptions = {
   approvalFilter?: ApprovalFilter;
@@ -77,6 +78,25 @@ export function normalizeTicketStatusFilter(
   return null;
 }
 
+export function normalizeQrDeliveryFilter(
+  qrDeliveryFilter: string | undefined,
+): QrDeliveryFilter | null {
+  if (qrDeliveryFilter === "received" || qrDeliveryFilter === "not-received") {
+    return qrDeliveryFilter;
+  }
+  return null;
+}
+
+export function matchesQrDeliveryFilter(
+  qrDeliveredAt: number | undefined,
+  qrDeliveryFilter: QrDeliveryFilter | null,
+): boolean {
+  if (!qrDeliveryFilter) return true;
+
+  const qrCodeWasReceived = qrDeliveredAt !== undefined;
+  return qrDeliveryFilter === "received" ? qrCodeWasReceived : !qrCodeWasReceived;
+}
+
 export function matchesTicketStatusFilter(
   ticketStatus: Doc<"rsvps">["ticketStatus"],
   ticketStatusFilter: TicketStatusFilter | null,
@@ -115,11 +135,17 @@ export function applyCollectedRsvpFilters<RsvpRecord extends FilterableRsvpRecor
 export function filtersRequireDirectRsvpCount({
   guestSearch,
   ticketStatusFilter,
+  qrDeliveryFilter,
 }: {
   guestSearch?: string;
   ticketStatusFilter?: TicketStatusFilter | null;
+  qrDeliveryFilter?: QrDeliveryFilter | null;
 }): boolean {
-  return Boolean(guestSearch?.trim()) || ticketStatusFilter !== null;
+  return (
+    Boolean(guestSearch?.trim()) ||
+    ticketStatusFilter !== null ||
+    (qrDeliveryFilter !== undefined && qrDeliveryFilter !== null)
+  );
 }
 
 export async function collectRsvpsMatchingFilters(

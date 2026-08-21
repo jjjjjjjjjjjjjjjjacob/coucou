@@ -14,6 +14,7 @@ import type { Event } from "@/lib/types";
 
 type ApprovalFilterOption = "all" | ApprovalStatusOption;
 type SortOrderOption = "asc" | "desc";
+type QrDeliveryFilterOption = "all" | "received" | "not-received";
 
 interface RsvpToolbarProps {
   eventsSorted: Event[];
@@ -27,6 +28,8 @@ interface RsvpToolbarProps {
   setListFilter: (value: string) => void;
   redemptionFilter: string;
   setRedemptionFilter: (value: string) => void;
+  qrDeliveryFilter: QrDeliveryFilterOption;
+  setQrDeliveryFilter: (value: QrDeliveryFilterOption) => void;
   socialPlatformFilter: string;
   setSocialPlatformFilter: (value: string) => void;
   sortBy: string;
@@ -63,6 +66,8 @@ export function RsvpToolbar({
   setListFilter,
   redemptionFilter,
   setRedemptionFilter,
+  qrDeliveryFilter,
+  setQrDeliveryFilter,
   socialPlatformFilter,
   setSocialPlatformFilter,
   sortBy,
@@ -156,6 +161,16 @@ export function RsvpToolbar({
           <SelectOption value="redeemed">Redeemed</SelectOption>
           <SelectOption value="disabled">Disabled</SelectOption>
           <SelectOption value="not-issued">None</SelectOption>
+        </Select>
+
+        <Select
+          value={qrDeliveryFilter}
+          onValueChange={(value) => setQrDeliveryFilter(value as QrDeliveryFilterOption)}
+          className="h-8 w-40 border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]"
+        >
+          <SelectOption value="all">All QR Delivery</SelectOption>
+          <SelectOption value="received">QR Received</SelectOption>
+          <SelectOption value="not-received">QR Not Received</SelectOption>
         </Select>
 
         {shouldShowSocialPlatformFilter && (
@@ -345,6 +360,21 @@ export function RsvpToolbar({
                 : redemptionFilter.charAt(0).toUpperCase() + redemptionFilter.slice(1)}
               <button
                 onClick={() => setRedemptionFilter("all")}
+                className="ml-1 hover:bg-[var(--surface-4)] rounded-full p-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </Badge>
+          )}
+
+          {qrDeliveryFilter !== "all" && (
+            <Badge
+              variant="secondary"
+              className="gap-1 border-[var(--border-subtle)] bg-[var(--surface-3)] text-[var(--text-primary)]"
+            >
+              QR: {qrDeliveryFilter === "received" ? "Received" : "Not Received"}
+              <button
+                onClick={() => setQrDeliveryFilter("all")}
                 className="ml-1 hover:bg-[var(--surface-4)] rounded-full p-0.5"
               >
                 <X className="w-3 h-3" />

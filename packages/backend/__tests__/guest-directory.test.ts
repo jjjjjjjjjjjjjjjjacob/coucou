@@ -145,6 +145,27 @@ async function seedRsvp(
   });
 }
 
+async function seedQrRedemption(
+  testBackend: TestBackend,
+  args: {
+    eventId: Id<"events">;
+    clerkUserId: string;
+    qrDeliveredAt?: number;
+  },
+) {
+  return await testBackend.run(async (databaseContext) => {
+    return await databaseContext.db.insert("redemptions", {
+      eventId: args.eventId,
+      clerkUserId: args.clerkUserId,
+      listKey: "vip",
+      code: `code-${args.clerkUserId}-${args.eventId}`,
+      qrDeliveredAt: args.qrDeliveredAt,
+      unredeemHistory: [],
+      createdAt: Date.now(),
+    });
+  });
+}
+
 async function seedSentBlastWithDelivery(
   testBackend: TestBackend,
   args: { eventId: Id<"events">; name: string; phoneHash: string },
@@ -340,6 +361,39 @@ describe("guestDirectory.listGuestDirectoryPaginated", () => {
 
     const lapsedPeople = await listDirectory(hostBackend, { rsvpedToLatestEvent: "no" });
     expect(lapsedPeople.people.map((person) => person.personKey)).toEqual(["user:user_lapsed"]);
+  });
+
+  it("filters contacts by whether an event QR code was received", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend, "QR Delivery Event", -86_400_000);
+
+    await seedRsvp(testBackend, { eventId, clerkUserId: "user_received" });
+    await seedRsvp(testBackend, { eventId, clerkUserId: "user_not_received" });
+    await seedQrRedemption(testBackend, {
+      eventId,
+      clerkUserId: "user_received",
+      qrDeliveredAt: Date.now(),
+    });
+    await seedQrRedemption(testBackend, {
+      eventId,
+      clerkUserId: "user_not_received",
+    });
+
+    const hostBackend = testBackend.withIdentity(createHostIdentity("host_1"));
+    const receivedPeople = await listDirectory(hostBackend, {
+      eventIds: [eventId],
+      recipientFilter: "qr_code_received",
+    });
+    const notReceivedPeople = await listDirectory(hostBackend, {
+      eventIds: [eventId],
+      recipientFilter: "qr_code_not_received",
+    });
+
+    expect(receivedPeople.people.map((person) => person.personKey)).toEqual(["user:user_received"]);
+    expect(notReceivedPeople.people.map((person) => person.personKey)).toEqual([
+      "user:user_not_received",
+    ]);
   });
 
   it("rolls up SMS consent from RSVPs, opt-outs, and organizer preferences", async () => {

@@ -93,6 +93,7 @@ async function seedThreadMessage(
     createdAt?: number;
     providerMessageId?: string;
     providerStatus?: string;
+    qrCodeSent?: boolean;
   },
 ) {
   const phoneResolution = await normalizeAndHashPhoneNumber(args.phone);
@@ -106,6 +107,7 @@ async function seedThreadMessage(
     body: args.body ?? (args.direction === "outbound" ? "Outbound test" : "Inbound test"),
     providerMessageId: args.providerMessageId,
     providerStatus: args.providerStatus ?? "received",
+    qrCodeSent: args.qrCodeSent,
     createdAt: args.createdAt ?? Date.now(),
   });
   const threads = await testBackend.run(async (databaseContext) => {
@@ -155,6 +157,30 @@ describe("sms conversations", () => {
     expect(threads[0]?.canSend).toBe(true);
     expect(detail.thread.phoneObfuscated).toContain("2222");
     expect(detail.messages.map((message) => message.body)).toEqual(["Inbound test"]);
+  });
+
+  it("returns explicit QR-send metadata in message timelines", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const threadId = await seedThreadMessage(testBackend, {
+      eventId,
+      phone: "555-111-3333",
+      clerkUserIds: ["user_qr"],
+      direction: "outbound",
+      body: "Your ticket is attached.",
+      providerStatus: "sent",
+      qrCodeSent: true,
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+
+    const detail = await hostBackend.query(api.smsConversations.getThread, {
+      threadId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    expect(detail.messages[0]?.qrCodeSent).toBe(true);
   });
 
   it("lists all workspace event threads with event metadata, global sorting, and event search", async () => {
