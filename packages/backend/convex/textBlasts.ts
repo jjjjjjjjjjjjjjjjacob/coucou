@@ -1676,6 +1676,7 @@ export const processQueuedBlastSend = internalAction({
       if (sendableRecipients.length > 0) {
         try {
           bulkSendResult = (await ctx.runAction(internal.smsActions.sendBulkSmsInternal, {
+            eventId: blast.eventId,
             recipients: sendableRecipients,
             message: blast.message,
             batchSize: 10,

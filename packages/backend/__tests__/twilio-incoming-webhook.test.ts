@@ -12,6 +12,7 @@ const convexModules = {
   "../convex/_generated/api.js": () => import("../convex/_generated/api.js"),
   "../convex/http.ts": () => import("../convex/http"),
   "../convex/smsCodeRouter.ts": () => import("../convex/smsCodeRouter"),
+  "../convex/twilioCredentials.ts": () => import("../convex/twilioCredentials"),
   "../convex/webhooks.ts": () => import("../convex/webhooks"),
 };
 
@@ -100,6 +101,112 @@ describe("Twilio incoming webhook validation", () => {
     expect(classifyTwilioComplianceMessage("stop", "START")).toBe("opt_in");
     expect(classifyTwilioComplianceMessage("event-code", "HELP")).toBe("help");
     expect(classifyTwilioComplianceMessage("stop", undefined)).toBe("opt_out");
+  });
+
+  it("accepts a webhook signed with an organizer-owned Twilio auth token", async () => {
+    const organizerAuthToken = "a".repeat(32);
+    const organizerPhoneNumber = "+15551230009";
+    const senderPhoneNumber = "+15551230015";
+    const testBackend = convexTest(schema, convexModules);
+    testBackend.registerComponent(
+      "rsvpAggregate",
+      aggregateComponentSchema,
+      aggregateComponentModules,
+    );
+    const organizerEventId = await testBackend.run(async (databaseContext) => {
+      const now = Date.now();
+      const workspaceId = await databaseContext.db.insert("workspaces", {
+        slug: "organizer-workspace",
+        name: "Organizer Workspace",
+        createdAt: now,
+        updatedAt: now,
+      });
+      const eventId = await databaseContext.db.insert("events", {
+        workspaceSlug: "organizer-workspace",
+        name: "Organizer event",
+        location: "Main room",
+        eventDate: now + 86_400_000,
+        status: "active",
+        lifecycle: "published",
+        rsvpConfirmationMessageEnabled: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey: "ga",
+        password: "OWNED",
+        passwordNormalized: "owned",
+        createdAt: now,
+      });
+      const otherEventId = await databaseContext.db.insert("events", {
+        workspaceSlug: "other-workspace",
+        name: "Other event",
+        location: "Other room",
+        eventDate: now + 86_400_000,
+        status: "active",
+        lifecycle: "published",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await databaseContext.db.insert("listCredentials", {
+        eventId: otherEventId,
+        listKey: "ga",
+        password: "OWNED",
+        passwordNormalized: "owned",
+        createdAt: now,
+      });
+      await databaseContext.db.insert("users", {
+        clerkUserId: "organizer_guest",
+        phone: senderPhoneNumber,
+        firstName: "Organizer",
+        lastName: "Guest",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await databaseContext.db.insert("twilioCredentials", {
+        workspaceId,
+        accountSid: `AC${"b".repeat(32)}`,
+        authToken: organizerAuthToken,
+        fromPhoneNumber: organizerPhoneNumber,
+        updatedByClerkUserId: "organizer_host",
+        createdAt: now,
+        updatedAt: now,
+      });
+      return eventId;
+    });
+
+    const rawBody = new URLSearchParams({
+      From: senderPhoneNumber,
+      To: organizerPhoneNumber,
+      Body: "OWNED",
+      MessageSid: "SM_organizer_owned",
+    }).toString();
+    const requestUrl = "https://some.convex.site/webhooks/twilio/incoming";
+    const twilioSignature = await createTwilioSignature({
+      requestUrl,
+      rawBody,
+      authToken: organizerAuthToken,
+    });
+    const response = await testBackend.fetch("/webhooks/twilio/incoming", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-twilio-signature": twilioSignature,
+      },
+      body: rawBody,
+    });
+
+    expect(response.status).toBe(200);
+    const organizerRsvp = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder.eq("eventId", organizerEventId).eq("clerkUserId", "organizer_guest"),
+        )
+        .unique();
+    });
+    expect(organizerRsvp?.listKey).toBe("ga");
   });
 
   it("routes an event password even when the retired rollout flag is false", async () => {

@@ -820,10 +820,51 @@ export const getWorkspaceBySlug = query({
       .withIndex("by_workspace", (queryBuilder) => queryBuilder.eq("workspaceId", workspace._id))
       .collect();
 
+    const identity = await ctx.auth.getUserIdentity();
+    const storedMembership =
+      identity && workspace.clerkOrganizationId
+        ? await ctx.db
+            .query("orgMemberships")
+            .withIndex("by_user", (queryBuilder) =>
+              queryBuilder.eq("clerkUserId", identity.subject),
+            )
+            .filter((queryBuilder) =>
+              queryBuilder.eq(queryBuilder.field("organizationId"), workspace.clerkOrganizationId),
+            )
+            .unique()
+        : null;
+    const activeOrganizationRole =
+      identity && getIdentityOrganizationId(identity) === workspace.clerkOrganizationId
+        ? getIdentityOrganizationRole(identity)
+        : null;
+
     return {
       ...workspace,
       sites,
+      membershipRole: storedMembership?.role ?? activeOrganizationRole,
     };
+  },
+});
+
+export const getCurrentStoredMembershipRole = query({
+  args: {
+    organizationId: v.string(),
+  },
+  handler: async (ctx, { organizationId }): Promise<string | null> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return null;
+    }
+
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
+      .filter((queryBuilder) =>
+        queryBuilder.eq(queryBuilder.field("organizationId"), organizationId),
+      )
+      .unique();
+
+    return membership?.role ?? null;
   },
 });
 
@@ -881,7 +922,11 @@ export const listAccessibleWorkspaceNavigationForUser = query({
       });
     }
 
-    if (activeOrganizationId && activeOrganizationRole) {
+    if (
+      activeOrganizationId &&
+      activeOrganizationRole &&
+      !membershipByOrganizationId.has(activeOrganizationId)
+    ) {
       membershipByOrganizationId.set(activeOrganizationId, {
         organizationId: activeOrganizationId,
         organizationSlug: activeOrganizationSlug,
@@ -974,12 +1019,30 @@ export const getDashboardWorkspaceAccess = query({
       };
     }
 
+    const storedMemberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identity.subject))
+      .collect();
+    const membershipByOrganizationId = new Map(
+      memberships.map((membership) => [membership.organizationId, membership]),
+    );
+    for (const storedMembership of storedMemberships) {
+      const existingMembership = membershipByOrganizationId.get(storedMembership.organizationId);
+      membershipByOrganizationId.set(storedMembership.organizationId, {
+        organizationId: storedMembership.organizationId,
+        organizationName: existingMembership?.organizationName,
+        organizationSlug: existingMembership?.organizationSlug,
+        role: storedMembership.role,
+      });
+    }
+    const resolvedMemberships = Array.from(membershipByOrganizationId.values());
+
     const coucouOrganizationSlug = getCoucouOrganizationSlug();
     const workspaces = await ctx.db.query("workspaces").collect();
     const coucouWorkspace = workspaces.find(
       (workspace) => workspace.slug === coucouOrganizationSlug || workspace.kind === "admin",
     );
-    const hasCoucouOrganizationAccess = memberships.some((membership) => {
+    const hasCoucouOrganizationAccess = resolvedMemberships.some((membership) => {
       const organizationSlug = membership.organizationSlug?.toLowerCase();
       return (
         organizationSlug === coucouOrganizationSlug ||
@@ -1001,7 +1064,7 @@ export const getDashboardWorkspaceAccess = query({
     );
     const seenWorkspaceSlugs = new Set<string>();
 
-    const tenantWorkspaces = memberships
+    const tenantWorkspaces = resolvedMemberships
       .flatMap((membership) => {
         const organizationSlug = membership.organizationSlug?.toLowerCase();
         if (

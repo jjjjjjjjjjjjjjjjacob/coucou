@@ -13,7 +13,11 @@ import { DanzaPresentationDetails } from "@/components/danza-event-detail-sectio
 import type { DanzaLandingEvent } from "@/components/danza-event-row";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { EventThemeProvider } from "@/components/event-theme-provider";
-import { formatCompactBauhausDate } from "@/lib/bauhaus-event-display";
+import {
+  DANZA_BAUHAUS_EVENT_TIME,
+  formatCompactBauhausDate,
+  formatExpandedBauhausDate,
+} from "@/lib/bauhaus-event-display";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import {
   buildRsvpPathForViewport,
@@ -23,29 +27,6 @@ import {
 import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
 import { siteConfiguration } from "@/lib/site";
 import type { Event as ClubEvent } from "@/lib/types";
-
-function formatExpandedDate(timestamp: number, timezone?: string): string {
-  const date = new Date(timestamp);
-  const day = date.toLocaleDateString("en-US", {
-    weekday: "long",
-    timeZone: timezone ?? "UTC",
-  });
-  const formatted = date
-    .toLocaleDateString("en-US", {
-      month: "2-digit",
-      day: "2-digit",
-      year: "2-digit",
-      timeZone: timezone ?? "UTC",
-    })
-    .replace(/\//g, ".");
-  const time = date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: timezone ?? "UTC",
-  });
-  return `${day} ${formatted} · ${time}`;
-}
 
 interface LandingRowSeed {
   sourceEvent: ClubEvent;
@@ -80,7 +61,7 @@ function HomeContent() {
         sourceEvent: event,
         eventId: event._id,
         routeId: getEventRouteId(event),
-        expandedDate: formatExpandedDate(event.eventDate, event.eventTimezone),
+        expandedDate: formatExpandedBauhausDate(event.eventDate, event.eventTimezone),
         lineup: getPublicEventActs(event).map((act) => ({
           label: act.displayName,
           descriptorBadges: act.descriptorBadges,
@@ -210,6 +191,7 @@ function HomeEventRow({
       rowSeed.sourceEvent.eventTimezone,
     ),
     location: rowSeed.sourceEvent.location,
+    time: DANZA_BAUHAUS_EVENT_TIME,
     lineup: rowSeed.lineup,
     rsvpHref: brickHref,
     rsvpLabel: brickLabel,

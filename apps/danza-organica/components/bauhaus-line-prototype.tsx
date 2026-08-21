@@ -273,7 +273,7 @@ function EventTextPreview({ settings }: { settings: EventTextSettings }) {
         </p>
         <p className="m-0">
           <HighlightedEventText style={highlightedTextStyle}>
-            Sponsored by · The Market
+            Free drinks for matches on · The Market
           </HighlightedEventText>
         </p>
         <p className="m-0 mt-[clamp(0.25rem,0.6vw,0.55rem)]">

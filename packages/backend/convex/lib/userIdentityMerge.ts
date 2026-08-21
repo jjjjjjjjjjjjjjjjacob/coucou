@@ -588,10 +588,11 @@ function membershipRoleRank(role: string): number {
     case "host":
       return 3;
     case "door":
-    case "member":
       return 2;
-    case "guest":
+    case "member":
       return 1;
+    case "guest":
+      return 0;
     default:
       return 0;
   }

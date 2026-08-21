@@ -173,6 +173,26 @@ describe("workspace role capabilities", () => {
     ).resolves.toEqual(resolvedWorkspaceScope);
   });
 
+  it("uses a stored Host role when Clerk represents the user as Member", async () => {
+    await expect(
+      requireWorkspaceCapabilityForResolvedScope(
+        createAuthContextWithStoredMembership(createIdentity("org:member"), "org:host"),
+        resolvedWorkspaceScope,
+        "host",
+      ),
+    ).resolves.toEqual(resolvedWorkspaceScope);
+  });
+
+  it("uses a stored Member demotion ahead of a stale Clerk Admin token", async () => {
+    await expect(
+      requireWorkspaceCapabilityForResolvedScope(
+        createAuthContextWithStoredMembership(createIdentity("org:admin"), "org:member"),
+        resolvedWorkspaceScope,
+        "host",
+      ),
+    ).rejects.toThrow("Forbidden");
+  });
+
   it("allows Coucou platform members to access tenant workspace capabilities", async () => {
     for (const capability of ["read", "door", "host", "admin"] as const) {
       await expect(

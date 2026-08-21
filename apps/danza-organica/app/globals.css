@@ -486,6 +486,19 @@
   align-items: center;
 }
 
+.danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__volume {
+  width: 100%;
+  margin: 0 0 clamp(0.55rem, 1.4svh, 0.9rem);
+  color: var(--danza-bauhaus-text);
+  font-family: var(--tt-display), var(--font-geist-sans), sans-serif;
+  font-size: clamp(0.78rem, 1.15vw, 1rem);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .danza-bauhaus-page[data-preset="simple"] .danza-bauhaus-event__title {
   line-height: 0.9;
   letter-spacing: -0.065em;

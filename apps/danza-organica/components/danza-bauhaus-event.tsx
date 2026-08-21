@@ -106,8 +106,11 @@ export function DanzaBauhausEvent({
     (partner) => normalizePartnerLabel(partner.label) === "the market",
   );
   const rsvpIsClickable = Boolean(event.rsvpHref && !event.rsvpDisabled);
-  let nextEntranceSequenceIndex = titleLines.length;
-  const subtitleEntranceSequenceIndex = event.subtitle ? nextEntranceSequenceIndex++ : undefined;
+  const simpleVolumeEntranceSequenceIndex = usesSimplePreset && event.subtitle ? 0 : undefined;
+  const titleEntranceSequenceStart = simpleVolumeEntranceSequenceIndex === undefined ? 0 : 1;
+  let nextEntranceSequenceIndex = titleEntranceSequenceStart + titleLines.length;
+  const subtitleEntranceSequenceIndex =
+    event.subtitle && !usesSimplePreset ? nextEntranceSequenceIndex++ : undefined;
   const lineupEntranceSequenceIndex =
     normalizedLineup.length > 0 ? nextEntranceSequenceIndex++ : undefined;
   const hostEntranceSequenceIndices = showsVerboseInfo
@@ -185,12 +188,20 @@ export function DanzaBauhausEvent({
       data-variant="expanded"
     >
       <div ref={compositionReference} className="danza-bauhaus-event__composition">
+        {usesSimplePreset && event.subtitle ? (
+          <p
+            className="danza-bauhaus-event__volume danza-bauhaus-enter"
+            style={createBauhausEntranceStyle(simpleVolumeEntranceSequenceIndex ?? 0)}
+          >
+            {event.subtitle}
+          </p>
+        ) : null}
         <h1 ref={titleReference} className="danza-bauhaus-event__title">
           {titleLines.map((titleLine, titleLineIndex) => (
             <span
               key={`${titleLine}-${titleLineIndex}`}
               className="danza-bauhaus-highlight danza-bauhaus-title-line danza-bauhaus-enter"
-              style={createBauhausEntranceStyle(titleLineIndex)}
+              style={createBauhausEntranceStyle(titleEntranceSequenceStart + titleLineIndex)}
             >
               {titleLine}
             </span>
@@ -198,7 +209,7 @@ export function DanzaBauhausEvent({
         </h1>
 
         <div className="danza-bauhaus-event__billing">
-          {event.subtitle ? (
+          {event.subtitle && !usesSimplePreset ? (
             <p
               className="danza-bauhaus-copy-line danza-bauhaus-copy-line--subtitle danza-bauhaus-enter"
               style={createBauhausEntranceStyle(subtitleEntranceSequenceIndex ?? 0)}
@@ -268,11 +279,11 @@ export function DanzaBauhausEvent({
           {showsVerboseInfo && sponsors?.length ? (
             <p
               className="danza-bauhaus-copy-line danza-bauhaus-copy-line--sponsors danza-bauhaus-enter"
-              aria-label="Sponsored by"
+              aria-label="Free drinks for matches on"
               style={createBauhausEntranceStyle(sponsorEntranceSequenceIndex ?? 0)}
             >
               <span className="danza-bauhaus-highlight">
-                Sponsored by ·{" "}
+                Free drinks for matches on ·{" "}
                 {sponsors.map((sponsor, sponsorIndex) => (
                   <span key={`${sponsor.label}-${sponsorIndex}`}>
                     {sponsorIndex > 0 ? " · " : ""}
@@ -295,8 +306,18 @@ export function DanzaBauhausEvent({
           >
             <span className="danza-bauhaus-highlight">
               {usesSimplePreset ? (event.compactDate ?? event.date) : event.date}
-              {usesSimplePreset && event.location ? <br /> : null}
-              {event.location ? (usesSimplePreset ? event.location : ` · ${event.location}`) : ""}
+              {event.time ? (
+                <>
+                  {" • "}
+                  <span className="danza-bauhaus-event__time">{event.time}</span>
+                </>
+              ) : null}
+              {event.location ? (
+                <>
+                  {usesSimplePreset ? <br /> : " · "}
+                  {event.location}
+                </>
+              ) : null}
             </span>
           </p>
 
@@ -335,10 +356,10 @@ export function DanzaBauhausEvent({
               className="danza-bauhaus-event__market-brand danza-bauhaus-enter"
               style={createBauhausEntranceStyle(partnersEntranceSequenceIndex ?? 0)}
             >
-              <span className="danza-bauhaus-event__brand-eyebrow">Sponsored by</span>
+              <span className="danza-bauhaus-event__brand-eyebrow">Powered by</span>
               <EventPartnerLogos
                 entries={[marketBrandPartner]}
-                ariaLabel="RSVP presented by The Market"
+                ariaLabel="Powered by The Market"
                 size="compact"
                 logoSourcesByLabel={BAUHAUS_PARTNER_LOGO_SOURCES[displaySettings.logoVariant]}
               />

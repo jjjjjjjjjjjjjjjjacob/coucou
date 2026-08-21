@@ -27,6 +27,8 @@ export const BAUHAUS_DISPLAY_COLORS = {
   string
 >;
 
+export const DANZA_BAUHAUS_EVENT_TIME = "10pm-LATE";
+
 interface SearchParametersReader {
   get(name: string): string | null;
 }
@@ -143,6 +145,25 @@ export function formatCompactBauhausDate(timestamp: number, timezone?: string): 
   const day = dateParts.find((datePart) => datePart.type === "day")?.value ?? "";
 
   return `${weekday.toUpperCase()} ${month}.${day}`.trim();
+}
+
+/** Formats the date used by the detailed poster while its editorial time remains separate. */
+export function formatExpandedBauhausDate(timestamp: number, timezone?: string): string {
+  const date = new Date(timestamp);
+  const weekday = date.toLocaleDateString("en-US", {
+    weekday: "long",
+    timeZone: timezone ?? "UTC",
+  });
+  const formattedDate = date
+    .toLocaleDateString("en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      year: "2-digit",
+      timeZone: timezone ?? "UTC",
+    })
+    .replace(/\//g, ".");
+
+  return `${weekday} ${formattedDate}`;
 }
 
 /**

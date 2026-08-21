@@ -110,6 +110,7 @@ async function sendManualMessageToReadyThread(
   let sendResult: SendSmsInternalResult;
   try {
     sendResult = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
+      eventId: args.thread.eventId,
       phoneNumber: args.phoneNumber,
       message: formattedBody,
       messageType: "Transactional",

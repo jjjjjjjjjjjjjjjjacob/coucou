@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./functions";
+import { resolveRoleAfterClerkSynchronization } from "./lib/clerkWorkspaceRoles";
 import { getCoucouOrganizationSlug, requireCoucouPlatformMember } from "./lib/platformAuth";
 
 export const upsertMembership = mutation({
@@ -25,7 +26,10 @@ export const upsertMembership = mutation({
       });
       return { created: true } as const;
     } else {
-      await ctx.db.patch(existing._id, { role, updatedAt: now });
+      await ctx.db.patch(existing._id, {
+        role: resolveRoleAfterClerkSynchronization(existing.role, role),
+        updatedAt: now,
+      });
       return { created: false } as const;
     }
   },

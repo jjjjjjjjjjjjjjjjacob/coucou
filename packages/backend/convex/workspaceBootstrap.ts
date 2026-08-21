@@ -78,8 +78,8 @@ async function ensureVerifiedOrganizationMembership(
     clerkOrganizationId,
   );
   const verifiedMembershipRole =
-    activeOrganizationRole ??
     storedMembership?.role ??
+    activeOrganizationRole ??
     (await fetchClerkOrganizationMembershipRole(clerkOrganizationId, identity.subject));
 
   if (storedMembership?.role !== verifiedMembershipRole) {

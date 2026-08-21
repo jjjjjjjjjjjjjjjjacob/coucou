@@ -231,8 +231,9 @@ export default function UsersPage() {
         case "host":
           return <Shield className="h-4 w-4" />;
         case "door":
-        case "member":
           return <DoorOpen className="h-4 w-4" />;
+        case "member":
+          return <User className="h-4 w-4" />;
         case "guest":
           return <User className="h-4 w-4" />;
         default:
@@ -251,8 +252,9 @@ export default function UsersPage() {
         case "host":
           return "Host";
         case "door":
-        case "member":
           return "Door";
+        case "member":
+          return "Member";
         case "guest":
           return "Guest";
         default:
@@ -402,6 +404,12 @@ export default function UsersPage() {
                       <span>Door</span>
                     </div>
                   </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="member" className="focus:bg-[var(--surface-3)]">
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4" />
+                      <span>Member</span>
+                    </div>
+                  </DropdownMenuRadioItem>
                   <DropdownMenuRadioItem value="admin" className="focus:bg-[var(--surface-3)]">
                     <div className="flex items-center gap-2">
                       <Crown className="h-4 w-4" />
@@ -459,6 +467,13 @@ export default function UsersPage() {
                   >
                     <DoorOpen className="mr-2 h-4 w-4" />
                     Promote to Door
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleRoleChange(user._id, "member", true)}
+                    className="focus:bg-[var(--surface-3)]"
+                  >
+                    <User className="mr-2 h-4 w-4" />
+                    Promote to Member
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => handleRoleChange(user._id, "admin", true)}
@@ -565,12 +580,12 @@ export default function UsersPage() {
             </div>
           </PageCard>
           <PageCard
-            title="Organization"
-            description="Total staff"
+            title="Members"
+            description="Read access users"
             action={<User className="h-4 w-4 text-[var(--text-secondary)]" />}
           >
             <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
-              {userStats.organizationMembers}
+              {userStats.member}
             </div>
           </PageCard>
         </div>
@@ -586,6 +601,7 @@ export default function UsersPage() {
                 <SelectOption value="admin">Admin</SelectOption>
                 <SelectOption value="host">Host</SelectOption>
                 <SelectOption value="door">Door</SelectOption>
+                <SelectOption value="member">Member</SelectOption>
                 <SelectOption value="guest">Guest</SelectOption>
               </Select>
             </div>
@@ -621,6 +637,7 @@ export default function UsersPage() {
           <SelectOption value="admin">Admin</SelectOption>
           <SelectOption value="host">Host</SelectOption>
           <SelectOption value="door">Door</SelectOption>
+          <SelectOption value="member">Member</SelectOption>
           <SelectOption value="guest">Guest</SelectOption>
         </Select>
         <Select

@@ -14,6 +14,7 @@ import {
   PrimaryFieldConfigEditor,
   primaryFieldConfigToDraft,
 } from "@/components/primary-field-config-editor";
+import { TwilioCredentialsSettings } from "@/components/twilio-credentials-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -353,6 +354,13 @@ export default function WorkspaceDashboardSettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      {workspaceScope ? (
+        <TwilioCredentialsSettings
+          workspaceSlug={workspaceScope.workspaceSlug}
+          canWrite={canWriteSettings}
+        />
+      ) : null}
 
       <Card>
         <CardHeader>

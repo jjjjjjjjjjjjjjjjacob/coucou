@@ -253,6 +253,7 @@ export const sendDeferredQrBatch = action({
         });
 
         await ctx.runAction(internal.smsActions.sendSmsInternal, {
+          eventId: args.eventId,
           phoneNumber: recipient.phone,
           message,
           notificationId,

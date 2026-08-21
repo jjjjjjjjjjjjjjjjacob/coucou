@@ -10,6 +10,7 @@ import {
   resolveCanonicalUserById,
   resolveCanonicalUserIdentity,
 } from "./lib/canonicalUserIdentity";
+import { synchronizeClerkWorkspaceRole, toStoredOrganizationRole } from "./lib/clerkWorkspaceRoles";
 import { generateReferralCode } from "./lib/codeGenerators";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { resolveApprovalStatus } from "./lib/rsvpStatus";
@@ -449,7 +450,7 @@ export const promoteUserToOrganization = mutation({
     if (organizationId && organizationId !== workspaceScope.clerkOrganizationId) {
       throw new Error("Organization does not match workspace");
     }
-    const clerkRole = toClerkOrganizationRole(role);
+    const storedRole = toStoredOrganizationRole(role);
 
     // Get the target user
     const targetUser = await ctx.db.get(userId);
@@ -477,7 +478,7 @@ export const promoteUserToOrganization = mutation({
     await ctx.db.insert("orgMemberships", {
       clerkUserId: targetUser.clerkUserId,
       organizationId: workspaceScope.clerkOrganizationId,
-      role: clerkRole,
+      role: storedRole,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -502,7 +503,7 @@ export const updateUserRole = mutation({
     if (organizationId && organizationId !== workspaceScope.clerkOrganizationId) {
       throw new Error("Organization does not match workspace");
     }
-    const clerkRole = toClerkOrganizationRole(newRole);
+    const storedRole = toStoredOrganizationRole(newRole);
 
     // Get the target user
     const targetUser = await ctx.db.get(userId);
@@ -527,14 +528,14 @@ export const updateUserRole = mutation({
       await ctx.db.insert("orgMemberships", {
         clerkUserId: targetUser.clerkUserId,
         organizationId: workspaceScope.clerkOrganizationId,
-        role: clerkRole,
+        role: storedRole,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
     } else {
       // User has membership, update their role
       await ctx.db.patch(targetMembership._id, {
-        role: clerkRole,
+        role: storedRole,
         updatedAt: Date.now(),
       });
     }
@@ -543,7 +544,7 @@ export const updateUserRole = mutation({
       action: "user.updateRole",
       targetKind: "user",
       targetId: userId,
-      summary: `${targetUser.firstName ?? ""} ${targetUser.lastName ?? ""} → ${clerkRole}`.trim(),
+      summary: `${targetUser.firstName ?? ""} ${targetUser.lastName ?? ""} → ${storedRole}`.trim(),
       metadata: {
         clerkOrganizationId: workspaceScope.clerkOrganizationId,
       },
@@ -558,21 +559,6 @@ type OrganizationUserSortDirection = "asc" | "desc";
 
 const normalizeRoleValue = (role: string): string => role.replace(/^org:/, "");
 
-const toClerkOrganizationRole = (role: string): "org:admin" | "org:host" | "org:door" => {
-  const normalizedRole = normalizeRoleValue(role);
-  switch (normalizedRole) {
-    case "admin":
-      return "org:admin";
-    case "host":
-      return "org:host";
-    case "door":
-    case "member":
-      return "org:door";
-    default:
-      throw new Error("Invalid role");
-  }
-};
-
 const resolveRolePriority = (role: string): number => {
   const normalizedRole = normalizeRoleValue(role);
   switch (normalizedRole) {
@@ -581,12 +567,13 @@ const resolveRolePriority = (role: string): number => {
     case "host":
       return 1;
     case "door":
-    case "member":
       return 2;
-    case "guest":
+    case "member":
       return 3;
-    default:
+    case "guest":
       return 4;
+    default:
+      return 5;
   }
 };
 
@@ -711,9 +698,6 @@ export const listOrganizationUsersPaginated = query({
       const normalizedRoleFilter = normalizeRoleValue(args.roleFilter);
       usersWithRoles = usersWithRoles.filter((user) => {
         const normalizedUserRole = normalizeRoleValue(user.role);
-        if (normalizedRoleFilter === "door") {
-          return normalizedUserRole === "door" || normalizedUserRole === "member";
-        }
         return normalizedUserRole === normalizedRoleFilter;
       });
     }
@@ -783,12 +767,10 @@ export const getUserStats = query({
         .length,
       host: organizationMembers.filter((member) => normalizeRoleValue(member.role) === "host")
         .length,
-      door: organizationMembers.filter((member) =>
-        ["door", "member"].includes(normalizeRoleValue(member.role)),
-      ).length,
-      member: organizationMembers.filter((member) =>
-        ["door", "member"].includes(normalizeRoleValue(member.role)),
-      ).length,
+      door: organizationMembers.filter((member) => normalizeRoleValue(member.role) === "door")
+        .length,
+      member: organizationMembers.filter((member) => normalizeRoleValue(member.role) === "member")
+        .length,
       guest: organizationMembers.filter((member) => normalizeRoleValue(member.role) === "guest")
         .length,
       organizationMembers: organizationMembers.length,
@@ -837,24 +819,22 @@ export const promoteUserToOrganizationWithClerk = action({
     }
 
     const clerkOrgId = workspaceScope.clerkOrganizationId;
-    const clerkRole = toClerkOrganizationRole(role);
-
     const clerk = createClerkClient({ secretKey: clerkSecretKey });
-    await clerk.organizations.createOrganizationMembership({
+    const clerkRoleSynchronization = await synchronizeClerkWorkspaceRole(clerk.organizations, {
       organizationId: clerkOrgId,
       userId: targetUser.clerkUserId,
-      role: clerkRole,
+      requestedRole: role,
     });
 
-    await ctx.runMutation(api.users.promoteUserToOrganization, {
+    await ctx.runMutation(api.users.updateUserRole, {
       userId,
-      role,
+      newRole: role,
       organizationId: clerkOrgId,
       siteKey,
       workspaceSlug,
     });
 
-    return { success: true };
+    return { success: true, ...clerkRoleSynchronization };
   },
 });
 
@@ -891,13 +871,11 @@ export const updateUserRoleWithClerk = action({
     }
 
     const clerkOrgId = workspaceScope.clerkOrganizationId;
-    const clerkRole = toClerkOrganizationRole(newRole);
-
     const clerk = createClerkClient({ secretKey: clerkSecretKey });
-    await clerk.organizations.updateOrganizationMembership({
+    const clerkRoleSynchronization = await synchronizeClerkWorkspaceRole(clerk.organizations, {
       organizationId: clerkOrgId,
       userId: targetUser.clerkUserId,
-      role: clerkRole,
+      requestedRole: newRole,
     });
 
     await ctx.runMutation(api.users.updateUserRole, {
@@ -908,7 +886,7 @@ export const updateUserRoleWithClerk = action({
       workspaceSlug,
     });
 
-    return { success: true };
+    return { success: true, ...clerkRoleSynchronization };
   },
 });
 

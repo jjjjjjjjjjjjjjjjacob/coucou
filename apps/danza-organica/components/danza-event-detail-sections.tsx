@@ -25,7 +25,7 @@ interface DanzaSponsorCreditProps {
 export function DanzaSponsorCredit({ sponsors }: DanzaSponsorCreditProps) {
   return (
     <div
-      aria-label="Sponsored by"
+      aria-label="Free drinks for matches on"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -41,7 +41,7 @@ export function DanzaSponsorCredit({ sponsors }: DanzaSponsorCreditProps) {
           letterSpacing: "0.16em",
         }}
       >
-        Sponsored by
+        Free drinks for matches on
       </span>
       <EventSponsorNames entries={sponsors} />
     </div>

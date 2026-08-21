@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   BAUHAUS_PARTNER_LOGO_SOURCES,
+  DANZA_BAUHAUS_EVENT_TIME,
   DEFAULT_BAUHAUS_EVENT_DISPLAY_SETTINGS,
   formatCompactBauhausDate,
+  formatExpandedBauhausDate,
   resolveBauhausEventDisplaySettings,
   splitBauhausHostLines,
 } from "@/lib/bauhaus-event-display";
@@ -78,6 +80,11 @@ describe("Bauhaus event display settings", () => {
 
   it("formats the simple preset date as abbreviated weekday, month, and day", () => {
     expect(formatCompactBauhausDate(Date.UTC(2026, 7, 21, 21), "UTC")).toBe("FRI 08.21");
+  });
+
+  it("keeps the editorial event time separate from the formatted calendar date", () => {
+    expect(formatExpandedBauhausDate(Date.UTC(2026, 7, 21, 21), "UTC")).toBe("Friday 08.21.26");
+    expect(DANZA_BAUHAUS_EVENT_TIME).toBe("10pm-LATE");
   });
 
   it("maps every logo treatment to its public partner assets", () => {

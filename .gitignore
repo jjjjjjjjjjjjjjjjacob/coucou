@@ -20,6 +20,8 @@ out
 
 # production
 build
+/apps/video/dist
+/apps/video/out
 
 # misc
 .DS_Store

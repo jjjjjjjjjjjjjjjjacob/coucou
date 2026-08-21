@@ -9,7 +9,7 @@ import { internalMutation } from "./functions";
 import { canonicalizeClerkUserIds, resolveCanonicalClerkUserId } from "./lib/canonicalUserIdentity";
 import { isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
-import { obfuscatePhoneNumber } from "./lib/phoneUtils";
+import { formatPhoneNumberForSms, obfuscatePhoneNumber } from "./lib/phoneUtils";
 import {
   isSocialProfileFieldKey,
   socialPlatformKeyFromProfileFieldKey,
@@ -23,6 +23,7 @@ import {
 } from "./lib/smsCodeRouting";
 import { recordSmsConversationMessage } from "./lib/smsConversationRecords";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
+import { resolveStoredTwilioCredentialForEvent } from "./lib/twilioCredentialResolution";
 
 const INBOUND_RECEIPT_RETRY_AFTER_MS = 5 * 60 * 1000;
 
@@ -86,6 +87,35 @@ type ProcessedInboundResult = {
   participantClerkUserIds?: string[];
 };
 
+type InboundDestination = {
+  destinationPhoneNumber?: string;
+  destinationUsesGlobalFallback?: boolean;
+};
+
+async function eventMatchesInboundDestination(
+  ctx: MutationCtx,
+  event: Doc<"events">,
+  destination: InboundDestination,
+): Promise<boolean> {
+  if (!destination.destinationPhoneNumber) {
+    return true;
+  }
+
+  let normalizedDestinationPhoneNumber: string;
+  try {
+    normalizedDestinationPhoneNumber = formatPhoneNumberForSms(destination.destinationPhoneNumber);
+  } catch {
+    return false;
+  }
+
+  const storedCredentialMatch = await resolveStoredTwilioCredentialForEvent(ctx, event._id);
+  if (storedCredentialMatch) {
+    return storedCredentialMatch.credential.fromPhoneNumber === normalizedDestinationPhoneNumber;
+  }
+
+  return destination.destinationUsesGlobalFallback === true;
+}
+
 function eventSharesWorkspace(
   candidateEvent: Doc<"events">,
   destinationEvent: Doc<"events">,
@@ -110,6 +140,7 @@ async function findEventCodeRoutes(
   ctx: MutationCtx,
   normalizedCode: string,
   now: number,
+  destination: InboundDestination,
 ): Promise<EventCodeRoute[]> {
   const credentials = await ctx.db
     .query("listCredentials")
@@ -120,7 +151,13 @@ async function findEventCodeRoutes(
   const routes: EventCodeRoute[] = [];
   for (const listCredential of credentials) {
     const event = await ctx.db.get(listCredential.eventId);
-    if (!event || !isSmsExecutableEvent(event, now)) continue;
+    if (
+      !event ||
+      !isSmsExecutableEvent(event, now) ||
+      !(await eventMatchesInboundDestination(ctx, event, destination))
+    ) {
+      continue;
+    }
     routes.push({
       kind: "event_code",
       event,
@@ -137,6 +174,7 @@ async function findExecutableActionRoutes(
   normalizedCode: string,
   phoneHash: string,
   now: number,
+  destination: InboundDestination,
 ): Promise<{ executableCount: number; eligibleRoutes: ActionCodeRoute[] }> {
   const replyActions = await ctx.db
     .query("textBlastReplyActions")
@@ -148,7 +186,13 @@ async function findExecutableActionRoutes(
   for (const replyAction of replyActions) {
     if (!replyAction.isEnabled) continue;
     const event = await ctx.db.get(replyAction.targetEventId);
-    if (!event || !isSmsExecutableEvent(event, now)) continue;
+    if (
+      !event ||
+      !isSmsExecutableEvent(event, now) ||
+      !(await eventMatchesInboundDestination(ctx, event, destination))
+    ) {
+      continue;
+    }
     const listCredential = await ctx.db
       .query("listCredentials")
       .withIndex("by_event_key", (queryBuilder) =>
@@ -231,10 +275,17 @@ async function resolveSmsCode(
   normalizedCode: string,
   phoneHash: string,
   now: number,
+  destination: InboundDestination,
 ): Promise<RouteResolution> {
   if (!normalizedCode) return { status: "unmatched" };
-  const eventRoutes = await findEventCodeRoutes(ctx, normalizedCode, now);
-  const actionRoutes = await findExecutableActionRoutes(ctx, normalizedCode, phoneHash, now);
+  const eventRoutes = await findEventCodeRoutes(ctx, normalizedCode, now, destination);
+  const actionRoutes = await findExecutableActionRoutes(
+    ctx,
+    normalizedCode,
+    phoneHash,
+    now,
+    destination,
+  );
 
   if (eventRoutes.length > 1) {
     return { status: "conflict" };
@@ -267,6 +318,7 @@ async function findActiveSession(
   ctx: MutationCtx,
   phoneHash: string,
   now: number,
+  destination: InboundDestination,
 ): Promise<Doc<"smsRsvpSessions"> | null> {
   const sessions = await ctx.db
     .query("smsRsvpSessions")
@@ -281,7 +333,13 @@ async function findActiveSession(
   for (const session of orderedSessions) {
     if (session.expiresAt <= now) {
       await ctx.db.patch(session._id, { status: "expired", updatedAt: now });
-    } else if (!activeSession) {
+      continue;
+    }
+    const sessionEvent = await ctx.db.get(session.eventId);
+    if (!sessionEvent || !(await eventMatchesInboundDestination(ctx, sessionEvent, destination))) {
+      continue;
+    }
+    if (!activeSession) {
       activeSession = session;
     } else {
       await ctx.db.patch(session._id, { status: "cancelled", updatedAt: now });
@@ -294,6 +352,7 @@ async function cancelActiveSessions(
   ctx: MutationCtx,
   phoneHash: string,
   now: number,
+  destination: InboundDestination,
 ): Promise<void> {
   const sessions = await ctx.db
     .query("smsRsvpSessions")
@@ -302,7 +361,10 @@ async function cancelActiveSessions(
     )
     .collect();
   for (const session of sessions) {
-    await ctx.db.patch(session._id, { status: "cancelled", updatedAt: now });
+    const sessionEvent = await ctx.db.get(session.eventId);
+    if (sessionEvent && (await eventMatchesInboundDestination(ctx, sessionEvent, destination))) {
+      await ctx.db.patch(session._id, { status: "cancelled", updatedAt: now });
+    }
   }
 }
 
@@ -729,18 +791,27 @@ async function recordOrdinaryInbound(
     providerMessageId: string;
     rawPayload?: Record<string, string>;
     receivedAt: number;
+    destination: InboundDestination;
   },
 ): Promise<void> {
   const threads = await ctx.db
     .query("smsConversationThreads")
     .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", args.phoneHash))
     .collect();
-  const thread = threads
-    .filter((candidateThread) => candidateThread.lastOutboundAt !== undefined)
-    .sort(
-      (firstThread, secondThread) =>
-        (secondThread.lastOutboundAt ?? 0) - (firstThread.lastOutboundAt ?? 0),
-    )[0];
+  const matchingThreads: Doc<"smsConversationThreads">[] = [];
+  for (const candidateThread of threads) {
+    if (candidateThread.lastOutboundAt === undefined) {
+      continue;
+    }
+    const event = await ctx.db.get(candidateThread.eventId);
+    if (event && (await eventMatchesInboundDestination(ctx, event, args.destination))) {
+      matchingThreads.push(candidateThread);
+    }
+  }
+  const thread = matchingThreads.sort(
+    (firstThread, secondThread) =>
+      (secondThread.lastOutboundAt ?? 0) - (firstThread.lastOutboundAt ?? 0),
+  )[0];
   if (!thread) return;
 
   await recordSmsConversationMessage(ctx, {
@@ -874,9 +945,10 @@ async function startRouteSession(
     providerMessageId: string;
     rawPayload?: Record<string, string>;
     receivedAt: number;
+    destination: InboundDestination;
   },
 ): Promise<ProcessedInboundResult> {
-  await cancelActiveSessions(ctx, args.phoneHash, args.receivedAt);
+  await cancelActiveSessions(ctx, args.phoneHash, args.receivedAt, args.destination);
   const identity = await resolveSmsIdentity(
     ctx,
     args.route,
@@ -1201,7 +1273,7 @@ export const completeComplianceInbound = internalMutation({
   handler: async (ctx, args): Promise<void> => {
     const now = args.receivedAt ?? Date.now();
     const phoneResolution = await normalizeAndHashPhoneNumber(args.fromPhoneNumber);
-    await cancelActiveSessions(ctx, phoneResolution.phoneHash, now);
+    await cancelActiveSessions(ctx, phoneResolution.phoneHash, now, {});
     const phoneObfuscated = obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber);
     const threads = await ctx.db
       .query("smsConversationThreads")
@@ -1270,6 +1342,8 @@ export const processReservedInbound = internalMutation({
     messageBody: v.string(),
     rawPayload: v.optional(v.record(v.string(), v.string())),
     receivedAt: v.optional(v.number()),
+    destinationPhoneNumber: v.optional(v.string()),
+    destinationUsesGlobalFallback: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<ProcessedInboundResult> => {
     const receivedAt = args.receivedAt ?? Date.now();
@@ -1295,11 +1369,17 @@ export const processReservedInbound = internalMutation({
       };
     }
 
+    const destination: InboundDestination = {
+      destinationPhoneNumber: args.destinationPhoneNumber,
+      destinationUsesGlobalFallback: args.destinationUsesGlobalFallback,
+    };
+
     const routeResolution = await resolveSmsCode(
       ctx,
       normalizedCode,
       phoneResolution.phoneHash,
       receivedAt,
+      destination,
     );
     console.info("[smsCodeRouter.processReservedInbound] Route resolved", {
       providerMessageId: args.providerMessageId,
@@ -1322,9 +1402,15 @@ export const processReservedInbound = internalMutation({
         providerMessageId: args.providerMessageId,
         rawPayload: args.rawPayload,
         receivedAt,
+        destination,
       });
     } else {
-      const session = await findActiveSession(ctx, phoneResolution.phoneHash, receivedAt);
+      const session = await findActiveSession(
+        ctx,
+        phoneResolution.phoneHash,
+        receivedAt,
+        destination,
+      );
       if (session) {
         result = await continueRouteSession(ctx, {
           session,
@@ -1345,6 +1431,7 @@ export const processReservedInbound = internalMutation({
           providerMessageId: args.providerMessageId,
           rawPayload: args.rawPayload,
           receivedAt,
+          destination,
         });
         result = {
           shouldRespond: false,

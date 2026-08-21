@@ -65,6 +65,12 @@ export function buildGuestRowActionDescriptors({
         onSelect: () => onRoleChange(person, "door"),
       },
       {
+        id: "role-member",
+        label: `${roleVerb} Member`,
+        icon: User,
+        onSelect: () => onRoleChange(person, "member"),
+      },
+      {
         id: "role-admin",
         label: `${roleVerb} Admin`,
         icon: Crown,

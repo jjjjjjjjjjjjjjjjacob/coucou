@@ -7,11 +7,6 @@ import { getCoucouOrganizationSlug, requireCoucouPlatformMember } from "./platfo
 
 type WorkspaceCapability = "host" | "door" | "admin" | "read";
 
-type StoredOrganizationMembership = {
-  organizationId: string;
-  role: string;
-};
-
 export interface WorkspaceAuthScope {
   siteKey?: string | null;
   workspaceSlug?: string | null;
@@ -112,14 +107,9 @@ async function getStoredOrganizationMembershipRole(
   }
 
   if (ctx.runQuery) {
-    const canonicalClerkUserId = await ctx.runQuery(api.users.getCurrentCanonicalClerkUserId, {});
-    const memberships = (await ctx.runQuery(api.orgMemberships.listForUser, {
-      clerkUserId: canonicalClerkUserId,
-    })) as StoredOrganizationMembership[];
-    const membership = memberships.find(
-      (storedMembership) => storedMembership.organizationId === organizationId,
-    );
-    return membership?.role ?? null;
+    return await ctx.runQuery(api.workspaces.getCurrentStoredMembershipRole, {
+      organizationId,
+    });
   }
 
   return null;
@@ -237,12 +227,6 @@ export async function requireWorkspaceCapabilityForResolvedScope(
     throw new Error("Unauthorized");
   }
 
-  const activeOrganizationId = getIdentityOrganizationId(identity);
-  const activeOrganizationMatches = activeOrganizationId === resolvedScope.clerkOrganizationId;
-  if (activeOrganizationMatches && identityHasCapability(identity, capability)) {
-    return resolvedScope;
-  }
-
   const storedMembershipRole = await getStoredOrganizationMembershipRole(
     ctx,
     identity.subject,
@@ -258,6 +242,12 @@ export async function requireWorkspaceCapabilityForResolvedScope(
     }
 
     throw new Error(`Forbidden: ${capability} role required`);
+  }
+
+  const activeOrganizationId = getIdentityOrganizationId(identity);
+  const activeOrganizationMatches = activeOrganizationId === resolvedScope.clerkOrganizationId;
+  if (activeOrganizationMatches && identityHasCapability(identity, capability)) {
+    return resolvedScope;
   }
 
   if (await hasCoucouPlatformAccess(ctx)) {

@@ -173,6 +173,7 @@ export function WorkspaceAccessGate({
     }) ?? null;
   const targetOrganizationId =
     workspaceConfiguration?.clerkOrganizationId || targetMembership?.organization.id || "";
+  const resolvedMembershipRole = workspace?.membershipRole ?? targetMembership?.role;
   const workspaceBrandName =
     workspaceConfiguration?.brandName ?? targetMembership?.organization.name ?? workspaceSlug;
   const needsWorkspaceBootstrap =
@@ -447,7 +448,7 @@ export function WorkspaceAccessGate({
   if (
     targetMembership &&
     !hasCoucouSuperadminWorkspaceAccess &&
-    !membershipHasRequiredRole(targetMembership.role, accessKind)
+    !membershipHasRequiredRole(resolvedMembershipRole ?? targetMembership.role, accessKind)
   ) {
     return (
       <main className="mx-auto max-w-3xl space-y-2 p-6">
@@ -514,16 +515,16 @@ export function WorkspaceAccessGate({
       workspaceConfiguration?.clerkOrganizationSlug ?? targetMembership?.organization.slug ?? null,
     membershipRole: hasCoucouSuperadminWorkspaceAccess
       ? "org:admin"
-      : (targetMembership?.role ?? "org:admin"),
+      : (resolvedMembershipRole ?? "org:admin"),
     clerkOrganizationId: targetOrganizationId || workspaceConfiguration?.clerkOrganizationId || "",
     queryArgs: {
       siteKey: workspaceConfiguration?.siteKey ?? workspaceSlug,
       workspaceSlug: workspaceConfiguration?.workspaceSlug ?? workspaceSlug,
     },
-    canRead: hasCoucouSuperadminWorkspaceAccess || hasWorkspaceReadAccess(targetMembership?.role),
-    canWrite: hasCoucouSuperadminWorkspaceAccess || hasWorkspaceWriteAccess(targetMembership?.role),
+    canRead: hasCoucouSuperadminWorkspaceAccess || hasWorkspaceReadAccess(resolvedMembershipRole),
+    canWrite: hasCoucouSuperadminWorkspaceAccess || hasWorkspaceWriteAccess(resolvedMembershipRole),
     canUseDoor:
-      hasCoucouSuperadminWorkspaceAccess || hasWorkspaceDoorAccess(targetMembership?.role),
+      hasCoucouSuperadminWorkspaceAccess || hasWorkspaceDoorAccess(resolvedMembershipRole),
   };
 
   return (

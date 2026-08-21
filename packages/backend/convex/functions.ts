@@ -63,6 +63,14 @@ triggers.register("events", async (ctx, change) => {
   if (change.operation === "delete" && change.oldDoc) {
     console.log(`[TRIGGER] Event deleted: ${change.oldDoc.name} (${change.oldDoc._id})`);
 
+    const twilioCredential = await ctx.db
+      .query("twilioCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", change.oldDoc._id))
+      .unique();
+    if (twilioCredential) {
+      await ctx.db.delete(twilioCredential._id);
+    }
+
     const { shouldBatch, estimatedSize } = await shouldBatchCascade(ctx, change.oldDoc._id);
 
     if (shouldBatch) {

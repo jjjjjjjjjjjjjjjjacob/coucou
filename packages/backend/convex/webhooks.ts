@@ -5,6 +5,7 @@
  */
 
 import { internal } from "./_generated/api";
+import type { ActionCtx } from "./_generated/server";
 import { httpAction } from "./_generated/server";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 
@@ -95,25 +96,52 @@ export function classifyTwilioComplianceMessage(
 export async function verifyTwilioRequestSignature(
   request: Request,
   rawBody: string,
+  candidateAuthTokens?: readonly string[],
 ): Promise<boolean> {
-  const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
   const providedSignature = request.headers.get("x-twilio-signature");
-  if (!twilioAuthToken || !providedSignature) {
+  const environmentAuthToken = process.env.TWILIO_AUTH_TOKEN;
+  const authTokens = candidateAuthTokens ?? (environmentAuthToken ? [environmentAuthToken] : []);
+  if (authTokens.length === 0 || !providedSignature) {
     return false;
   }
 
   const signaturePayload = buildTwilioSignaturePayload(request.url, new URLSearchParams(rawBody));
   const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(twilioAuthToken),
-    { name: "HMAC", hash: "SHA-1" },
-    false,
-    ["sign"],
+  for (const authToken of authTokens) {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(authToken),
+      { name: "HMAC", hash: "SHA-1" },
+      false,
+      ["sign"],
+    );
+    const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(signaturePayload));
+    const expectedSignature = base64FromArrayBuffer(signatureBuffer);
+    if (timingSafeEqual(expectedSignature, providedSignature)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function getWebhookAuthTokensForPhoneNumber(
+  ctx: Pick<ActionCtx, "runQuery">,
+  phoneNumber: string | null,
+): Promise<string[]> {
+  if (!phoneNumber) {
+    return [];
+  }
+
+  const storedAuthTokens = await ctx.runQuery(
+    internal.twilioCredentials.listWebhookAuthTokensForPhoneNumber,
+    { phoneNumber },
   );
-  const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(signaturePayload));
-  const expectedSignature = base64FromArrayBuffer(signatureBuffer);
-  return timingSafeEqual(expectedSignature, providedSignature);
+  const globalAuthToken = process.env.TWILIO_AUTH_TOKEN;
+  const globalPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+  if (globalAuthToken && twilioDestinationMatchesConfiguredNumber(phoneNumber, globalPhoneNumber)) {
+    return Array.from(new Set([...storedAuthTokens, globalAuthToken]));
+  }
+  return Array.from(new Set(storedAuthTokens));
 }
 
 /**
@@ -123,10 +151,11 @@ export async function verifyTwilioRequestSignature(
 export const handleDeliveryStatus = httpAction(async (ctx, request) => {
   // Parse webhook data
   const body = await request.text();
-  if (!(await verifyTwilioRequestSignature(request, body))) {
+  const params = new URLSearchParams(body);
+  const authTokens = await getWebhookAuthTokensForPhoneNumber(ctx, params.get("From"));
+  if (!(await verifyTwilioRequestSignature(request, body, authTokens))) {
     return new Response("Invalid Twilio signature", { status: 403 });
   }
-  const params = new URLSearchParams(body);
   const messageSid = params.get("MessageSid");
   const messageStatus = params.get("MessageStatus");
   const _errorCode = params.get("ErrorCode");
@@ -165,10 +194,11 @@ export const handleDeliveryStatus = httpAction(async (ctx, request) => {
  */
 export const handleOptOut = httpAction(async (ctx, request) => {
   const body = await request.text();
-  if (!(await verifyTwilioRequestSignature(request, body))) {
+  const params = new URLSearchParams(body);
+  const authTokens = await getWebhookAuthTokensForPhoneNumber(ctx, params.get("To"));
+  if (!(await verifyTwilioRequestSignature(request, body, authTokens))) {
     return new Response("Invalid Twilio signature", { status: 403 });
   }
-  const params = new URLSearchParams(body);
 
   const from = params.get("From"); // User's phone number
   const bodyText = params.get("Body")?.toLowerCase().trim();
@@ -230,9 +260,6 @@ export const handleOptOut = httpAction(async (ctx, request) => {
  */
 export const handleIncomingSms = httpAction(async (ctx, request) => {
   const body = await request.text();
-  if (!(await verifyTwilioRequestSignature(request, body))) {
-    return new Response("Invalid Twilio signature", { status: 403 });
-  }
   const params = new URLSearchParams(body);
 
   const from = params.get("From");
@@ -240,13 +267,16 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
   const messageBody = rawMessageBody?.toLowerCase();
   const to = params.get("To");
   const messageSid = params.get("MessageSid");
-  const configuredPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
   if (!from || !to || !rawMessageBody || !messageBody || !messageSid) {
     return new Response("Missing required parameters", { status: 400 });
   }
-  if (!twilioDestinationMatchesConfiguredNumber(to, configuredPhoneNumber)) {
+  const authTokens = await getWebhookAuthTokensForPhoneNumber(ctx, to);
+  if (authTokens.length === 0) {
     return new Response("Unexpected destination number", { status: 400 });
+  }
+  if (!(await verifyTwilioRequestSignature(request, body, authTokens))) {
+    return new Response("Invalid Twilio signature", { status: 403 });
   }
 
   try {
@@ -323,6 +353,11 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
         fromPhoneNumber: from,
         messageBody: rawMessageBody,
         rawPayload,
+        destinationPhoneNumber: to,
+        destinationUsesGlobalFallback: twilioDestinationMatchesConfiguredNumber(
+          to,
+          process.env.TWILIO_PHONE_NUMBER,
+        ),
       });
       console.info("[twilio.incoming] Reply routing completed", {
         providerMessageId: messageSid,
@@ -333,6 +368,7 @@ export const handleIncomingSms = httpAction(async (ctx, request) => {
       if (replyResult.shouldRespond && replyResult.responseMessage) {
         try {
           const sendResult = await ctx.runAction(internal.smsActions.sendSmsInternal, {
+            eventId: replyResult.targetEventId,
             phoneNumber: from,
             message: replyResult.responseMessage,
             messageType: "Transactional",

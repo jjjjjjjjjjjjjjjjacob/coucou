@@ -310,22 +310,6 @@ export const sendApprovalSms = action({
       return { skipped: "missing_env" };
     }
 
-    // In production (or dev with SMS enabled), validate all required environment variables
-    const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
-    const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-    const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
-
-    const missingEnvVars: string[] = [];
-    if (!twilioAccountSid) missingEnvVars.push("TWILIO_ACCOUNT_SID");
-    if (!twilioAuthToken) missingEnvVars.push("TWILIO_AUTH_TOKEN");
-    if (!twilioPhoneNumber) missingEnvVars.push("TWILIO_PHONE_NUMBER");
-
-    if (missingEnvVars.length > 0) {
-      const errorMessage = `Missing required environment variables: ${missingEnvVars.join(", ")}`;
-      console.error(`❌ ${errorMessage}`);
-      throw new Error(errorMessage);
-    }
-
     // Get event details
     const event = await ctx.runQuery(api.events.get, {
       eventId: args.eventId,
@@ -426,6 +410,7 @@ export const sendApprovalSms = action({
 
       // Send SMS/MMS via Twilio
       const result = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
+        eventId: args.eventId,
         phoneNumber: userRecord.phone,
         message: approvalMessage,
         notificationId,
@@ -472,19 +457,6 @@ export const sendRsvpConfirmationSms = action({
       return { skipped: "missing_env" };
     }
 
-    const missingEnvironmentVariables = [
-      ["TWILIO_ACCOUNT_SID", process.env.TWILIO_ACCOUNT_SID],
-      ["TWILIO_AUTH_TOKEN", process.env.TWILIO_AUTH_TOKEN],
-      ["TWILIO_PHONE_NUMBER", process.env.TWILIO_PHONE_NUMBER],
-    ]
-      .filter(([, value]) => !value)
-      .map(([environmentVariableName]) => environmentVariableName);
-    if (missingEnvironmentVariables.length > 0) {
-      const errorMessage = `Missing required environment variables: ${missingEnvironmentVariables.join(", ")}`;
-      console.error(`❌ ${errorMessage}`);
-      throw new Error(errorMessage);
-    }
-
     const event = await ctx.runQuery(api.events.get, {
       eventId: args.eventId,
     });
@@ -519,6 +491,7 @@ export const sendRsvpConfirmationSms = action({
         message: args.message,
       });
       const result = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
+        eventId: args.eventId,
         phoneNumber: recipientPhoneNumber,
         message: args.message,
         notificationId,
@@ -561,22 +534,6 @@ export const sendSmsConsentStatusMessage = action({
       return { skipped: "missing_env" };
     }
 
-    // In production (or dev with SMS enabled), validate all required environment variables
-    const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
-    const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-    const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
-
-    const missingEnvVars: string[] = [];
-    if (!twilioAccountSid) missingEnvVars.push("TWILIO_ACCOUNT_SID");
-    if (!twilioAuthToken) missingEnvVars.push("TWILIO_AUTH_TOKEN");
-    if (!twilioPhoneNumber) missingEnvVars.push("TWILIO_PHONE_NUMBER");
-
-    if (missingEnvVars.length > 0) {
-      const errorMessage = `Missing required environment variables: ${missingEnvVars.join(", ")}`;
-      console.error(`❌ ${errorMessage}`);
-      throw new Error(errorMessage);
-    }
-
     const event = await ctx.runQuery(api.events.get, {
       eventId: args.eventId,
     });
@@ -612,6 +569,7 @@ export const sendSmsConsentStatusMessage = action({
       });
 
       const result = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
+        eventId: args.eventId,
         phoneNumber: recipientPhoneNumber,
         message,
         notificationId,

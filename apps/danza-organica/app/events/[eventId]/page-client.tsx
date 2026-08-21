@@ -11,7 +11,11 @@ import { DanzaPresentationDetails } from "@/components/danza-event-detail-sectio
 import type { DanzaLandingEvent } from "@/components/danza-event-row";
 import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Spinner } from "@/components/ui/spinner";
-import { formatCompactBauhausDate } from "@/lib/bauhaus-event-display";
+import {
+  DANZA_BAUHAUS_EVENT_TIME,
+  formatCompactBauhausDate,
+  formatExpandedBauhausDate,
+} from "@/lib/bauhaus-event-display";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import { buildRsvpPathForViewport, useRsvpFlowViewport } from "@/lib/rsvp-flow-routing";
 import { buildPathWithPreservedQuery } from "@/lib/rsvp-url-state";
@@ -25,29 +29,6 @@ interface EventPageClientProps {
 type UserEventRsvpStatus = {
   status?: RSVP["status"];
 } | null;
-
-function formatExpandedDate(timestamp: number, timezone?: string): string {
-  const date = new Date(timestamp);
-  const day = date.toLocaleDateString("en-US", {
-    weekday: "long",
-    timeZone: timezone ?? "UTC",
-  });
-  const formatted = date
-    .toLocaleDateString("en-US", {
-      month: "2-digit",
-      day: "2-digit",
-      year: "2-digit",
-      timeZone: timezone ?? "UTC",
-    })
-    .replace(/\//g, ".");
-  const time = date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: timezone ?? "UTC",
-  });
-  return `${day} ${formatted} · ${time}`;
-}
 
 export default function EventPageClient({ params }: EventPageClientProps) {
   const { eventId: eventRouteId } = use(params);
@@ -178,7 +159,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         title: resolvedFocusedEvent.name,
         subtitle: resolvedFocusedEvent.secondaryTitle,
         hosts: resolvedFocusedEvent.hosts,
-        date: formatExpandedDate(
+        date: formatExpandedBauhausDate(
           resolvedFocusedEvent.eventDate,
           resolvedFocusedEvent.eventTimezone,
         ),
@@ -187,6 +168,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
           resolvedFocusedEvent.eventTimezone,
         ),
         location: resolvedFocusedEvent.location,
+        time: DANZA_BAUHAUS_EVENT_TIME,
         lineup: getPublicEventActs(resolvedFocusedEvent).map((act) => ({
           label: act.displayName,
           descriptorBadges: act.descriptorBadges,
@@ -219,9 +201,10 @@ export default function EventPageClient({ params }: EventPageClientProps) {
         title: event.name,
         subtitle: event.secondaryTitle,
         hosts: event.hosts,
-        date: formatExpandedDate(event.eventDate, event.eventTimezone),
+        date: formatExpandedBauhausDate(event.eventDate, event.eventTimezone),
         compactDate: formatCompactBauhausDate(event.eventDate, event.eventTimezone),
         location: event.location,
+        time: DANZA_BAUHAUS_EVENT_TIME,
         lineup: getPublicEventActs(event).map((act) => ({
           label: act.displayName,
           descriptorBadges: act.descriptorBadges,

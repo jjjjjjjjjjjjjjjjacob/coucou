@@ -944,6 +944,23 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_phoneNumber", ["phoneNumber"]),
 
+  // Workspace Twilio credentials with optional per-event overrides. Auth
+  // tokens are server-only: public queries return masked configuration
+  // summaries and outbound actions read the secret through an internal query.
+  twilioCredentials: defineTable({
+    workspaceId: v.id("workspaces"),
+    eventId: v.optional(v.id("events")),
+    accountSid: v.string(),
+    authToken: v.string(),
+    fromPhoneNumber: v.string(),
+    updatedByClerkUserId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_event", ["eventId"])
+    .index("by_fromPhoneNumber", ["fromPhoneNumber"]),
+
   // Partner API clients — one row per issued API key (hash stored, plaintext shown once)
   apiClients: defineTable({
     workspaceId: v.id("workspaces"),

@@ -34,8 +34,9 @@ function getRoleLabel(role: string): string {
     case "host":
       return "Host";
     case "door":
-    case "member":
       return "Door";
+    case "member":
+      return "Member";
     default:
       return "Guest";
   }
@@ -48,8 +49,9 @@ function getRoleBadgeVariant(role: string): "approved" | "pending" | "default" |
     case "host":
       return "approved";
     case "door":
-    case "member":
       return "issued";
+    case "member":
+      return "default";
     default:
       return "default";
   }

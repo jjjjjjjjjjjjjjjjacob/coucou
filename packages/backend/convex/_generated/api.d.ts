@@ -38,6 +38,7 @@ import type * as lib_cascadeHelpers from "../lib/cascadeHelpers.js";
 import type * as lib_clerkAuthConfig from "../lib/clerkAuthConfig.js";
 import type * as lib_clerkTenantProvisioning from "../lib/clerkTenantProvisioning.js";
 import type * as lib_clerkWebhookPayloads from "../lib/clerkWebhookPayloads.js";
+import type * as lib_clerkWorkspaceRoles from "../lib/clerkWorkspaceRoles.js";
 import type * as lib_codeGenerators from "../lib/codeGenerators.js";
 import type * as lib_credentialPasswords from "../lib/credentialPasswords.js";
 import type * as lib_eventMetadata from "../lib/eventMetadata.js";
@@ -69,6 +70,7 @@ import type * as lib_smsConversationRecords from "../lib/smsConversationRecords.
 import type * as lib_smsOrganizerPreferences from "../lib/smsOrganizerPreferences.js";
 import type * as lib_smsProgramCopy from "../lib/smsProgramCopy.js";
 import type * as lib_socialProfileRecords from "../lib/socialProfileRecords.js";
+import type * as lib_twilioCredentialResolution from "../lib/twilioCredentialResolution.js";
 import type * as lib_types from "../lib/types.js";
 import type * as lib_userIdentityMerge from "../lib/userIdentityMerge.js";
 import type * as lib_webhookCrypto from "../lib/webhookCrypto.js";
@@ -101,6 +103,7 @@ import type * as socialProfiles from "../socialProfiles.js";
 import type * as tenantApplications from "../tenantApplications.js";
 import type * as testTwilio from "../testTwilio.js";
 import type * as textBlasts from "../textBlasts.js";
+import type * as twilioCredentials from "../twilioCredentials.js";
 import type * as users from "../users.js";
 import type * as webhookDeliveries from "../webhookDeliveries.js";
 import type * as webhookDispatch from "../webhookDispatch.js";
@@ -146,6 +149,7 @@ declare const fullApi: ApiFromModules<{
   "lib/clerkAuthConfig": typeof lib_clerkAuthConfig;
   "lib/clerkTenantProvisioning": typeof lib_clerkTenantProvisioning;
   "lib/clerkWebhookPayloads": typeof lib_clerkWebhookPayloads;
+  "lib/clerkWorkspaceRoles": typeof lib_clerkWorkspaceRoles;
   "lib/codeGenerators": typeof lib_codeGenerators;
   "lib/credentialPasswords": typeof lib_credentialPasswords;
   "lib/eventMetadata": typeof lib_eventMetadata;
@@ -177,6 +181,7 @@ declare const fullApi: ApiFromModules<{
   "lib/smsOrganizerPreferences": typeof lib_smsOrganizerPreferences;
   "lib/smsProgramCopy": typeof lib_smsProgramCopy;
   "lib/socialProfileRecords": typeof lib_socialProfileRecords;
+  "lib/twilioCredentialResolution": typeof lib_twilioCredentialResolution;
   "lib/types": typeof lib_types;
   "lib/userIdentityMerge": typeof lib_userIdentityMerge;
   "lib/webhookCrypto": typeof lib_webhookCrypto;
@@ -209,6 +214,7 @@ declare const fullApi: ApiFromModules<{
   tenantApplications: typeof tenantApplications;
   testTwilio: typeof testTwilio;
   textBlasts: typeof textBlasts;
+  twilioCredentials: typeof twilioCredentials;
   users: typeof users;
   webhookDeliveries: typeof webhookDeliveries;
   webhookDispatch: typeof webhookDispatch;

@@ -18,6 +18,7 @@ export interface DanzaLandingEvent extends ChlorineLandingEvent {
   hosts?: string[];
   location?: string;
   compactDate?: string;
+  time?: string;
 }
 export type DanzaLineupEntry = ChlorineLineupEntry;
 

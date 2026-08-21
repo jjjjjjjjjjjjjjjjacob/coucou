@@ -109,7 +109,7 @@ describe("Danza Bauhaus event experience", () => {
 
     expect(screen.getByRole("heading", { name: "Danza Organica" })).toBeTruthy();
     expect(screen.getByLabelText("Featuring")).toHaveTextContent("Nothing Radio");
-    expect(screen.getByLabelText("Sponsored by")).toHaveTextContent("The Market");
+    expect(screen.getByLabelText("Free drinks for matches on")).toHaveTextContent("The Market");
     expect(screen.getByRole("link", { name: "RSVP" })).toHaveAttribute(
       "href",
       "/events/tgn47p2/rsvp",
@@ -160,6 +160,7 @@ describe("Danza Bauhaus event experience", () => {
             date: "Friday 08.21.26 · 9:00 PM",
             compactDate: "FRI 08.21",
             location: "Laissez-Faire",
+            time: "10pm-LATE",
             lineup: [{ label: "Nothing Radio" }],
             rsvpHref: "/events/simple/rsvp",
           }}
@@ -193,17 +194,18 @@ describe("Danza Bauhaus event experience", () => {
     expect(container.querySelector('[data-text-color="orange"]')).toBeTruthy();
     expect(screen.queryByLabelText("Featuring")).toBeNull();
     expect(screen.queryByLabelText("Hosted by")).toBeNull();
-    expect(screen.queryByLabelText("Sponsored by")).toBeNull();
+    expect(screen.queryByLabelText("Free drinks for matches on")).toBeNull();
     expect(screen.queryByText("Long event description")).toBeNull();
     expect(container.querySelector(".danza-bauhaus-copy-line--date")).toHaveTextContent(
-      "FRI 08.21Laissez-Faire",
+      "FRI 08.21 • 10pm-LATELaissez-Faire",
     );
+    expect(screen.getByText("10pm-LATE")).toBeVisible();
 
     const artistLogo = screen.getByRole("img", { name: "Nothing Radio" });
     const marketLogo = screen.getByRole("img", { name: "The Market" });
     const rsvpLink = screen.getByRole("link", { name: "RSVP" });
     expect(screen.getByText("Featuring")).toBeVisible();
-    expect(screen.getByText("Sponsored by")).toBeVisible();
+    expect(screen.getByText("Powered by")).toBeVisible();
     expect(artistLogo).toHaveAttribute("src", "/partners/nothing-radio.png");
     expect(marketLogo).toHaveAttribute("src", "/partners/the-market-danza.svg");
     expect(
@@ -211,6 +213,11 @@ describe("Danza Bauhaus event experience", () => {
     ).not.toBe(0);
     expect(
       rsvpLink.compareDocumentPosition(marketLogo) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    const volumeLabel = screen.getByText("Vol. 4");
+    const eventTitle = screen.getByRole("heading", { name: "Danza Organica" });
+    expect(
+      volumeLabel.compareDocumentPosition(eventTitle) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).not.toBe(0);
   });
 });

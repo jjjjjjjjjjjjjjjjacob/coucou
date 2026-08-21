@@ -23,24 +23,15 @@ function isDevWithSmsDisabled(): boolean {
   return process.env.DEV_TWILIO_ENABLED === "false";
 }
 
-/**
- * Validates Twilio credentials and throws error in production if missing
- * Returns false if dev mode with SMS disabled (should skip gracefully)
- */
-function validateTwilioCredentials(): {
+/** Resolves Coucou's environment-backed fallback credentials. */
+type ResolvedTwilioCredentials = {
   accountSid: string;
   authToken: string;
   fromNumber: string;
-} | null {
-  const isDevDisabled = isDevWithSmsDisabled();
+  source: "event" | "workspace" | "global";
+};
 
-  if (isDevDisabled) {
-    // Dev mode with SMS disabled - warn but don't throw
-    console.warn("⚠️  SMS disabled in development (DEV_TWILIO_ENABLED=false). SMS will be skipped.");
-    return null;
-  }
-
-  // Production mode (or dev with SMS enabled) - validate credentials
+function getGlobalTwilioCredentials(): ResolvedTwilioCredentials | null {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const fromNumber = process.env.TWILIO_PHONE_NUMBER;
@@ -56,7 +47,33 @@ function validateTwilioCredentials(): {
     );
   }
 
-  return { accountSid, authToken, fromNumber };
+  return { accountSid, authToken, fromNumber, source: "global" };
+}
+
+async function resolveTwilioCredentials(
+  ctx: Pick<ActionCtx, "runQuery">,
+  eventId?: Id<"events">,
+): Promise<ResolvedTwilioCredentials | null> {
+  if (isDevWithSmsDisabled()) {
+    console.warn("⚠️  SMS disabled in development (DEV_TWILIO_ENABLED=false). SMS will be skipped.");
+    return null;
+  }
+
+  if (eventId) {
+    const storedCredentials = await ctx.runQuery(internal.twilioCredentials.resolveForEvent, {
+      eventId,
+    });
+    if (storedCredentials) {
+      return {
+        accountSid: storedCredentials.accountSid,
+        authToken: storedCredentials.authToken,
+        fromNumber: storedCredentials.fromPhoneNumber,
+        source: storedCredentials.source,
+      };
+    }
+  }
+
+  return getGlobalTwilioCredentials();
 }
 
 async function recordNotificationConversationMessage(
@@ -113,6 +130,7 @@ function calculateSmsCost(messageLength: number): number {
  */
 export const sendSmsInternal = internalAction({
   args: {
+    eventId: v.optional(v.id("events")),
     phoneNumber: v.string(),
     message: v.string(),
     notificationId: v.optional(v.id("smsNotifications")),
@@ -121,7 +139,7 @@ export const sendSmsInternal = internalAction({
   },
   handler: async (ctx, args) => {
     // Validate credentials (throws error in production if missing, returns null in dev if disabled)
-    const credentials = validateTwilioCredentials();
+    const credentials = await resolveTwilioCredentials(ctx, args.eventId);
 
     if (!credentials) {
       // Dev mode with SMS disabled - update notification status and return gracefully
@@ -329,6 +347,7 @@ export const sendSmsInternal = internalAction({
  */
 export const sendBulkSmsInternal = internalAction({
   args: {
+    eventId: v.optional(v.id("events")),
     recipients: v.array(
       v.object({
         phoneNumber: v.string(),
@@ -344,9 +363,9 @@ export const sendBulkSmsInternal = internalAction({
     batchSize: v.optional(v.number()),
     messageType: v.optional(v.string()), // 'Transactional' | 'Promotional'
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
     // Validate credentials (throws error in production if missing, returns null in dev if disabled)
-    const credentials = validateTwilioCredentials();
+    const credentials = await resolveTwilioCredentials(ctx, args.eventId);
 
     if (!credentials) {
       // Dev mode with SMS disabled - return failure for all recipients

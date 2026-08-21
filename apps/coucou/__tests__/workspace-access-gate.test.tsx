@@ -76,6 +76,42 @@ describe("WorkspaceAccessGate", () => {
     expect(getWorkspaceAccessGateTestGlobal().__getToastTestCalls?.()).toEqual([]);
   });
 
+  it("uses the stored Host role when Clerk reports the fallback Member role", async () => {
+    getWorkspaceAccessGateTestGlobal().__setClerkTestMemberships?.([
+      {
+        id: "membership_dojo",
+        role: "org:member",
+        organization: {
+          id: "org_123",
+          name: "Dojo Pomodoro",
+          slug: "dojo-pomodoro",
+        },
+      },
+    ]);
+    getWorkspaceAccessGateTestGlobal().__setConvexQueryResponse?.({
+      _id: "workspace_123",
+      slug: "dojo-pomodoro",
+      name: "Dojo Pomodoro",
+      kind: "client",
+      clerkOrganizationId: "org_123",
+      clerkOrganizationSlug: "dojo-pomodoro",
+      membershipRole: "org:host",
+      sites: [],
+    });
+
+    render(
+      <WorkspaceAccessGate workspaceSlug="dojo-pomodoro" accessKind="host">
+        {(workspaceAccessState) => (
+          <div>{workspaceAccessState.canWrite ? "Stored host access" : "Read only"}</div>
+        )}
+      </WorkspaceAccessGate>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Stored host access")).toBeTruthy();
+    });
+  });
+
   it("uses a toast while the target organization is switching", async () => {
     getWorkspaceAccessGateTestGlobal().__setClerkTestState?.({
       orgId: "org_other",

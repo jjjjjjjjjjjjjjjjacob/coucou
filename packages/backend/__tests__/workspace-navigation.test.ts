@@ -156,6 +156,41 @@ describe("workspace navigation access", () => {
     ).toEqual([{ membershipRole: "org:member", slug: "zebra-room" }]);
   });
 
+  it("uses the stored Host role when Clerk reports the fallback Member role", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    await seedWorkspaceNavigationFixture(testBackend);
+    await seedMembership(testBackend, "tenant_user", "org_zebra", "org:host");
+    const tenantBackend = testBackend.withIdentity(
+      createIdentity("tenant_user", {
+        id: "org_zebra",
+        role: "org:member",
+        slug: "zebra-room",
+      }),
+    );
+
+    const navigationAccess = await tenantBackend.query(
+      api.workspaces.listAccessibleWorkspaceNavigationForUser,
+      {},
+    );
+    const dashboardAccess = await tenantBackend.query(api.workspaces.getDashboardWorkspaceAccess, {
+      memberships: [
+        {
+          organizationId: "org_zebra",
+          organizationName: "Zebra Room",
+          organizationSlug: "zebra-room",
+          role: "org:member",
+        },
+      ],
+    });
+    const workspace = await tenantBackend.query(api.workspaces.getWorkspaceBySlug, {
+      slug: "zebra-room",
+    });
+
+    expect(navigationAccess.tenantWorkspaces[0]?.membershipRole).toBe("org:host");
+    expect(dashboardAccess.tenantWorkspaces[0]?.membershipRole).toBe("org:host");
+    expect(workspace?.membershipRole).toBe("org:host");
+  });
+
   it("uses platform-wide admin navigation access instead of a lower tenant role", async () => {
     const testBackend = convexTest(schema, convexModules);
     await seedWorkspaceNavigationFixture(testBackend);
