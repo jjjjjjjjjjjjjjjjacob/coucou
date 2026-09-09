@@ -6,7 +6,6 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
-import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -152,11 +151,6 @@ export default function EventPageClient({ params }: { params: Promise<{ eventId:
                 <DialogFooter />
               </DialogContent>
             </Dialog>
-            {isSignedIn && event ? (
-              <div className="mt-3 flex justify-center">
-                <EventReferralShareButton event={event} />
-              </div>
-            ) : null}
           </div>
         </header>
       )}
