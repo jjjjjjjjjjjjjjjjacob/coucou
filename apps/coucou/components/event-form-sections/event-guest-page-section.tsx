@@ -13,6 +13,40 @@ import {
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import type { BaseEventFormValues, UseFormReturn } from "@/lib/types";
+import { useWorkspaceScope } from "@/lib/use-workspace-scope";
+
+export function EventReferralSharingField<FormValues extends BaseEventFormValues>({
+  form,
+}: {
+  form: UseFormReturn<FormValues>;
+}) {
+  const workspaceScope = useWorkspaceScope();
+  if (workspaceScope?.siteKey === "dojo" || workspaceScope?.siteKey === "club-chlorine") {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Guest sharing buttons are unavailable on this site.
+      </p>
+    );
+  }
+
+  return (
+    <FormField
+      control={form.control}
+      name={"referralSharingEnabled" as Path<FormValues>}
+      render={({ field }) => (
+        <FormItem>
+          <FieldSwitchRow
+            title="Show referral sharing CTA"
+            description="Show sharing buttons for this event. Off by default."
+            checked={field.value === true}
+            onCheckedChange={(checked) => field.onChange(checked)}
+          />
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
 
 export interface EventGuestPageSectionProps<FormValues extends BaseEventFormValues> {
   form: UseFormReturn<FormValues>;
@@ -123,21 +157,7 @@ export function EventGuestPageSection<FormValues extends BaseEventFormValues>({
           }}
         />
       </div>
-      <FormField
-        control={form.control}
-        name={"referralSharingEnabled" as Path<FormValues>}
-        render={({ field }) => (
-          <FormItem>
-            <FieldSwitchRow
-              title="Show referral sharing CTA"
-              description="Adds the guest sharing button on pending status pages and approved tickets."
-              checked={Boolean(field.value)}
-              onCheckedChange={(checked) => field.onChange(checked)}
-            />
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <EventReferralSharingField form={form} />
     </SectionCard>
   );
 }

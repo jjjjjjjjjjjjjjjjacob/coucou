@@ -15,7 +15,6 @@ import { Check, Download } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
-import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { formatEventTitleInline, hasEventSecondaryTitle } from "@/lib/event-display";
@@ -432,17 +431,6 @@ export default function TicketClientPage({ eventPreload, statusPreload }: Ticket
         <div className="w-full max-w-2xl space-y-6 text-center animate-in fade-in">
           {renderEventHeader()}
           <section className="space-y-3">{renderStatusContent()}</section>
-          <div className="flex justify-center">
-            <div className="flex flex-col items-center gap-2 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500">
-              <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                Invite friends
-              </span>
-              <EventReferralShareButton event={event} variant="prominent" />
-              <span className="text-[12px] text-muted-foreground/80">
-                Tap to copy your referral link
-              </span>
-            </div>
-          </div>
           {(guestPortalImageUrl || shouldShowGuestLink) && (
             <section className="space-y-3 rounded-lg border border-primary/15 bg-card/70 p-4">
               {guestPortalImageUrl && (

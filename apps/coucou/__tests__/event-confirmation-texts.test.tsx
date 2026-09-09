@@ -296,24 +296,29 @@ describe("event confirmation texts", () => {
     setNavigationSearchParams();
   });
 
-  it("prefills new event colors and lists from workspace defaults", async () => {
+  it.each([
+    "club-chlorine",
+    "dojo",
+    "danza-organica",
+  ])("prefills colors and lists but requires an event sharing opt-in for %s", async (siteKey) => {
     workspaceQueryResult = {
-      slug: "club-chlorine",
-      name: "Club Chlorine",
+      slug: siteKey,
+      name: "Test Workspace",
       eventDefaults: {
         themeBackgroundColor: "#101820",
         themeTextColor: "#FEE715",
         listKeys: ["pool", "cabana"],
+        referralSharingEnabled: true,
       },
-      sites: [{ siteKey: "club-chlorine" }],
+      sites: [{ siteKey }],
     };
     workspaceScope = {
-      workspaceSlug: "club-chlorine",
-      siteKey: "club-chlorine",
-      brandName: "Club Chlorine",
+      workspaceSlug: siteKey,
+      siteKey,
+      brandName: "Test Workspace",
       queryArgs: {
-        siteKey: "club-chlorine",
-        workspaceSlug: "club-chlorine",
+        siteKey,
+        workspaceSlug: siteKey,
       },
     };
 
@@ -338,6 +343,15 @@ describe("event confirmation texts", () => {
     await screen.findByRole("heading", { name: "Flyer" });
     await clickContinue();
     await screen.findByRole("heading", { name: "Guest page" });
+    if (siteKey === "danza-organica") {
+      const sharingToggle = screen.getByRole("switch", { name: "Show referral sharing CTA" });
+      expect(sharingToggle).not.toBeChecked();
+      fireEvent.click(sharingToggle);
+      expect(sharingToggle).toBeChecked();
+    } else {
+      expect(screen.queryByRole("switch", { name: "Show referral sharing CTA" })).toBeNull();
+      expect(screen.getByText("Guest sharing buttons are unavailable on this site.")).toBeVisible();
+    }
     await clickContinue();
     await screen.findByRole("heading", { name: "Lists & access" });
 

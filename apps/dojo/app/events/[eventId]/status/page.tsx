@@ -8,7 +8,6 @@ import { useConvexAuth, useQuery as useConvexQuery, useMutation } from "convex/r
 import { CheckCircle2, CircleDashed } from "lucide-react";
 import React, { use } from "react";
 import { toast } from "sonner";
-import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
@@ -193,12 +192,6 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
               <p className="font-medium">IMPORTANT: Approval is necessary to access the event.</p>
             </div>
           )}
-          {status?.status === "pending" && event ? (
-            <section className="flex flex-col items-center gap-3 rounded-lg border border-primary/15 bg-card/70 p-4 text-primary">
-              <p className="text-sm font-medium">Share to move up in the waitlist.</p>
-              <EventReferralShareButton event={event} />
-            </section>
-          ) : null}
           {status && (
             <div className="flex flex-col gap-3 items-center text-sm text-primary">
               {status.smsConsent ? (

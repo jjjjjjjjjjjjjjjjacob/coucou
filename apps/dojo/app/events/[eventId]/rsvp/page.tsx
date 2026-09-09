@@ -12,6 +12,7 @@ import { type Path, useForm } from "react-hook-form";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
 import { GuestInfoFields, NoteForHostsField } from "@/components/guest-info-form";
+import { SmsProgramDisclosure } from "@/components/sms-program-disclosure";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,10 +37,10 @@ import {
 } from "@/components/ui/context-menu";
 import { Form } from "@/components/ui/form";
 import { Spinner } from "@/components/ui/spinner";
-import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { validateRequiredPrimaryFields, validateRequiredWithFirstName } from "@/lib/mini-zod";
 import { siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
+import { dojoSmsProgram } from "@/lib/sms-program";
 import {
   type ApplicationError,
   type ClerkUser,
@@ -124,19 +125,6 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
     useState<boolean>(false);
   const [smsConsentDialogMode, setSmsConsentDialogMode] = useState<"confirm" | "encourage" | null>(
     null,
-  );
-  const smsSenderDisplayName = useMemo(
-    () =>
-      resolveEventMessagingBrandName(
-        {
-          name: event?.name,
-          secondaryTitle: event?.secondaryTitle,
-          hosts: event?.hosts,
-          productionCompany: event?.productionCompany,
-        },
-        { fallback: event?.name?.trim() ?? "Event Host" },
-      ),
-    [event?.hosts, event?.name, event?.secondaryTitle, event?.productionCompany],
   );
   const { foregroundColor: qrForegroundColor, backgroundColor: qrBackgroundColor } =
     resolveQrCodeColors({
@@ -672,21 +660,9 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
                       />
                       <span className="flex flex-col text-left gap-0.5">
                         <span className="font-medium text-primary text-sm">
-                          I consent to receive SMS messages from {smsSenderDisplayName}.
+                          {dojoSmsProgram.consentLabel}
                         </span>
-                        <span className="text-[10px] text-muted-foreground leading-tight">
-                          RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-                          {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply.
-                          Reply STOP to cancel. Consent not required for purchase.{" "}
-                          <a href="/terms" className="underline">
-                            Terms
-                          </a>{" "}
-                          &{" "}
-                          <a href="/privacy" className="underline">
-                            Privacy
-                          </a>
-                          .
-                        </span>
+                        <SmsProgramDisclosure className="text-[10px] text-muted-foreground leading-tight" />
                       </span>
                     </label>
                     <Button
@@ -710,17 +686,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
                   <AlertDialogHeader>
                     <AlertDialogTitle className="text-lg">Confirm SMS Updates</AlertDialogTitle>
                     <AlertDialogDescription className="text-[11px] leading-tight break-words">
-                      RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-                      {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply
-                      STOP to cancel. Consent not required for purchase.{" "}
-                      <a href="/terms" className="underline break-words">
-                        Terms
-                      </a>{" "}
-                      &{" "}
-                      <a href="/privacy" className="underline break-words">
-                        Privacy
-                      </a>
-                      .
+                      <SmsProgramDisclosure />
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter className="flex flex-col sm:items-center sm:justify-center">
@@ -751,17 +717,7 @@ export default function RsvpPage({ params }: { params: Promise<{ eventId: string
                       so you never have to refresh this page to see if you are approved.
                     </p>
                     <AlertDialogDescription className="text-[10px] leading-tight text-muted-foreground break-words">
-                      RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-                      {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply
-                      STOP to cancel. Consent not required for purchase.{" "}
-                      <a href="/terms" className="underline break-words">
-                        Terms
-                      </a>{" "}
-                      &{" "}
-                      <a href="/privacy" className="underline break-words">
-                        Privacy
-                      </a>
-                      .
+                      <SmsProgramDisclosure />
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">

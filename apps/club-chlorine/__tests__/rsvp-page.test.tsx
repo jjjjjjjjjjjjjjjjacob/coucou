@@ -176,10 +176,6 @@ mock.module("@coucou/ui/tenant-template", () => ({
   useMobile: () => false,
 }));
 
-mock.module("@/components/event-referral-share-button", () => ({
-  EventReferralShareButton: () => <div data-testid="event-referral-share-button" />,
-}));
-
 mock.module("posthog-js", () => ({
   default: {
     capture: mock(() => {}),

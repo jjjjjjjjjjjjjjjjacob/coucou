@@ -340,8 +340,7 @@ async function applyWorkspaceEventDefaults<TEvent extends Doc<"events"> | null>(
   const fallbackPrimaryFieldConfig = hasEventPrimaryFieldConfig
     ? event.primaryFieldConfig
     : primaryFieldConfigFromWorkspaceDefaults(workspace?.eventDefaults);
-  const referralSharingEnabled =
-    event.referralSharingEnabled ?? workspace?.eventDefaults?.referralSharingEnabled ?? false;
+  const referralSharingEnabled = event.referralSharingEnabled ?? false;
 
   if (
     fallbackPrimaryFieldConfig === event.primaryFieldConfig &&
@@ -617,7 +616,7 @@ export const insertWithCreds = mutation({
       defersQrDelivery: args.defersQrDelivery,
       sendQrOnApproval: args.sendQrOnApproval,
       attendanceQuestionEnabled: args.attendanceQuestionEnabled,
-      referralSharingEnabled: args.referralSharingEnabled,
+      referralSharingEnabled: args.referralSharingEnabled ?? false,
       maxAttendees: args.maxAttendees,
       customFields: args.customFields,
       primaryFieldConfig: args.primaryFieldConfig,
@@ -768,6 +767,7 @@ export const createDraft = mutation({
       location: "",
       eventDate: 0,
       lifecycle: "draft",
+      referralSharingEnabled: false,
       createdAt: now,
       updatedAt: now,
     });

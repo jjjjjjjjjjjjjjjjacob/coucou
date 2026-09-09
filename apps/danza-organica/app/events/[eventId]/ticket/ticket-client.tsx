@@ -330,11 +330,13 @@ export default function TicketClientPage({
                   Download
                 </TenantButton>
               ) : null,
-              <EventReferralShareButton
-                key="share-ticket"
-                event={event}
-                className="danza-ticket__share-button"
-              />,
+              event.referralSharingEnabled === true ? (
+                <EventReferralShareButton
+                  key="share-ticket"
+                  event={event}
+                  className="danza-ticket__share-button"
+                />
+              ) : null,
             ]}
             details={ticketDetails}
           />

@@ -231,7 +231,7 @@ export default function EventPageClient({ params }: EventPageClientProps) {
           partners={row.sourceEvent.eventPartners}
           expandedContent={row.isFocused ? expandedContent : undefined}
           utilitySlot={
-            row.isFocused && isSignedIn ? (
+            row.isFocused && isSignedIn && resolvedFocusedEvent.referralSharingEnabled === true ? (
               <EventReferralShareButton event={resolvedFocusedEvent} showLabel={false} />
             ) : undefined
           }

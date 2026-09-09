@@ -9,7 +9,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type React from "react";
 import { use, useMemo } from "react";
-import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { Spinner } from "@/components/ui/spinner";
 import { getPublicEventActs } from "@/lib/event-lineup";
 import { buildRsvpPathForViewport, useRsvpFlowViewport } from "@/lib/rsvp-flow-routing";
@@ -327,11 +326,6 @@ export default function EventPageClient({ params }: EventPageClientProps) {
               row.isFocused
                 ? undefined
                 : buildEventDetailPathWithPreservedQuery(row.landingEvent.id, searchParams)
-            }
-            bottomRightSlot={
-              row.isFocused && isSignedIn ? (
-                <EventReferralShareButton event={resolvedFocusedEvent} showLabel={false} />
-              ) : undefined
             }
             expandedContent={row.isFocused ? expandedContent : undefined}
           />

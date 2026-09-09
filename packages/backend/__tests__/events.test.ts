@@ -48,6 +48,81 @@ async function getListCredentialsForEvent(testBackend: TestBackend, eventId: Id<
 }
 
 describe("Events Functions", () => {
+  it.each([
+    undefined,
+    false,
+    true,
+  ])("creates events with sharing explicitly set to %s without inheriting workspace sharing", async (referralSharingEnabled) => {
+    const testBackend = convexTest(schema, convexModules);
+    const workspaceId = await seedWorkspace(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(workspaceId, {
+        eventDefaults: { referralSharingEnabled: true },
+      });
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+    const createResult = await hostBackend.action(api.eventsNode.create, {
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "Optional sharing",
+      location: "Main Room",
+      eventDate: Date.now() + 86_400_000,
+      lists: [{ listKey: "guest", password: "" }],
+      referralSharingEnabled,
+    });
+    const storedEvent = await testBackend.run(async (databaseContext) =>
+      databaseContext.db.get(createResult.eventId),
+    );
+    expect(storedEvent?.referralSharingEnabled).toBe(referralSharingEnabled === true);
+
+    const publicEvent = await testBackend.query(api.events.getByRouteId, {
+      eventRouteId: storedEvent?.shortId ?? createResult.eventId,
+      siteKey: SITE_KEY,
+    });
+    expect(publicEvent?.referralSharingEnabled).toBe(referralSharingEnabled === true);
+  });
+
+  it("keeps legacy events and new drafts off until sharing is enabled for the event", async () => {
+    const testBackend = convexTest(schema, convexModules);
+    const workspaceId = await seedWorkspace(testBackend);
+    const legacyEventId = await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(workspaceId, {
+        eventDefaults: { referralSharingEnabled: true },
+      });
+      return databaseContext.db.insert("events", {
+        workspaceSlug: WORKSPACE_SLUG,
+        siteKey: SITE_KEY,
+        name: "Legacy event",
+        location: "Main Room",
+        eventDate: Date.now() + 86_400_000,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+    const draftResult = await hostBackend.mutation(api.events.createDraft, {
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+
+    for (const eventId of [legacyEventId, draftResult.eventId]) {
+      const event = await hostBackend.query(api.events.get, { eventId, siteKey: SITE_KEY });
+      expect(event?.referralSharingEnabled).toBe(false);
+
+      await hostBackend.mutation(api.events.update, {
+        eventId,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+        referralSharingEnabled: true,
+      });
+      const enabledEvent = await hostBackend.query(api.events.getByRouteId, {
+        eventRouteId: eventId,
+        siteKey: SITE_KEY,
+      });
+      expect(enabledEvent?.referralSharingEnabled).toBe(true);
+    }
+  });
+
   it("creates events with sanitized partner metadata and an explicit accent color", async () => {
     const testBackend = convexTest(schema, convexModules);
     await seedWorkspace(testBackend);

@@ -401,8 +401,7 @@ export const create = action({
     const primaryFieldConfig =
       sanitizePrimaryFieldConfig(args.primaryFieldConfig) ??
       primaryFieldConfigFromWorkspaceDefaults(workspaceEventDefaults);
-    const referralSharingEnabled =
-      args.referralSharingEnabled ?? workspaceEventDefaults?.referralSharingEnabled ?? false;
+    const referralSharingEnabled = args.referralSharingEnabled ?? false;
     const trimmedGuestPortalLinkLabel = args.guestPortalLinkLabel?.trim() ?? "";
     const trimmedGuestPortalLinkUrl = args.guestPortalLinkUrl?.trim() ?? "";
     const hasGuestPortalLinkLabel = trimmedGuestPortalLinkLabel.length > 0;

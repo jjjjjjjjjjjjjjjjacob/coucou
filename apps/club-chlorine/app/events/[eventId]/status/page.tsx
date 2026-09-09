@@ -12,7 +12,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { EventReferralShareButton } from "@/components/event-referral-share-button";
 import { SmsProgramDisclosure } from "@/components/sms-program-disclosure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,7 +88,6 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
   const guestPortalLinkUrl = event?.guestPortalLinkUrl?.trim() ?? "";
   const shouldShowGuestLink = guestPortalLinkLabel.length > 0 && guestPortalLinkUrl.length > 0;
   const guestPortalImageUrl = guestPortalImageResponse?.url ?? null;
-  const shouldShowReferralSharing = event?.referralSharingEnabled === true;
 
   useEffect(() => {
     if (typeof status?.smsConsentIpAddress === "string" && status.smsConsentIpAddress.length > 0) {
@@ -256,16 +254,6 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
                 )}
               </section>
             )}
-
-            {shouldShowReferralSharing ? (
-              <section className="flex w-full flex-col items-center gap-3 text-center">
-                <EventReferralShareButton
-                  event={event}
-                  variant="prominent"
-                  className="h-auto p-3"
-                />
-              </section>
-            ) : null}
 
             {status.smsConsent !== true ? (
               <div className="flex flex-col gap-3">

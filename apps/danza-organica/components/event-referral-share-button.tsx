@@ -21,6 +21,7 @@ interface EventReferralShareButtonProps {
     siteKey?: string | null;
     shortId?: string | null;
     name?: string | null;
+    referralSharingEnabled?: boolean;
   };
   className?: string;
   showLabel?: boolean;
@@ -118,7 +119,12 @@ async function copyTextToClipboard(text: string): Promise<ClipboardCopyResult> {
   }
 }
 
-export function EventReferralShareButton({
+export function EventReferralShareButton(props: EventReferralShareButtonProps) {
+  if (props.event.referralSharingEnabled !== true) return null;
+  return <EnabledEventReferralShareButton {...props} />;
+}
+
+function EnabledEventReferralShareButton({
   event,
   className,
   showLabel = true,

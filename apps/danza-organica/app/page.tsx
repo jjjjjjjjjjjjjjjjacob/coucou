@@ -213,7 +213,7 @@ function HomeEventRow({
       partners={rowSeed.sourceEvent.eventPartners}
       expandedContent={expandedContent}
       utilitySlot={
-        isFirstEvent && isSignedIn ? (
+        isFirstEvent && isSignedIn && rowSeed.sourceEvent.referralSharingEnabled === true ? (
           <EventReferralShareButton event={rowSeed.sourceEvent} showLabel={false} />
         ) : undefined
       }

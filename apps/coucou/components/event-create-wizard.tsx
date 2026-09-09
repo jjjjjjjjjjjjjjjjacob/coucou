@@ -22,6 +22,7 @@ import { type CustomFieldDef, CustomFieldsEditor } from "@/components/custom-fie
 import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { DateTimePicker } from "@/components/date-time-picker";
 import { EventActsEditor } from "@/components/event-acts-editor";
+import { EventReferralSharingField } from "@/components/event-form-sections/event-guest-page-section";
 import { OpenGraphImageSourceField } from "@/components/event-form-sections/open-graph-image-source-field";
 import { EventIconUpload } from "@/components/event-icon-upload";
 import {
@@ -320,7 +321,7 @@ function resolveEventWizardDefaults({
     themeTextColor,
     themeAccentColor,
     listKeys,
-    referralSharingEnabled: eventDefaults?.referralSharingEnabled ?? false,
+    referralSharingEnabled: false,
   };
 }
 
@@ -1836,30 +1837,7 @@ function StepGuestExperience({
         />
       </div>
 
-      <FormField
-        control={form.control}
-        name="referralSharingEnabled"
-        render={({ field }) => (
-          <FormItem>
-            <label className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4">
-              <FormControl>
-                <Checkbox
-                  checked={Boolean(field.value)}
-                  onCheckedChange={(checked) => field.onChange(Boolean(checked))}
-                  className="mt-0.5"
-                />
-              </FormControl>
-              <span className="space-y-1">
-                <span className="block text-sm font-medium">Show referral sharing CTA</span>
-                <FormDescription>
-                  Adds the guest sharing button on pending status pages and approved tickets.
-                </FormDescription>
-              </span>
-            </label>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <EventReferralSharingField form={form} />
     </div>
   );
 }
