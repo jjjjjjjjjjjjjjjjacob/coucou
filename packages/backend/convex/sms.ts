@@ -5,7 +5,7 @@
 
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./functions";
 import { ensureEventInSiteScope, eventMatchesSiteScope } from "./lib/siteScope";
 import { updateSmsConversationProviderStatus } from "./lib/smsConversationRecords";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
@@ -15,7 +15,8 @@ import { requireWorkspaceHost } from "./lib/workspaceAuth";
  */
 export const createNotification = internalMutation({
   args: {
-    eventId: v.id("events"),
+    eventId: v.optional(v.id("events")),
+    workspaceId: v.optional(v.id("workspaces")),
     recipientClerkUserId: v.string(),
     recipientPhoneObfuscated: v.string(),
     recipientPhoneHash: v.optional(v.string()),
@@ -282,7 +283,7 @@ export const listForEventPaginated = query({
     if (!identity) {
       throw new Error("Unauthorized");
     }
-    await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
+    const workspaceScope = await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
     if (eventId) {
       await ensureEventInSiteScope(ctx, eventId, { siteKey, workspaceSlug });
@@ -297,7 +298,7 @@ export const listForEventPaginated = query({
           )
         : null;
 
-    if (!eventId && scopedEventIds && scopedEventIds.size === 0) {
+    if (!eventId && !workspaceScope && scopedEventIds && scopedEventIds.size === 0) {
       return {
         page: [],
         nextCursor: null,
@@ -318,7 +319,11 @@ export const listForEventPaginated = query({
         return allNotifications;
       }
 
-      return allNotifications.filter((notification) => scopedEventIds.has(notification.eventId));
+      return allNotifications.filter(
+        (notification) =>
+          notification.workspaceId === workspaceScope.workspaceId ||
+          Boolean(notification.eventId && scopedEventIds.has(notification.eventId)),
+      );
     };
 
     let filteredNotifications = await loadNotifications();
@@ -358,7 +363,7 @@ export const listForEventPaginated = query({
     const userIds = new Set<string>();
 
     paginatedPage.forEach((notification) => {
-      eventIds.add(notification.eventId);
+      if (notification.eventId) eventIds.add(notification.eventId);
       userIds.add(notification.recipientClerkUserId);
     });
 
@@ -426,7 +431,7 @@ export const countForEventFiltered = query({
     if (!identity) {
       throw new Error("Unauthorized");
     }
-    await requireWorkspaceHost(ctx, {
+    const workspaceScope = await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
@@ -462,8 +467,10 @@ export const countForEventFiltered = query({
       : await ctx.db.query("smsNotifications").collect();
 
     if (!scopedEventId && scopedEventIds) {
-      notifications = notifications.filter((notification) =>
-        scopedEventIds.has(notification.eventId),
+      notifications = notifications.filter(
+        (notification) =>
+          notification.workspaceId === workspaceScope.workspaceId ||
+          Boolean(notification.eventId && scopedEventIds.has(notification.eventId)),
       );
     }
 

@@ -54,6 +54,7 @@ function getGlobalTwilioCredentials(): ResolvedTwilioCredentials | null {
 async function resolveTwilioCredentials(
   ctx: Pick<ActionCtx, "runQuery">,
   eventId?: Id<"events">,
+  workspaceId?: Id<"workspaces">,
 ): Promise<ResolvedTwilioCredentials | null> {
   if (isDevWithSmsDisabled()) {
     console.warn("⚠️  SMS disabled in development (DEV_TWILIO_ENABLED=false). SMS will be skipped.");
@@ -74,6 +75,18 @@ async function resolveTwilioCredentials(
     }
   }
 
+  if (workspaceId) {
+    const stored = await ctx.runQuery(internal.twilioCredentials.resolveForWorkspace, {
+      workspaceId,
+    });
+    if (stored)
+      return {
+        accountSid: stored.accountSid,
+        authToken: stored.authToken,
+        fromNumber: stored.fromPhoneNumber,
+        source: "workspace",
+      };
+  }
   return getGlobalTwilioCredentials();
 }
 
@@ -142,6 +155,7 @@ function calculateSmsCost(messageLength: number): number {
 export const sendSmsInternal = internalAction({
   args: {
     eventId: v.optional(v.id("events")),
+    workspaceId: v.optional(v.id("workspaces")),
     phoneNumber: v.string(),
     message: v.string(),
     notificationId: v.optional(v.id("smsNotifications")),
@@ -152,7 +166,7 @@ export const sendSmsInternal = internalAction({
     // Validate credentials (throws error in production if missing, returns null in dev if disabled)
     let credentials: ResolvedTwilioCredentials | null;
     try {
-      credentials = await resolveTwilioCredentials(ctx, args.eventId);
+      credentials = await resolveTwilioCredentials(ctx, args.eventId, args.workspaceId);
     } catch (error) {
       const errorDetails = getSmsErrorDetails(error);
       if (args.notificationId) {
@@ -431,6 +445,7 @@ export const sendSmsInternal = internalAction({
 export const sendBulkSmsInternal = internalAction({
   args: {
     eventId: v.optional(v.id("events")),
+    workspaceId: v.optional(v.id("workspaces")),
     recipients: v.array(
       v.object({
         phoneNumber: v.string(),
@@ -448,7 +463,7 @@ export const sendBulkSmsInternal = internalAction({
   },
   handler: async (ctx, args) => {
     // Validate credentials (throws error in production if missing, returns null in dev if disabled)
-    const credentials = await resolveTwilioCredentials(ctx, args.eventId);
+    const credentials = await resolveTwilioCredentials(ctx, args.eventId, args.workspaceId);
 
     if (!credentials) {
       // Dev mode with SMS disabled - return failure for all recipients

@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { AnyFunctionReference } from "convex/server";
 import { getFunctionName } from "convex/server";
 import { HapticProvider } from "../contexts/haptic-context";
 
-type ConvexFunctionReference = AnyFunctionReference;
+type ConvexFunctionReference = Parameters<typeof getFunctionName>[0];
 
 const workspaceScope = {
   workspaceSlug: "dojo-pomodoro",

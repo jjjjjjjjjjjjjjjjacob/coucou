@@ -9,7 +9,7 @@ import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
-import { action, internalMutation, query } from "./_generated/server";
+import { action, internalMutation, query } from "./functions";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";

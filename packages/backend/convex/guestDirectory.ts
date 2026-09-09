@@ -12,7 +12,7 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { mutation, query } from "./_generated/server";
+import { mutation, query } from "./functions";
 import { resolveCanonicalRsvpId, resolveCanonicalUserById } from "./lib/canonicalUserIdentity";
 import { GUEST_CLERK_USER_ID_PREFIX, isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
@@ -472,7 +472,7 @@ function getBlastTargetEventIdsForDelivery(blast: Doc<"textBlasts">): Id<"events
   if (blast.targetEventIds && blast.targetEventIds.length > 0) {
     return blast.targetEventIds;
   }
-  return [blast.eventId];
+  return blast.eventId ? [blast.eventId] : [];
 }
 
 async function countWorkspaceSentTexts(

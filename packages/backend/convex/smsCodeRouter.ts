@@ -23,7 +23,10 @@ import {
 } from "./lib/smsCodeRouting";
 import { recordSmsConversationMessage } from "./lib/smsConversationRecords";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
-import { resolveStoredTwilioCredentialForEvent } from "./lib/twilioCredentialResolution";
+import {
+  findTwilioCredentialForScope,
+  resolveStoredTwilioCredentialForEvent,
+} from "./lib/twilioCredentialResolution";
 
 const INBOUND_RECEIPT_RETRY_AFTER_MS = 5 * 60 * 1000;
 
@@ -186,11 +189,7 @@ async function findExecutableActionRoutes(
   for (const replyAction of replyActions) {
     if (!replyAction.isEnabled) continue;
     const event = await ctx.db.get(replyAction.targetEventId);
-    if (
-      !event ||
-      !isSmsExecutableEvent(event, now) ||
-      !(await eventMatchesInboundDestination(ctx, event, destination))
-    ) {
+    if (!event || !isSmsExecutableEvent(event, now)) {
       continue;
     }
     const listCredential = await ctx.db
@@ -201,6 +200,17 @@ async function findExecutableActionRoutes(
       .unique();
     const textBlast = await ctx.db.get(replyAction.textBlastId);
     if (!listCredential || !textBlast) continue;
+    if (textBlast.eventId) {
+      const messageEvent = await ctx.db.get(textBlast.eventId);
+      if (!messageEvent || !(await eventMatchesInboundDestination(ctx, messageEvent, destination)))
+        continue;
+    } else if (textBlast.workspaceId && destination.destinationPhoneNumber) {
+      const credential = await findTwilioCredentialForScope(ctx, textBlast.workspaceId);
+      const matchesSender = credential
+        ? credential.fromPhoneNumber === formatPhoneNumberForSms(destination.destinationPhoneNumber)
+        : destination.destinationUsesGlobalFallback === true;
+      if (!matchesSender) continue;
+    }
     executableCount += 1;
 
     const delivery = await ctx.db
@@ -803,7 +813,16 @@ async function recordOrdinaryInbound(
     if (candidateThread.lastOutboundAt === undefined) {
       continue;
     }
-    const event = await ctx.db.get(candidateThread.eventId);
+    const event = candidateThread.eventId ? await ctx.db.get(candidateThread.eventId) : null;
+    if (!event && candidateThread.workspaceId) {
+      const credential = await findTwilioCredentialForScope(ctx, candidateThread.workspaceId);
+      const matchesDestination =
+        !args.destination.destinationPhoneNumber ||
+        (credential
+          ? credential.fromPhoneNumber === args.destination.destinationPhoneNumber
+          : args.destination.destinationUsesGlobalFallback === true);
+      if (matchesDestination) matchingThreads.push(candidateThread);
+    }
     if (event && (await eventMatchesInboundDestination(ctx, event, args.destination))) {
       matchingThreads.push(candidateThread);
     }
@@ -816,6 +835,7 @@ async function recordOrdinaryInbound(
 
   await recordSmsConversationMessage(ctx, {
     eventId: thread.eventId,
+    workspaceId: thread.workspaceId,
     phoneHash: args.phoneHash,
     phoneObfuscated: thread.phoneObfuscated || args.phoneObfuscated,
     participantClerkUserIds: thread.participantClerkUserIds,
@@ -1284,6 +1304,7 @@ export const completeComplianceInbound = internalMutation({
     for (const thread of threads) {
       await recordSmsConversationMessage(ctx, {
         eventId: thread.eventId,
+        workspaceId: thread.workspaceId,
         phoneHash: phoneResolution.phoneHash,
         phoneObfuscated: thread.phoneObfuscated || phoneObfuscated,
         participantClerkUserIds: thread.participantClerkUserIds,

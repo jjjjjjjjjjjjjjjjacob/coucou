@@ -255,6 +255,7 @@ export type GuestDirectorySortDirection = "asc" | "desc";
 export interface GuestDirectoryFilterState {
   searchText: string;
   eventIds: string[];
+  listKeys?: string[];
   recipientFilter: RecipientFilterState;
   recipientHistoryFilter: RecipientHistoryFilterState;
   smsConsentFilter: GuestDirectorySmsConsentFilter;
@@ -274,8 +275,8 @@ export const createDefaultGuestDirectoryFilterState = (): GuestDirectoryFilterSt
   tags: [],
   defaultListKeys: [],
   rsvpedToLatestEvent: "any",
-  sortBy: "latestRsvpAt",
-  sortDirection: "desc",
+  sortBy: "name",
+  sortDirection: "asc",
 });
 
 export const isGuestDirectoryFilterConfigured = (state: GuestDirectoryFilterState): boolean =>
@@ -285,6 +286,7 @@ export const isGuestDirectoryFilterConfigured = (state: GuestDirectoryFilterStat
 export interface GuestDirectoryQueryFilterArgs {
   searchText?: string;
   eventIds?: string[];
+  listKeys?: string[];
   recipientFilter?: string;
   recipientHistoryFilter?: {
     type: "received_any" | "not_received_any";
@@ -298,12 +300,13 @@ export interface GuestDirectoryQueryFilterArgs {
   sortDirection: GuestDirectorySortDirection;
 }
 
-/** Serializes the filter state into guestDirectory.listGuestDirectoryPaginated args. */
+/** Serializes the shared contact directory and audience filter state. */
 export const encodeGuestDirectoryFilterArgs = (
   state: GuestDirectoryFilterState,
 ): GuestDirectoryQueryFilterArgs => ({
   searchText: state.searchText.trim() ? state.searchText.trim() : undefined,
   eventIds: state.eventIds.length > 0 ? state.eventIds : undefined,
+  ...(state.listKeys?.length ? { listKeys: state.listKeys } : {}),
   recipientFilter: isRecipientFilterConfigured(state.recipientFilter)
     ? encodeRecipientFilter(state.recipientFilter)
     : undefined,
@@ -324,7 +327,7 @@ export const encodeGuestDirectoryFilterArgs = (
 });
 
 export const countActiveGuestDirectoryFilters = (state: GuestDirectoryFilterState): number => {
-  let activeFilterCount = 0;
+  let activeFilterCount = state.listKeys?.length ? 1 : 0;
   if (state.searchText.trim()) activeFilterCount += 1;
   if (state.eventIds.length > 0) activeFilterCount += 1;
   if (state.recipientFilter.type !== "all") activeFilterCount += 1;

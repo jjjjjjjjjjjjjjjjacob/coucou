@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { resolveTenantWorkspaceScope } from "./workspaceScope";
 
 export type SiteScope = {
   siteKey?: string | null;
@@ -64,12 +65,23 @@ export async function getTextBlastInSiteScope(
   ctx: SiteScopedDatabaseReader,
   blastId: Id<"textBlasts">,
   scope: SiteScope,
-): Promise<{ blast: TextBlastScopeRecord; event: Doc<"events"> } | null> {
+): Promise<{ blast: TextBlastScopeRecord; event: Doc<"events"> | null } | null> {
   const blast = await ctx.db.get(blastId);
   if (!blast) {
     return null;
   }
 
+  if (blast.workspaceId) {
+    const workspace = await resolveTenantWorkspaceScope(ctx, {
+      workspaceSlug: scope.workspaceSlug ?? undefined,
+      siteKey: scope.siteKey ?? undefined,
+    });
+    if (!workspace || workspace.workspaceId !== blast.workspaceId) return null;
+    const event = blast.eventId ? await getEventInSiteScope(ctx, blast.eventId, scope) : null;
+    if (blast.eventId && !event) return null;
+    return { blast, event };
+  }
+  if (!blast.eventId) return null;
   const event = await getEventInSiteScope(ctx, blast.eventId, scope);
   if (!event) {
     return null;
@@ -82,7 +94,7 @@ export async function ensureTextBlastInSiteScope(
   ctx: SiteScopedDatabaseReader,
   blastId: Id<"textBlasts">,
   scope: SiteScope,
-): Promise<{ blast: TextBlastScopeRecord; event: Doc<"events"> }> {
+): Promise<{ blast: TextBlastScopeRecord; event: Doc<"events"> | null }> {
   const blastRecord = await getTextBlastInSiteScope(ctx, blastId, scope);
   if (!blastRecord) {
     throw new Error("Text blast not found");

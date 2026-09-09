@@ -133,7 +133,7 @@ describe("guest directory filter state", () => {
     const defaultState = createDefaultGuestDirectoryFilterState();
     expect(defaultState.recipientFilter).toEqual({ type: "all" });
     expect(defaultState.recipientHistoryFilter).toEqual({ type: "none", textBlastIds: [] });
-    expect(defaultState.sortBy).toBe("latestRsvpAt");
+    expect(defaultState.sortBy).toBe("name");
     expect(isGuestDirectoryFilterConfigured(defaultState)).toBe(true);
   });
 
@@ -149,8 +149,8 @@ describe("guest directory filter state", () => {
     expect(defaultEncoded.smsConsentFilter).toBeUndefined();
     expect(defaultEncoded.tags).toBeUndefined();
     expect(defaultEncoded.rsvpedToLatestEvent).toBeUndefined();
-    expect(defaultEncoded.sortBy).toBe("latestRsvpAt");
-    expect(defaultEncoded.sortDirection).toBe("desc");
+    expect(defaultEncoded.sortBy).toBe("name");
+    expect(defaultEncoded.sortDirection).toBe("asc");
 
     const activeEncoded = encodeGuestDirectoryFilterArgs({
       ...createDefaultGuestDirectoryFilterState(),

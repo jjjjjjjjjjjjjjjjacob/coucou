@@ -12,6 +12,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { GuestDirectoryPerson } from "@/lib/types";
+import { ContactHistory } from "./contact-history";
 
 export interface GuestProfilePatch {
   tags: string[];
@@ -84,6 +85,9 @@ export function GuestProfileSheet({
               <p className="text-sm text-[var(--text-tertiary)]">No inviter history.</p>
             )}
           </div>
+          {person.contactId && open ? (
+            <ContactHistory key={person.contactId} contactId={person.contactId} />
+          ) : null}
           <GuestAnnotationsFields
             tags={tags}
             onTagsChange={setTags}

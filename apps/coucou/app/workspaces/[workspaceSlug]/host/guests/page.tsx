@@ -17,6 +17,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 import { toast } from "sonner";
 import { DashboardTitleBar } from "@/components/dashboard-title-bar";
+import { ContactHistory } from "@/components/guests/contact-history";
 import { GuestDirectoryFilters } from "@/components/guests/guest-directory-filters";
 import { GuestDirectoryTable } from "@/components/guests/guest-directory-table";
 import { type GuestProfilePatch, GuestProfileSheet } from "@/components/guests/guest-profile-sheet";
@@ -40,26 +41,21 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { UserDetailContent } from "@/components/users/user-detail-content";
 import { useWorkspaceAccess } from "@/components/workspace-access-gate";
 import {
+  readContactDirectoryFilters,
+  writeContactDirectoryFilters,
+} from "@/lib/contact-directory-url";
+import {
   HOST_GUEST_DIRECTORY_TABLE_KEY,
   HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
 } from "@/lib/dashboard-table-preferences";
 import { buildGuestDirectoryPersonKey } from "@/lib/guest-directory-helpers";
+import { useContactDirectory } from "@/lib/hooks/use-contact-directory";
+import { useContactFilterOptions } from "@/lib/hooks/use-contact-filter-options";
 import { useDashboardTableColumnLayout } from "@/lib/hooks/use-dashboard-table-column-layout";
-import { useDebounce } from "@/lib/hooks/use-debounce";
 import { useIsViewportAtLeast } from "@/lib/hooks/use-viewport-at-least";
 import { getRsvpTableColumnSizing, RSVP_SELECT_COLUMN_SIZING } from "@/lib/rsvp-table-layout";
-import {
-  createDefaultGuestDirectoryFilterState,
-  encodeGuestDirectoryFilterArgs,
-  type GuestDirectoryFilterState,
-  isGuestDirectoryFilterConfigured,
-} from "@/lib/text-blast-filters";
-import type {
-  GuestDirectoryFacets,
-  GuestDirectoryPerson,
-  GuestDirectoryResponse,
-  TextBlast,
-} from "@/lib/types";
+import { type GuestDirectoryFilterState } from "@/lib/text-blast-filters";
+import type { GuestDirectoryFacets, GuestDirectoryPerson, TextBlast } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
 import TextBlastDialog, { type TextBlastInitialTargeting } from "../text-blasts/text-blast-dialog";
 
@@ -95,7 +91,7 @@ const COLUMN_LABELS: Record<string, string> = {
   eventsAttended: "Attended",
   role: "Role",
   firstRsvpAt: "First RSVP",
-  events: "Event List",
+  events: "Recent events",
   actions: "Actions",
 };
 
@@ -128,20 +124,40 @@ export default function GuestDirectoryPage() {
   const usersPath = useWorkspaceOperationPath("host", "users");
   const isWideViewport = useIsViewportAtLeast(GUEST_DETAIL_PANEL_MIN_VIEWPORT_WIDTH);
 
-  const pageIndex = Number.parseInt(searchParams.get("page") || "0", 10);
-  const pageSize = Number.parseInt(searchParams.get("pageSize") || "20", 10);
+  const requestedPageSize = Number.parseInt(searchParams.get("pageSize") || "20", 10);
+  const pageSize = Number.isFinite(requestedPageSize)
+    ? Math.max(1, Math.min(40, requestedPageSize))
+    : 20;
   const detailPanelUserReference = searchParams.get(GUEST_DETAIL_PANEL_QUERY_PARAM);
 
-  const [filterState, setFilterState] = React.useState<GuestDirectoryFilterState>(
-    createDefaultGuestDirectoryFilterState,
+  const [filterState, setFilterState] = React.useState<GuestDirectoryFilterState>(() =>
+    readContactDirectoryFilters(new URLSearchParams(searchParams.toString())),
   );
-  const debouncedSearchText = useDebounce(filterState.searchText, 250);
-  const debouncedEventIds = useDebounce(filterState.eventIds, 300);
+
+  React.useEffect(() => {
+    setFilterState(readContactDirectoryFilters(new URLSearchParams(searchParams.toString())));
+  }, [searchParams]);
 
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
   const [selectedPeopleByKey, setSelectedPeopleByKey] = React.useState<
     Record<string, GuestDirectoryPerson>
   >({});
+
+  const selectionFilterKey = JSON.stringify({
+    ...filterState,
+    listKeys: filterState.listKeys ?? [],
+    sortBy: undefined,
+    sortDirection: undefined,
+    workspace: workspaceScope?.workspaceSlug,
+  });
+  const selectionFilterReference = React.useRef(selectionFilterKey);
+  React.useEffect(() => {
+    if (selectionFilterReference.current !== selectionFilterKey) {
+      setRowSelection({});
+      setSelectedPeopleByKey({});
+      selectionFilterReference.current = selectionFilterKey;
+    }
+  }, [selectionFilterKey]);
 
   const [profileSheetPerson, setProfileSheetPerson] = React.useState<GuestDirectoryPerson | null>(
     null,
@@ -152,47 +168,24 @@ export default function GuestDirectoryPage() {
     React.useState<TextBlastInitialTargeting | null>(null);
   const [bulkTagInput, setBulkTagInput] = React.useState("");
 
-  const queryFilterArgs = React.useMemo(() => {
-    const encodedFilterArgs = encodeGuestDirectoryFilterArgs(filterState);
-    return {
-      ...encodedFilterArgs,
-      searchText: debouncedSearchText.trim() || undefined,
-      eventIds: debouncedEventIds.length > 0 ? (debouncedEventIds as Id<"events">[]) : undefined,
-      recipientHistoryFilter: encodedFilterArgs.recipientHistoryFilter
-        ? {
-            type: encodedFilterArgs.recipientHistoryFilter.type,
-            textBlastIds: encodedFilterArgs.recipientHistoryFilter
-              .textBlastIds as Id<"textBlasts">[],
-          }
-        : undefined,
-    };
-  }, [filterState, debouncedEventIds, debouncedSearchText]);
-
-  const eventSelectionIsSettled =
-    filterState.eventIds.length === debouncedEventIds.length &&
-    filterState.eventIds.every((eventId, eventIndex) => eventId === debouncedEventIds[eventIndex]);
-  const isFilterConfigured = isGuestDirectoryFilterConfigured(filterState);
-
-  const directoryQuery = useQuery({
-    ...convexQuery(api.guestDirectory.listGuestDirectoryPaginated, {
-      ...queryFilterArgs,
-      page: pageIndex,
-      pageSize,
-      ...(workspaceScope?.queryArgs ?? {}),
+  const directory = useContactDirectory(filterState, workspaceScope, pageSize);
+  const people = directory.people;
+  const activeContactId = searchParams.get("contact") as Id<"workspaceContacts"> | null;
+  const activeContactQuery = useQuery({
+    ...convexQuery(api.contacts.get, {
+      workspaceSlug: workspaceScope?.workspaceSlug ?? "",
+      contactId: activeContactId as Id<"workspaceContacts">,
     }),
-    enabled: !!isSignedIn && !!workspaceScope && isFilterConfigured,
+    enabled: Boolean(workspaceScope && activeContactId && !detailPanelUserReference),
   });
-  const directoryData = eventSelectionIsSettled
-    ? (directoryQuery.data as GuestDirectoryResponse | undefined)
-    : undefined;
-  const people = React.useMemo(() => directoryData?.people ?? [], [directoryData]);
+  React.useEffect(() => {
+    if (activeContactQuery.data && activeContactId && !detailPanelUserReference) {
+      setProfileSheetPerson(activeContactQuery.data);
+      setIsProfileSheetOpen(true);
+    }
+  }, [activeContactQuery.data, activeContactId, detailPanelUserReference]);
 
-  const facetsQuery = useQuery({
-    ...convexQuery(api.guestDirectory.getGuestDirectoryFacets, {
-      ...(workspaceScope?.queryArgs ?? {}),
-    }),
-    enabled: !!isSignedIn && !!workspaceScope,
-  });
+  const facetsQuery = useContactFilterOptions(workspaceScope);
   const facets = facetsQuery.data as GuestDirectoryFacets | undefined;
 
   const blastsQuery = useQuery({
@@ -255,36 +248,39 @@ export default function GuestDirectoryPage() {
 
   const handleFilterChange = React.useCallback(
     (nextFilterState: GuestDirectoryFilterState) => {
-      const eventSelectionChanged =
-        nextFilterState.eventIds.length !== filterState.eventIds.length ||
-        nextFilterState.eventIds.some(
-          (eventId, eventIndex) => eventId !== filterState.eventIds[eventIndex],
-        );
+      const audienceChanged =
+        JSON.stringify({ ...nextFilterState, sortBy: undefined, sortDirection: undefined }) !==
+        JSON.stringify({ ...filterState, sortBy: undefined, sortDirection: undefined });
       setFilterState(nextFilterState);
-      if (eventSelectionChanged) {
+      if (audienceChanged) {
         setRowSelection({});
         setSelectedPeopleByKey({});
       }
-      const shouldResetPage = searchParams.has("page") && searchParams.get("page") !== "0";
-      if (eventSelectionChanged || shouldResetPage) {
-        navigateWithParams((params) => {
-          params.set("page", "0");
-          if (eventSelectionChanged) {
-            params.delete(GUEST_DETAIL_PANEL_QUERY_PARAM);
-          }
-        });
-      }
+      navigateWithParams((params) => {
+        writeContactDirectoryFilters(params, nextFilterState);
+        if (audienceChanged) {
+          params.delete(GUEST_DETAIL_PANEL_QUERY_PARAM);
+          params.delete("contact");
+        }
+      });
     },
-    [filterState.eventIds, navigateWithParams, searchParams],
+    [filterState, navigateWithParams],
   );
 
   const openPersonDetail = React.useCallback(
     (person: GuestDirectoryPerson) => {
-      if (!person.detailReference) return;
+      if (!person.detailReference) {
+        setProfileSheetPerson(person);
+        setIsProfileSheetOpen(true);
+        return;
+      }
       if (isWideViewport) {
         // Push so browser back closes the panel.
         navigateWithParams(
-          (params) => params.set(GUEST_DETAIL_PANEL_QUERY_PARAM, person.detailReference as string),
+          (params) => {
+            params.set(GUEST_DETAIL_PANEL_QUERY_PARAM, person.detailReference as string);
+            if (person.contactId) params.set("contact", person.contactId);
+          },
           { pushHistory: true },
         );
       } else {
@@ -295,7 +291,10 @@ export default function GuestDirectoryPage() {
   );
 
   const closePersonDetail = React.useCallback(() => {
-    navigateWithParams((params) => params.delete(GUEST_DETAIL_PANEL_QUERY_PARAM));
+    navigateWithParams((params) => {
+      params.delete(GUEST_DETAIL_PANEL_QUERY_PARAM);
+      params.delete("contact");
+    });
   }, [navigateWithParams]);
 
   const selectedPeople = React.useMemo(
@@ -314,8 +313,8 @@ export default function GuestDirectoryPage() {
       setSelectedPeopleByKey((previousPeopleByKey) => {
         const nextPeopleByKey = { ...previousPeopleByKey };
         for (const person of people) {
-          if (nextSelection[person.personKey]) {
-            nextPeopleByKey[person.personKey] = person;
+          if (nextSelection[person.contactId ?? person.personKey]) {
+            nextPeopleByKey[person.contactId ?? person.personKey] = person;
           }
         }
         for (const personKey of Object.keys(nextPeopleByKey)) {
@@ -397,23 +396,11 @@ export default function GuestDirectoryPage() {
 
   const handleStartTextBlast = () => {
     if (selectedPeople.length === 0) return;
-    const eventIds = new Set<string>();
-    const rsvpIds = new Set<string>();
-    const listKeys = new Set<string>();
-    for (const person of selectedPeople) {
-      for (const eventEntry of person.events) {
-        eventIds.add(eventEntry.eventId);
-        rsvpIds.add(eventEntry.rsvpId);
-        if (eventEntry.listKey) {
-          listKeys.add(eventEntry.listKey.toLowerCase());
-        }
-      }
-    }
-    setTextBlastTargeting({
-      eventIds: Array.from(eventIds) as Id<"events">[],
-      selectedRsvpIds: Array.from(rsvpIds) as Id<"rsvps">[],
-      targetLists: Array.from(listKeys),
-    });
+    const contactIds = selectedPeople
+      .map((person) => person.contactId)
+      .filter((identifier): identifier is Id<"workspaceContacts"> => Boolean(identifier));
+    if (!contactIds.length) return;
+    setTextBlastTargeting({ contactIds });
     setIsTextBlastDialogOpen(true);
   };
 
@@ -657,15 +644,17 @@ export default function GuestDirectoryPage() {
         ...getRsvpTableColumnSizing({ label: "First RSVP" }),
         cell: ({ row }) => (
           <span className="text-[var(--text-secondary)]">
-            {new Date(row.original.firstRsvpAt).toLocaleDateString()}
+            {row.original.firstRsvpAt
+              ? new Date(row.original.firstRsvpAt).toLocaleDateString()
+              : "No RSVPs"}
           </span>
         ),
       },
       {
         id: "events",
-        header: "Event List",
+        header: "Recent events",
         ...getRsvpTableColumnSizing({
-          label: "Event List",
+          label: "Recent events",
           minContentWidth: 220,
           contentWidthCap: 360,
         }),
@@ -748,7 +737,7 @@ export default function GuestDirectoryPage() {
       columnOrder: columnLayout.columnOrder,
       columnSizing: columnLayout.columnSizing,
     },
-    getRowId: (person) => person.personKey,
+    getRowId: (person) => person.contactId ?? person.personKey,
     enableRowSelection: true,
     enableColumnResizing: true,
     columnResizeMode: "onChange",
@@ -757,12 +746,15 @@ export default function GuestDirectoryPage() {
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
     manualSorting: true,
-    pageCount: directoryData?.pagination.totalPages ?? 1,
+    pageCount: -1,
   });
 
-  const isDirectoryLoading =
-    !eventSelectionIsSettled || (directoryQuery.isLoading && isFilterConfigured);
-  const pagination = directoryData?.pagination;
+  const isDirectoryLoading = directory.isLoading;
+  const pagination = {
+    pageIndex: directory.pageIndex,
+    hasNextPage: directory.hasNextPage,
+    hasPreviousPage: directory.hasPreviousPage,
+  };
   const isDetailPanelOpen = detailPanelUserReference !== null;
 
   return (
@@ -771,9 +763,18 @@ export default function GuestDirectoryPage() {
         <div className="min-w-0 flex-1 space-y-5 lg:pr-0">
           <DashboardTitleBar
             title="Contacts"
-            subtitle="Every contact across all events — filter, annotate, and text them"
+            subtitle="Search, organize, and message everyone in your workspace"
             breadcrumb={[{ label: "Workspace" }]}
           />
+
+          {activeContactQuery.error ? (
+            <div role="alert">
+              Contact could not be loaded.{" "}
+              <Button variant="link" onClick={() => void activeContactQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
@@ -784,6 +785,7 @@ export default function GuestDirectoryPage() {
                 eventOptions={facets?.events ?? []}
                 blastOptions={blastOptions}
                 tagOptions={facets?.tags ?? []}
+                listKeyOptions={facets?.workspaceListKeys ?? []}
                 defaultListKeyOptions={Array.from(
                   new Set([
                     ...(facets?.defaultListKeys ?? []),
@@ -792,6 +794,14 @@ export default function GuestDirectoryPage() {
                 ).sort()}
                 customFieldOptions={facets?.customFieldOptions ?? []}
               />
+              {facetsQuery.error ? (
+                <div role="alert" className="mt-2 text-sm">
+                  Filter options could not be loaded.{" "}
+                  <Button variant="link" onClick={() => void facetsQuery.refetch()}>
+                    Retry filters
+                  </Button>
+                </div>
+              ) : null}
             </div>
             <Popover>
               <PopoverTrigger asChild>
@@ -967,7 +977,20 @@ export default function GuestDirectoryPage() {
 
           <Card className="border-[var(--border-subtle)] bg-[var(--surface-2)] shadow-[var(--shadow-card)]">
             <CardContent className="pt-6">
-              {isDirectoryLoading ? (
+              {directory.error ? (
+                <div role="alert" className="space-y-3">
+                  <p>{directory.error}</p>
+                  <Button variant="outline" onClick={() => void directory.retry()}>
+                    Retry
+                  </Button>
+                </div>
+              ) : directory.isPreparing ? (
+                <p role="status" className="py-8 text-center">
+                  Preparing the contact directory…
+                </p>
+              ) : !directory.configured ? (
+                <p className="py-8 text-center">Complete the filter details to search contacts.</p>
+              ) : isDirectoryLoading ? (
                 <TableSkeleton rows={10} columns={8} />
               ) : (
                 <GuestDirectoryTable
@@ -991,8 +1014,7 @@ export default function GuestDirectoryPage() {
               <Users className="h-3.5 w-3.5" />
               {pagination ? (
                 <>
-                  {pagination.totalCount} contacts · Page {pagination.pageIndex + 1} of{" "}
-                  {pagination.totalPages}
+                  Page {pagination.pageIndex + 1} · {people.length} contacts shown
                 </>
               ) : (
                 <>Page 1 of 1</>
@@ -1009,7 +1031,7 @@ export default function GuestDirectoryPage() {
                 }
                 className="w-24"
               >
-                {[10, 20, 50, 100].map((pageSizeOption) => (
+                {[10, 20, 40].map((pageSizeOption) => (
                   <SelectOption key={pageSizeOption} value={String(pageSizeOption)}>
                     {pageSizeOption} / page
                   </SelectOption>
@@ -1018,9 +1040,7 @@ export default function GuestDirectoryPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() =>
-                  navigateWithParams((params) => params.set("page", String(pageIndex - 1)))
-                }
+                onClick={directory.previousPage}
                 disabled={!pagination?.hasPreviousPage}
                 className="border-[var(--border-subtle)]"
               >
@@ -1029,9 +1049,7 @@ export default function GuestDirectoryPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() =>
-                  navigateWithParams((params) => params.set("page", String(pageIndex + 1)))
-                }
+                onClick={directory.nextPage}
                 disabled={!pagination?.hasNextPage}
                 className="border-[var(--border-subtle)]"
               >
@@ -1043,6 +1061,9 @@ export default function GuestDirectoryPage() {
 
         {isDetailPanelOpen ? (
           <aside className="hidden shrink-0 lg:sticky lg:top-0 lg:block lg:max-h-screen lg:w-[400px] lg:overflow-y-auto lg:border-l lg:border-[var(--border-subtle)] lg:pl-5 lg:ml-5">
+            {activeContactId ? (
+              <ContactHistory key={activeContactId} contactId={activeContactId} />
+            ) : null}
             <UserDetailContent
               key={detailPanelUserReference}
               userReference={detailPanelUserReference}
@@ -1056,7 +1077,10 @@ export default function GuestDirectoryPage() {
       <GuestProfileSheet
         person={profileSheetPerson}
         open={isProfileSheetOpen}
-        onOpenChange={setIsProfileSheetOpen}
+        onOpenChange={(open) => {
+          setIsProfileSheetOpen(open);
+          if (!open && activeContactId && !detailPanelUserReference) closePersonDetail();
+        }}
         onSave={handleSaveProfile}
         listKeyOptions={facets?.workspaceListKeys ?? []}
         tagSuggestions={facets?.tags ?? []}

@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { contactAudienceValidator, contactReplyActionValidator } from "./lib/contactValidators";
 import {
   eventActValidator,
   eventLifecycleValidator,
@@ -56,6 +57,141 @@ const inviterHistoryEntryValidator = v.object({
 });
 
 export default defineSchema({
+  contactDirectoryState: defineTable({
+    workspaceId: v.id("workspaces"),
+    status: v.union(v.literal("building"), v.literal("ready"), v.literal("failed")),
+    phase: v.string(),
+    cursor: v.optional(v.string()),
+    processed: v.number(),
+    error: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("by_workspace", ["workspaceId"]),
+  workspaceContacts: defineTable({
+    workspaceId: v.id("workspaces"),
+    personKey: v.string(),
+    mergedInto: v.optional(v.id("workspaceContacts")),
+    phoneHash: v.optional(v.string()),
+    phoneNumber: v.optional(v.string()),
+    clerkUserIds: v.array(v.string()),
+    primaryClerkUserId: v.optional(v.string()),
+    detailReference: v.optional(v.string()),
+    name: v.string(),
+    normalizedName: v.string(),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    searchText: v.string(),
+    tags: v.array(v.string()),
+    notes: v.optional(v.string()),
+    defaultListKey: v.optional(v.string()),
+    invitedByNames: v.array(v.string()),
+    smsConsent: v.boolean(),
+    consentUpdatedAt: v.number(),
+    hasOptedOut: v.boolean(),
+    eventCount: v.number(),
+    eventsAttendedCount: v.number(),
+    receivedTextCount: v.number(),
+    firstRsvpAt: v.number(),
+    latestRsvpAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace_phone", ["workspaceId", "phoneHash"])
+    .index("by_phone", ["phoneHash"])
+    .index("by_workspace_identity", ["workspaceId", "personKey"])
+    .index("by_workspace_name", ["workspaceId", "mergedInto", "normalizedName"])
+    .index("by_workspace_latest", ["workspaceId", "mergedInto", "latestRsvpAt"])
+    .index("by_workspace_first", ["workspaceId", "mergedInto", "firstRsvpAt"])
+    .index("by_workspace_count", ["workspaceId", "mergedInto", "eventCount"]),
+  workspaceContactIdentities: defineTable({
+    workspaceId: v.id("workspaces"),
+    clerkUserId: v.string(),
+    contactId: v.id("workspaceContacts"),
+  })
+    .index("by_workspace_user", ["workspaceId", "clerkUserId"])
+    .index("by_user", ["clerkUserId"])
+    .index("by_contact", ["contactId"]),
+  contactEvents: defineTable({
+    workspaceId: v.id("workspaces"),
+    contactId: v.id("workspaceContacts"),
+    eventId: v.id("events"),
+    rsvpId: v.id("rsvps"),
+    clerkUserId: v.string(),
+    eventName: v.string(),
+    eventDate: v.number(),
+    listKey: v.optional(v.string()),
+    approvalStatus: v.string(),
+    attendanceStatus: v.optional(v.string()),
+    invitedByName: v.optional(v.string()),
+    rsvpCreatedAt: v.number(),
+    smsConsent: v.optional(v.boolean()),
+    consentUpdatedAt: v.number(),
+    hasAttended: v.boolean(),
+    hasApprovalSms: v.boolean(),
+    hasQrCode: v.boolean(),
+    customFieldKeys: v.array(v.string()),
+    missingCustomFieldKeys: v.array(v.string()),
+  })
+    .index("by_rsvp", ["rsvpId"])
+    .index("by_user", ["clerkUserId"])
+    .index("by_event", ["eventId"])
+    .index("by_contact_event", ["contactId", "eventId"])
+    .index("by_contact_created", ["contactId", "rsvpCreatedAt"])
+    .index("by_contact_rsvp", ["contactId", "rsvpId"])
+    .index("by_contact_consent", ["contactId", "smsConsent", "consentUpdatedAt"])
+    .index("by_contact_attendance", ["contactId", "eventId", "hasAttended"])
+    .index("by_contact_date", ["contactId", "eventDate"]),
+  contactFacets: defineTable({
+    workspaceId: v.id("workspaces"),
+    kind: v.union(v.literal("tag"), v.literal("defaultList"), v.literal("eventList")),
+    value: v.string(),
+    count: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_value", ["workspaceId", "kind", "value"]),
+  contactDeliveries: defineTable({
+    workspaceId: v.id("workspaces"),
+    contactId: v.id("workspaceContacts"),
+    deliveryId: v.id("textBlastRecipients"),
+    textBlastId: v.id("textBlasts"),
+  })
+    .index("by_delivery", ["deliveryId"])
+    .index("by_contact", ["contactId"])
+    .index("by_contact_blast", ["contactId", "textBlastId"]),
+  contactAudiencePreviews: defineTable({
+    workspaceId: v.id("workspaces"),
+    createdBy: v.string(),
+    blastId: v.optional(v.id("textBlasts")),
+    replyActions: v.optional(v.array(contactReplyActionValidator)),
+    exclusionCounts: v.optional(v.record(v.string(), v.number())),
+    audience: contactAudienceValidator,
+    messageEventId: v.optional(v.id("events")),
+    includeQrCodes: v.boolean(),
+    status: v.union(v.literal("building"), v.literal("ready"), v.literal("failed")),
+    cursor: v.optional(v.string()),
+    selectedOffset: v.number(),
+    eligibleCount: v.number(),
+    excludedCount: v.number(),
+    processedCount: v.number(),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_workspace", ["workspaceId"]),
+  contactAudienceSelections: defineTable({
+    previewId: v.id("contactAudiencePreviews"),
+    rsvpId: v.id("rsvps"),
+  }).index("by_preview_rsvp", ["previewId", "rsvpId"]),
+  contactAudienceEvaluations: defineTable({
+    previewId: v.id("contactAudiencePreviews"),
+    contactId: v.id("workspaceContacts"),
+  }).index("by_preview_contact", ["previewId", "contactId"]),
+  contactAudienceMembers: defineTable({
+    previewId: v.id("contactAudiencePreviews"),
+    contactId: v.id("workspaceContacts"),
+    phoneHash: v.string(),
+  })
+    .index("by_preview", ["previewId"])
+    .index("by_preview_phone", ["previewId", "phoneHash"]),
   workspaces: defineTable({
     slug: v.string(),
     name: v.string(),
@@ -310,6 +446,7 @@ export default defineSchema({
     .index("by_shortId", ["shortId"])
     .index("by_date", ["eventDate"])
     .index("by_workspaceSlug", ["workspaceSlug"])
+    .index("by_workspace_date", ["workspaceSlug", "eventDate"])
     .index("by_siteKey", ["siteKey"]),
 
   listCredentials: defineTable({
@@ -591,7 +728,8 @@ export default defineSchema({
 
   // SMS notifications tracking
   smsNotifications: defineTable({
-    eventId: v.id("events"),
+    workspaceId: v.optional(v.id("workspaces")),
+    eventId: v.optional(v.id("events")),
     recipientClerkUserId: v.string(),
     recipientPhoneObfuscated: v.string(), // ***-***-1234 format for display
     recipientPhoneHash: v.optional(v.string()),
@@ -610,13 +748,22 @@ export default defineSchema({
   })
     .index("by_event", ["eventId"])
     .index("by_user", ["recipientClerkUserId"])
+    .index("by_workspace", ["workspaceId"])
+    .index("by_event_recipient_type_status", ["eventId", "recipientClerkUserId", "type", "status"])
     .index("by_status", ["status"])
     .index("by_type", ["type"])
     .index("by_text_blast", ["textBlastId"]),
 
   // Text blast campaigns
   textBlasts: defineTable({
-    eventId: v.id("events"),
+    workspaceId: v.optional(v.id("workspaces")),
+    audience: v.optional(contactAudienceValidator),
+    audiencePreviewId: v.optional(v.id("contactAudiencePreviews")),
+    sendAttempt: v.optional(v.number()),
+    sendLeaseToken: v.optional(v.string()),
+    sendLeaseExpiresAt: v.optional(v.number()),
+    sendCursor: v.optional(v.string()),
+    eventId: v.optional(v.id("events")),
     targetEventIds: v.optional(v.array(v.id("events"))),
     name: v.string(),
     message: v.string(),
@@ -643,9 +790,14 @@ export default defineSchema({
   })
     .index("by_event", ["eventId"])
     .index("by_status", ["status"])
-    .index("by_sent_by", ["sentBy"]),
+    .index("by_sent_by", ["sentBy"])
+    .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_created", ["workspaceId", "createdAt"])
+    .index("by_workspace_status_created", ["workspaceId", "status", "createdAt"]),
 
   textBlastRecipients: defineTable({
+    workspaceId: v.optional(v.id("workspaces")),
+    contactId: v.optional(v.id("workspaceContacts")),
     textBlastId: v.id("textBlasts"),
     phoneHash: v.string(),
     status: v.string(), // 'pending' | 'sent' | 'failed'
@@ -799,7 +951,8 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
   smsConversationThreads: defineTable({
-    eventId: v.id("events"),
+    workspaceId: v.optional(v.id("workspaces")),
+    eventId: v.optional(v.id("events")),
     phoneHash: v.string(),
     phoneObfuscated: v.string(),
     participantClerkUserIds: v.array(v.string()),
@@ -833,11 +986,14 @@ export default defineSchema({
   })
     .index("by_event", ["eventId"])
     .index("by_event_phone", ["eventId", "phoneHash"])
+    .index("by_workspace_phone", ["workspaceId", "phoneHash"])
+    .index("by_workspace", ["workspaceId"])
     .index("by_phone", ["phoneHash"]),
 
   smsConversationMessages: defineTable({
     threadId: v.id("smsConversationThreads"),
-    eventId: v.id("events"),
+    workspaceId: v.optional(v.id("workspaces")),
+    eventId: v.optional(v.id("events")),
     phoneHash: v.string(),
     direction: v.union(v.literal("inbound"), v.literal("outbound"), v.literal("system")),
     kind: v.union(
@@ -969,6 +1125,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_event", ["workspaceId", "eventId"])
     .index("by_event", ["eventId"])
     .index("by_fromPhoneNumber", ["fromPhoneNumber"]),
 

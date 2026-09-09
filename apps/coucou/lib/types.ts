@@ -1,4 +1,5 @@
 import type { Id } from "@convex/_generated/dataModel";
+import type { ContactAudience } from "@convex/lib/contactValidators";
 import type { EventPartner as SharedEventPartner } from "@coucou/sdk/shared/event-partners";
 import type { OpenGraphImageSource } from "@coucou/sdk/shared/open-graph";
 import type {
@@ -304,7 +305,10 @@ export interface TextBlastReplyAction {
 
 export interface TextBlast {
   _id: Id<"textBlasts">;
-  eventId: Id<"events">;
+  workspaceId?: Id<"workspaces">;
+  eventId?: Id<"events">;
+  audience?: ContactAudience;
+  audiencePreviewId?: Id<"contactAudiencePreviews">;
   targetEventIds?: Id<"events">[];
   name: string;
   message: string;
@@ -363,7 +367,8 @@ export type SmsConversationKind =
 
 export interface SmsConversationThread {
   _id: Id<"smsConversationThreads">;
-  eventId: Id<"events">;
+  workspaceId?: Id<"workspaces">;
+  eventId?: Id<"events">;
   phoneHash: string;
   phoneObfuscated: string;
   participantClerkUserIds: string[];
@@ -395,7 +400,8 @@ export interface SmsConversationThreadSummary extends SmsConversationThread {
 export interface SmsConversationMessage {
   _id: Id<"smsConversationMessages">;
   threadId: Id<"smsConversationThreads">;
-  eventId: Id<"events">;
+  workspaceId?: Id<"workspaces">;
+  eventId?: Id<"events">;
   phoneHash: string;
   direction: SmsConversationDirection;
   kind: SmsConversationKind;
@@ -752,6 +758,7 @@ export interface GuestDirectoryPersonEventEntry {
 }
 
 export interface GuestDirectoryPerson {
+  contactId?: Id<"workspaceContacts">;
   personKey: string;
   clerkUserIds: string[];
   primaryClerkUserId: string | null;

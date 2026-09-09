@@ -14,12 +14,83 @@ import { customCtx, customMutation } from "convex-helpers/server/customFunctions
 import { Triggers } from "convex-helpers/server/triggers";
 import { internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { cascadeListKeyUpdate, shouldBatchCascade } from "./lib/cascadeHelpers";
 import { resolveStoredUserDisplayName } from "./lib/rsvpUserName";
 import { enqueueEventWebhookDeliveries, enqueueRsvpWebhookDeliveries } from "./lib/webhookEmission";
+import { resolveTenantWorkspaceScope } from "./lib/workspaceScope";
 
 // Initialize triggers with our data model types
 export const triggers = new Triggers<DataModel>();
+
+async function contactsEnabled(ctx: MutationCtx): Promise<boolean> {
+  return (await ctx.db.query("contactDirectoryState").first()) !== null;
+}
+
+triggers.register("workspaceGuestProfiles", async (ctx, change) => {
+  const profile = change.newDoc ?? change.oldDoc;
+  if (profile && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncProfile, {
+      workspaceId: profile.workspaceId,
+      clerkUserId: profile.clerkUserId,
+      guestPhoneHash: profile.guestPhoneHash,
+    });
+});
+triggers.register("userSmsOrganizerPreferences", async (ctx, change) => {
+  const preference = change.newDoc ?? change.oldDoc;
+  if (preference && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncUser, {
+      clerkUserId: preference.clerkUserId,
+      phase: "contacts",
+    });
+});
+triggers.register("smsOptOuts", async (ctx, change) => {
+  const optOut = change.newDoc ?? change.oldDoc;
+  if (optOut && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncPhone, {
+      phoneHash: optOut.phoneNumber,
+    });
+});
+triggers.register("guestContacts", async (ctx, change) => {
+  const contact = change.newDoc ?? change.oldDoc;
+  if (contact && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncPhone, {
+      phoneHash: contact.phoneHash,
+    });
+});
+triggers.register("userIdentityAliases", async (ctx, change) => {
+  const alias = change.newDoc ?? change.oldDoc;
+  if (alias && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncUser, {
+      clerkUserId: alias.aliasClerkUserId,
+    });
+});
+triggers.register("redemptions", async (ctx, change) => {
+  const redemption = change.newDoc ?? change.oldDoc;
+  if (redemption && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncUser, {
+      clerkUserId: redemption.clerkUserId,
+    });
+});
+triggers.register("textBlastRecipients", async (ctx, change) => {
+  const delivery = change.newDoc ?? change.oldDoc;
+  if (delivery && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncDelivery, {
+      deliveryId: delivery._id,
+    });
+});
+triggers.register("smsNotifications", async (ctx, change) => {
+  const notification = change.newDoc ?? change.oldDoc;
+  if (change.newDoc?.eventId && !change.newDoc.workspaceId) {
+    const event = await ctx.db.get(change.newDoc.eventId);
+    const workspace = event ? await resolveTenantWorkspaceScope(ctx, event) : null;
+    if (workspace) await ctx.db.patch(change.newDoc._id, { workspaceId: workspace.workspaceId });
+  }
+  if (notification?.type === "approval" && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncUser, {
+      clerkUserId: notification.recipientClerkUserId,
+    });
+});
 
 // Register trigger for listCredentials table - handles listKey updates and deletes
 triggers.register("listCredentials", async (ctx, change) => {
@@ -52,10 +123,16 @@ triggers.register("listCredentials", async (ctx, change) => {
 // every RSVP change, regardless of which mutation performed it.
 triggers.register("rsvps", async (ctx, change) => {
   await enqueueRsvpWebhookDeliveries(ctx, change);
+  const rsvp = change.newDoc ?? change.oldDoc;
+  if (rsvp && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncRsvp, { rsvpId: rsvp._id });
 });
 
 // Register trigger for events table - handles deletes and status changes
 triggers.register("events", async (ctx, change) => {
+  const contactEvent = change.newDoc ?? change.oldDoc;
+  if (contactEvent && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncEvent, { eventId: contactEvent._id });
   // Emit partner webhooks for publish/unpublish/public-field/delete changes.
   await enqueueEventWebhookDeliveries(ctx, change);
 
@@ -128,6 +205,11 @@ triggers.register("events", async (ctx, change) => {
 
 // Register trigger for users table - keeps userName synchronized in RSVPs
 triggers.register("users", async (ctx, change) => {
+  const contactUser = change.newDoc ?? change.oldDoc;
+  if (contactUser?.clerkUserId && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncUser, {
+      clerkUserId: contactUser.clerkUserId,
+    });
   // Only react to updates where name fields might have changed
   if (change.operation === "insert" || change.operation === "update") {
     const user = change.newDoc;
@@ -144,14 +226,16 @@ triggers.register("users", async (ctx, change) => {
       `[TRIGGER] User name changed for ${user.clerkUserId}: updating RSVPs with userName: ${userName}`,
     );
 
-    // Find all RSVPs for this user
     const userRsvps = await ctx.db
       .query("rsvps")
-      .withIndex("by_user", (q) => q.eq("clerkUserId", user.clerkUserId!))
-      .collect();
-
+      .withIndex("by_user", (builder) => builder.eq("clerkUserId", user.clerkUserId as string))
+      .take(41);
+    if (userRsvps.length > 40)
+      await ctx.scheduler.runAfter(0, internal.contactSync.syncUserNames, {
+        clerkUserId: user.clerkUserId,
+      });
     // Update userName in all their RSVPs to keep search data fresh
-    for (const rsvp of userRsvps) {
+    for (const rsvp of userRsvps.slice(0, 40)) {
       // Only update if userName actually changed (avoid unnecessary writes)
       if (rsvp.userName !== userName) {
         await ctx.db.patch(rsvp._id, {

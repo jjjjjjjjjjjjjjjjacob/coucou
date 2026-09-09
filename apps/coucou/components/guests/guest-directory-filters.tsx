@@ -43,6 +43,7 @@ export interface GuestDirectoryFiltersProps {
   blastOptions: GuestDirectoryBlastOption[];
   tagOptions: string[];
   defaultListKeyOptions: string[];
+  listKeyOptions?: string[];
   customFieldOptions: Array<{ key: string; label: string }>;
   disabled?: boolean;
 }
@@ -120,6 +121,7 @@ export function GuestDirectoryFilters({
   blastOptions,
   tagOptions,
   defaultListKeyOptions,
+  listKeyOptions = [],
   customFieldOptions,
   disabled,
 }: GuestDirectoryFiltersProps) {
@@ -181,6 +183,24 @@ export function GuestDirectoryFilters({
         ) : null}
 
         <MultiSelectPopover
+          label="Event lists"
+          selectedCount={value.listKeys?.length ?? 0}
+          disabled={disabled || listKeyOptions.length === 0}
+        >
+          {listKeyOptions.map((listKey) => (
+            <CheckboxOptionRow
+              key={listKey}
+              label={listKey}
+              checked={value.listKeys?.includes(listKey) ?? false}
+              onCheckedChange={(checked) =>
+                updateFilterState({
+                  listKeys: toggleValueInList(value.listKeys ?? [], listKey, checked),
+                })
+              }
+            />
+          ))}
+        </MultiSelectPopover>
+        <MultiSelectPopover
           label={isFullVariant && value.eventIds.length === 0 ? "All events" : "Events"}
           selectedCount={value.eventIds.length}
           disabled={disabled || eventOptions.length === 0}
@@ -211,7 +231,9 @@ export function GuestDirectoryFilters({
               value={filterType}
               disabled={filterType === "custom_field_missing" && customFieldOptions.length === 0}
             >
-              {RECIPIENT_FILTER_LABELS[filterType]}
+              {filterType === "all" && isFullVariant
+                ? "All contacts"
+                : RECIPIENT_FILTER_LABELS[filterType]}
             </SelectOption>
           ))}
         </Select>

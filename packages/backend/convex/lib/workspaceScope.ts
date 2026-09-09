@@ -14,7 +14,7 @@ export interface ResolvedTenantWorkspaceScope {
 }
 
 export async function resolveTenantWorkspaceScope(
-  ctx: MutationCtx | QueryCtx,
+  ctx: Pick<MutationCtx | QueryCtx, "db">,
   { workspaceSlug, siteKey }: TenantWorkspaceScopeInput,
 ): Promise<ResolvedTenantWorkspaceScope | null> {
   let workspace: Doc<"workspaces"> | null = null;

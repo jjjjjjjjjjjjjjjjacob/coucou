@@ -221,6 +221,21 @@ export const resolveForEvent = internalQuery({
   },
 });
 
+export const resolveForWorkspace = internalQuery({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args): Promise<StoredTwilioCredentialResolution | null> => {
+    const credential = await findTwilioCredentialForScope(ctx, args.workspaceId);
+    return credential
+      ? {
+          accountSid: credential.accountSid,
+          authToken: credential.authToken,
+          fromPhoneNumber: credential.fromPhoneNumber,
+          source: "workspace",
+        }
+      : null;
+  },
+});
+
 export const listWebhookAuthTokensForPhoneNumber = internalQuery({
   args: { phoneNumber: v.string() },
   handler: async (ctx, { phoneNumber }): Promise<string[]> => {

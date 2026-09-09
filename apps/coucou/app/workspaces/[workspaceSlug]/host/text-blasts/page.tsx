@@ -64,7 +64,9 @@ type SortOption = "date" | "name" | "recipients";
 function getBlastTargetEventIds(blast: TextBlast): Id<"events">[] {
   return blast.targetEventIds && blast.targetEventIds.length > 0
     ? blast.targetEventIds
-    : [blast.eventId];
+    : blast.eventId
+      ? [blast.eventId]
+      : [];
 }
 
 function _getStatusIcon(status: TextBlastStatus) {
@@ -263,6 +265,13 @@ export default function TextBlastsPage() {
   const handleSendBlast = async (blastId: Id<"textBlasts">) => {
     if (!workspaceScope) {
       toast.error("Workspace scope is required to send text blasts");
+      return;
+    }
+    const blast = textBlasts?.find((record) => record._id === blastId);
+    if (!blast?.audience || !blast.audiencePreviewId) {
+      setSelectedBlastForDialog(blastId);
+      setDialogMode("full");
+      setIsDialogOpen(true);
       return;
     }
     setSendingBlastId(blastId);

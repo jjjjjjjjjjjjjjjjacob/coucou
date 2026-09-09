@@ -844,6 +844,107 @@ describe("deterministic SMS code router", () => {
     expect(state.sourceMessages).toHaveLength(0);
   });
 
+  it("routes eventless blast replies through the workspace sender even when the target event overrides its sender", async () => {
+    const testBackend = setupTestBackend();
+    const target = await seedEvent(testBackend, { name: "Reply target" });
+    const phoneNumber = "+15551230123";
+    const sender = "+15551230999";
+    await testBackend.run(async ({ db }) => {
+      const now = Date.now();
+      const workspaceId = await db.insert("workspaces", {
+        slug: "club-chlorine",
+        name: "Club",
+        clerkOrganizationId: "org_club",
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (const eventId of [undefined, target.eventId])
+        await db.insert("twilioCredentials", {
+          workspaceId,
+          eventId,
+          accountSid: "AC_test",
+          authToken: "test",
+          fromPhoneNumber: eventId ? "+15551230888" : sender,
+          updatedByClerkUserId: "host",
+          createdAt: now,
+          updatedAt: now,
+        });
+      await db.insert("listCredentials", {
+        eventId: target.eventId,
+        listKey: "ga",
+        createdAt: now,
+      });
+      await db.insert("users", {
+        clerkUserId: "profile_only",
+        firstName: "Profile",
+        lastName: "Guest",
+        phone: phoneNumber,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const blastId = await db.insert("textBlasts", {
+        workspaceId,
+        name: "General",
+        message: "Reply VISIT",
+        targetLists: [],
+        recipientCount: 1,
+        sentCount: 1,
+        failedCount: 0,
+        sentBy: "host",
+        status: "sent",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await db.insert("textBlastReplyActions", {
+        textBlastId: blastId,
+        replyCode: "VISIT",
+        replyCodeNormalized: "visit",
+        targetEventId: target.eventId,
+        targetListKey: "ga",
+        isEnabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const phone = await normalizeAndHashPhoneNumber(phoneNumber);
+      await db.insert("textBlastRecipients", {
+        textBlastId: blastId,
+        workspaceId,
+        phoneHash: phone.phoneHash,
+        status: "sent",
+        sourceEventIds: [],
+        sourceRsvpIds: [],
+        sourceListKeys: [],
+        recipientClerkUserIds: ["profile_only"],
+        sentAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    await testBackend.mutation(internal.smsCodeRouter.beginInboundReceipt, {
+      providerMessageId: "SM_general_reply",
+      fromPhoneNumber: phoneNumber,
+      toPhoneNumber: sender,
+      body: "VISIT",
+    });
+    const result = await testBackend.mutation(internal.smsCodeRouter.processReservedInbound, {
+      providerMessageId: "SM_general_reply",
+      fromPhoneNumber: phoneNumber,
+      destinationPhoneNumber: sender,
+      destinationUsesGlobalFallback: false,
+      messageBody: "VISIT",
+    });
+    expect(result.outcome).toBe("submitted");
+    const rsvp = await testBackend.run(({ db }) =>
+      db
+        .query("rsvps")
+        .withIndex("by_event_user", (builder) =>
+          builder.eq("eventId", target.eventId).eq("clerkUserId", "profile_only"),
+        )
+        .first(),
+    );
+    expect(rsvp?.userName).toBe("Profile Guest");
+  });
+
   it("treats an action code from an ineligible phone as ordinary free text", async () => {
     const testBackend = setupTestBackend();
     const sourceEvent = await seedEvent(testBackend, { name: "Source" });

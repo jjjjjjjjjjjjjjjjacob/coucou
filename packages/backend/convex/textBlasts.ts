@@ -12,9 +12,8 @@ import {
   messageContainsQrCodeUrlVariable,
   resolveMessageTemplateFirstName,
 } from "@coucou/sdk/shared/message-template";
-import type { UserIdentity } from "convex/server";
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -24,7 +23,7 @@ import {
   internalQuery,
   mutation,
   query,
-} from "./_generated/server";
+} from "./functions";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import {
@@ -78,6 +77,11 @@ import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
 import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
 import { ConvexError } from "./lib/types";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
+
+function requireLegacyBlastEventId(blast: Pick<Doc<"textBlasts">, "eventId">): Id<"events"> {
+  if (!blast.eventId) throw new Error("Use the contact blast flow for workspace messages");
+  return blast.eventId;
+}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -191,7 +195,9 @@ const getBlastTargetEventIds = (
   const rawTargetEventIds =
     blast.targetEventIds && blast.targetEventIds.length > 0
       ? blast.targetEventIds
-      : [blast.eventId];
+      : blast.eventId
+        ? [blast.eventId]
+        : [];
   return getUniqueIds(rawTargetEventIds);
 };
 
@@ -227,19 +233,6 @@ const validateBlastConfiguration = (args: {
       "Multi-event text blasts can only use {{firstName}}. Remove event-specific variables before sending.",
     );
   }
-};
-
-type IdentityWithRole = UserIdentity & { role?: string };
-
-const identityHasHostRole = (identity: IdentityWithRole): boolean => {
-  return identity.role === "org:admin" || identity.role === "org:host";
-};
-
-const identityCanManageBlast = (identity: IdentityWithRole, blastOwnerId: string): boolean => {
-  if (identity.subject === blastOwnerId) {
-    return true;
-  }
-  return identityHasHostRole(identity);
 };
 
 function getEventBaseUrl(event: Pick<Doc<"events">, "siteKey"> | null): string | null {
@@ -314,7 +307,7 @@ async function assertNoExecutableEventCodeCollision(
   }
 }
 
-async function hasActiveReplyActionCollision(
+export async function hasActiveReplyActionCollision(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   args: {
     normalizedCode: string;
@@ -359,41 +352,37 @@ async function hasActiveReplyActionCollision(
       continue;
     }
 
-    const existingClaims = await ctx.db
-      .query("smsCodeClaims")
-      .withIndex("by_reply_action", (queryBuilder) =>
-        queryBuilder.eq("replyActionId", matchingReplyAction._id),
-      )
-      .collect();
-    const hasOverlappingLiveClaim = existingClaims.some(
-      (claim) =>
-        claim.phoneHash !== undefined &&
-        args.recipientPhoneHashes.has(claim.phoneHash) &&
-        (claim.status === "active" || (claim.reservationExpiresAt ?? 0) > args.now),
-    );
-    if (hasOverlappingLiveClaim) {
-      return true;
-    }
-
-    // Successful deliveries are the source of truth for legacy routes that
-    // predate smsCodeClaims or have not been backfilled yet.
-    const successfulDeliveries = await ctx.db
-      .query("textBlastRecipients")
-      .withIndex("by_text_blast_status", (queryBuilder) =>
-        queryBuilder.eq("textBlastId", matchingReplyAction.textBlastId).eq("status", "sent"),
-      )
-      .collect();
-    if (
-      successfulDeliveries.some((delivery) => args.recipientPhoneHashes.has(delivery.phoneHash))
-    ) {
-      return true;
+    for (const phoneHash of args.recipientPhoneHashes) {
+      const claim = await ctx.db
+        .query("smsCodeClaims")
+        .withIndex("by_code_phone", (builder) =>
+          builder.eq("normalizedCode", args.normalizedCode).eq("phoneHash", phoneHash),
+        )
+        .filter((builder) =>
+          builder.and(
+            builder.eq(builder.field("replyActionId"), matchingReplyAction._id),
+            builder.or(
+              builder.eq(builder.field("status"), "active"),
+              builder.gt(builder.field("reservationExpiresAt"), args.now),
+            ),
+          ),
+        )
+        .first();
+      if (claim) return true;
+      const delivery = await ctx.db
+        .query("textBlastRecipients")
+        .withIndex("by_text_blast_phone", (builder) =>
+          builder.eq("textBlastId", matchingReplyAction.textBlastId).eq("phoneHash", phoneHash),
+        )
+        .first();
+      if (delivery?.status === "sent") return true;
     }
   }
 
   return false;
 }
 
-async function normalizeReplyActionsForStorage(
+export async function normalizeReplyActionsForStorage(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   replyActions: ReplyActionInput[] | undefined,
   scope: SiteScopeArgs,
@@ -603,7 +592,7 @@ async function finalizeReplyActionClaims(
   }
 }
 
-async function replaceReplyActionsForBlast(
+export async function replaceReplyActionsForBlast(
   ctx: MutationCtx,
   args: {
     textBlastId: Id<"textBlasts">;
@@ -661,11 +650,10 @@ export const createDraft = mutation({
   handler: async (ctx, args): Promise<Id<"textBlasts">> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
-    await requireWorkspaceHost(ctx, {
+    const workspace = await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     const targetEventIds = normalizeTargetEventIds(args);
     const effectiveIncludeQrCodes = resolveEffectiveIncludeQrCodes({
@@ -684,10 +672,6 @@ export const createDraft = mutation({
       workspaceSlug: args.workspaceSlug,
     });
 
-    if (!identityHasHostRole(identityWithRole)) {
-      throw new Error("Not authorized for this event");
-    }
-
     // Count potential recipients
     const recipientCount = await ctx.runQuery(internal.textBlasts.countRecipientsInternal, {
       eventId: args.eventId,
@@ -702,6 +686,7 @@ export const createDraft = mutation({
 
     const now = Date.now();
     const blastId = await ctx.db.insert("textBlasts", {
+      workspaceId: workspace.workspaceId,
       eventId: args.eventId,
       targetEventIds,
       name: args.name,
@@ -759,22 +744,17 @@ export const updateDraft = mutation({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     const { blast } = await ensureTextBlastInSiteScope(ctx, args.blastId, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
 
-    if (!identityCanManageBlast(identityWithRole, blast.sentBy)) {
-      throw new Error("Not authorized to edit this text blast");
-    }
-
     if (blast.status !== "draft") {
       throw new Error("Can only edit draft text blasts");
     }
 
-    const primaryEventId = args.eventId ?? blast.eventId;
+    const primaryEventId = args.eventId ?? requireLegacyBlastEventId(blast);
     const targetEventIds =
       args.targetEventIds !== undefined
         ? normalizeTargetEventIds({
@@ -1412,7 +1392,6 @@ export const sendBlast = action({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     // Get blast details and verify ownership
     const blast = await ctx.runQuery(internal.textBlasts.getBlastInternal, {
@@ -1422,8 +1401,18 @@ export const sendBlast = action({
     });
 
     if (!blast) throw new Error("Text blast not found");
-    if (!identityCanManageBlast(identityWithRole, blast.sentBy)) {
-      throw new Error("Not authorized to send this text blast");
+    if (blast.audience) {
+      const scope = await requireWorkspaceHost(ctx, args);
+      const result = await ctx.runMutation(api.contactBlasts.send, {
+        ...args,
+        workspaceSlug: scope.workspaceSlug,
+      });
+      return {
+        success: true,
+        blastId: blast._id,
+        totalRecipients: result.totalRecipients,
+        status: "sending",
+      };
     }
     // Allow sending drafts and failed blasts (failed blasts can be retried)
     if (blast.status !== "draft" && blast.status !== "failed") {
@@ -1442,7 +1431,7 @@ export const sendBlast = action({
     });
 
     const event = await ctx.runQuery(internal.textBlasts.getEventInternal, {
-      eventId: blast.eventId,
+      eventId: requireLegacyBlastEventId(blast),
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
@@ -1451,7 +1440,7 @@ export const sendBlast = action({
     }
 
     const recipientCount = await ctx.runQuery(internal.textBlasts.countRecipientsInternal, {
-      eventId: blast.eventId,
+      eventId: requireLegacyBlastEventId(blast),
       targetEventIds,
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
@@ -1518,7 +1507,6 @@ export const sendBlastDirect = action({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     // Verify user is host of this event (using org:admin role)
     const event = await ctx.runQuery(internal.textBlasts.getEventInternal, {
@@ -1527,10 +1515,6 @@ export const sendBlastDirect = action({
       workspaceSlug: args.workspaceSlug,
     });
     if (!event) throw new Error("Event not found");
-
-    if (!identityHasHostRole(identityWithRole)) {
-      throw new Error("Not authorized for this event");
-    }
 
     const targetEventIds = normalizeTargetEventIds(args);
     const effectiveIncludeQrCodes = resolveEffectiveIncludeQrCodes({
@@ -1644,7 +1628,7 @@ export const processQueuedBlastSend = internalAction({
       });
 
       const primaryEvent = await ctx.runQuery(internal.textBlasts.getEventInternal, {
-        eventId: blast.eventId,
+        eventId: requireLegacyBlastEventId(blast),
         siteKey: args.siteKey,
         workspaceSlug: args.workspaceSlug,
       });
@@ -1653,7 +1637,7 @@ export const processQueuedBlastSend = internalAction({
       }
 
       const recipients = (await ctx.runAction(internal.textBlasts.getRecipientsWithPhonesInternal, {
-        eventId: blast.eventId,
+        eventId: requireLegacyBlastEventId(blast),
         targetEventIds,
         siteKey: args.siteKey,
         workspaceSlug: args.workspaceSlug,
@@ -1749,7 +1733,7 @@ export const processQueuedBlastSend = internalAction({
       if (sendableRecipients.length > 0) {
         try {
           bulkSendResult = (await ctx.runAction(internal.smsActions.sendBulkSmsInternal, {
-            eventId: blast.eventId,
+            eventId: requireLegacyBlastEventId(blast),
             recipients: sendableRecipients.map((recipient) => ({
               phoneNumber: recipient.phoneNumber,
               clerkUserId: recipient.clerkUserId,
@@ -1987,27 +1971,53 @@ export const getBlastsByWorkspaceWithSenderNames = query({
     ctx,
     args,
   ): Promise<(Doc<"textBlasts"> & { sentByName: string; replyActionCount: number })[]> => {
-    await requireWorkspaceHost(ctx, {
+    const resolvedWorkspace = await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
 
-    const scopedEvents = (await ctx.db.query("events").collect()).filter((event) =>
-      eventMatchesSiteScope(event, {
-        siteKey: args.siteKey,
-        workspaceSlug: args.workspaceSlug,
-      }),
-    );
-    const scopedEventIds = new Set(scopedEvents.map((event) => event._id));
-
-    const allBlasts = await ctx.db.query("textBlasts").collect();
-    const blasts = allBlasts
-      .filter((blast) =>
-        getBlastTargetEventIds(blast).some((eventId) => scopedEventIds.has(eventId)),
+    const directoryState = await ctx.db
+      .query("contactDirectoryState")
+      .withIndex("by_workspace", (builder) =>
+        builder.eq("workspaceId", resolvedWorkspace.workspaceId),
       )
-      .filter((blast) => !args.status || blast.status === args.status)
-      .sort((firstBlast, secondBlast) => secondBlast.createdAt - firstBlast.createdAt)
-      .slice(0, args.limit || 200);
+      .first();
+    let blasts: Doc<"textBlasts">[];
+    if (directoryState?.status === "ready") {
+      const collection = args.status
+        ? ctx.db
+            .query("textBlasts")
+            .withIndex("by_workspace_status_created", (builder) =>
+              builder
+                .eq("workspaceId", resolvedWorkspace.workspaceId)
+                .eq("status", args.status as string),
+            )
+        : ctx.db
+            .query("textBlasts")
+            .withIndex("by_workspace_created", (builder) =>
+              builder.eq("workspaceId", resolvedWorkspace.workspaceId),
+            );
+      blasts = await collection.order("desc").take(Math.min(Math.max(args.limit ?? 200, 1), 200));
+    } else {
+      const scopedEvents = (await ctx.db.query("events").collect()).filter((event) =>
+        eventMatchesSiteScope(event, {
+          siteKey: args.siteKey,
+          workspaceSlug: args.workspaceSlug,
+        }),
+      );
+      const scopedEventIds = new Set(scopedEvents.map((event) => event._id));
+
+      const allBlasts = await ctx.db.query("textBlasts").collect();
+      blasts = allBlasts
+        .filter(
+          (blast) =>
+            blast.workspaceId === resolvedWorkspace.workspaceId ||
+            getBlastTargetEventIds(blast).some((eventId) => scopedEventIds.has(eventId)),
+        )
+        .filter((blast) => !args.status || blast.status === args.status)
+        .sort((firstBlast, secondBlast) => secondBlast.createdAt - firstBlast.createdAt)
+        .slice(0, args.limit || 200);
+    }
 
     const uniqueSenderIds = [...new Set(blasts.map((blast) => blast.sentBy))];
     const senderNameMap = new Map<string, string>();
@@ -2170,7 +2180,6 @@ export const getRecipientsForSelection = query({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     const targetEventIds = normalizeTargetEventIds(args);
 
@@ -2179,10 +2188,6 @@ export const getRecipientsForSelection = query({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-
-    if (!identityHasHostRole(identityWithRole)) {
-      throw new Error("Not authorized for this event");
-    }
 
     const filteredRecipients = await selectRecipientsFromStoredPhones(ctx, {
       eventId: args.eventId,
@@ -2243,17 +2248,12 @@ export const countRecipientsForTargeting = query({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
     const targetEventIds = normalizeTargetEventIds(args);
 
     await ensureEventsInSiteScope(ctx, targetEventIds, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-
-    if (!identityHasHostRole(identityWithRole)) {
-      throw new Error("Not authorized for this event");
-    }
 
     const recipients = await selectRecipientsFromStoredPhones(ctx, {
       eventId: args.eventId,
@@ -2271,135 +2271,6 @@ export const countRecipientsForTargeting = query({
 });
 
 /**
- * Get available recipient lists for an event with counts
- * Returns distinct listKeys with recipient counts for each list
- */
-export const getAvailableListsForEvent = query({
-  args: {
-    eventId: v.id("events"),
-    siteKey: v.optional(v.string()),
-    workspaceSlug: v.optional(v.string()),
-    recipientFilter: v.optional(v.string()),
-    recipientHistoryFilter: recipientHistoryFilterValidator,
-  },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<Array<{ listKey: string; recipientCount: number; totalRsvps: number }>> => {
-    return await getAvailableListsForEventsHandler(ctx, {
-      ...args,
-      targetEventIds: [args.eventId],
-    });
-  },
-});
-
-export const getAvailableListsForEvents = query({
-  args: {
-    eventId: v.id("events"),
-    targetEventIds: v.array(v.id("events")),
-    siteKey: v.optional(v.string()),
-    workspaceSlug: v.optional(v.string()),
-    recipientFilter: v.optional(v.string()),
-    recipientHistoryFilter: recipientHistoryFilterValidator,
-  },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<Array<{ listKey: string; recipientCount: number; totalRsvps: number }>> => {
-    return await getAvailableListsForEventsHandler(ctx, args);
-  },
-});
-
-async function getAvailableListsForEventsHandler(
-  ctx: QueryCtx,
-  args: {
-    eventId: Id<"events">;
-    targetEventIds: Id<"events">[];
-    siteKey?: string;
-    workspaceSlug?: string;
-    recipientFilter?: string;
-    recipientHistoryFilter?: RecipientHistoryFilterConfig;
-  },
-): Promise<Array<{ listKey: string; recipientCount: number; totalRsvps: number }>> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) throw new Error("Unauthorized");
-  await requireWorkspaceHost(ctx, {
-    siteKey: args.siteKey,
-    workspaceSlug: args.workspaceSlug,
-  });
-  const identityWithRole = identity as IdentityWithRole;
-
-  const targetEventIds = normalizeTargetEventIds(args);
-
-  // Verify user is host of selected events (using org:admin role)
-  await ensureEventsInSiteScope(ctx, targetEventIds, {
-    siteKey: args.siteKey,
-    workspaceSlug: args.workspaceSlug,
-  });
-
-  if (!identityHasHostRole(identityWithRole)) {
-    throw new Error("Not authorized for this event");
-  }
-
-  const filterConfig = parseRecipientFilter(args.recipientFilter);
-  const statusesToFetch = statusesForFilter(filterConfig);
-  const listUniqueUsers = new Map<string, Set<string>>();
-
-  for (const eventId of targetEventIds) {
-    const rsvpsForEvent = await ctx.db
-      .query("rsvps")
-      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
-      .collect();
-
-    for (const rsvp of rsvpsForEvent) {
-      if (!statusesToFetch.includes(resolveApprovalStatus(rsvp))) {
-        continue;
-      }
-      if (!rsvp.listKey) {
-        console.warn(`[getAvailableListsForEvents] RSVP ${rsvp._id} missing listKey, skipping`);
-        continue;
-      }
-      if (!listUniqueUsers.has(rsvp.listKey)) {
-        listUniqueUsers.set(rsvp.listKey, new Set());
-      }
-      listUniqueUsers.get(rsvp.listKey)!.add(rsvp.clerkUserId);
-    }
-  }
-
-  const result: Array<{
-    listKey: string;
-    recipientCount: number;
-    totalRsvps: number;
-  }> = [];
-
-  for (const [listKey, userIds] of listUniqueUsers.entries()) {
-    const recipientCount = await ctx.runQuery(internal.textBlasts.countRecipientsInternal, {
-      eventId: args.eventId,
-      targetEventIds,
-      siteKey: args.siteKey,
-      workspaceSlug: args.workspaceSlug,
-      targetLists: [listKey],
-      recipientFilter: args.recipientFilter,
-      recipientHistoryFilter: args.recipientHistoryFilter,
-    });
-
-    result.push({
-      listKey,
-      recipientCount,
-      totalRsvps: userIds.size,
-    });
-
-    console.log(
-      `[getAvailableListsForEvents] List ${listKey}: ${userIds.size} RSVPs (statuses considered: ${statusesToFetch.join(", ")}), ${recipientCount} reachable recipients`,
-    );
-  }
-
-  result.sort((a, b) => a.listKey.localeCompare(b.listKey));
-
-  return result;
-}
-
-/**
  * Duplicate an existing text blast as a new draft
  */
 export const duplicateBlast = mutation({
@@ -2411,20 +2282,15 @@ export const duplicateBlast = mutation({
   handler: async (ctx, args): Promise<Id<"textBlasts">> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
-    await requireWorkspaceHost(ctx, {
+    const workspace = await requireWorkspaceHost(ctx, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     const { blast: originalBlast } = await ensureTextBlastInSiteScope(ctx, args.blastId, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-
-    if (!identityCanManageBlast(identityWithRole, originalBlast.sentBy)) {
-      throw new Error("Not authorized to duplicate this text blast");
-    }
 
     const targetEventIds = getBlastTargetEventIds(originalBlast);
     const effectiveIncludeQrCodes = resolveEffectiveIncludeQrCodes({
@@ -2432,20 +2298,20 @@ export const duplicateBlast = mutation({
       includeQrCodes: originalBlast.includeQrCodes,
     });
 
-    // Count current recipients for the target lists
-    const recipientCount = await ctx.runQuery(internal.textBlasts.countRecipientsInternal, {
-      eventId: originalBlast.eventId,
-      targetEventIds,
-      siteKey: args.siteKey,
-      workspaceSlug: args.workspaceSlug,
+    // Copies require a fresh snapshot; preserve every legacy targeting constraint.
+    const audience = originalBlast.audience ?? {
+      type: "legacy_events" as const,
+      eventIds: targetEventIds,
       targetLists: originalBlast.targetLists,
       recipientFilter: originalBlast.recipientFilter,
       selectedRsvpIds: originalBlast.selectedRsvpIds,
       recipientHistoryFilter: originalBlast.recipientHistoryFilter,
-    });
+    };
 
     const now = Date.now();
     const newBlastId = await ctx.db.insert("textBlasts", {
+      workspaceId: workspace.workspaceId,
+      audience,
       eventId: originalBlast.eventId,
       targetEventIds,
       name: `${originalBlast.name} (Copy)`,
@@ -2456,7 +2322,7 @@ export const duplicateBlast = mutation({
       recipientHistoryFilter: originalBlast.recipientHistoryFilter,
       includeQrCodes: effectiveIncludeQrCodes,
       deliveryTrackingEnabled: true,
-      recipientCount,
+      recipientCount: 0,
       sentCount: 0,
       failedCount: 0,
       sentBy: identity.subject,
@@ -2499,16 +2365,11 @@ export const deleteBlast = mutation({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     const { blast } = await ensureTextBlastInSiteScope(ctx, args.blastId, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-
-    if (!identityCanManageBlast(identityWithRole, blast.sentBy)) {
-      throw new Error("Not authorized to delete this text blast");
-    }
 
     // Prevent deletion of blasts that are currently being sent
     if (blast.status === "sending") {
@@ -2545,16 +2406,12 @@ export const updateReplyActions = mutation({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
 
     const { blast } = await ensureTextBlastInSiteScope(ctx, args.blastId, {
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
 
-    if (!identityCanManageBlast(identityWithRole, blast.sentBy)) {
-      throw new Error("Not authorized to update this text blast");
-    }
     if (blast.status === "sending") {
       throw new Error("Cannot update reply actions while the blast is sending");
     }
@@ -2712,10 +2569,6 @@ export const validateReplyActionCodes = query({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
-    if (!identityHasHostRole(identityWithRole)) {
-      throw new Error("Not authorized for this workspace");
-    }
 
     const scopedBlast = args.blastId
       ? (
@@ -2725,9 +2578,6 @@ export const validateReplyActionCodes = query({
           })
         ).blast
       : null;
-    if (scopedBlast && !identityCanManageBlast(identityWithRole, scopedBlast.sentBy)) {
-      throw new Error("Not authorized to validate this text blast");
-    }
 
     let recipientPhoneHashes = new Set<string>();
     if (scopedBlast && scopedBlast.sentCount > 0) {
@@ -2863,10 +2713,6 @@ export const getReplyActionTargetOptions = query({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const identityWithRole = identity as IdentityWithRole;
-    if (!identityHasHostRole(identityWithRole)) {
-      throw new Error("Not authorized for this workspace");
-    }
 
     const events = (await ctx.db.query("events").collect())
       .filter((event) =>
@@ -3161,11 +3007,12 @@ async function finalizeQueuedBlastResultBatchWithContext(
 
     const qrCodeSent =
       result.success && result.mediaIncluded === true && blast?.includeQrCodes === true;
-    if (qrCodeSent && blast) {
+    if (qrCodeSent && blast?.eventId) {
+      const messageEventId = blast.eventId;
       const redemption = await ctx.db
         .query("redemptions")
         .withIndex("by_event_user", (queryBuilder) =>
-          queryBuilder.eq("eventId", blast.eventId).eq("clerkUserId", result.clerkUserId),
+          queryBuilder.eq("eventId", messageEventId).eq("clerkUserId", result.clerkUserId),
         )
         .unique();
       if (redemption && redemption.qrDeliveredAt === undefined) {
@@ -3177,6 +3024,7 @@ async function finalizeQueuedBlastResultBatchWithContext(
     if (notification && conversationPhoneHash) {
       await recordSmsConversationMessage(ctx, {
         eventId: notification.eventId,
+        workspaceId: notification.workspaceId,
         phoneHash: conversationPhoneHash,
         phoneObfuscated: notification.recipientPhoneObfuscated,
         participantClerkUserIds: Array.from(
@@ -3330,7 +3178,8 @@ async function logReplyAttempt(
 async function recordReplyActionConversation(
   ctx: MutationCtx,
   args: {
-    eventId: Id<"events">;
+    eventId?: Id<"events">;
+    workspaceId?: Id<"workspaces">;
     phoneHash: string;
     fromPhoneObfuscated: string;
     participantClerkUserIds: readonly string[];
@@ -3346,6 +3195,7 @@ async function recordReplyActionConversation(
 ) {
   await recordSmsConversationMessage(ctx, {
     eventId: args.eventId,
+    workspaceId: args.workspaceId,
     phoneHash: args.phoneHash,
     phoneObfuscated: args.fromPhoneObfuscated,
     participantClerkUserIds: args.participantClerkUserIds,
@@ -3364,6 +3214,7 @@ async function recordReplyActionConversation(
     : `Reply action ${args.status}`;
   await recordSmsConversationMessage(ctx, {
     eventId: args.eventId,
+    workspaceId: args.workspaceId,
     phoneHash: args.phoneHash,
     phoneObfuscated: args.fromPhoneObfuscated,
     participantClerkUserIds: args.participantClerkUserIds,
@@ -3552,7 +3403,7 @@ export const processIncomingSmsReply = internalMutation({
       });
       return { shouldRespond: false, status: "unmatched_message" };
     }
-    const sourceEvent = await ctx.db.get(candidate.blast.eventId);
+    const sourceEvent = candidate.blast.eventId ? await ctx.db.get(candidate.blast.eventId) : null;
 
     const matchingReplyAction = candidate.replyActions.find(
       (replyAction) => replyAction.replyCodeNormalized === normalizedReplyCode,
@@ -3576,6 +3427,7 @@ export const processIncomingSmsReply = internalMutation({
       });
       await recordReplyActionConversation(ctx, {
         eventId: candidate.blast.eventId,
+        workspaceId: candidate.blast.workspaceId,
         phoneHash: phoneResolution.phoneHash,
         fromPhoneObfuscated,
         participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
@@ -3614,6 +3466,7 @@ export const processIncomingSmsReply = internalMutation({
       });
       await recordReplyActionConversation(ctx, {
         eventId: candidate.blast.eventId,
+        workspaceId: candidate.blast.workspaceId,
         phoneHash: phoneResolution.phoneHash,
         fromPhoneObfuscated,
         participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
@@ -3659,6 +3512,7 @@ export const processIncomingSmsReply = internalMutation({
       });
       await recordReplyActionConversation(ctx, {
         eventId: candidate.blast.eventId,
+        workspaceId: candidate.blast.workspaceId,
         phoneHash: phoneResolution.phoneHash,
         fromPhoneObfuscated,
         participantClerkUserIds: candidate.delivery.recipientClerkUserIds,
@@ -3707,6 +3561,7 @@ export const processIncomingSmsReply = internalMutation({
       });
       await recordReplyActionConversation(ctx, {
         eventId: targetEvent?._id ?? candidate.blast.eventId,
+        workspaceId: candidate.blast.workspaceId,
         phoneHash: phoneResolution.phoneHash,
         fromPhoneObfuscated,
         participantClerkUserIds: candidate.delivery.recipientClerkUserIds,

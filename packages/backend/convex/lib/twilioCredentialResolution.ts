@@ -22,9 +22,11 @@ export async function findTwilioCredentialForScope(
 
   const workspaceCredentials = await ctx.db
     .query("twilioCredentials")
-    .withIndex("by_workspace", (queryBuilder) => queryBuilder.eq("workspaceId", workspaceId))
-    .collect();
-  return workspaceCredentials.find((credential) => credential.eventId === undefined) ?? null;
+    .withIndex("by_workspace_event", (queryBuilder) =>
+      queryBuilder.eq("workspaceId", workspaceId).eq("eventId", undefined),
+    )
+    .first();
+  return workspaceCredentials;
 }
 
 export async function resolveStoredTwilioCredentialForEvent(

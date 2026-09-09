@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, query } from "./functions";
 import { resolveCanonicalRsvpId, resolveCanonicalUserById } from "./lib/canonicalUserIdentity";
+import { contactConsent } from "./lib/contactRecords";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
@@ -23,6 +24,7 @@ import {
   requireWorkspaceHost,
   requireWorkspaceRead,
 } from "./lib/workspaceAuth";
+import { resolveTenantWorkspaceScope } from "./lib/workspaceScope";
 import { formatQrDeliveryMessage } from "./qrDelivery";
 
 const smsConversationDirectionValidator = v.union(
@@ -131,6 +133,7 @@ async function sendManualMessageToReadyThread(
   try {
     sendResult = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
       eventId: args.thread.eventId,
+      workspaceId: args.thread.workspaceId,
       phoneNumber: args.phoneNumber,
       message: formattedBody,
       mediaUrl: args.mediaUrl,
@@ -140,6 +143,7 @@ async function sendManualMessageToReadyThread(
     const errorDetails = getSmsErrorDetails(error);
     await ctx.runMutation(internal.smsConversations.recordMessage, {
       eventId: args.thread.eventId,
+      workspaceId: args.thread.workspaceId,
       phoneHash: args.thread.phoneHash,
       phoneObfuscated: args.thread.phoneObfuscated,
       participantClerkUserIds: args.thread.participantClerkUserIds,
@@ -159,6 +163,7 @@ async function sendManualMessageToReadyThread(
   const failureReason = sent ? undefined : (sendResult.error ?? sendResult.skipped);
   await ctx.runMutation(internal.smsConversations.recordMessage, {
     eventId: args.thread.eventId,
+    workspaceId: args.thread.workspaceId,
     phoneHash: args.thread.phoneHash,
     phoneObfuscated: args.thread.phoneObfuscated,
     participantClerkUserIds: args.thread.participantClerkUserIds,
@@ -256,6 +261,24 @@ async function summarizeThreadParticipants(
   ctx: Pick<QueryCtx, "db">,
   thread: Doc<"smsConversationThreads">,
 ): Promise<ThreadParticipantSummary> {
+  if (!thread.eventId && thread.workspaceId) {
+    const contact = await ctx.db
+      .query("workspaceContacts")
+      .withIndex("by_workspace_phone", (builder) =>
+        builder
+          .eq("workspaceId", thread.workspaceId as Id<"workspaces">)
+          .eq("phoneHash", thread.phoneHash),
+      )
+      .filter((builder) => builder.eq(builder.field("mergedInto"), undefined))
+      .first();
+    return {
+      displayName: contact?.name ?? thread.phoneObfuscated,
+      clerkUserIds: contact?.clerkUserIds ?? thread.participantClerkUserIds,
+    };
+  }
+  const eventId = thread.eventId;
+  if (!eventId)
+    return { displayName: thread.phoneObfuscated, clerkUserIds: thread.participantClerkUserIds };
   const participantRecords = await Promise.all(
     thread.participantClerkUserIds.map(async (clerkUserId) => {
       const [user, rsvp] = await Promise.all([
@@ -263,7 +286,7 @@ async function summarizeThreadParticipants(
         ctx.db
           .query("rsvps")
           .withIndex("by_event_user", (queryBuilder) =>
-            queryBuilder.eq("eventId", thread.eventId).eq("clerkUserId", clerkUserId),
+            queryBuilder.eq("eventId", eventId).eq("clerkUserId", clerkUserId),
           )
           .first(),
       ]);
@@ -278,7 +301,7 @@ async function summarizeThreadParticipants(
     const phoneMatchedRsvp = await ctx.db
       .query("rsvps")
       .withIndex("by_event_guestPhoneHash", (queryBuilder) =>
-        queryBuilder.eq("eventId", thread.eventId).eq("guestPhoneHash", thread.phoneHash),
+        queryBuilder.eq("eventId", eventId).eq("guestPhoneHash", thread.phoneHash),
       )
       .first();
     const phoneMatchedDisplayName = resolveParticipantDisplayName(null, phoneMatchedRsvp);
@@ -297,6 +320,25 @@ async function resolveThreadSendReadiness(
   ctx: Pick<QueryCtx, "db">,
   thread: Doc<"smsConversationThreads">,
 ): Promise<SendReadiness> {
+  if (!thread.eventId && thread.workspaceId) {
+    const contact = await ctx.db
+      .query("workspaceContacts")
+      .withIndex("by_workspace_phone", (builder) =>
+        builder
+          .eq("workspaceId", thread.workspaceId as Id<"workspaces">)
+          .eq("phoneHash", thread.phoneHash),
+      )
+      .filter((builder) => builder.eq(builder.field("mergedInto"), undefined))
+      .first();
+    if (contact?.phoneNumber && (await contactConsent(ctx, contact)).smsConsent)
+      return {
+        state: "ready",
+        phoneNumber: contact.phoneNumber,
+        clerkUserId:
+          contact.primaryClerkUserId ?? contact.clerkUserIds[0] ?? `guest:${thread.phoneHash}`,
+      };
+    return { state: "no_phone", reason: "This contact has no reachable phone with SMS consent." };
+  }
   const sendableUsers: Array<{ clerkUserId: string; phoneNumber: string }> = [];
 
   for (const clerkUserId of thread.participantClerkUserIds) {
@@ -343,21 +385,24 @@ async function resolveThreadQrAttachmentReadiness(
   thread: Doc<"smsConversationThreads">,
   sendReadiness: SendReadiness,
 ): Promise<QrAttachmentReadiness> {
+  const eventId = thread.eventId;
+  if (!eventId)
+    return { state: "unavailable", reason: "Choose an event conversation to send a ticket." };
   if (sendReadiness.state !== "ready") {
     return { state: "unavailable", reason: sendReadiness.reason };
   }
   const [event, rsvp, redemption, user] = await Promise.all([
-    ctx.db.get(thread.eventId),
+    ctx.db.get(eventId),
     ctx.db
       .query("rsvps")
       .withIndex("by_event_user", (queryBuilder) =>
-        queryBuilder.eq("eventId", thread.eventId).eq("clerkUserId", sendReadiness.clerkUserId),
+        queryBuilder.eq("eventId", eventId).eq("clerkUserId", sendReadiness.clerkUserId),
       )
       .first(),
     ctx.db
       .query("redemptions")
       .withIndex("by_event_user", (queryBuilder) =>
-        queryBuilder.eq("eventId", thread.eventId).eq("clerkUserId", sendReadiness.clerkUserId),
+        queryBuilder.eq("eventId", eventId).eq("clerkUserId", sendReadiness.clerkUserId),
       )
       .first(),
     getUserByClerkUserId(ctx, sendReadiness.clerkUserId),
@@ -375,7 +420,7 @@ async function resolveThreadQrAttachmentReadiness(
   const listCredential = await ctx.db
     .query("listCredentials")
     .withIndex("by_event_key", (queryBuilder) =>
-      queryBuilder.eq("eventId", thread.eventId).eq("listKey", redemption.listKey),
+      queryBuilder.eq("eventId", eventId).eq("listKey", redemption.listKey),
     )
     .first();
   if (listCredential?.generateQR !== true) {
@@ -419,7 +464,12 @@ async function getThreadInScope(
     throw new Error("Conversation thread not found");
   }
 
-  await ensureEventInSiteScope(ctx, thread.eventId, scope);
+  if (thread.workspaceId) {
+    const workspace = await resolveTenantWorkspaceScope(ctx, scope);
+    if (!workspace || workspace.workspaceId !== thread.workspaceId)
+      throw new Error("Conversation thread not found");
+  } else if (thread.eventId) await ensureEventInSiteScope(ctx, thread.eventId, scope);
+  else throw new Error("Conversation thread not found");
   return thread;
 }
 
@@ -443,7 +493,8 @@ export const ensureThreadForPhoneHash = internalMutation({
 
 export const recordMessage = internalMutation({
   args: {
-    eventId: v.id("events"),
+    eventId: v.optional(v.id("events")),
+    workspaceId: v.optional(v.id("workspaces")),
     phoneHash: v.string(),
     phoneObfuscated: v.string(),
     participantClerkUserIds: v.optional(v.array(v.string())),
@@ -513,6 +564,7 @@ export const recordInboundForExistingThreads = internalMutation({
     for (const thread of threads) {
       await recordSmsConversationMessage(ctx, {
         eventId: thread.eventId,
+        workspaceId: thread.workspaceId,
         phoneHash: thread.phoneHash,
         phoneObfuscated: thread.phoneObfuscated,
         participantClerkUserIds: thread.participantClerkUserIds,
@@ -552,6 +604,7 @@ export const recordOutboundForExistingThreads = internalMutation({
     for (const thread of threads) {
       await recordSmsConversationMessage(ctx, {
         eventId: thread.eventId,
+        workspaceId: thread.workspaceId,
         phoneHash: thread.phoneHash,
         phoneObfuscated: thread.phoneObfuscated,
         participantClerkUserIds: thread.participantClerkUserIds,
@@ -585,6 +638,7 @@ export const getNotificationMirrorContext = internalQuery({
 
     return {
       eventId: notification.eventId,
+      workspaceId: notification.workspaceId,
       phoneHash,
       phoneObfuscated: notification.recipientPhoneObfuscated,
       participantClerkUserIds: [notification.recipientClerkUserId],
@@ -721,6 +775,16 @@ export const listThreads = query({
             .collect(),
       ),
     );
+    if (!args.eventId)
+      threadGroups.push(
+        await ctx.db
+          .query("smsConversationThreads")
+          .withIndex("by_workspace", (builder) =>
+            builder.eq("workspaceId", workspaceScope.workspaceId),
+          )
+          .filter((builder) => builder.eq(builder.field("eventId"), undefined))
+          .collect(),
+      );
     const threads = threadGroups
       .flat()
       .filter(
@@ -735,10 +799,10 @@ export const listThreads = query({
       threads.map(async (thread) => {
         const participants = await summarizeThreadParticipants(ctx, thread);
         const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
-        const event = eventById.get(thread.eventId);
+        const event = thread.eventId ? eventById.get(thread.eventId) : undefined;
         return {
           ...thread,
-          eventName: event?.name ?? "Unknown Event",
+          eventName: event?.name ?? "Workspace message",
           eventDate: event?.eventDate ?? 0,
           participantName: participants.displayName,
           canSend: sendReadiness.state === "ready",
@@ -779,7 +843,7 @@ export const getThread = query({
       siteKey: args.siteKey,
       workspaceSlug: args.workspaceSlug,
     });
-    const event = await ctx.db.get(thread.eventId);
+    const event = thread.eventId ? await ctx.db.get(thread.eventId) : null;
     const participants = await summarizeThreadParticipants(ctx, thread);
     const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
     const qrAttachmentReadiness = await resolveThreadQrAttachmentReadiness(
@@ -890,6 +954,7 @@ export const sendManualMessage = action({
         const errorDetails = getSmsErrorDetails(error);
         await ctx.runMutation(internal.smsConversations.recordMessage, {
           eventId: target.thread.eventId,
+          workspaceId: target.thread.workspaceId,
           phoneHash: target.thread.phoneHash,
           phoneObfuscated: target.thread.phoneObfuscated,
           participantClerkUserIds: target.thread.participantClerkUserIds,
@@ -914,7 +979,7 @@ export const sendManualMessage = action({
       siteKey: args.siteKey ?? args.workspaceSlug,
       adminClerkUserId: identity.subject,
     });
-    if (result.sent && qrCodeMediaUrl) {
+    if (result.sent && qrCodeMediaUrl && target.thread.eventId) {
       await ctx.runMutation(internal.qrDelivery.markRedemptionDelivered, {
         eventId: target.thread.eventId,
         clerkUserId: target.sendReadiness.clerkUserId,
@@ -1104,14 +1169,18 @@ async function listWorkspaceThreadsByPhoneHashes(
 
   const enrichedThreads = await Promise.all(
     threads
-      .filter((thread) => workspaceEventIds.has(thread.eventId))
+      .filter(
+        (thread) =>
+          thread.workspaceId === workspaceScope.workspaceId ||
+          Boolean(thread.eventId && workspaceEventIds.has(thread.eventId)),
+      )
       .map(async (thread) => {
         const participants = await summarizeThreadParticipants(ctx, thread);
         const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
-        const event = eventMap.get(thread.eventId);
+        const event = thread.eventId ? eventMap.get(thread.eventId) : undefined;
         return {
           ...thread,
-          eventName: event?.name ?? "Unknown Event",
+          eventName: event?.name ?? "Workspace message",
           eventDate: event?.eventDate ?? 0,
           participantName: participants.displayName,
           canSend: sendReadiness.state === "ready",

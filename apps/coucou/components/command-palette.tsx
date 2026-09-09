@@ -40,7 +40,9 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useWorkspaceAccess } from "@/components/workspace-access-gate";
 import { useCommandPalette } from "@/hooks/use-command-palette";
 import { useDashboardAppearance } from "@/hooks/use-dashboard-appearance";
+import { useContactDirectory } from "@/lib/hooks/use-contact-directory";
 import { useDebounce } from "@/lib/hooks/use-debounce";
+import { createDefaultGuestDirectoryFilterState } from "@/lib/text-blast-filters";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { cn } from "@/lib/utils";
 import {
@@ -59,15 +61,6 @@ interface NavigationCommandItem {
   searchTerms?: string[];
   shortcut?: string;
   action?: () => void;
-}
-
-interface GuestSearchResult {
-  detailReference: string | null;
-  name: string;
-  phoneObfuscated?: string;
-  tags: string[];
-  eventCount: number;
-  latestEventName?: string;
 }
 
 function commandMatchesQuery(item: NavigationCommandItem, normalizedQuery: string): boolean {
@@ -152,49 +145,31 @@ function useEventCommands(): NavigationCommandItem[] {
   }, [events, eventsPath]);
 }
 
-function useGuestCommands(
-  searchQuery: string,
-  isSearchEnabled: boolean,
-): { commands: NavigationCommandItem[]; isLoading: boolean } {
+function useGuestCommands(searchQuery: string, isSearchEnabled: boolean) {
   const workspaceScope = useWorkspaceScope();
-  const usersPath = useWorkspaceOperationPath("host", "users");
-  const guestSearchResults = useQuery(
-    api.guestDirectory.searchGuestDirectory,
-    workspaceScope && isSearchEnabled && searchQuery
-      ? {
-          ...workspaceScope.queryArgs,
-          searchText: searchQuery,
-          limit: 8,
-        }
-      : "skip",
-  ) as GuestSearchResult[] | undefined;
-
-  const commands = React.useMemo(() => {
-    if (!guestSearchResults) return [];
-    return guestSearchResults.flatMap((guest) => {
-      if (!guest.detailReference) return [];
-      const eventCountLabel = `${guest.eventCount} event${guest.eventCount === 1 ? "" : "s"}`;
-      const subtitle = [guest.phoneObfuscated, guest.latestEventName, eventCountLabel]
-        .filter(Boolean)
-        .join(" · ");
-
-      return [
-        {
-          id: `guest-${guest.detailReference}`,
-          title: guest.name,
-          subtitle,
-          searchTerms: [guest.phoneObfuscated ?? "", guest.latestEventName ?? "", ...guest.tags],
-          url: `${usersPath}/${encodeURIComponent(guest.detailReference)}`,
-          icon: User,
-        },
-      ];
-    });
-  }, [guestSearchResults, usersPath]);
-
+  const contactsPath = useWorkspaceOperationPath("host", "guests");
+  const filters = React.useMemo(
+    () => ({ ...createDefaultGuestDirectoryFilterState(), searchText: searchQuery }),
+    [searchQuery],
+  );
+  const directory = useContactDirectory(
+    filters,
+    isSearchEnabled && searchQuery ? workspaceScope : null,
+    8,
+  );
+  const commands: NavigationCommandItem[] = directory.people.map((contact) => ({
+    id: `contact-${contact.contactId}`,
+    title: contact.name,
+    subtitle: [contact.phoneObfuscated, `${contact.eventCount} events`].filter(Boolean).join(" · "),
+    url: `${contactsPath}?contact=${encodeURIComponent(contact.contactId)}${contact.detailReference ? `&guest=${encodeURIComponent(contact.detailReference)}` : ""}`,
+    icon: User,
+  }));
   return {
     commands,
     isLoading:
-      Boolean(workspaceScope && isSearchEnabled && searchQuery) && guestSearchResults === undefined,
+      Boolean(isSearchEnabled && searchQuery) && (directory.isLoading || directory.isPreparing),
+    error: directory.error,
+    retry: directory.retry,
   };
 }
 
@@ -454,6 +429,14 @@ function CommandPalette() {
             </>
           ) : null}
 
+          {guestSearch.error ? (
+            <div role="alert" className="p-3 text-sm">
+              Contacts could not be searched.{" "}
+              <Button variant="link" onClick={() => void guestSearch.retry()}>
+                Retry
+              </Button>
+            </div>
+          ) : null}
           {isGuestSearchLoading ? (
             <CommandLoading className="px-2 py-3 text-xs text-[var(--text-secondary)]">
               Searching contacts…

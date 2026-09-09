@@ -47,7 +47,7 @@ export const recipientHistoryFilterValidator = v.optional(
 export const parseRecipientFilter = (
   rawFilter: string | null | undefined,
 ): RecipientFilterConfig => {
-  if (!rawFilter) {
+  if (!rawFilter || rawFilter === "all") {
     return { type: "all" };
   }
 

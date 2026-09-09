@@ -4,7 +4,7 @@
 
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery } from "./functions";
 
 const DEFAULT_LIMIT = 1000;
 

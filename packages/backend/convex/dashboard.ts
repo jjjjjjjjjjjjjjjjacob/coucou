@@ -284,7 +284,7 @@ export const getSmsStats = query({
     workspaceSlug: v.optional(v.string()),
   },
   handler: async (ctx, { siteKey, workspaceSlug }) => {
-    await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
+    const workspace = await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
     const events = await ctx.db.query("events").collect();
     const { scopedEventIds } = getScopedEventsAndEventIds(events, {
@@ -294,7 +294,9 @@ export const getSmsStats = query({
 
     // Get all SMS notifications
     const notifications = (await ctx.db.query("smsNotifications").collect()).filter(
-      (notification) => scopedEventIds.has(notification.eventId),
+      (notification) =>
+        notification.workspaceId === workspace.workspaceId ||
+        Boolean(notification.eventId && scopedEventIds.has(notification.eventId)),
     );
 
     // Calculate stats
@@ -349,7 +351,7 @@ export const getSmsTrends = query({
     workspaceSlug: v.optional(v.string()),
   },
   handler: async (ctx, { siteKey, workspaceSlug }) => {
-    await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
+    const workspace = await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
     const events = await ctx.db.query("events").collect();
     const { scopedEventIds } = getScopedEventsAndEventIds(events, {
@@ -357,7 +359,9 @@ export const getSmsTrends = query({
       workspaceSlug,
     });
     const notifications = (await ctx.db.query("smsNotifications").collect()).filter(
-      (notification) => scopedEventIds.has(notification.eventId),
+      (notification) =>
+        notification.workspaceId === workspace.workspaceId ||
+        Boolean(notification.eventId && scopedEventIds.has(notification.eventId)),
     );
 
     // Group SMS by day for the last 30 days
@@ -452,7 +456,9 @@ export const getDeliverySummaryByWorkspacePaginated = query({
         const eventIds = eventsBySlug.get(workspace.slug) ?? new Set<string>();
         const scopedNotifications = notifications.filter(
           (notification) =>
-            eventIds.has(notification.eventId) && notification.createdAt > thirtyDaysAgo,
+            (notification.workspaceId === workspace._id ||
+              Boolean(notification.eventId && eventIds.has(notification.eventId))) &&
+            notification.createdAt > thirtyDaysAgo,
         );
         const sentCount = scopedNotifications.filter(
           (notification) => notification.status === "sent",

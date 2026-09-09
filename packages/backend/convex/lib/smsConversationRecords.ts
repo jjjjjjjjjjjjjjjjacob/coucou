@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { resolveTenantWorkspaceScope } from "./workspaceScope";
 
 export type SmsConversationDirection = "inbound" | "outbound" | "system";
 
@@ -28,7 +29,8 @@ function mergeUniqueStrings(firstValues: readonly string[], secondValues: readon
 export async function upsertSmsConversationThread(
   ctx: SmsConversationDatabase,
   args: {
-    eventId: Id<"events">;
+    eventId?: Id<"events">;
+    workspaceId?: Id<"workspaces">;
     phoneHash: string;
     phoneObfuscated: string;
     participantClerkUserIds?: readonly string[];
@@ -36,17 +38,31 @@ export async function upsertSmsConversationThread(
   },
 ): Promise<Doc<"smsConversationThreads">> {
   const now = args.now ?? Date.now();
-  const existingThread = await ctx.db
-    .query("smsConversationThreads")
-    .withIndex("by_event_phone", (queryBuilder) =>
-      queryBuilder.eq("eventId", args.eventId).eq("phoneHash", args.phoneHash),
-    )
-    .unique();
+  if (!args.eventId && !args.workspaceId) throw new Error("Message workspace is required");
+  const event = !args.workspaceId && args.eventId ? await ctx.db.get(args.eventId) : null;
+  const workspaceId =
+    args.workspaceId ??
+    (event ? (await resolveTenantWorkspaceScope(ctx, event))?.workspaceId : undefined);
+  const existingThread = args.eventId
+    ? await ctx.db
+        .query("smsConversationThreads")
+        .withIndex("by_event_phone", (builder) =>
+          builder.eq("eventId", args.eventId).eq("phoneHash", args.phoneHash),
+        )
+        .unique()
+    : await ctx.db
+        .query("smsConversationThreads")
+        .withIndex("by_workspace_phone", (builder) =>
+          builder.eq("workspaceId", args.workspaceId).eq("phoneHash", args.phoneHash),
+        )
+        .filter((builder) => builder.eq(builder.field("eventId"), undefined))
+        .unique();
   const participantClerkUserIds = uniqueStrings(args.participantClerkUserIds ?? []);
 
   if (!existingThread) {
     const threadId = await ctx.db.insert("smsConversationThreads", {
       eventId: args.eventId,
+      workspaceId,
       phoneHash: args.phoneHash,
       phoneObfuscated: args.phoneObfuscated,
       participantClerkUserIds,
@@ -69,6 +85,7 @@ export async function upsertSmsConversationThread(
     participantClerkUserIds,
   );
   const patch: Partial<Doc<"smsConversationThreads">> = {
+    workspaceId: existingThread.workspaceId ?? workspaceId,
     phoneObfuscated: args.phoneObfuscated || existingThread.phoneObfuscated,
     participantClerkUserIds: mergedParticipantClerkUserIds,
     updatedAt: now,
@@ -83,7 +100,8 @@ export async function upsertSmsConversationThread(
 export async function recordSmsConversationMessage(
   ctx: SmsConversationDatabase,
   args: {
-    eventId: Id<"events">;
+    eventId?: Id<"events">;
+    workspaceId?: Id<"workspaces">;
     phoneHash: string;
     phoneObfuscated: string;
     participantClerkUserIds?: readonly string[];
@@ -110,6 +128,7 @@ export async function recordSmsConversationMessage(
   const createdAt = args.createdAt ?? Date.now();
   const thread = await upsertSmsConversationThread(ctx, {
     eventId: args.eventId,
+    workspaceId: args.workspaceId,
     phoneHash: args.phoneHash,
     phoneObfuscated: args.phoneObfuscated,
     participantClerkUserIds: args.participantClerkUserIds,
@@ -166,6 +185,7 @@ export async function recordSmsConversationMessage(
   const messageId = await ctx.db.insert("smsConversationMessages", {
     threadId: thread._id,
     eventId: args.eventId,
+    workspaceId: thread.workspaceId,
     phoneHash: args.phoneHash,
     direction: args.direction,
     kind: args.kind,
