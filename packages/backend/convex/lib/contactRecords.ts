@@ -1,6 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { resolveCanonicalUserIdentity } from "./canonicalUserIdentity";
+import { contactSocialProfiles } from "./contactSocialProfiles";
 import { GUEST_CLERK_USER_ID_PREFIX } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
 import { resolveApprovalStatus } from "./rsvpStatus";
@@ -76,21 +77,70 @@ export async function resolveContactPhone(
 export function contactSearchText(
   contact: Pick<
     Doc<"workspaceContacts">,
-    "name" | "phoneNumber" | "tags" | "notes" | "invitedByNames" | "defaultListKey"
+    | "name"
+    | "phoneNumber"
+    | "searchAliases"
+    | "tags"
+    | "notes"
+    | "invitedByNames"
+    | "defaultListKey"
   >,
 ): string {
-  return [
+  const searchAliases = contact.searchAliases ?? [];
+  const searchableValues = [
     contact.name,
     contact.phoneNumber,
     contact.phoneNumber?.replace(/\D/g, ""),
+    ...searchAliases,
     ...contact.tags,
     contact.notes,
     ...contact.invitedByNames,
     contact.defaultListKey,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLocaleLowerCase();
+  ].filter((value): value is string => Boolean(value));
+  const normalizedSearchText = searchableValues.join(" ").toLocaleLowerCase();
+  return [normalizedSearchText, ...contactSearchSubstringTokens(searchableValues)].join(" ");
+}
+
+const MAX_CONTACT_SEARCH_ALIASES = 100;
+const MAX_CONTACT_SEARCH_SUBSTRING_LENGTH = 3;
+const MAX_CONTACT_SEARCH_SUBSTRING_TOKENS = 2_000;
+
+function contactSearchSubstringTokens(searchableValues: string[]): string[] {
+  const substringTokens = new Set<string>();
+  for (const searchableValue of searchableValues) {
+    const normalizedValue = searchableValue.toLocaleLowerCase();
+    const searchableTerms = new Set([
+      ...normalizedValue.split(/[^\p{L}\p{N}]+/gu).filter(Boolean),
+      normalizedValue.replace(/[^\p{L}\p{N}]+/gu, ""),
+    ]);
+    for (const searchableTerm of searchableTerms) {
+      for (let startIndex = 0; startIndex < searchableTerm.length; startIndex++) {
+        for (
+          let substringLength = 1;
+          substringLength <= MAX_CONTACT_SEARCH_SUBSTRING_LENGTH &&
+          startIndex + substringLength <= searchableTerm.length;
+          substringLength++
+        ) {
+          substringTokens.add(searchableTerm.slice(startIndex, startIndex + substringLength));
+          if (substringTokens.size >= MAX_CONTACT_SEARCH_SUBSTRING_TOKENS)
+            return [...substringTokens];
+        }
+      }
+    }
+  }
+  return [...substringTokens];
+}
+
+function mergeContactSearchAliases(...aliasGroups: Array<Array<string | undefined>>): string[] {
+  const aliasesByNormalizedValue = new Map<string, string>();
+  for (const alias of aliasGroups.flat()) {
+    const trimmedAlias = alias?.trim();
+    if (!trimmedAlias) continue;
+    aliasesByNormalizedValue.set(trimmedAlias.toLocaleLowerCase(), trimmedAlias);
+    const compactAlias = trimmedAlias.replace(/[^\p{L}\p{N}]+/gu, "");
+    if (compactAlias) aliasesByNormalizedValue.set(compactAlias.toLocaleLowerCase(), compactAlias);
+  }
+  return [...aliasesByNormalizedValue.values()].slice(-MAX_CONTACT_SEARCH_ALIASES);
 }
 
 export async function ensureContact(
@@ -139,6 +189,7 @@ export async function ensureContact(
     args.name?.trim() ||
     contact?.name ||
     "Guest";
+  const initialSearchAliases = mergeContactSearchAliases([args.name, name]);
   const now = Date.now();
   if (!contact) {
     const contactId = await ctx.db.insert("workspaceContacts", {
@@ -149,7 +200,8 @@ export async function ensureContact(
       clerkUserIds: [],
       name,
       normalizedName: name.toLocaleLowerCase(),
-      searchText: name.toLocaleLowerCase(),
+      searchText: [name, ...initialSearchAliases].join(" ").toLocaleLowerCase(),
+      searchAliases: initialSearchAliases,
       tags: [],
       invitedByNames: [],
       smsConsent: false,
@@ -188,6 +240,11 @@ export async function ensureContact(
       ),
     ]),
   );
+  const searchAliases = mergeContactSearchAliases(
+    contact.searchAliases ?? [],
+    identityContact?.searchAliases ?? [],
+    [args.name],
+  );
   for (const clerkUserId of [args.clerkUserId, identity.clerkUserId].filter(
     (value): value is string => Boolean(value),
   )) {
@@ -222,6 +279,7 @@ export async function ensureContact(
     firstName: identity.user?.firstName ?? contact.firstName,
     lastName: identity.user?.lastName ?? contact.lastName,
     imageUrl: identity.user?.imageUrl ?? contact.imageUrl,
+    searchAliases,
     updatedAt: now,
   };
   await ctx.db.patch(contact._id, {
@@ -288,6 +346,7 @@ async function adjustContactFacet(
 export async function refreshContactProfile(ctx: MutationCtx, contactId: Id<"workspaceContacts">) {
   const contact = await resolveContact(ctx, contactId);
   if (!contact) return;
+  const socialProfiles = await contactSocialProfiles(ctx, contact);
   const profiles: Doc<"workspaceGuestProfiles">[] = [];
   if (contact.phoneHash) {
     const profile = await ctx.db
@@ -321,11 +380,16 @@ export async function refreshContactProfile(ctx: MutationCtx, contactId: Id<"wor
   const notes =
     Array.from(new Set(profiles.map((profile) => profile.notes).filter(Boolean))).join("\n") ||
     undefined;
+  const searchAliases = mergeContactSearchAliases(
+    contact.searchAliases ?? [],
+    socialProfiles.flatMap((profile) => [profile.handle, profile.normalizedHandle]),
+  );
   const patch = {
     tags,
     invitedByNames,
     notes,
     defaultListKey: profiles[0]?.defaultListKey,
+    searchAliases,
     updatedAt: Date.now(),
   };
   for (const tag of contact.tags)
@@ -468,6 +532,10 @@ export async function syncContactRsvp(ctx: MutationCtx, rsvpId: Id<"rsvps">) {
   );
   const consentUpdatedAt = rsvp.smsConsentTimestamp ?? rsvp.updatedAt ?? rsvp.createdAt;
   const customFieldKeys = (event.customFields ?? []).map((field) => field.key);
+  const submittedSocialProfiles = await ctx.db
+    .query("rsvpSocialProfiles")
+    .withIndex("by_rsvp", (builder) => builder.eq("rsvpId", rsvp._id))
+    .take(20);
   await ctx.db.insert("contactEvents", {
     workspaceId: scope.workspaceId,
     contactId: contact._id,
@@ -500,6 +568,11 @@ export async function syncContactRsvp(ctx: MutationCtx, rsvpId: Id<"rsvps">) {
   const invitedByNames = Array.from(
     new Set([...contact.invitedByNames, ...(rsvp.invitedByName ? [rsvp.invitedByName] : [])]),
   );
+  const searchAliases = mergeContactSearchAliases(
+    contact.searchAliases ?? [],
+    [rsvp.userName],
+    submittedSocialProfiles.flatMap((profile) => [profile.handle, profile.normalizedHandle]),
+  );
   const patch = {
     eventCount: contact.eventCount + (siblings.length ? 0 : 1),
     eventsAttendedCount: contact.eventsAttendedCount + (hasAttended && !attendedSibling ? 1 : 0),
@@ -508,6 +581,7 @@ export async function syncContactRsvp(ctx: MutationCtx, rsvpId: Id<"rsvps">) {
       : rsvp.createdAt,
     latestRsvpAt: Math.max(contact.latestRsvpAt, rsvp.createdAt),
     invitedByNames,
+    searchAliases,
     ...(rsvp.smsConsent !== undefined && consentUpdatedAt >= contact.consentUpdatedAt
       ? { smsConsent: rsvp.smsConsent, consentUpdatedAt }
       : {}),

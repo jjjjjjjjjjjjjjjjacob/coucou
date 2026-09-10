@@ -47,6 +47,7 @@ import type * as lib_clerkWorkspaceRoles from "../lib/clerkWorkspaceRoles.js";
 import type * as lib_codeGenerators from "../lib/codeGenerators.js";
 import type * as lib_contactQueries from "../lib/contactQueries.js";
 import type * as lib_contactRecords from "../lib/contactRecords.js";
+import type * as lib_contactSocialProfiles from "../lib/contactSocialProfiles.js";
 import type * as lib_contactValidators from "../lib/contactValidators.js";
 import type * as lib_credentialPasswords from "../lib/credentialPasswords.js";
 import type * as lib_eventMetadata from "../lib/eventMetadata.js";
@@ -78,6 +79,7 @@ import type * as lib_smsConversationRecords from "../lib/smsConversationRecords.
 import type * as lib_smsErrorDetails from "../lib/smsErrorDetails.js";
 import type * as lib_smsOrganizerPreferences from "../lib/smsOrganizerPreferences.js";
 import type * as lib_smsProgramCopy from "../lib/smsProgramCopy.js";
+import type * as lib_smsRecipientIdentity from "../lib/smsRecipientIdentity.js";
 import type * as lib_socialProfileRecords from "../lib/socialProfileRecords.js";
 import type * as lib_twilioCredentialResolution from "../lib/twilioCredentialResolution.js";
 import type * as lib_types from "../lib/types.js";
@@ -167,6 +169,7 @@ declare const fullApi: ApiFromModules<{
   "lib/codeGenerators": typeof lib_codeGenerators;
   "lib/contactQueries": typeof lib_contactQueries;
   "lib/contactRecords": typeof lib_contactRecords;
+  "lib/contactSocialProfiles": typeof lib_contactSocialProfiles;
   "lib/contactValidators": typeof lib_contactValidators;
   "lib/credentialPasswords": typeof lib_credentialPasswords;
   "lib/eventMetadata": typeof lib_eventMetadata;
@@ -198,6 +201,7 @@ declare const fullApi: ApiFromModules<{
   "lib/smsErrorDetails": typeof lib_smsErrorDetails;
   "lib/smsOrganizerPreferences": typeof lib_smsOrganizerPreferences;
   "lib/smsProgramCopy": typeof lib_smsProgramCopy;
+  "lib/smsRecipientIdentity": typeof lib_smsRecipientIdentity;
   "lib/socialProfileRecords": typeof lib_socialProfileRecords;
   "lib/twilioCredentialResolution": typeof lib_twilioCredentialResolution;
   "lib/types": typeof lib_types;

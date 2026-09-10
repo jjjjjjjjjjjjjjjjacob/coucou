@@ -293,6 +293,90 @@ describe("contact directory and frozen audiences", () => {
     ).toBe("Profile Person");
   });
 
+  it("indexes historical RSVP names and social handles on one atomic contact", async () => {
+    const { backend, host, eventId } = await setup();
+    await backend.run(async (context) => {
+      await context.db.insert("users", {
+        clerkUserId: "renamed_person",
+        firstName: "Current",
+        lastName: "Profile",
+        createdAt: 1,
+        updatedAt: 2,
+      });
+      const rsvpId = await context.db.insert("rsvps", {
+        eventId,
+        clerkUserId: "renamed_person",
+        listKey: "main",
+        userName: "Jacob Stein",
+        status: "approved",
+        shareContact: false,
+        smsConsent: true,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await context.db.insert("rsvpSocialProfiles", {
+        eventId,
+        rsvpId,
+        clerkUserId: "renamed_person",
+        platformKey: "instagram",
+        handle: "night.owl",
+        normalizedHandle: "night.owl",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await context.db.insert("userSocialProfiles", {
+        clerkUserId: "renamed_person",
+        platformKey: "tiktok",
+        handle: "contact.level",
+        normalizedHandle: "contact.level",
+        createdAt: 1,
+        updatedAt: 2,
+      });
+      await syncContactRsvp(context, rsvpId);
+    });
+
+    const currentNameResult = await host.query(api.contacts.list, {
+      ...scope,
+      searchText: "Current Profile",
+    });
+    const historicalNameResult = await host.query(api.contacts.list, {
+      ...scope,
+      searchText: "Jacob Stein",
+    });
+    const socialHandleResult = await host.query(api.contacts.list, {
+      ...scope,
+      searchText: "@night.owl",
+    });
+    expect(currentNameResult.people.map((person) => person.name)).toEqual(["Current Profile"]);
+    expect(historicalNameResult.people.map((person) => person.name)).toEqual(["Current Profile"]);
+    expect(socialHandleResult.people.map((person) => person.name)).toEqual(["Current Profile"]);
+    expect(
+      (await host.query(api.contacts.list, { ...scope, searchText: "j_a_c" })).people.map(
+        (person) => person.name,
+      ),
+    ).toEqual(["Current Profile"]);
+    expect(
+      (await host.query(api.contacts.list, { ...scope, searchText: "curr" })).people.map(
+        (person) => person.name,
+      ),
+    ).toEqual(["Current Profile"]);
+    expect(
+      (await host.query(api.contacts.list, { ...scope, searchText: "cont" })).people.map(
+        (person) => person.name,
+      ),
+    ).toEqual(["Current Profile"]);
+    expect(
+      (await host.query(api.contacts.list, { ...scope, searchText: "tact.l" })).people.map(
+        (person) => person.name,
+      ),
+    ).toEqual(["Current Profile"]);
+    expect(
+      (await host.query(api.contacts.list, { ...scope, searchText: "ight.o" })).people.map(
+        (person) => person.name,
+      ),
+    ).toEqual(["Current Profile"]);
+  });
+
   it("deduplicates guest/account phones and preserves annotations and selected aliases after an identity merge", async () => {
     const { backend, host, workspaceId } = await setup();
     const phone = await normalizeAndHashPhoneNumber("+14155550102");
@@ -642,7 +726,7 @@ describe("contact directory and frozen audiences", () => {
     });
   });
 
-  it("searches phone and combined filters across pages and invalidates mismatched previews", async () => {
+  it("searches the complete indexed contact directory and invalidates mismatched previews", async () => {
     const { backend, host, workspaceId, eventId } = await setup();
     for (let position = 0; position < 45; position++)
       await seedContact(backend, workspaceId, {
@@ -652,7 +736,7 @@ describe("contact directory and frozen audiences", () => {
         normalizedName: `name ${String(position).padStart(2, "0")}`,
         searchText:
           position === 44
-            ? "zelda +14155550144 14155550144 friend met at dinner invited by casey"
+            ? "zelda jacob +14155550144 14155550144 friend met at dinner invited by casey"
             : `name ${position}`,
         tags: position === 44 ? ["friend"] : [],
         notes: position === 44 ? "Met at dinner" : undefined,
@@ -662,14 +746,20 @@ describe("contact directory and frozen audiences", () => {
       tags: ["friend"],
       smsConsentFilter: "consented" as const,
     };
-    let cursor: string | undefined;
-    const names: string[] = [];
-    do {
-      const page = await host.query(api.contacts.list, { ...scope, ...filters, cursor });
-      names.push(...page.people.map((person) => person.name));
-      cursor = page.nextCursor ?? undefined;
-    } while (cursor);
-    expect(names).toEqual(["Name 44"]);
+    const page = await host.query(api.contacts.list, { ...scope, ...filters });
+    expect(page.people.map((person) => person.name)).toEqual(["Name 44"]);
+    expect(page.nextCursor).toBeNull();
+    const nameSearchPage = await host.query(api.contacts.list, {
+      ...scope,
+      searchText: "Jacob",
+    });
+    expect(nameSearchPage.people.map((person) => person.name)).toEqual(["Name 44"]);
+    expect(nameSearchPage.nextCursor).toBeNull();
+    const combinedSearchPage = await host.query(api.contacts.list, {
+      ...scope,
+      searchText: "dinner casey",
+    });
+    expect(combinedSearchPage.people.map((person) => person.name)).toEqual(["Name 44"]);
     const audience = { type: "filter" as const, filters: { searchText: "dinner casey" } };
     const previewId = await host.mutation(api.contactAudiences.prepare, { ...scope, audience });
     expect(await finishPreview(backend, previewId)).toMatchObject({
@@ -697,6 +787,31 @@ describe("contact directory and frozen audiences", () => {
         includeQrCodes: false,
       }),
     ).rejects.toThrow("Prepare a new audience preview");
+  });
+
+  it("fills a filtered UI page across internal candidate batches", async () => {
+    const { backend, host, workspaceId } = await setup();
+    for (let position = 0; position < 95; position++)
+      await seedContact(backend, workspaceId, {
+        personKey: `phone:sparse-${position}`,
+        phoneHash: `sparse-${position}`,
+        name: `Sparse ${String(position).padStart(2, "0")}`,
+        normalizedName: `sparse ${String(position).padStart(2, "0")}`,
+        searchText: `sparse ${position}`,
+        smsConsent: position >= 80,
+      });
+
+    const page = await host.query(api.contacts.list, {
+      ...scope,
+      pageSize: 20,
+      smsConsentFilter: "consented",
+    });
+
+    expect(page.people).toHaveLength(15);
+    expect(page.people[0].name).toBe("Sparse 80");
+    expect(page.people[14].name).toBe("Sparse 94");
+    expect(page.nextCursor).toBeNull();
+    expect(page.isDone).toBe(true);
   });
 
   it("sends an eventless snapshot through the workspace sender and never resends a successful delivery", async () => {

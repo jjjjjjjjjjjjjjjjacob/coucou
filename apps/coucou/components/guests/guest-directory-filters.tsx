@@ -46,6 +46,7 @@ export interface GuestDirectoryFiltersProps {
   listKeyOptions?: string[];
   customFieldOptions: Array<{ key: string; label: string }>;
   disabled?: boolean;
+  hideSmsConsentFilter?: boolean;
 }
 
 interface MultiSelectPopoverProps {
@@ -124,6 +125,7 @@ export function GuestDirectoryFilters({
   listKeyOptions = [],
   customFieldOptions,
   disabled,
+  hideSmsConsentFilter = false,
 }: GuestDirectoryFiltersProps) {
   const isFullVariant = variant === "full";
 
@@ -163,6 +165,8 @@ export function GuestDirectoryFilters({
   );
 
   const activeFilterCount = countActiveGuestDirectoryFilters(value);
+  const visibleActiveFilterCount =
+    activeFilterCount - (hideSmsConsentFilter && value.smsConsentFilter !== "any" ? 1 : 0);
 
   return (
     <div className="space-y-3">
@@ -384,20 +388,22 @@ export function GuestDirectoryFilters({
 
         {isFullVariant ? (
           <>
-            <Select
-              value={value.smsConsentFilter}
-              disabled={disabled}
-              onValueChange={(nextValue) =>
-                updateFilterState({
-                  smsConsentFilter: nextValue as GuestDirectoryFilterState["smsConsentFilter"],
-                })
-              }
-              className="w-44"
-            >
-              <SelectOption value="any">Any SMS consent</SelectOption>
-              <SelectOption value="consented">SMS consented</SelectOption>
-              <SelectOption value="not_consented">No SMS consent</SelectOption>
-            </Select>
+            {!hideSmsConsentFilter ? (
+              <Select
+                value={value.smsConsentFilter}
+                disabled={disabled}
+                onValueChange={(nextValue) =>
+                  updateFilterState({
+                    smsConsentFilter: nextValue as GuestDirectoryFilterState["smsConsentFilter"],
+                  })
+                }
+                className="w-44"
+              >
+                <SelectOption value="any">Any SMS consent</SelectOption>
+                <SelectOption value="consented">SMS consented</SelectOption>
+                <SelectOption value="not_consented">No SMS consent</SelectOption>
+              </Select>
+            ) : null}
 
             <Select
               value={value.rsvpedToLatestEvent}
@@ -480,12 +486,17 @@ export function GuestDirectoryFilters({
               <SelectOption value="eventCount:asc">Fewest events</SelectOption>
             </Select>
 
-            {activeFilterCount > 0 ? (
+            {visibleActiveFilterCount > 0 ? (
               <Button
                 size="sm"
                 variant="outline"
                 disabled={disabled}
-                onClick={() => onChange(createDefaultGuestDirectoryFilterState())}
+                onClick={() =>
+                  onChange({
+                    ...createDefaultGuestDirectoryFilterState(),
+                    smsConsentFilter: hideSmsConsentFilter ? value.smsConsentFilter : "any",
+                  })
+                }
                 className="border-[var(--border-subtle)] text-xs"
               >
                 Clear All
@@ -495,7 +506,7 @@ export function GuestDirectoryFilters({
         ) : null}
       </div>
 
-      {isFullVariant && activeFilterCount > 0 ? (
+      {isFullVariant && visibleActiveFilterCount > 0 ? (
         <ChipGroup aria-label="Active contact filters">
           {value.searchText.trim() ? (
             <Chip
@@ -535,7 +546,7 @@ export function GuestDirectoryFilters({
               removeLabel="Clear text history filter"
             />
           ) : null}
-          {value.smsConsentFilter !== "any" ? (
+          {!hideSmsConsentFilter && value.smsConsentFilter !== "any" ? (
             <Chip
               label={value.smsConsentFilter === "consented" ? "SMS consented" : "No SMS consent"}
               onRemove={() => updateFilterState({ smsConsentFilter: "any" })}

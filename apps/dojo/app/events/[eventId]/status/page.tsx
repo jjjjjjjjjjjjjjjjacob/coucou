@@ -5,9 +5,9 @@ import type { Id } from "@convex/_generated/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useConvexAuth, useQuery as useConvexQuery, useMutation } from "convex/react";
-import { CheckCircle2, CircleDashed } from "lucide-react";
 import React, { use } from "react";
 import { toast } from "sonner";
+import { SmsOptInPrompt } from "@/components/sms-opt-in-prompt";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
@@ -78,12 +78,12 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
     }
   }, [status?.smsConsentIpAddress]);
 
-  const handleSmsPreferenceChange = async (desiredSmsConsent: boolean) => {
+  const handleEnableSmsPreference = async () => {
     if (!status?.rsvpId) return;
     try {
       setIsUpdatingSmsPreference(true);
       let consentIpAddress = smsConsentIpAddress;
-      if (desiredSmsConsent && !consentIpAddress) {
+      if (!consentIpAddress) {
         consentIpAddress = await fetchSmsConsentIpAddress();
         if (consentIpAddress) {
           setSmsConsentIpAddress(consentIpAddress);
@@ -91,23 +91,14 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
       }
       await updateSmsPreference({
         rsvpId: status.rsvpId as Id<"rsvps">,
-        smsConsent: desiredSmsConsent,
-        smsConsentIpAddress: desiredSmsConsent && consentIpAddress ? consentIpAddress : undefined,
+        smsConsent: true,
+        smsConsentIpAddress: consentIpAddress,
       });
       await statusQuery.refetch();
-      toast.success(
-        desiredSmsConsent
-          ? `SMS updates from ${smsSenderDisplayName} enabled.`
-          : `SMS from ${smsSenderDisplayName} disabled.`,
-      );
+      toast.success(`SMS updates from ${smsSenderDisplayName} enabled.`);
     } catch (error) {
       const errorDetails = error as Error;
-      toast.error(
-        errorDetails.message ||
-          (desiredSmsConsent
-            ? "Failed to enable SMS notifications."
-            : "Failed to disable SMS notifications."),
-      );
+      toast.error(errorDetails.message || "Failed to enable SMS notifications.");
     } finally {
       setIsUpdatingSmsPreference(false);
     }
@@ -193,66 +184,16 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
             </div>
           )}
           {status && (
-            <div className="flex flex-col gap-3 items-center text-sm text-primary">
-              {status.smsConsent ? (
-                <div className="flex flex-col items-center gap-3">
-                  <div
-                    className="flex items-center gap-2 text-sm font-medium"
-                    style={{ color: eventThemeColors.textColor }}
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>SMS from {smsSenderDisplayName} enabled</span>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="default"
-                    className="min-w-[7rem]"
-                    onClick={() => handleSmsPreferenceChange(false)}
-                    disabled={
-                      statusQuery.isLoading || statusQuery.isFetching || isUpdatingSmsPreference
-                    }
-                  >
-                    {isUpdatingSmsPreference && <Spinner className="h-3.5 w-3.5" />}
-                    SMS On
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-3">
-                  <div
-                    className="flex items-center gap-2 text-sm font-medium"
-                    style={{ color: eventThemeColors.textColor }}
-                  >
-                    <CircleDashed className="h-4 w-4" />
-                    <span>SMS from {smsSenderDisplayName} disabled</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleSmsPreferenceChange(true)}
-                    disabled={
-                      statusQuery.isLoading || statusQuery.isFetching || isUpdatingSmsPreference
-                    }
-                  >
-                    {isUpdatingSmsPreference && <Spinner className="h-3.5 w-3.5" />}
-                    Enable SMS Updates
-                  </Button>
-                </div>
-              )}
-              <p className="text-[10px] text-muted-foreground text-center leading-tight max-w-sm">
-                RSVP updates, reminders, and offers via SMS. Sent by Coucou on behalf of{" "}
-                {smsSenderDisplayName} using Dojo Pomodoro. Msg & data rates may apply. Reply STOP
-                to cancel. Consent not required for purchase.{" "}
-                <a href="/terms" className="underline">
-                  Terms
-                </a>{" "}
-                &{" "}
-                <a href="/privacy" className="underline">
-                  Privacy
-                </a>
-                .
-              </p>
-            </div>
+            <SmsOptInPrompt
+              isSmsConsentEnabled={status.smsConsent === true}
+              isUpdatingSmsPreference={isUpdatingSmsPreference}
+              isUpdateDisabled={
+                statusQuery.isLoading || statusQuery.isFetching || isUpdatingSmsPreference
+              }
+              onEnableSms={handleEnableSmsPreference}
+              smsSenderDisplayName={smsSenderDisplayName}
+              textColor={eventThemeColors.textColor}
+            />
           )}
           {status?.status === "denied" && (
             <div className="text-sm">

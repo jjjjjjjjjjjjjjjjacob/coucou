@@ -6,9 +6,11 @@ import type { ContactAudience } from "@convex/lib/contactValidators";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table";
+import { useMutation } from "convex/react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DirectoryPagination } from "@/components/ui/directory-pagination";
 import {
   HOST_GUEST_DIRECTORY_TABLE_KEY,
   HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
@@ -21,6 +23,7 @@ import {
 import { useContactDirectory } from "@/lib/hooks/use-contact-directory";
 import { useContactFilterOptions } from "@/lib/hooks/use-contact-filter-options";
 import { useDashboardTableColumnLayout } from "@/lib/hooks/use-dashboard-table-column-layout";
+import { useDebounce } from "@/lib/hooks/use-debounce";
 import {
   createDefaultGuestDirectoryFilterState,
   decodeRecipientFilter,
@@ -33,6 +36,32 @@ import { GuestDirectoryColumnsMenu } from "./guest-directory-columns-menu";
 import { GuestDirectoryFilters } from "./guest-directory-filters";
 import { GuestDirectoryTable } from "./guest-directory-table";
 import { useGuestDirectoryTable } from "./use-guest-directory-table";
+
+function buildFilterAudience(
+  filters: GuestDirectoryFilterState,
+  options: { includeSmsConsent: boolean },
+): Extract<ContactAudience, { type: "filter" }> {
+  const {
+    sortBy: _sortBy,
+    sortDirection: _sortDirection,
+    smsConsentFilter,
+    ...encodedFilters
+  } = encodeGuestDirectoryFilterArgs(filters);
+  return {
+    type: "filter",
+    filters: {
+      ...encodedFilters,
+      ...(options.includeSmsConsent && smsConsentFilter ? { smsConsentFilter } : {}),
+      eventIds: encodedFilters.eventIds as Id<"events">[] | undefined,
+      recipientHistoryFilter: encodedFilters.recipientHistoryFilter
+        ? {
+            ...encodedFilters.recipientHistoryFilter,
+            textBlastIds: encodedFilters.recipientHistoryFilter.textBlastIds as Id<"textBlasts">[],
+          }
+        : undefined,
+    },
+  };
+}
 
 export function ContactAudiencePicker({
   audience,
@@ -51,6 +80,7 @@ export function ContactAudiencePicker({
     return {
       ...defaults,
       ...audience.filters,
+      smsConsentFilter: "consented",
       searchText: audience.filters.searchText ?? "",
       eventIds: audience.filters.eventIds ?? [],
       tags: audience.filters.tags ?? [],
@@ -60,6 +90,12 @@ export function ContactAudiencePicker({
         audience.filters.recipientHistoryFilter ?? defaults.recipientHistoryFilter,
     };
   });
+  const [eligibilityPreviewState, setEligibilityPreviewState] = useState<{
+    filterKey: string;
+    previewId: Id<"contactAudiencePreviews">;
+  } | null>(null);
+  const eligibilityRequest = useRef({ filterKey: null as string | null, version: 0 });
+  const [eligibilityCountError, setEligibilityCountError] = useState<string | null>(null);
   const directory = useContactDirectory(filters, workspace);
   const facetsQuery = useContactFilterOptions(workspace);
   const facets = facetsQuery.data;
@@ -72,40 +108,84 @@ export function ContactAudiencePicker({
   });
   const selectedIds = audience?.type === "contacts" ? audience.contactIds : [];
   const allMatching = audience?.type === "filter";
-  const setSelected = (identifiers: Id<"workspaceContacts">[]) =>
+  const debouncedSearchText = useDebounce(filters.searchText, 250);
+  const eligibilityAudience = useMemo(
+    () =>
+      buildFilterAudience(
+        { ...filters, searchText: debouncedSearchText },
+        { includeSmsConsent: false },
+      ),
+    [debouncedSearchText, filters],
+  );
+  const eligibilityFilterKey = JSON.stringify(eligibilityAudience);
+  const activeEligibilityPreviewId =
+    eligibilityPreviewState?.filterKey === eligibilityFilterKey
+      ? eligibilityPreviewState.previewId
+      : undefined;
+  const eligibilityPreviewQuery = useQuery({
+    ...convexQuery(api.contactAudiences.get, {
+      workspaceSlug: workspace?.workspaceSlug ?? "",
+      siteKey: workspace?.siteKey,
+      previewId: activeEligibilityPreviewId as Id<"contactAudiencePreviews">,
+    }),
+    enabled: Boolean(workspace && activeEligibilityPreviewId),
+  });
+  const prepareEligibilityCount = useMutation(api.contactAudiences.prepare);
+  useEffect(() => {
+    if (!workspace || eligibilityRequest.current.filterKey === eligibilityFilterKey) return;
+    const requestVersion = eligibilityRequest.current.version + 1;
+    eligibilityRequest.current = { filterKey: eligibilityFilterKey, version: requestVersion };
+    setEligibilityCountError(null);
+    prepareEligibilityCount({
+      ...workspace.queryArgs,
+      audience: eligibilityAudience,
+    })
+      .then((previewId) => {
+        if (eligibilityRequest.current.version === requestVersion)
+          setEligibilityPreviewState({ filterKey: eligibilityFilterKey, previewId });
+      })
+      .catch((error: unknown) => {
+        if (eligibilityRequest.current.version === requestVersion)
+          setEligibilityCountError(
+            error instanceof Error ? error.message : "Could not count matching contacts",
+          );
+      });
+  }, [eligibilityAudience, eligibilityFilterKey, prepareEligibilityCount, workspace]);
+  const clearAudience = () => {
+    onChange(null);
+  };
+  const setSelected = (identifiers: Id<"workspaceContacts">[]) => {
     onChange(identifiers.length ? { type: "contacts", contactIds: identifiers } : null);
+  };
   const updateFilters = (next: GuestDirectoryFilterState) => {
+    const enforcedFilters = { ...next, smsConsentFilter: "consented" as const };
     const changedAudience =
       JSON.stringify({ ...filters, sortBy: undefined, sortDirection: undefined }) !==
-      JSON.stringify({ ...next, sortBy: undefined, sortDirection: undefined });
-    setFilters(next);
-    if (changedAudience) onChange(null);
+      JSON.stringify({ ...enforcedFilters, sortBy: undefined, sortDirection: undefined });
+    setFilters(enforcedFilters);
+    if (changedAudience) clearAudience();
   };
   const selectAllMatching = () => {
-    const {
-      sortBy: _sortBy,
-      sortDirection: _sortDirection,
-      ...encoded
-    } = encodeGuestDirectoryFilterArgs(filters);
-    onChange({
-      type: "filter",
-      filters: {
-        ...encoded,
-        eventIds: encoded.eventIds as Id<"events">[] | undefined,
-        recipientHistoryFilter: encoded.recipientHistoryFilter
-          ? {
-              ...encoded.recipientHistoryFilter,
-              textBlastIds: encoded.recipientHistoryFilter.textBlastIds as Id<"textBlasts">[],
-            }
-          : undefined,
-      },
-    });
+    onChange(buildFilterAudience(filters, { includeSmsConsent: true }));
   };
+  const eligibilityPreview = activeEligibilityPreviewId ? eligibilityPreviewQuery.data : undefined;
+  const explicitSelectedCount = selectedIds.length;
+  const selectionLabel =
+    eligibilityPreview?.status === "ready"
+      ? `${(allMatching ? eligibilityPreview.eligibleCount : explicitSelectedCount).toLocaleString()} selected of ${eligibilityPreview.eligibleCount.toLocaleString()} eligible (${eligibilityPreview.excludedCount.toLocaleString()} not eligible)`
+      : eligibilityPreview?.status === "failed" ||
+          eligibilityPreviewQuery.error ||
+          eligibilityCountError
+        ? `${explicitSelectedCount.toLocaleString()} selected · eligibility totals unavailable`
+        : allMatching
+          ? "All matching selected · checking eligibility…"
+          : `${explicitSelectedCount.toLocaleString()} selected · checking eligibility…`;
   const columnLayout = useDashboardTableColumnLayout({
     tableKey: HOST_GUEST_DIRECTORY_TABLE_KEY,
     scopeKey: HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
     availableColumnIds: GUEST_DIRECTORY_COLUMN_IDS,
     defaultVisibleColumnIds: GUEST_DIRECTORY_DEFAULT_VISIBLE_COLUMN_IDS,
+    insertMissingColumnsCanonically: true,
     isEnabled: Boolean(workspace),
     queryArgs: workspace?.queryArgs ?? {},
   });
@@ -151,7 +231,7 @@ export function ContactAudiencePicker({
       {audience?.type === "legacy_events" ? (
         <div className="rounded-md border border-[var(--border-subtle)] p-3 text-sm">
           This draft keeps its original event, list, RSVP status, and guest selections.{" "}
-          <Button variant="link" onClick={() => onChange(null)}>
+          <Button variant="link" onClick={clearAudience}>
             Choose a different audience
           </Button>
         </div>
@@ -161,6 +241,7 @@ export function ContactAudiencePicker({
             value={filters}
             onChange={updateFilters}
             variant="full"
+            hideSmsConsentFilter
             eventOptions={facets?.events ?? []}
             tagOptions={facets?.tags ?? []}
             defaultListKeyOptions={facets?.defaultListKeys ?? []}
@@ -182,9 +263,7 @@ export function ContactAudiencePicker({
             </p>
           ) : null}
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span>
-              {allMatching ? "All matching contacts selected" : `${selectedIds.length} selected`}
-            </span>
+            <span className="tabular-nums">{selectionLabel}</span>
             <Button
               variant="outline"
               size="sm"
@@ -193,7 +272,7 @@ export function ContactAudiencePicker({
             >
               Select all matching
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => onChange(null)}>
+            <Button variant="ghost" size="sm" onClick={clearAudience}>
               Clear selection
             </Button>
             <div className="ml-auto">
@@ -226,24 +305,18 @@ export function ContactAudiencePicker({
               }
             />
           )}
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!directory.hasPreviousPage || directory.isLoading}
-              onClick={directory.previousPage}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!directory.hasNextPage || directory.isLoading}
-              onClick={directory.nextPage}
-            >
-              Next
-            </Button>
-          </div>
+          <DirectoryPagination
+            itemCount={directory.people.length}
+            itemLabel="contacts"
+            currentPage={directory.pageIndex + 1}
+            pageSize={20}
+            hasActiveFilters
+            hasPreviousPage={directory.hasPreviousPage}
+            hasNextPage={directory.hasNextPage}
+            isLoading={directory.isLoading}
+            onPreviousPage={directory.previousPage}
+            onNextPage={directory.nextPage}
+          />
         </>
       )}
     </div>

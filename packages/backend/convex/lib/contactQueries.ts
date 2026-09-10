@@ -53,6 +53,19 @@ export async function latestWorkspaceEvent(ctx: Pick<QueryCtx, "db">, workspaceS
   );
 }
 
+function normalizeContactSearch(searchText?: string): string {
+  const normalizedSearchText = searchText?.trim().toLocaleLowerCase() ?? "";
+  if (!/\d/.test(normalizedSearchText) || !/^[+\d\s().-]+$/.test(normalizedSearchText))
+    return normalizedSearchText
+      .split(/\s+/)
+      .map((term) => term.replace(/[^\p{L}\p{N}]+/gu, ""))
+      .filter(Boolean)
+      .join(" ");
+  const phoneDigits = normalizedSearchText.replace(/\D/g, "");
+  // Stored US numbers use E.164, so index the same token whether a host types the +1 or not.
+  return phoneDigits.length === 10 ? `1${phoneDigits}` : phoneDigits;
+}
+
 export async function contactMatchesFilters(
   ctx: Pick<QueryCtx, "db">,
   contact: Doc<"workspaceContacts">,
@@ -63,11 +76,7 @@ export async function contactMatchesFilters(
   legacySelectionPreviewId?: Id<"contactAudiencePreviews">,
 ): Promise<boolean | Id<"rsvps">> {
   if (contact.mergedInto) return false;
-  const rawSearch = filters.searchText?.trim().toLocaleLowerCase() ?? "";
-  const search =
-    /\d/.test(rawSearch) && /^[+\d\s().-]+$/.test(rawSearch)
-      ? rawSearch.replace(/\D/g, "")
-      : rawSearch;
+  const search = normalizeContactSearch(filters.searchText);
   if (search && !search.split(/\s+/).every((term) => contact.searchText.includes(term)))
     return false;
   if (
@@ -204,6 +213,12 @@ export async function readContactPage(
     firstRsvpAt: "by_workspace_first",
     eventCount: "by_workspace_count",
   } as const;
+  const consentIndex = {
+    name: "by_workspace_consent_name",
+    latestRsvpAt: "by_workspace_consent_latest",
+    firstRsvpAt: "by_workspace_consent_first",
+    eventCount: "by_workspace_consent_count",
+  } as const;
   const continuation: ContactContinuation = args.cursor
     ? JSON.parse(args.cursor)
     : { contactCursor: null, done: false, pending: [] };
@@ -220,19 +235,47 @@ export async function readContactPage(
       Math.floor(1200 / (30 + (args.filters.recipientHistoryFilter?.textBlastIds.length ?? 0))),
     ),
   );
+  const searchText = normalizeContactSearch(args.filters.searchText);
+  const indexedSearchTerm = searchText
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort((firstTerm, secondTerm) => secondTerm.length - firstTerm.length)[0]
+    ?.slice(0, 3);
+  const requiresSmsConsent = args.filters.smsConsentFilter === "consented";
   if (!continuation.pending.length && !continuation.done) {
-    const batch = await ctx.db
-      .query("workspaceContacts")
-      .withIndex(index[args.sortBy ?? "name"], (builder) =>
-        builder.eq("workspaceId", args.workspaceId).eq("mergedInto", undefined),
-      )
-      .order(args.sortDirection ?? "asc")
-      .paginate({ cursor: continuation.contactCursor, numItems: pageSize });
+    const batch = indexedSearchTerm
+      ? await ctx.db
+          .query("workspaceContacts")
+          .withSearchIndex("search_text", (builder) => {
+            const searchBuilder = builder
+              .search("searchText", indexedSearchTerm)
+              .eq("workspaceId", args.workspaceId);
+            return requiresSmsConsent ? searchBuilder.eq("smsConsent", true) : searchBuilder;
+          })
+          .paginate({ cursor: continuation.contactCursor, numItems: CONTACT_BATCH_SIZE })
+      : requiresSmsConsent
+        ? await ctx.db
+            .query("workspaceContacts")
+            .withIndex(consentIndex[args.sortBy ?? "name"], (builder) =>
+              builder
+                .eq("workspaceId", args.workspaceId)
+                .eq("mergedInto", undefined)
+                .eq("smsConsent", true),
+            )
+            .order(args.sortDirection ?? "asc")
+            .paginate({ cursor: continuation.contactCursor, numItems: CONTACT_BATCH_SIZE })
+        : await ctx.db
+            .query("workspaceContacts")
+            .withIndex(index[args.sortBy ?? "name"], (builder) =>
+              builder.eq("workspaceId", args.workspaceId).eq("mergedInto", undefined),
+            )
+            .order(args.sortDirection ?? "asc")
+            .paginate({ cursor: continuation.contactCursor, numItems: CONTACT_BATCH_SIZE });
     continuation.contactCursor = batch.continueCursor;
     continuation.done = batch.isDone;
     continuation.pending = batch.page.map((contact) => ({ contactId: contact._id }));
   }
-  while (continuation.pending.length) {
+  while (continuation.pending.length && contacts.length < pageSize) {
     const candidate = continuation.pending[0];
     const contact = await ctx.db.get(candidate.contactId);
     if (!contact || contact.workspaceId !== args.workspaceId)

@@ -24,6 +24,7 @@ export interface DashboardTablePreferenceMergeInput {
   savedColumnOrder?: string[];
   hiddenColumnIds?: string[];
   forcedHiddenColumnIds?: string[];
+  insertMissingColumnsCanonically?: boolean;
 }
 
 export interface DashboardTablePreferenceState {
@@ -202,6 +203,7 @@ export function mergeDashboardTablePreferenceState({
   savedColumnOrder,
   hiddenColumnIds,
   forcedHiddenColumnIds = [],
+  insertMissingColumnsCanonically = false,
 }: DashboardTablePreferenceMergeInput): DashboardTablePreferenceState {
   const availableColumnIdSet = new Set(availableColumnIds);
   const savedColumnOrderIds = uniqueAvailableColumnIds(
@@ -211,7 +213,30 @@ export function mergeDashboardTablePreferenceState({
   const missingColumnIds = availableColumnIds.filter(
     (columnId) => !savedColumnOrderIds.includes(columnId),
   );
-  const columnOrder = [...savedColumnOrderIds, ...missingColumnIds];
+  const columnOrder = [...savedColumnOrderIds];
+  if (insertMissingColumnsCanonically) {
+    for (const missingColumnId of missingColumnIds) {
+      const canonicalIndex = availableColumnIds.indexOf(missingColumnId);
+      const precedingColumnId = availableColumnIds
+        .slice(0, canonicalIndex)
+        .reverse()
+        .find((columnId) => columnOrder.includes(columnId));
+      if (precedingColumnId) {
+        columnOrder.splice(columnOrder.indexOf(precedingColumnId) + 1, 0, missingColumnId);
+        continue;
+      }
+      const followingColumnId = availableColumnIds
+        .slice(canonicalIndex + 1)
+        .find((columnId) => columnOrder.includes(columnId));
+      if (followingColumnId) {
+        columnOrder.splice(columnOrder.indexOf(followingColumnId), 0, missingColumnId);
+      } else {
+        columnOrder.push(missingColumnId);
+      }
+    }
+  } else {
+    columnOrder.push(...missingColumnIds);
+  }
   const forcedHiddenColumnIdSet = new Set(forcedHiddenColumnIds);
   const savedHiddenColumnIds = uniqueAvailableColumnIds(
     hiddenColumnIds ?? [],

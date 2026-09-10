@@ -56,6 +56,7 @@ interface UseDashboardTableColumnLayoutOptions {
   defaultVisibleColumnIds: readonly string[];
   isEnabled: boolean;
   queryArgs: { siteKey?: string; workspaceSlug?: string };
+  insertMissingColumnsCanonically?: boolean;
 }
 
 /** Shares a browser/user/workspace layout immediately; account preferences seed new browsers. */
@@ -103,13 +104,20 @@ export function useDashboardTableColumnLayout(
       defaultVisibleColumnIds,
       savedColumnOrder: source?.columnOrder,
       hiddenColumnIds: source?.hiddenColumnIds,
+      insertMissingColumnsCanonically: options.insertMissingColumnsCanonically,
     });
     return {
       columnOrder: merged.columnOrder,
       hiddenColumnIds: merged.hiddenColumnIds,
       columnSizing: browserPreference?.columnSizing ?? {},
     };
-  }, [availableColumnIds, defaultVisibleColumnIds, browserPreference, savedPreference]);
+  }, [
+    availableColumnIds,
+    defaultVisibleColumnIds,
+    browserPreference,
+    savedPreference,
+    options.insertMissingColumnsCanonically,
+  ]);
   const { columnOrder, hiddenColumnIds, columnSizing } = preference;
 
   // Persist synchronously on each edit, before navigation can unmount either table.

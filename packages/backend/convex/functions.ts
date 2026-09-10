@@ -36,6 +36,21 @@ triggers.register("workspaceGuestProfiles", async (ctx, change) => {
       guestPhoneHash: profile.guestPhoneHash,
     });
 });
+triggers.register("userSocialProfiles", async (ctx, change) => {
+  const socialProfile = change.newDoc ?? change.oldDoc;
+  if (socialProfile && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncUser, {
+      clerkUserId: socialProfile.clerkUserId,
+      phase: "contacts",
+    });
+});
+triggers.register("rsvpSocialProfiles", async (ctx, change) => {
+  const socialProfile = change.newDoc ?? change.oldDoc;
+  if (socialProfile && (await contactsEnabled(ctx)))
+    await ctx.scheduler.runAfter(0, internal.contactSync.syncRsvp, {
+      rsvpId: socialProfile.rsvpId,
+    });
+});
 triggers.register("userSmsOrganizerPreferences", async (ctx, change) => {
   const preference = change.newDoc ?? change.oldDoc;
   if (preference && (await contactsEnabled(ctx)))

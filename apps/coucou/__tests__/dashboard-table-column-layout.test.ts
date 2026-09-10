@@ -7,6 +7,7 @@ import {
 const NEW_GUEST_DIRECTORY_COLUMN_IDS = [
   "select",
   "person",
+  "socials",
   "tags",
   "notes",
   "defaultListKey",
@@ -63,7 +64,7 @@ describe("moveDashboardTableColumnId", () => {
 });
 
 describe("guest directory preference migration behavior", () => {
-  it("appends the new columns after a prior release's saved order and keeps events visible", () => {
+  it("places new columns near their canonical neighbors and keeps events visible", () => {
     const mergedState = mergeDashboardTablePreferenceState({
       availableColumnIds: NEW_GUEST_DIRECTORY_COLUMN_IDS,
       defaultVisibleColumnIds: NEW_GUEST_DIRECTORY_COLUMN_IDS.filter(
@@ -71,13 +72,25 @@ describe("guest directory preference migration behavior", () => {
       ),
       savedColumnOrder: PRIOR_RELEASE_COLUMN_IDS,
       hiddenColumnIds: [],
+      insertMissingColumnsCanonically: true,
     });
 
     expect(mergedState.columnOrder).toEqual([
-      ...PRIOR_RELEASE_COLUMN_IDS,
+      "select",
+      "person",
+      "socials",
+      "events",
+      "defaultListKey",
+      "tags",
       "notes",
+      "latestEventStatus",
+      "smsConsent",
+      "receivedTexts",
       "eventCount",
       "eventsAttended",
+      "role",
+      "firstRsvpAt",
+      "actions",
     ]);
     // Saved (empty) hiddenColumnIds win over the new defaults: events stays visible.
     expect(mergedState.hiddenColumnIds).toEqual([]);

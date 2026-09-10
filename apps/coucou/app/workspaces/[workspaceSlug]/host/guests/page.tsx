@@ -6,7 +6,7 @@ import type { Id } from "@convex/_generated/dataModel";
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type OnChangeFn, type RowSelectionState } from "@tanstack/react-table";
-import { MessageSquare, Tag, Users } from "lucide-react";
+import { MessageSquare, Tag } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 import { toast } from "sonner";
@@ -24,10 +24,10 @@ import {
 import { useGuestDirectoryTable } from "@/components/guests/use-guest-directory-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DirectoryPagination } from "@/components/ui/directory-pagination";
 import { DropdownMenu, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectOption } from "@/components/ui/select";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { UserDetailContent } from "@/components/users/user-detail-content";
 import { useWorkspaceAccess } from "@/components/workspace-access-gate";
@@ -165,6 +165,7 @@ export default function GuestDirectoryPage() {
     scopeKey: HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
     availableColumnIds: GUEST_DIRECTORY_COLUMN_IDS,
     defaultVisibleColumnIds: GUEST_DIRECTORY_DEFAULT_VISIBLE_COLUMN_IDS,
+    insertMissingColumnsCanonically: true,
     isEnabled: !!isSignedIn && !!workspaceScope,
     queryArgs: workspaceScope?.queryArgs ?? {},
   });
@@ -430,6 +431,17 @@ export default function GuestDirectoryPage() {
     hasNextPage: directory.hasNextPage,
     hasPreviousPage: directory.hasPreviousPage,
   };
+  const hasActiveFilters = Boolean(
+    filterState.searchText.trim() ||
+      filterState.eventIds.length ||
+      filterState.listKeys?.length ||
+      filterState.recipientFilter.type !== "all" ||
+      filterState.recipientHistoryFilter.type !== "none" ||
+      filterState.smsConsentFilter !== "any" ||
+      filterState.tags.length ||
+      filterState.defaultListKeys.length ||
+      filterState.rsvpedToLatestEvent !== "any",
+  );
   const isDetailPanelOpen = detailPanelUserReference !== null;
 
   return (
@@ -651,54 +663,25 @@ export default function GuestDirectoryPage() {
             </CardContent>
           </Card>
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-              <Users className="h-3.5 w-3.5" />
-              {pagination ? (
-                <>
-                  Page {pagination.pageIndex + 1} · {people.length} contacts shown
-                </>
-              ) : (
-                <>Page 1 of 1</>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Select
-                value={String(pageSize)}
-                onValueChange={(nextValue) =>
-                  navigateWithParams((params) => {
-                    params.set("pageSize", nextValue);
-                    params.set("page", "0");
-                  })
-                }
-                className="w-24"
-              >
-                {[10, 20, 40].map((pageSizeOption) => (
-                  <SelectOption key={pageSizeOption} value={String(pageSizeOption)}>
-                    {pageSizeOption} / page
-                  </SelectOption>
-                ))}
-              </Select>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={directory.previousPage}
-                disabled={!pagination?.hasPreviousPage}
-                className="border-[var(--border-subtle)]"
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={directory.nextPage}
-                disabled={!pagination?.hasNextPage}
-                className="border-[var(--border-subtle)]"
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <DirectoryPagination
+            itemCount={people.length}
+            itemLabel="contacts"
+            currentPage={pagination.pageIndex + 1}
+            pageSize={pageSize}
+            pageSizeOptions={[10, 20, 40]}
+            hasActiveFilters={hasActiveFilters}
+            hasPreviousPage={pagination.hasPreviousPage}
+            hasNextPage={pagination.hasNextPage}
+            isLoading={directory.isLoading || directory.isPreparing}
+            onPageSizeChange={(nextPageSize) =>
+              navigateWithParams((params) => {
+                params.set("pageSize", String(nextPageSize));
+                params.set("page", "0");
+              })
+            }
+            onPreviousPage={directory.previousPage}
+            onNextPage={directory.nextPage}
+          />
         </div>
 
         {isDetailPanelOpen ? (

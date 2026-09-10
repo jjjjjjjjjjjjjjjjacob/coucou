@@ -82,10 +82,13 @@ export function useContactDirectory(
     directoryStatus === "ready" &&
     directoryQuery.data?.people.length === 0 &&
     Boolean(directoryQuery.data.nextCursor);
+  const isLoading =
+    directoryQuery.isLoading || searching || debouncedSearch !== filterState.searchText;
   return {
-    people: directoryQuery.data?.people ?? [],
+    // Never let a consumer display results from the previous debounced search term.
+    people: isLoading ? [] : (directoryQuery.data?.people ?? []),
     configured,
-    isLoading: directoryQuery.isLoading || searching || debouncedSearch !== filterState.searchText,
+    isLoading,
     isPreparing: directoryStatus === "not_started" || directoryStatus === "building",
     error:
       backfillError ??

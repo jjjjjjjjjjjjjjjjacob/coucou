@@ -81,6 +81,7 @@ export default defineSchema({
     lastName: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
     searchText: v.string(),
+    searchAliases: v.optional(v.array(v.string())),
     tags: v.array(v.string()),
     notes: v.optional(v.string()),
     defaultListKey: v.optional(v.string()),
@@ -102,7 +103,25 @@ export default defineSchema({
     .index("by_workspace_name", ["workspaceId", "mergedInto", "normalizedName"])
     .index("by_workspace_latest", ["workspaceId", "mergedInto", "latestRsvpAt"])
     .index("by_workspace_first", ["workspaceId", "mergedInto", "firstRsvpAt"])
-    .index("by_workspace_count", ["workspaceId", "mergedInto", "eventCount"]),
+    .index("by_workspace_count", ["workspaceId", "mergedInto", "eventCount"])
+    .index("by_workspace_consent_name", [
+      "workspaceId",
+      "mergedInto",
+      "smsConsent",
+      "normalizedName",
+    ])
+    .index("by_workspace_consent_latest", [
+      "workspaceId",
+      "mergedInto",
+      "smsConsent",
+      "latestRsvpAt",
+    ])
+    .index("by_workspace_consent_first", ["workspaceId", "mergedInto", "smsConsent", "firstRsvpAt"])
+    .index("by_workspace_consent_count", ["workspaceId", "mergedInto", "smsConsent", "eventCount"])
+    .searchIndex("search_text", {
+      searchField: "searchText",
+      filterFields: ["workspaceId", "smsConsent"],
+    }),
   workspaceContactIdentities: defineTable({
     workspaceId: v.id("workspaces"),
     clerkUserId: v.string(),

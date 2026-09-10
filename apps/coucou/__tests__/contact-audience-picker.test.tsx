@@ -7,6 +7,7 @@ import { useState } from "react";
 import type { GuestDirectoryFilterState } from "../lib/text-blast-filters";
 
 let directoryError: string | null = null;
+let latestDirectoryFilters: GuestDirectoryFilterState | null = null;
 const retry = mock(async () => undefined);
 const workspace = { workspaceSlug: "dojo-pomodoro", queryArgs: { workspaceSlug: "dojo-pomodoro" } };
 
@@ -26,9 +27,11 @@ mock.module("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: string[] }) => ({
     data: queryKey[0].includes("TablePreference")
       ? null
-      : queryKey[0].includes("Facets")
-        ? { events: [], tags: [], defaultListKeys: [], customFieldOptions: [] }
-        : [],
+      : queryKey[0].includes("contactAudiences:get")
+        ? { status: "ready", processedCount: 463, eligibleCount: 460, excludedCount: 3 }
+        : queryKey[0].includes("Facets")
+          ? { events: [], tags: [], defaultListKeys: [], customFieldOptions: [] }
+          : [],
     error: null,
   }),
 }));
@@ -36,11 +39,14 @@ mock.module("@/components/guests/guest-directory-filters", () => ({
   GuestDirectoryFilters: ({
     value,
     onChange,
+    hideSmsConsentFilter,
   }: {
     value: GuestDirectoryFilterState;
     onChange: (state: GuestDirectoryFilterState) => void;
+    hideSmsConsentFilter?: boolean;
   }) => (
     <div>
+      <span data-testid="sms-consent-filter-hidden">{String(hideSmsConsentFilter)}</span>
       <input
         aria-label="Search contacts"
         value={value.searchText}
@@ -56,6 +62,12 @@ mock.module("@/components/guests/guest-directory-filters", () => ({
       </button>
       <button type="button" onClick={() => onChange({ ...value, searchText: "" })}>
         Clear filters
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange({ ...value, smsConsentFilter: "not_consented" })}
+      >
+        Try showing non-consented
       </button>
     </div>
   ),
@@ -74,7 +86,8 @@ mock.module("@/lib/hooks/use-contact-filter-options", () => ({
   }),
 }));
 mock.module("@/lib/hooks/use-contact-directory", () => ({
-  useContactDirectory: () => {
+  useContactDirectory: (filterState: GuestDirectoryFilterState) => {
+    latestDirectoryFilters = filterState;
     const [page, setPage] = useState(0);
     return {
       people: directoryError
@@ -100,6 +113,7 @@ mock.module("@/lib/hooks/use-contact-directory", () => ({
       error: directoryError,
       isPreparing: false,
       isLoading: false,
+      pageIndex: page,
       hasNextPage: page === 0,
       hasPreviousPage: page === 1,
       nextPage: () => setPage(1),
@@ -136,6 +150,7 @@ beforeEach(() => {
   workspace.workspaceSlug = `picker-test-${++testNumber}`;
   workspace.queryArgs.workspaceSlug = workspace.workspaceSlug;
   directoryError = null;
+  latestDirectoryFilters = null;
   retry.mockClear();
 });
 
@@ -147,6 +162,7 @@ describe("contact audience selection", () => {
         scopeKey: HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
         availableColumnIds: GUEST_DIRECTORY_COLUMN_IDS,
         defaultVisibleColumnIds: GUEST_DIRECTORY_DEFAULT_VISIBLE_COLUMN_IDS,
+        insertMissingColumnsCanonically: true,
         queryArgs: workspace.queryArgs,
         isEnabled: true,
       }),
@@ -201,8 +217,12 @@ describe("contact audience selection", () => {
   it("starts with no recipients and preserves explicit selections across pages and sorting", () => {
     render(<Picker />);
     expect(screen.getByLabelText("Audience").textContent).toBe("null");
+    expect(screen.getByText("Showing 1-1 contacts (filtered)")).toBeTruthy();
+    expect(screen.getByText("Page 1")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Ada"));
     fireEvent.click(screen.getByText("Next"));
+    expect(screen.getByText("Showing 21-21 contacts (filtered)")).toBeTruthy();
+    expect(screen.getByText("Page 2")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Bea"));
     fireEvent.click(screen.getByText("Change sort"));
     expect(JSON.parse(screen.getByLabelText("Audience").textContent ?? "null")).toEqual({
@@ -223,11 +243,22 @@ describe("contact audience selection", () => {
     expect(screen.getByLabelText("Audience").textContent).toBe("null");
   });
 
-  it("selects all matches only after an explicit action and excludes sort controls from the audience", () => {
+  it("forces SMS consent eligibility while hiding the redundant filter", () => {
     render(<Picker />);
-    fireEvent.click(screen.getByText("Select all matching"));
+    expect(screen.getByTestId("sms-consent-filter-hidden").textContent).toBe("true");
+    expect(latestDirectoryFilters?.smsConsentFilter).toBe("consented");
+    fireEvent.click(screen.getByText("Try showing non-consented"));
+    expect(latestDirectoryFilters?.smsConsentFilter).toBe("consented");
+  });
+
+  it("selects and counts all matches only after an explicit action", async () => {
+    render(<Picker />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Select all matching"));
+    });
     const audience = JSON.parse(screen.getByLabelText("Audience").textContent ?? "null");
     expect(audience).toEqual({ type: "filter", filters: { smsConsentFilter: "consented" } });
+    expect(await screen.findByText("460 selected of 460 eligible (3 not eligible)")).toBeTruthy();
     fireEvent.click(screen.getByText("Change sort"));
     expect(JSON.parse(screen.getByLabelText("Audience").textContent ?? "null")).toEqual(audience);
     fireEvent.click(screen.getByText("Clear selection"));

@@ -27,12 +27,17 @@ export const status = query({
   },
 });
 
-async function beginBackfill(ctx: MutationCtx, workspaceId: Id<"workspaces">) {
+async function beginBackfill(
+  ctx: MutationCtx,
+  workspaceId: Id<"workspaces">,
+  options: { force?: boolean } = {},
+) {
   let state = await ctx.db
     .query("contactDirectoryState")
     .withIndex("by_workspace", (builder) => builder.eq("workspaceId", workspaceId))
     .first();
-  if (state?.status === "building" || state?.status === "ready") return state._id;
+  if (state?.status === "building" || (state?.status === "ready" && !options.force))
+    return state._id;
   if (!state) {
     const stateId = await ctx.db.insert("contactDirectoryState", {
       workspaceId,
@@ -43,7 +48,14 @@ async function beginBackfill(ctx: MutationCtx, workspaceId: Id<"workspaces">) {
     });
     state = await ctx.db.get(stateId);
   } else
-    await ctx.db.patch(state._id, { status: "building", error: undefined, updatedAt: Date.now() });
+    await ctx.db.patch(state._id, {
+      status: "building",
+      phase: "rsvps",
+      cursor: undefined,
+      processed: 0,
+      error: undefined,
+      updatedAt: Date.now(),
+    });
   if (!state) throw new Error("Could not start contact backfill");
   await ctx.scheduler.runAfter(0, internal.contactSync.backfillBatch, { stateId: state._id });
   return state._id;
@@ -62,6 +74,16 @@ export const startBackfillInternal = internalMutation({
     const scope = await resolveTenantWorkspaceScope(ctx, args);
     if (!scope) throw new Error("Workspace not found");
     return await beginBackfill(ctx, scope.workspaceId);
+  },
+});
+
+// Rebuild denormalized contact search data after the projection format changes.
+export const restartBackfillInternal = internalMutation({
+  args: { workspaceSlug: v.string() },
+  handler: async (ctx, args) => {
+    const scope = await resolveTenantWorkspaceScope(ctx, args);
+    if (!scope) throw new Error("Workspace not found");
+    return await beginBackfill(ctx, scope.workspaceId, { force: true });
   },
 });
 
