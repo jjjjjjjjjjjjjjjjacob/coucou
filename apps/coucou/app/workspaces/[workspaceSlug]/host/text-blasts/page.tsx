@@ -580,12 +580,30 @@ export default function TextBlastsPage() {
                 </CardHeader>
 
                 <CardContent className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <StatusBadge
-                      variant={statusVariant}
-                      label={getStatusLabel(blast.status)}
-                      showDot={false}
-                    />
+                  <div className="flex flex-wrap items-center gap-2">
+                    {blast.status === "sent" || blast.status === "failed" ? (
+                      <div className="flex flex-wrap items-center gap-1 tabular-nums">
+                        <StatusBadge
+                          variant={blast.sentCount > 0 ? "published" : "default"}
+                          label={`${blast.sentCount} succeeded`}
+                          showDot={false}
+                        />
+                        <span aria-hidden="true" className="text-[var(--text-tertiary)]">
+                          ·
+                        </span>
+                        <StatusBadge
+                          variant={blast.failedCount > 0 ? "denied" : "default"}
+                          label={`${blast.failedCount} failed`}
+                          showDot={false}
+                        />
+                      </div>
+                    ) : (
+                      <StatusBadge
+                        variant={statusVariant}
+                        label={getStatusLabel(blast.status)}
+                        showDot={false}
+                      />
+                    )}
                     {(blast.replyActionCount ?? 0) > 0 && (
                       <Badge
                         variant="outline"
@@ -612,19 +630,6 @@ export default function TextBlastsPage() {
                         : `Created ${formatEventDateTime(blast.createdAt)}`}
                     </span>
                   </div>
-
-                  {blast.status === "sent" && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[var(--status-approved)]">
-                        ✓ {blast.sentCount} delivered
-                      </span>
-                      {blast.failedCount > 0 && (
-                        <span className="text-[var(--status-denied)]">
-                          ✗ {blast.failedCount} failed
-                        </span>
-                      )}
-                    </div>
-                  )}
 
                   <div className="flex flex-wrap gap-1">
                     {blast.targetLists.map((listKey) => (
