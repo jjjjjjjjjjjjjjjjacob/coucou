@@ -52,7 +52,7 @@ export interface EyebrowPillProps {
 /**
  * Small inline link rendered alongside an `Eyebrow` (typically as
  * `Eyebrow.trailing`). Used for cross-route nav like "← BACK TO EVENT" on
- * status / ticket pages and "MY RSVP →" on the detail page.
+ * status / ticket pages and "RSVP STATUS →" on the detail page.
  *
  * The component renders the consumer's `linkComponent` (e.g. Next.js
  * `Link`) directly when provided so client-side routing stays intact;

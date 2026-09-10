@@ -21,7 +21,7 @@ const accountSettingsAppearance: Appearance = {
     formFieldLabel: "text-sm font-medium text-foreground",
     formFieldInput: "border border-primary/20 focus:border-primary focus-visible:ring-primary/40",
     formButtonPrimary:
-      "bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-primary/40",
+      "bg-primary text-background hover:bg-primary/90 focus-visible:ring-primary/40",
   },
 };
 

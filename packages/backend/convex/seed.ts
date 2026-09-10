@@ -705,7 +705,7 @@ export const clearTestData = action({
           rsvp.clerkUserId.startsWith("seed_user_") ||
           rsvp.clerkUserId.startsWith("seed_public_instagram_")
         ) {
-          await ctx.runMutation(api.users.deleteUser, {
+          await ctx.runMutation(internal.users.deleteUser, {
             clerkUserId: rsvp.clerkUserId,
           });
         }

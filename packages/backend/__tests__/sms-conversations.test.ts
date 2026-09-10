@@ -1,11 +1,13 @@
-import type { UserIdentity } from "convex/server";
+import type { FunctionArgs, FunctionReturnType, UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import type { QueryCtx } from "../convex/_generated/server";
 import { normalizeAndHashPhoneNumber } from "../convex/lib/phoneHash";
 import { obfuscatePhoneNumber } from "../convex/lib/phoneUtils";
 import schema from "../convex/schema";
+import { listThreadsPage } from "../convex/smsConversations";
 
 const convexModules = {
   "../convex/_generated/api.js": () => import("../convex/_generated/api.js"),
@@ -157,6 +159,176 @@ describe("sms conversations", () => {
     expect(threads[0]?.canSend).toBe(true);
     expect(detail.thread.phoneObfuscated).toContain("2222");
     expect(detail.messages.map((message) => message.body)).toEqual(["Inbound test"]);
+  });
+
+  it("bounds participant reads for an inbox larger than the production read limit", async () => {
+    const testBackend = setupTestBackend();
+    const workspaceId = await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    await testBackend.run(async (databaseContext) => {
+      for (let threadNumber = 0; threadNumber < 2200; threadNumber += 1) {
+        const clerkUserId = `user_large_inbox_${threadNumber}`;
+        await databaseContext.db.insert("users", {
+          clerkUserId,
+          firstName: `Guest ${threadNumber}`,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        await databaseContext.db.insert("smsConversationThreads", {
+          workspaceId,
+          eventId,
+          phoneHash: `phone_${threadNumber}`,
+          phoneObfuscated: "***-***-1234",
+          participantClerkUserIds: [clerkUserId],
+          lastMessageAt: threadNumber,
+          lastMessageDirection: "inbound",
+          messageCount: 1,
+          inboundCount: 1,
+          outboundCount: 0,
+          systemCount: 0,
+          createdAt: threadNumber,
+          updatedAt: threadNumber,
+        });
+      }
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_large_inbox"));
+    const handler = (
+      listThreadsPage as unknown as {
+        _handler: (
+          context: QueryCtx,
+          args: FunctionArgs<typeof api.smsConversations.listThreadsPage>,
+        ) => Promise<FunctionReturnType<typeof api.smsConversations.listThreadsPage>>;
+      }
+    )._handler;
+    await hostBackend.run(async (context) => {
+      let readOperations = 0;
+      const measuredDatabase = new Proxy(context.db, {
+        get(database, property) {
+          const value: unknown = Reflect.get(database, property);
+          if (typeof value !== "function") return value;
+          return (...methodArguments: unknown[]) => {
+            if (property === "query" || property === "get") readOperations += 1;
+            return Reflect.apply(value, database, methodArguments);
+          };
+        },
+      });
+      const firstPage = await handler(
+        { ...context, db: measuredDatabase },
+        {
+          siteKey: SITE_KEY,
+          workspaceSlug: WORKSPACE_SLUG,
+          paginationOpts: { numItems: 5000, cursor: null },
+        },
+      );
+      expect(firstPage.page).toHaveLength(50);
+      expect(firstPage.page[0].participantName).toBe("Guest 2199");
+      expect(firstPage.isDone).toBe(false);
+      expect(readOperations).toBeLessThan(200);
+    });
+    const noMatchPage = await hostBackend.query(api.smsConversations.listThreadsPage, {
+      workspaceSlug: WORKSPACE_SLUG,
+      search: "does not exist",
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+    expect(noMatchPage.page).toEqual([]);
+    expect(noMatchPage.isDone).toBe(false);
+    expect(noMatchPage.continueCursor).toBeTruthy();
+  });
+
+  it("paginates legacy event and workspace threads in order without exposing other workspaces", async () => {
+    const testBackend = setupTestBackend();
+    const workspaceId = await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const expectedThreadIds = await testBackend.run(async (databaseContext) => {
+      const outsideWorkspaceId = await databaseContext.db.insert("workspaces", {
+        slug: "outside",
+        name: "Outside",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const identifiers: Id<"smsConversationThreads">[] = [];
+      for (let threadNumber = 0; threadNumber < 12; threadNumber += 1) {
+        const outsideWorkspace = threadNumber % 3 === 0;
+        const workspaceOnly = threadNumber % 3 === 1;
+        const threadId = await databaseContext.db.insert("smsConversationThreads", {
+          workspaceId: outsideWorkspace
+            ? outsideWorkspaceId
+            : workspaceOnly
+              ? workspaceId
+              : undefined,
+          eventId: !outsideWorkspace && !workspaceOnly ? eventId : undefined,
+          phoneHash: `phone_${threadNumber}`,
+          phoneObfuscated: "***-***-1234",
+          participantClerkUserIds: [],
+          lastMessageAt: Math.floor(threadNumber / 2),
+          lastMessageDirection: "inbound",
+          messageCount: 1,
+          inboundCount: 1,
+          outboundCount: 0,
+          systemCount: 0,
+          createdAt: threadNumber,
+          updatedAt: threadNumber,
+        });
+        if (!outsideWorkspace) identifiers.unshift(threadId);
+      }
+      return identifiers;
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_pagination"));
+    const actualThreadIds: Id<"smsConversationThreads">[] = [];
+    let cursor: string | null = null;
+    for (let pageNumber = 0; pageNumber < 10; pageNumber += 1) {
+      const result = await hostBackend.query(api.smsConversations.listThreadsPage, {
+        workspaceSlug: WORKSPACE_SLUG,
+        paginationOpts: { numItems: 2, cursor },
+      });
+      actualThreadIds.push(...result.page.map((thread) => thread._id));
+      if (result.isDone) break;
+      expect(result.continueCursor).not.toBe(cursor);
+      cursor = result.continueCursor;
+    }
+    expect(actualThreadIds).toEqual(expectedThreadIds);
+  });
+
+  it("finds older name matches beyond an empty first page and applies event and state filters", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend);
+    const olderThreadId = await seedThreadMessage(testBackend, {
+      eventId,
+      phone: "555-222-0001",
+      clerkUserIds: ["user_older"],
+      createdAt: 1,
+    });
+    await seedUser(testBackend, {
+      clerkUserId: "user_older",
+      phone: "555-222-0001",
+      firstName: "Older Match",
+    });
+    await seedThreadMessage(testBackend, {
+      eventId,
+      phone: "555-222-0002",
+      clerkUserIds: [],
+      createdAt: 2,
+      direction: "outbound",
+    });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_search"));
+    const queryArguments = {
+      workspaceSlug: WORKSPACE_SLUG,
+      eventId,
+      search: "older match",
+      conversationStates: ["needs_reply" as const],
+    };
+    const firstPage = await hostBackend.query(api.smsConversations.listThreadsPage, {
+      ...queryArguments,
+      paginationOpts: { numItems: 1, cursor: null },
+    });
+    expect(firstPage.page).toEqual([]);
+    expect(firstPage.isDone).toBe(false);
+    const nextPage = await hostBackend.query(api.smsConversations.listThreadsPage, {
+      ...queryArguments,
+      paginationOpts: { numItems: 1, cursor: firstPage.continueCursor },
+    });
+    expect(nextPage.page.map((thread) => thread._id)).toEqual([olderThreadId]);
   });
 
   it("returns explicit QR-send metadata in message timelines", async () => {

@@ -1,6 +1,7 @@
 import { api } from "@convex/_generated/api";
 import { fetchQuery } from "convex/nextjs";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { selectLandingOpenGraphImageUrl } from "@/lib/landing-open-graph";
 import { siteConfiguration } from "@/lib/site";
 import { HomePageClient } from "./home-page-client";
@@ -53,5 +54,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function Home() {
-  return <HomePageClient />;
+  return (
+    <Suspense fallback={null}>
+      <HomePageClient />
+    </Suspense>
+  );
 }

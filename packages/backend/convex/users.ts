@@ -4,7 +4,7 @@ import { api } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
-import { action, internalQuery, mutation, query } from "./functions";
+import { action, internalMutation, internalQuery, mutation, query } from "./functions";
 import {
   resolveCanonicalRsvpId,
   resolveCanonicalUserById,
@@ -12,6 +12,7 @@ import {
 } from "./lib/canonicalUserIdentity";
 import { synchronizeClerkWorkspaceRole, toStoredOrganizationRole } from "./lib/clerkWorkspaceRoles";
 import { generateReferralCode } from "./lib/codeGenerators";
+import { deleteUserData } from "./lib/deleteUserData";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { resolveApprovalStatus } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope } from "./lib/siteScope";
@@ -357,45 +358,18 @@ export const create = mutation({
 });
 
 // Delete a user (for cleaning up test data)
-export const deleteUser = mutation({
+export const deleteUser = internalMutation({
   args: {
     clerkUserId: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
-      .unique();
-
-    if (user) {
-      const workspaceProfileValueGrants = await ctx.db
-        .query("workspaceProfileValueGrants")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", args.clerkUserId))
-        .collect();
-      const profileFieldValues = await ctx.db
-        .query("profileFieldValues")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", args.clerkUserId))
-        .collect();
-      const userSocialProfiles = await ctx.db
-        .query("userSocialProfiles")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", args.clerkUserId))
-        .collect();
-
-      for (const workspaceProfileValueGrant of workspaceProfileValueGrants) {
-        await ctx.db.delete(workspaceProfileValueGrant._id);
-      }
-      for (const profileFieldValue of profileFieldValues) {
-        await ctx.db.delete(profileFieldValue._id);
-      }
-      for (const userSocialProfile of userSocialProfiles) {
-        await ctx.db.delete(userSocialProfile._id);
-      }
-
-      await ctx.db.delete(user._id);
-      return { deleted: true };
-    }
-    return { deleted: false };
+    return await deleteUserData(ctx, args.clerkUserId);
   },
+});
+
+export const deleteFromClerk = internalMutation({
+  args: { clerkUserId: v.string() },
+  handler: async (ctx, { clerkUserId }) => await deleteUserData(ctx, clerkUserId),
 });
 
 export const listOrganizationUsers = query({

@@ -2,9 +2,10 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Emoji } from "next/font/google";
+import { headers } from "next/headers";
 import "./globals.css";
-import { RedirectAdminsToCoucou } from "@/components/redirect-admins-to-coucou";
-import { siteConfiguration } from "@/lib/site";
+import { resolveRequestSatelliteContext } from "@/lib/auth-redirects";
+import { resolveCoucouBaseUrl, siteConfiguration } from "@/lib/site";
 import { AppChrome } from "./app-chrome";
 import Providers from "./providers";
 
@@ -23,16 +24,6 @@ const notoEmoji = Noto_Emoji({
   subsets: ["emoji"],
   display: "swap",
 });
-const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
-  /\/+$/,
-  "",
-);
-const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
-  primaryBaseUrl: coucouBaseUrl,
-  siteConfiguration,
-});
-const clerkSatelliteDomain =
-  process.env.NEXT_PUBLIC_CLERK_DOMAIN ?? new URL(siteConfiguration.domain).host;
 
 export const metadata: Metadata = {
   title: siteConfiguration.brandName,
@@ -71,15 +62,19 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const satelliteContext = resolveRequestSatelliteContext(await headers());
+  const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
+    primaryBaseUrl: resolveCoucouBaseUrl(satelliteContext.origin),
+    siteConfiguration,
+  });
   const inner = (
     <Providers>
-      <RedirectAdminsToCoucou />
-      <AppChrome>{children}</AppChrome>
+      <AppChrome satelliteOrigin={satelliteContext.origin}>{children}</AppChrome>
     </Providers>
   );
 
@@ -90,7 +85,7 @@ export default function RootLayout({
       >
         <ClerkProvider
           isSatellite
-          domain={clerkSatelliteDomain}
+          domain={satelliteContext.host}
           signInUrl={primaryTenantSignInUrl}
           signUpUrl={primaryTenantSignInUrl}
         >

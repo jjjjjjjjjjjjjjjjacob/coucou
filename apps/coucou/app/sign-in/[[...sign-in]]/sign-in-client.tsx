@@ -4,6 +4,7 @@ import { getClientSiteRedirectOrigins, type PresetKey } from "@coucou/sdk";
 import type { SiteAuthConfiguration } from "@coucou/sdk/site-config";
 import { type AuthBrandingOverrides, PhoneAuthPage, type PhoneAuthStep } from "@coucou/ui/auth";
 import { DanzaOrganicaMark } from "@coucou/ui/tenant-template";
+import Image from "next/image";
 import { type ReactNode, useMemo } from "react";
 import { CoucouLogoMark } from "@/components/coucou-logo";
 import { siteConfiguration } from "@/lib/site";
@@ -62,11 +63,20 @@ export function SignInClient({
     };
   }, [eventThemeAccentColor, eventThemeBackgroundColor, eventThemeTextColor]);
   const isCoucouPlatformAuthentication = siteAuthConfiguration === siteConfiguration.auth;
+  const isDojoAuthentication = siteAuthConfiguration.siteKey === "dojo";
   const isDanzaOrganicaAuthentication = siteAuthConfiguration.siteKey === "danza-organica";
   const resolvedBrandMarkSlot =
     brandMarkSlot ??
     (isCoucouPlatformAuthentication ? (
       <CoucouLogoMark size={64} />
+    ) : isDojoAuthentication ? (
+      <Image
+        src="/brand/dojo-icon.png"
+        width={64}
+        height={64}
+        alt="Dojo Pomodoro icon"
+        className="object-contain"
+      />
     ) : isDanzaOrganicaAuthentication ? (
       <DanzaOrganicaMark size={64} aria-label="Danza Organica disco ball" />
     ) : undefined);

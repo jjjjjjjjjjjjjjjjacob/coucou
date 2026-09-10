@@ -41,10 +41,12 @@ export function mapClerkErrorToPhoneAuth(error: unknown): PhoneAuthError {
         type: "expired_code",
         message: "Code expired. Send a new one.",
       };
+    case "verification_code_too_many_requests":
     case "too_many_requests":
       return {
         type: "rate_limit",
-        message: "Too many attempts. Wait a minute and try again.",
+        message:
+          fallbackMessage ?? "Too many verification requests. Please wait before trying again.",
       };
     case "form_identifier_not_found":
       return {

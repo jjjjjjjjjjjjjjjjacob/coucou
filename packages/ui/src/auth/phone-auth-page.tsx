@@ -105,9 +105,7 @@ export function PhoneAuthPage({
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
   const hasTriggeredAuthenticatedRedirectRef = useRef(false);
-  const [phoneAuthStep, setPhoneAuthStep] = useState<PhoneAuthStep>(() =>
-    autoSendInitialCode && initialPhoneNumber ? "verification" : "phone",
-  );
+  const [phoneAuthStep, setPhoneAuthStep] = useState<PhoneAuthStep>("phone");
   const phoneAuthHeadingOverride =
     phoneAuthStep === "verification" || phoneAuthStep === "completing"
       ? "Enter your verification code"

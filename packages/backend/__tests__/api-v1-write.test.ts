@@ -711,12 +711,13 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
         const scheduledFunctions = await databaseContext.db.system
           .query("_scheduled_functions")
           .collect();
-        expect(
-          scheduledFunctions.filter(
+        const consentTransitions = scheduledFunctions
+          .filter(
             (scheduledFunction) =>
               scheduledFunction.name === "notifications:sendSmsConsentStatusMessage",
-          ),
-        ).toHaveLength(2);
+          )
+          .map((scheduledFunction) => scheduledFunction.args[0]?.consentEnabled);
+        expect(consentTransitions).toEqual([true, false, true]);
       });
       await drainScheduledFunctions(testBackend);
     } finally {

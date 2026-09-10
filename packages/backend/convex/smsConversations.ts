@@ -1,4 +1,5 @@
-import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
+import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
@@ -740,93 +741,118 @@ export const getRsvpThreadTargetInternal = internalQuery({
   },
 });
 
+const threadListArgs = {
+  eventId: v.optional(v.id("events")),
+  search: v.optional(v.string()),
+  conversationStates: v.optional(v.array(smsConversationFilterStateValidator)),
+  ...scopeArgs,
+};
+
+const THREAD_PAGE_SIZE = 50;
+const MAX_THREAD_ROWS_READ = 200;
+
+async function readThreadPage(
+  queryContext: QueryCtx,
+  argumentsValue: SiteScopeArgs & {
+    eventId?: Id<"events">;
+    search?: string;
+    conversationStates?: SmsConversationFilterState[];
+    paginationOpts: Infer<typeof paginationOptsValidator>;
+  },
+) {
+  const workspaceScope = await requireWorkspaceRead(queryContext, argumentsValue);
+  const eventScope = {
+    siteKey: argumentsValue.siteKey ?? workspaceScope.siteKey ?? undefined,
+    workspaceSlug: argumentsValue.workspaceSlug ?? workspaceScope.workspaceSlug,
+  };
+  const selectedEvent = argumentsValue.eventId
+    ? await ensureEventInSiteScope(queryContext, argumentsValue.eventId, eventScope)
+    : null;
+  const threadQuery = argumentsValue.eventId
+    ? queryContext.db
+        .query("smsConversationThreads")
+        .withIndex("by_event_last_message", (queryBuilder) =>
+          queryBuilder.eq("eventId", argumentsValue.eventId),
+        )
+    : queryContext.db.query("smsConversationThreads").withIndex("by_last_message");
+
+  // Paginate before participant lookups. Even a search with no matches must stay
+  // below Convex's per-execution read limit. The global index includes legacy
+  // event threads that predate workspaceId; scope checks happen before enrichment.
+  const paginationOptions: Infer<typeof paginationOptsValidator> = {
+    ...argumentsValue.paginationOpts,
+    numItems: Math.min(THREAD_PAGE_SIZE, Math.max(1, argumentsValue.paginationOpts.numItems)),
+    maximumRowsRead: MAX_THREAD_ROWS_READ,
+    maximumBytesRead: 256_000,
+  };
+  const threadPage = await threadQuery.order("desc").paginate(paginationOptions);
+  const pageEventIds = new Set(
+    threadPage.page.flatMap((thread) => (thread.eventId ? [thread.eventId] : [])),
+  );
+  const pageEvents = selectedEvent
+    ? [selectedEvent]
+    : await Promise.all([...pageEventIds].map((eventId) => queryContext.db.get(eventId)));
+  const scopedEvents = pageEvents.filter(
+    (event): event is Doc<"events"> => event !== null && eventMatchesSiteScope(event, eventScope),
+  );
+  const eventById = new Map(scopedEvents.map((event) => [event._id, event]));
+  const selectedConversationStates = Array.from(new Set(argumentsValue.conversationStates ?? []));
+  const scopedThreads = threadPage.page.filter((thread) => {
+    const inScope = thread.eventId
+      ? eventById.has(thread.eventId)
+      : thread.workspaceId === workspaceScope.workspaceId;
+    return (
+      inScope &&
+      (selectedConversationStates.length === 0 ||
+        selectedConversationStates.some((filterState) =>
+          threadMatchesConversationFilterState(thread, filterState),
+        ))
+    );
+  });
+  const enrichedThreads = await Promise.all(
+    scopedThreads.map(async (thread) => {
+      const participants = await summarizeThreadParticipants(queryContext, thread);
+      const sendReadiness = await resolveThreadSendReadiness(queryContext, thread);
+      const event = thread.eventId ? eventById.get(thread.eventId) : undefined;
+      return {
+        ...thread,
+        eventName: event?.name ?? "Workspace message",
+        eventDate: event?.eventDate ?? 0,
+        participantName: participants.displayName,
+        canSend: sendReadiness.state === "ready",
+        sendDisabledReason: sendReadiness.state === "ready" ? undefined : sendReadiness.reason,
+      };
+    }),
+  );
+  const search = argumentsValue.search?.trim().toLowerCase() ?? "";
+  return {
+    ...threadPage,
+    page: enrichedThreads.filter(
+      (thread) =>
+        !search ||
+        thread.participantName.toLowerCase().includes(search) ||
+        thread.phoneObfuscated.toLowerCase().includes(search) ||
+        (thread.lastMessageBody ?? "").toLowerCase().includes(search) ||
+        thread.eventName.toLowerCase().includes(search),
+    ),
+  };
+}
+
+// Keep already-open clients working while the paginated dashboard rolls out.
 export const listThreads = query({
-  args: {
-    eventId: v.optional(v.id("events")),
-    search: v.optional(v.string()),
-    conversationStates: v.optional(v.array(smsConversationFilterStateValidator)),
-    ...scopeArgs,
-  },
-  handler: async (ctx, args) => {
-    const workspaceScope = await requireWorkspaceRead(ctx, {
-      siteKey: args.siteKey,
-      workspaceSlug: args.workspaceSlug,
-    });
-
-    const eventScope = {
-      siteKey: args.siteKey ?? workspaceScope.siteKey ?? undefined,
-      workspaceSlug: args.workspaceSlug ?? workspaceScope.workspaceSlug,
-    };
-    const scopedEvents = args.eventId
-      ? [await ensureEventInSiteScope(ctx, args.eventId, eventScope)]
-      : (await ctx.db.query("events").collect()).filter((event) =>
-          eventMatchesSiteScope(event, eventScope),
-        );
-    const eventById = new Map(scopedEvents.map((event) => [event._id, event]));
-
-    const search = args.search?.trim().toLowerCase() ?? "";
-    const selectedConversationStates = Array.from(new Set(args.conversationStates ?? []));
-    const threadGroups = await Promise.all(
-      scopedEvents.map(
-        async (event) =>
-          await ctx.db
-            .query("smsConversationThreads")
-            .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
-            .collect(),
-      ),
-    );
-    if (!args.eventId)
-      threadGroups.push(
-        await ctx.db
-          .query("smsConversationThreads")
-          .withIndex("by_workspace", (builder) =>
-            builder.eq("workspaceId", workspaceScope.workspaceId),
-          )
-          .filter((builder) => builder.eq(builder.field("eventId"), undefined))
-          .collect(),
-      );
-    const threads = threadGroups
-      .flat()
-      .filter(
-        (thread) =>
-          selectedConversationStates.length === 0 ||
-          selectedConversationStates.some((filterState) =>
-            threadMatchesConversationFilterState(thread, filterState),
-          ),
-      );
-
-    const enrichedThreads = await Promise.all(
-      threads.map(async (thread) => {
-        const participants = await summarizeThreadParticipants(ctx, thread);
-        const sendReadiness = await resolveThreadSendReadiness(ctx, thread);
-        const event = thread.eventId ? eventById.get(thread.eventId) : undefined;
-        return {
-          ...thread,
-          eventName: event?.name ?? "Workspace message",
-          eventDate: event?.eventDate ?? 0,
-          participantName: participants.displayName,
-          canSend: sendReadiness.state === "ready",
-          sendDisabledReason: sendReadiness.state === "ready" ? undefined : sendReadiness.reason,
-        };
-      }),
-    );
-
-    return enrichedThreads
-      .filter((thread) => {
-        if (!search) return true;
-        return (
-          thread.participantName.toLowerCase().includes(search) ||
-          thread.phoneObfuscated.toLowerCase().includes(search) ||
-          (thread.lastMessageBody ?? "").toLowerCase().includes(search) ||
-          thread.eventName.toLowerCase().includes(search)
-        );
+  args: threadListArgs,
+  handler: async (queryContext, argumentsValue) =>
+    (
+      await readThreadPage(queryContext, {
+        ...argumentsValue,
+        paginationOpts: { numItems: THREAD_PAGE_SIZE, cursor: null },
       })
-      .sort(
-        (firstThread, secondThread) =>
-          (secondThread.lastMessageAt ?? secondThread.updatedAt) -
-          (firstThread.lastMessageAt ?? firstThread.updatedAt),
-      );
-  },
+    ).page,
+});
+
+export const listThreadsPage = query({
+  args: { ...threadListArgs, paginationOpts: paginationOptsValidator },
+  handler: readThreadPage,
 });
 
 export const getThread = query({

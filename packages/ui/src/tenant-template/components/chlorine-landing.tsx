@@ -401,7 +401,7 @@ export interface ChlorineEventRowProps {
   expandedContent?: ReactNode;
   /**
    * Optional content rendered in column 3 ABOVE the RSVP brick — used by
-   * the detail page to surface a small "MY RSVP →" pill on the same line
+   * the detail page to surface a small "RSVP STATUS →" pill on the same line
    * as the date / title.
    */
   topRightSlot?: ReactNode;

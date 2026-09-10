@@ -2,7 +2,7 @@
 
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { useAction, useQuery } from "convex/react";
+import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import { AlertCircle, Filter, MessageSquare, QrCode, RefreshCw, Search, Send } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -23,12 +23,12 @@ import type {
   SmsConversationFilterState,
   SmsConversationThread,
   SmsConversationThreadDetail,
-  SmsConversationThreadSummary,
 } from "@/lib/types";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { cn } from "@/lib/utils";
 
 const ALL_EVENTS_VALUE = "all";
+const THREAD_PAGE_SIZE = 50;
 
 const CONVERSATION_FILTER_OPTIONS: Array<{
   value: SmsConversationFilterState;
@@ -100,6 +100,7 @@ export default function TextsPage() {
     searchParams.get("eventId") ?? ALL_EVENTS_VALUE,
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [requestedThreadCount, setRequestedThreadCount] = useState(1);
   const [selectedConversationStates, setSelectedConversationStates] = useState<
     SmsConversationFilterState[]
   >([]);
@@ -135,8 +136,12 @@ export default function TextsPage() {
     }
   }, [events, selectedEventIsValid]);
 
-  const threads = useQuery(
-    api.smsConversations.listThreads,
+  const {
+    results: threads,
+    status: threadStatus,
+    loadMore: loadMoreThreads,
+  } = usePaginatedQuery(
+    api.smsConversations.listThreadsPage,
     workspaceScope && selectedEventIsValid
       ? {
           ...(selectedEventId === ALL_EVENTS_VALUE
@@ -147,7 +152,20 @@ export default function TextsPage() {
           ...workspaceScope.queryArgs,
         }
       : "skip",
-  ) as SmsConversationThreadSummary[] | undefined;
+    { initialNumItems: THREAD_PAGE_SIZE },
+  );
+
+  useEffect(() => {
+    setRequestedThreadCount(1);
+  }, [selectedEventId, searchQuery, selectedConversationStates]);
+
+  // A page can contain no matches after workspace/search/state filtering.
+  // Advance until the initial load or a Load more request finds another match.
+  useEffect(() => {
+    if (threads.length < requestedThreadCount && threadStatus === "CanLoadMore") {
+      loadMoreThreads(THREAD_PAGE_SIZE);
+    }
+  }, [threads.length, requestedThreadCount, threadStatus, loadMoreThreads]);
 
   useEffect(() => {
     if (!threads || threads.length === 0) {
@@ -347,7 +365,8 @@ export default function TextsPage() {
               <div className="p-6 text-center text-sm text-muted-foreground">
                 Workspace scope is loading.
               </div>
-            ) : threads === undefined ? (
+            ) : threadStatus === "LoadingFirstPage" ||
+              (threads.length === 0 && threadStatus !== "Exhausted") ? (
               <div className="p-6 text-center text-sm text-muted-foreground">
                 Loading conversations...
               </div>
@@ -406,6 +425,19 @@ export default function TextsPage() {
                 );
               })
             )}
+            {threads.length > 0 && threadStatus !== "Exhausted" ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={threadStatus !== "CanLoadMore"}
+                onClick={() => setRequestedThreadCount(threads.length + 1)}
+              >
+                {threadStatus === "LoadingMore"
+                  ? "Loading conversations..."
+                  : "Load more conversations"}
+              </Button>
+            ) : null}
           </div>
         </aside>
 

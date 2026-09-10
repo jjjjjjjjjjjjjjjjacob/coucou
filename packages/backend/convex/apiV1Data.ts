@@ -25,6 +25,7 @@ import { tryAutoApproveRsvp } from "./lib/rsvpApproval";
 import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./lib/rsvpStatus";
 import { buildRsvpTicketSnapshot } from "./lib/rsvpTicketSnapshot";
 import {
+  resolveSmsConsentChange,
   resolveSmsOrganizerPreference,
   upsertSmsOrganizerPreference,
 } from "./lib/smsOrganizerPreferences";
@@ -721,14 +722,10 @@ export const createRsvpFromApiClient = internalMutation({
       event,
       siteKey: event.siteKey,
     });
-    const smsConsentChange =
-      args.smsConsent === undefined ||
-      args.smsConsent === existingOrganizerPreference.smsConsent ||
-      (args.smsConsent && existingOrganizerPreference.firstSmsOptInAt !== undefined)
-        ? null
-        : args.smsConsent
-          ? "enabled"
-          : "disabled";
+    const smsConsentChange = resolveSmsConsentChange(
+      existingOrganizerPreference.smsConsent,
+      args.smsConsent,
+    );
     const sanitizedSmsConsentIpAddress =
       args.smsConsent === true && typeof args.smsConsentIpAddress === "string"
         ? args.smsConsentIpAddress.slice(0, 256)

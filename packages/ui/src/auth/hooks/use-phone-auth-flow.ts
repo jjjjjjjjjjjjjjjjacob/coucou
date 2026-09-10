@@ -13,6 +13,40 @@ import {
 } from "../internal-utils";
 
 const RESEND_COOLDOWN_SECONDS = 30;
+const CODE_REQUEST_COOLDOWN_KEY = "phone-auth-code-request-cooldown";
+
+function readCodeRequestCooldown(): number {
+  try {
+    const timestamp = Number(sessionStorage.getItem(CODE_REQUEST_COOLDOWN_KEY));
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function clerkRetryAfterSeconds(error: unknown): number {
+  if (typeof error !== "object" || error === null || !("retryAfter" in error)) return 0;
+  return typeof error.retryAfter === "number" && Number.isFinite(error.retryAfter)
+    ? Math.max(0, error.retryAfter)
+    : 0;
+}
+function hasPendingPhoneCode(
+  verification:
+    | {
+        strategy: string | null;
+        status: string | null;
+        expireAt: Date | null;
+      }
+    | undefined,
+): boolean {
+  return (
+    verification?.strategy === "phone_code" &&
+    verification.status === "unverified" &&
+    verification.expireAt !== null &&
+    verification.expireAt.getTime() > Date.now()
+  );
+}
+
 const SESSION_ACTIVATION_FALLBACK_MS = 1200;
 const AUTO_SEND_CAPTCHA_FALLBACK_MINIMUM_MS = 1200;
 const AUTO_SEND_CAPTCHA_FALLBACK_CHECK_INTERVAL_MS = 250;
@@ -135,19 +169,17 @@ function isBotProtectionError(error: unknown): boolean {
 function buildBotProtectionRequiredError(): PhoneAuthError {
   return {
     type: "unknown",
-    message: "Captcha required.",
+    message: "The security check didn't finish. Please try sending the code again.",
   };
 }
 
 function buildCaptchaRequiredState(previousState: PhoneAuthState): PhoneAuthState {
   return {
     ...previousState,
-    step: "captcha",
+    step: hasRenderedClerkCaptchaChallenge() ? "captcha" : "phone",
     isLoading: false,
     authMode: null,
     error: buildBotProtectionRequiredError(),
-    canResend: false,
-    resendCooldown: 0,
   };
 }
 
@@ -157,7 +189,17 @@ function hasRenderedClerkCaptchaChallenge(): boolean {
   }
 
   const captchaElement = document.getElementById("clerk-captcha");
-  return Boolean(captchaElement && captchaElement.childElementCount > 0);
+  if (!captchaElement) return false;
+  return Array.from(captchaElement.children).some((element) => {
+    const bounds = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return (
+      bounds.width > 20 &&
+      bounds.height > 20 &&
+      style.display !== "none" &&
+      style.visibility !== "hidden"
+    );
+  });
 }
 
 function resolveInitialPhoneAuthState(
@@ -231,6 +273,10 @@ export function usePhoneAuthFlow({
   const hasAutoSentInitialCodeRef = useRef(false);
   const autoSendRequestInFlightRef = useRef(false);
   const autoSendLoadingStartedAtRef = useRef<number | null>(null);
+  const verificationRequestIdRef = useRef(0);
+  const codeVerificationInFlightRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const codeRequestCooldownUntilRef = useRef(readCodeRequestCooldown());
 
   // Latest onSuccess for the session-watching effect to call without stale closure.
   const onSuccessRef = useRef(onSuccess);
@@ -282,7 +328,6 @@ export function usePhoneAuthFlow({
     hasCompletedAuthenticationRef.current = false;
     clearSessionActivationFallback();
     clearAutoSendCaptchaFallbackInterval();
-    clearResendCooldown();
     setState((prev) => buildCaptchaRequiredState(prev));
   }, [clearAutoSendCaptchaFallbackInterval, clearResendCooldown, clearSessionActivationFallback]);
 
@@ -300,11 +345,10 @@ export function usePhoneAuthFlow({
       if (elapsedMilliseconds < AUTO_SEND_CAPTCHA_FALLBACK_MINIMUM_MS) return;
       if (!hasRenderedClerkCaptchaChallenge()) return;
 
-      autoSendRequestInFlightRef.current = false;
       clearAutoSendCaptchaFallbackInterval();
       setState((prev) => {
         if (prev.step !== "phone" || !prev.isLoading) return prev;
-        return buildCaptchaRequiredState(prev);
+        return { ...prev, step: "captcha", error: null };
       });
     }, AUTO_SEND_CAPTCHA_FALLBACK_CHECK_INTERVAL_MS);
   }, [clearAutoSendCaptchaFallbackInterval]);
@@ -320,7 +364,9 @@ export function usePhoneAuthFlow({
   }, [state.step, isSignedIn, triggerSuccess]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       clearResendCooldown();
       clearSessionActivationFallback();
       clearAutoSendCaptchaFallbackInterval();
@@ -340,91 +386,164 @@ export function usePhoneAuthFlow({
   }, []);
 
   const goBack = useCallback(() => {
+    verificationRequestIdRef.current += 1;
+    autoSendRequestInFlightRef.current = false;
+    clearAutoSendCaptchaFallbackInterval();
     awaitingSessionRef.current = false;
     hasCompletedAuthenticationRef.current = false;
-    clearResendCooldown();
     clearSessionActivationFallback();
     setState((prev) => ({
       ...prev,
       step: "phone",
+      isLoading: false,
       error: null,
       authMode: null,
-      canResend: false,
-      resendCooldown: 0,
     }));
-  }, [clearResendCooldown, clearSessionActivationFallback]);
+  }, [clearAutoSendCaptchaFallbackInterval, clearResendCooldown, clearSessionActivationFallback]);
+
+  const clearVerifiedCodeRequest = useCallback(() => {
+    clearResendCooldown();
+    codeRequestCooldownUntilRef.current = 0;
+    try {
+      sessionStorage.removeItem(CODE_REQUEST_COOLDOWN_KEY);
+    } catch {
+      /* Storage is optional. */
+    }
+    setState((previous) => ({ ...previous, resendCooldown: 0, canResend: false }));
+  }, [clearResendCooldown]);
 
   const completeSessionActivation = useCallback(
     async (activateSession: SessionActivator, createdSessionId: string) => {
+      // Clerk returned a completed verification. A later sign-in starts a new request lifecycle.
+      clearVerifiedCodeRequest();
       setState((prev) => ({ ...prev, step: "completing" }));
       awaitingSessionRef.current = true;
       await activateSession({ session: createdSessionId });
       scheduleSessionActivationFallback();
     },
-    [scheduleSessionActivationFallback],
+    [clearVerifiedCodeRequest, scheduleSessionActivationFallback],
   );
 
-  const startResendCooldown = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      canResend: false,
-      resendCooldown: RESEND_COOLDOWN_SECONDS,
-    }));
-
-    if (cooldownTimerRef.current) {
+  const startResendCooldown = useCallback(
+    (seconds = RESEND_COOLDOWN_SECONDS) => {
+      codeRequestCooldownUntilRef.current = Math.max(
+        codeRequestCooldownUntilRef.current,
+        Date.now() + seconds * 1000,
+      );
+      try {
+        sessionStorage.setItem(
+          CODE_REQUEST_COOLDOWN_KEY,
+          String(codeRequestCooldownUntilRef.current),
+        );
+      } catch {
+        /* Storage can be unavailable in private browsing. */
+      }
       clearResendCooldown();
-    }
+      const updateCooldown = () => {
+        const remainingSeconds = Math.max(
+          0,
+          Math.ceil((codeRequestCooldownUntilRef.current - Date.now()) / 1000),
+        );
+        setState((previous) => ({
+          ...previous,
+          canResend: remainingSeconds === 0,
+          resendCooldown: remainingSeconds,
+        }));
+        if (remainingSeconds === 0) clearResendCooldown();
+      };
+      updateCooldown();
+      if (codeRequestCooldownUntilRef.current > Date.now())
+        cooldownTimerRef.current = setInterval(updateCooldown, 1000);
+    },
+    [clearResendCooldown],
+  );
 
-    cooldownTimerRef.current = setInterval(() => {
-      setState((prev) => {
-        const next = prev.resendCooldown - 1;
-        if (next <= 0) {
-          if (cooldownTimerRef.current) {
-            clearInterval(cooldownTimerRef.current);
-            cooldownTimerRef.current = null;
-          }
-          return { ...prev, canResend: true, resendCooldown: 0 };
-        }
-        return { ...prev, resendCooldown: next };
-      });
-    }, 1000);
-  }, [clearResendCooldown]);
+  useEffect(() => {
+    if (codeRequestCooldownUntilRef.current > Date.now()) startResendCooldown(0);
+  }, [startResendCooldown]);
+
+  const resumePendingPhoneVerification = useCallback(() => {
+    const fullPhoneDigits = digitsOnly(`${state.countryCode}${state.phoneNumber}`);
+    const authMode =
+      signIn?.status === "needs_first_factor" &&
+      digitsOnly(signIn.identifier ?? "") === fullPhoneDigits &&
+      hasPendingPhoneCode(signIn.firstFactorVerification)
+        ? "signin"
+        : signUp?.status === "missing_requirements" &&
+            digitsOnly(signUp.phoneNumber ?? "") === fullPhoneDigits &&
+            hasPendingPhoneCode(signUp.verifications?.phoneNumber)
+          ? "signup"
+          : null;
+    if (!authMode) return false;
+    setState((previous) => ({
+      ...previous,
+      step: "verification",
+      authMode,
+      isLoading: false,
+      error: null,
+      canResend: codeRequestCooldownUntilRef.current <= Date.now(),
+    }));
+    return true;
+  }, [signIn, signUp, state.countryCode, state.phoneNumber]);
 
   const sendVerificationCode = useCallback(async () => {
     if (!isSignInLoaded || !isSignUpLoaded || !signIn || !signUp) return;
+    if (autoSendRequestInFlightRef.current) return;
+    if (resumePendingPhoneVerification()) return;
+    if (codeRequestCooldownUntilRef.current > Date.now()) {
+      setState((previous) => ({ ...previous, isLoading: false }));
+      return;
+    }
+    startResendCooldown();
+    const verificationRequestId = ++verificationRequestIdRef.current;
+    autoSendRequestInFlightRef.current = true;
+    startAutoSendCaptchaFallbackInterval();
 
     const fullPhone = `${state.countryCode}${digitsOnly(state.phoneNumber)}`;
     awaitingSessionRef.current = false;
     hasCompletedAuthenticationRef.current = false;
     clearSessionActivationFallback();
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    setState((prev) => ({ ...prev, step: "phone", isLoading: true, error: null }));
 
     try {
       await signIn.create({
         strategy: "phone_code",
         identifier: fullPhone,
       });
+      if (!isMountedRef.current || verificationRequestId !== verificationRequestIdRef.current)
+        return;
       setState((prev) => ({
         ...prev,
         step: "verification",
         isLoading: false,
         authMode: "signin",
+        error: null,
       }));
       startResendCooldown();
     } catch (signInError) {
+      if (!isMountedRef.current || verificationRequestId !== verificationRequestIdRef.current)
+        return;
       const errorCode = getClerkErrorCode(signInError);
       if (errorCode === "form_identifier_not_found") {
         try {
           await signUp.create({ phoneNumber: fullPhone, legalAccepted: true });
+          if (!isMountedRef.current || verificationRequestId !== verificationRequestIdRef.current)
+            return;
           await signUp.preparePhoneNumberVerification();
+          if (!isMountedRef.current || verificationRequestId !== verificationRequestIdRef.current)
+            return;
           setState((prev) => ({
             ...prev,
             step: "verification",
             isLoading: false,
             authMode: "signup",
+            error: null,
           }));
           startResendCooldown();
         } catch (signUpError) {
+          if (!isMountedRef.current || verificationRequestId !== verificationRequestIdRef.current)
+            return;
+          startResendCooldown(clerkRetryAfterSeconds(signUpError));
           if (isBotProtectionError(signUpError)) {
             enterCaptchaStep();
             return;
@@ -435,6 +554,7 @@ export function usePhoneAuthFlow({
           onError?.(error);
         }
       } else {
+        startResendCooldown(clerkRetryAfterSeconds(signInError));
         if (isBotProtectionError(signInError)) {
           enterCaptchaStep();
           return;
@@ -444,8 +564,14 @@ export function usePhoneAuthFlow({
         setState((prev) => ({ ...prev, isLoading: false, error }));
         onError?.(error);
       }
+    } finally {
+      if (verificationRequestId === verificationRequestIdRef.current) {
+        autoSendRequestInFlightRef.current = false;
+        clearAutoSendCaptchaFallbackInterval();
+      }
     }
   }, [
+    resumePendingPhoneVerification,
     isSignInLoaded,
     isSignUpLoaded,
     signIn,
@@ -454,6 +580,8 @@ export function usePhoneAuthFlow({
     state.phoneNumber,
     startResendCooldown,
     clearSessionActivationFallback,
+    clearAutoSendCaptchaFallbackInterval,
+    startAutoSendCaptchaFallbackInterval,
     enterCaptchaStep,
     onError,
   ]);
@@ -465,12 +593,7 @@ export function usePhoneAuthFlow({
     if (!isSignInLoaded || !isSignUpLoaded || !signIn || !signUp) return;
 
     hasAutoSentInitialCodeRef.current = true;
-    autoSendRequestInFlightRef.current = true;
-    startAutoSendCaptchaFallbackInterval();
-    void sendVerificationCode().finally(() => {
-      autoSendRequestInFlightRef.current = false;
-      clearAutoSendCaptchaFallbackInterval();
-    });
+    void sendVerificationCode();
   }, [
     autoSendInitialCode,
     clearAutoSendCaptchaFallbackInterval,
@@ -497,6 +620,8 @@ export function usePhoneAuthFlow({
         return;
       }
 
+      if (codeVerificationInFlightRef.current || !state.authMode) return;
+      codeVerificationInFlightRef.current = true;
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       try {
@@ -561,6 +686,8 @@ export function usePhoneAuthFlow({
           error: mappedError,
         }));
         onError?.(mappedError);
+      } finally {
+        codeVerificationInFlightRef.current = false;
       }
     },
     [
@@ -578,17 +705,27 @@ export function usePhoneAuthFlow({
   );
 
   const resendCode = useCallback(async () => {
-    if (!state.canResend) return;
+    if (
+      !state.canResend ||
+      autoSendRequestInFlightRef.current ||
+      codeRequestCooldownUntilRef.current > Date.now()
+    )
+      return;
     if (!isSignInLoaded || !isSignUpLoaded || !signIn || !signUp) return;
 
+    autoSendRequestInFlightRef.current = true;
+    startResendCooldown();
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
       if (state.authMode === "signin") {
-        const fullPhone = `${state.countryCode}${digitsOnly(state.phoneNumber)}`;
-        await signIn.create({
+        const phoneFactor = signIn.supportedFirstFactors?.find(
+          (factor) => factor.strategy === "phone_code",
+        );
+        if (!phoneFactor) throw new Error("Please edit your phone number and request a new code.");
+        await signIn.prepareFirstFactor({
           strategy: "phone_code",
-          identifier: fullPhone,
+          phoneNumberId: phoneFactor.phoneNumberId,
         });
       } else {
         await signUp.preparePhoneNumberVerification();
@@ -603,7 +740,10 @@ export function usePhoneAuthFlow({
 
       const mappedError = mapClerkErrorToPhoneAuth(error);
       setState((prev) => ({ ...prev, isLoading: false, error: mappedError }));
+      startResendCooldown(clerkRetryAfterSeconds(error));
       onError?.(mappedError);
+    } finally {
+      autoSendRequestInFlightRef.current = false;
     }
   }, [
     state.canResend,

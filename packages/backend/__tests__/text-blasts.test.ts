@@ -13,6 +13,8 @@ const convexModules = {
   "../convex/sms.ts": () => import("../convex/sms"),
   "../convex/smsActions.ts": () => import("../convex/smsActions"),
   "../convex/textBlasts.ts": () => import("../convex/textBlasts"),
+  "../convex/events.ts": () => import("../convex/events"),
+  "../convex/smsCodeAdmin.ts": () => import("../convex/smsCodeAdmin"),
   "../convex/workspaces.ts": () => import("../convex/workspaces"),
 };
 
@@ -624,7 +626,7 @@ describe("text blast recipient selection", () => {
           },
         ],
       }),
-    ).rejects.toThrow("unavailable");
+    ).resolves.toMatchObject({ _id: draftId });
 
     await expect(
       hostBackend.mutation(api.textBlasts.updateDraft, {
@@ -641,6 +643,149 @@ describe("text blast recipient selection", () => {
         ],
       }),
     ).rejects.toThrow("reserved");
+  });
+
+  it("allows a list password through preview, delivery, re-enable, event edits, and claim auditing", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const sourceEventId = await seedEvent(testBackend, "Source");
+    const targetEventId = await seedEvent(testBackend, "Password destination");
+    await seedListCredential(testBackend, { eventId: sourceEventId, listKey: "vip" });
+    await seedListCredential(testBackend, {
+      eventId: targetEventId,
+      listKey: "vip",
+      password: "FANCY",
+    });
+    await seedListCredential(testBackend, { eventId: targetEventId, listKey: "ga" });
+    const hostBackend = testBackend.withIdentity(createWorkspaceIdentity("host_1"));
+    const replyAction = {
+      replyCode: " fancy ",
+      targetEventId,
+      targetListKey: "vip",
+      isEnabled: true,
+    };
+    const blastId = await hostBackend.mutation(api.textBlasts.createDraft, {
+      eventId: sourceEventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "VIP invitation",
+      message: "Reply FANCY",
+      targetLists: ["vip"],
+      replyActions: [replyAction],
+    });
+    const availability = await hostBackend.query(api.textBlasts.validateReplyActionCodes, {
+      blastId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      replyActions: [
+        replyAction,
+        { ...replyAction, targetListKey: "ga" },
+        { ...replyAction, targetEventId: sourceEventId },
+      ],
+    });
+    expect(availability.results.map((result) => result.status)).toEqual([
+      "available",
+      "event_code_conflict",
+      "event_code_conflict",
+    ]);
+    for (const conflictingAction of [
+      { ...replyAction, targetListKey: "ga" },
+      { ...replyAction, targetEventId: sourceEventId },
+    ]) {
+      await expect(
+        hostBackend.mutation(api.textBlasts.updateDraft, {
+          blastId,
+          siteKey: SITE_KEY,
+          workspaceSlug: WORKSPACE_SLUG,
+          replyActions: [conflictingAction],
+        }),
+      ).rejects.toThrow("unavailable");
+    }
+
+    const phone = "+15551234009";
+    const { phoneHash } = await normalizeAndHashPhoneNumber(phone);
+    await testBackend.mutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
+      blastId,
+      phoneHashes: [phoneHash],
+    });
+    // Editing while a send is reserved must allow the compatible claim too.
+    await hostBackend.mutation(api.events.update, {
+      eventId: targetEventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "VIP night",
+    });
+    await seedUser(testBackend, "vip_guest", phone, "VIP Guest");
+    const rsvpId = await seedRsvp(testBackend, {
+      eventId: sourceEventId,
+      clerkUserId: "vip_guest",
+      listKey: "vip",
+    });
+    await seedDelivery(testBackend, {
+      textBlastId: blastId,
+      phone,
+      status: "sent",
+      eventId: sourceEventId,
+      rsvpId,
+      clerkUserId: "vip_guest",
+      listKey: "vip",
+    });
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(blastId, { sentCount: 1, status: "sent" });
+    });
+
+    const deliveredAction = { ...replyAction, replyCode: "fancy" };
+    for (const isEnabled of [false, true]) {
+      await hostBackend.mutation(api.textBlasts.updateReplyActions, {
+        blastId,
+        siteKey: SITE_KEY,
+        workspaceSlug: WORKSPACE_SLUG,
+        replyActions: [{ ...deliveredAction, isEnabled }],
+      });
+    }
+    await hostBackend.mutation(api.events.update, {
+      eventId: targetEventId,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      name: "VIP night updated",
+    });
+    const credential = await testBackend.run(async (databaseContext) =>
+      databaseContext.db
+        .query("listCredentials")
+        .withIndex("by_event_key", (queryBuilder) =>
+          queryBuilder.eq("eventId", targetEventId).eq("listKey", "vip"),
+        )
+        .unique(),
+    );
+    if (!credential) throw new Error("Missing VIP credential");
+    await hostBackend.mutation(api.events.updateListCredential, {
+      id: credential._id,
+      siteKey: SITE_KEY,
+      workspaceSlug: WORKSPACE_SLUG,
+      patch: { password: " fancy " },
+    });
+
+    const platformBackend = testBackend.withIdentity({
+      subject: "platform_host",
+      org_slug: "coucou",
+    } as Partial<UserIdentity>);
+    expect(
+      await platformBackend.query(api.smsCodeAdmin.auditExecutableCodeCollisions, {}),
+    ).toMatchObject({ unresolvedConflictCount: 0 });
+    await testBackend.run(async (databaseContext) => {
+      for (const claim of await databaseContext.db.query("smsCodeClaims").collect())
+        await databaseContext.db.delete(claim._id);
+    });
+    expect(
+      await platformBackend.mutation(api.smsCodeAdmin.backfillExecutableCodeClaims, {
+        expectedUnresolvedConflictCount: 0,
+      }),
+    ).toMatchObject({ insertedClaimCount: 2 });
+    expect(
+      await platformBackend.mutation(api.smsCodeAdmin.backfillExecutableCodeClaims, {
+        expectedUnresolvedConflictCount: 0,
+      }),
+    ).toMatchObject({ insertedClaimCount: 0 });
   });
 
   it("validates reply codes against active event codes and overlapping blast recipients", async () => {

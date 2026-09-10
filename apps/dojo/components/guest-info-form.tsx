@@ -1,10 +1,9 @@
 "use client";
 import { Info } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Path } from "react-hook-form";
-import { Button } from "@/components/ui/button";
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,31 +21,26 @@ export function GuestInfoFields({
   setSocialProfiles,
   invitedByName,
   setInvitedByName,
-  phone,
-  openUserProfile,
-  isSignedIn,
+  afterNameFields,
 }: {
   form: UseFormReturn<RSVPFormData>;
   event: Event;
   name: string; // Keep during migration phase
-  setName: (v: string) => void;
+  setName: (value: string) => void;
   firstName: string;
-  setFirstName: (v: string) => void;
+  setFirstName: (value: string) => void;
   lastName: string;
-  setLastName: (v: string) => void;
+  setLastName: (value: string) => void;
   custom: Record<string, string>;
-  setCustom: (updater: (m: Record<string, string>) => Record<string, string>) => void;
+  setCustom: (updater: (currentValues: Record<string, string>) => Record<string, string>) => void;
   socialProfiles: Record<string, string>;
   setSocialProfiles: (updater: (current: Record<string, string>) => Record<string, string>) => void;
   invitedByName: string;
   setInvitedByName: (value: string) => void;
-  phone: string;
-  openUserProfile?: () => void;
-  isSignedIn?: boolean;
+  afterNameFields?: ReactNode;
 }) {
   return (
-    <div className="rounded border border-primary/30 p-3 space-y-2">
-      <div className="font-semibold text-sm text-primary">YOUR INFO</div>
+    <div className="rounded border border-primary/30 p-3 space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <FormField
           control={form.control}
@@ -62,8 +56,8 @@ export function GuestInfoFields({
                   placeholder="First name"
                   className="border border-primary/20 placeholder:text-primary/50 text-primary"
                   value={firstName}
-                  onChange={(e) => {
-                    const value = e.target.value;
+                  onChange={(changeEvent) => {
+                    const value = changeEvent.target.value;
                     setFirstName(value);
                     field.onChange(value);
                     setName(`${value} ${lastName}`.trim());
@@ -88,8 +82,8 @@ export function GuestInfoFields({
                   placeholder="Last name"
                   className="border border-primary/20 placeholder:text-primary/50 text-primary"
                   value={lastName}
-                  onChange={(e) => {
-                    const value = e.target.value;
+                  onChange={(changeEvent) => {
+                    const value = changeEvent.target.value;
                     setLastName(value);
                     field.onChange(value);
                     setName(`${firstName} ${value}`.trim());
@@ -101,6 +95,55 @@ export function GuestInfoFields({
           )}
         />
       </div>
+
+      {afterNameFields}
+
+      {(event.primaryFieldConfig?.socialPlatforms ?? []).map((platform) => (
+        <FormField
+          key={platform.platformKey}
+          control={form.control}
+          name={`socialProfiles.${platform.platformKey}` as Path<RSVPFormData>}
+          rules={
+            platform.required
+              ? {
+                  required: `${platform.label} is required`,
+                }
+              : undefined
+          }
+          render={({ field }) => {
+            const { value, onChange, ref, ...rest } = field;
+            return (
+              <FormItem>
+                <FormLabel className="text-primary text-xs font-medium">
+                  {platform.label}
+                  {platform.required && (
+                    <span className="text-xs text-primary/70"> (required)</span>
+                  )}
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={platform.placeholder ?? "@handle"}
+                    className="border border-primary/20 placeholder:text-primary/50 text-primary"
+                    value={(value as string | undefined) ?? ""}
+                    onChange={(event) => {
+                      const nextValue = event.target.value.trim();
+                      setSocialProfiles((current) => ({
+                        ...current,
+                        [platform.platformKey]: nextValue,
+                      }));
+                      onChange(nextValue);
+                    }}
+                    ref={ref}
+                    {...rest}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            );
+          }}
+        />
+      ))}
+
       {(event?.customFields || []).map((customField: CustomField) => (
         <FormField
           key={customField.key}
@@ -162,55 +205,9 @@ export function GuestInfoFields({
                       const rawValue = event.target.value;
                       const shouldTrim = customField.trimWhitespace !== false;
                       const nextValue = shouldTrim ? rawValue.trim() : rawValue;
-                      setCustom((m) => ({
-                        ...m,
+                      setCustom((currentValues) => ({
+                        ...currentValues,
                         [customField.key]: nextValue,
-                      }));
-                      onChange(nextValue);
-                    }}
-                    ref={ref}
-                    {...rest}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            );
-          }}
-        />
-      ))}
-
-      {(event.primaryFieldConfig?.socialPlatforms ?? []).map((platform) => (
-        <FormField
-          key={platform.platformKey}
-          control={form.control}
-          name={`socialProfiles.${platform.platformKey}` as Path<RSVPFormData>}
-          rules={
-            platform.required
-              ? {
-                  required: `${platform.label} is required`,
-                }
-              : undefined
-          }
-          render={({ field }) => {
-            const { value, onChange, ref, ...rest } = field;
-            return (
-              <FormItem>
-                <FormLabel className="text-primary text-xs font-medium">
-                  {platform.label}
-                  {platform.required && (
-                    <span className="text-xs text-primary/70"> (required)</span>
-                  )}
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder={platform.placeholder ?? "@handle"}
-                    className="border border-primary/20 placeholder:text-primary/50 text-primary"
-                    value={(value as string | undefined) ?? ""}
-                    onChange={(event) => {
-                      const nextValue = event.target.value.trim();
-                      setSocialProfiles((current) => ({
-                        ...current,
-                        [platform.platformKey]: nextValue,
                       }));
                       onChange(nextValue);
                     }}
@@ -263,69 +260,36 @@ export function GuestInfoFields({
           )}
         />
       )}
-
-      <div className="flex flex-col gap-1">
-        <Label className="text-sm flex items-center gap-2 text-xs text-primary font-medium">
-          PHONE
-        </Label>
-        <div className="flex gap-4">
-          <Input
-            key="phone"
-            className="text-sm text-primary/90 border border-primary/20 placeholder:text-primary/50 text-primary/80 disabled:opacity-100"
-            value={phone}
-            disabled
-          />
-          {isSignedIn ? (
-            <Button
-              variant="outline"
-              onClick={() => openUserProfile?.()}
-              className="border-primary/30 text-primary/70"
-            >
-              UPDATE
-            </Button>
-          ) : (
-            <div className="text-xs text-primary/60 flex items-center">Sign in to update</div>
-          )}
-        </div>
-      </div>
-
-      {/* Attendees selection */}
-      <FormField
-        control={form.control}
-        name="attendees"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs text-primary font-medium">
-              ATTENDEES{" "}
-              {event.maxAttendees && event.maxAttendees > 1 ? `(${event.maxAttendees} max)` : null}
-            </FormLabel>
-            <FormControl>
-              {(event?.maxAttendees ?? 1) === 1 ? (
-                <Select
-                  value="1"
-                  disabled
-                  className="border border-primary/20 text-primary disabled:opacity-100"
-                >
-                  <SelectOption value="1">1 (No Plus Ones)</SelectOption>
-                </Select>
-              ) : (
+      {(event.maxAttendees ?? 1) > 1 && (
+        <FormField
+          control={form.control}
+          name="attendees"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-xs text-primary font-medium">
+                ATTENDEES{" "}
+                {event.maxAttendees && event.maxAttendees > 1
+                  ? `(${event.maxAttendees} max)`
+                  : null}
+              </FormLabel>
+              <FormControl>
                 <Select
                   value={field.value?.toString() || "1"}
                   onValueChange={(value) => field.onChange(parseInt(value, 10))}
                   className="border border-primary/20 text-primary"
                 >
-                  {Array.from({ length: event?.maxAttendees ?? 1 }, (_, i) => (
-                    <SelectOption key={i + 1} value={(i + 1).toString()}>
-                      {i + 1}
+                  {Array.from({ length: event.maxAttendees ?? 1 }, (_, attendeeIndex) => (
+                    <SelectOption key={attendeeIndex + 1} value={(attendeeIndex + 1).toString()}>
+                      {attendeeIndex + 1}
                     </SelectOption>
                   ))}
                 </Select>
-              )}
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
     </div>
   );
 }
@@ -338,7 +302,7 @@ export function NoteForHostsField({
   setNote: (value: string) => void;
 }) {
   return (
-    <div className="rounded border border-primary/30 p-3 space-y-2">
+    <div className="space-y-2">
       <div className="font-medium text-xs text-primary">NOTE FOR HOSTS (optional)</div>
       <Textarea
         placeholder="Anything hosts should know"

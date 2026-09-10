@@ -1,10 +1,11 @@
+import { createClerkClient } from "@clerk/backend";
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { normalizeSocialPlatformKey } from "@coucou/sdk/shared/primary-fields";
-import { v } from "convex/values";
-import { api, components } from "./_generated/api";
+import { type Infer, v } from "convex/values";
+import { api, components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { internalMutation, mutation, query } from "./functions";
+import { action, internalMutation, mutation, query } from "./functions";
 import { resolveCanonicalClerkUserId, resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
 import { generateRsvpHandoffToken } from "./lib/codeGenerators";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
@@ -39,6 +40,7 @@ import {
   type ValidRsvpStatus,
   validRsvpStatuses,
 } from "./lib/rsvpFilters";
+import { updateRsvpListKeyRecords } from "./lib/rsvpListKey";
 import {
   type ApprovalStatus,
   type AttendanceStatus,
@@ -46,10 +48,12 @@ import {
   resolveApprovalStatus,
   sanitizeAttendanceStatus,
 } from "./lib/rsvpStatus";
+import { guestRsvpSubmissionFields } from "./lib/rsvpSubmissionArgs";
 import { finalizeRsvpSubmissionThroughSharedService } from "./lib/rsvpSubmissionService";
 import { isPhoneNumberLikeDisplayName, resolveStoredUserDisplayName } from "./lib/rsvpUserName";
 import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";
 import {
+  resolveSmsConsentChange,
   resolveSmsOrganizerPreference,
   upsertSmsOrganizerPreference,
 } from "./lib/smsOrganizerPreferences";
@@ -129,31 +133,6 @@ async function buildReferralPatch(
 }
 
 const RSVP_HANDOFF_TTL_MS = 15 * 60 * 1000;
-
-async function canAutoSendGuestRsvpHandoffCode(
-  ctx: QueryCtx,
-  {
-    phoneNumber,
-    phoneHash,
-  }: {
-    phoneNumber: string;
-    phoneHash: string;
-  },
-): Promise<boolean> {
-  const userWithPhone = await ctx.db
-    .query("users")
-    .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phone", phoneNumber))
-    .first();
-  if (userWithPhone?.clerkUserId && !isGuestClerkUserId(userWithPhone.clerkUserId)) {
-    return true;
-  }
-
-  const rsvpsWithPhone = await ctx.db
-    .query("rsvps")
-    .withIndex("by_guestPhoneHash", (queryBuilder) => queryBuilder.eq("guestPhoneHash", phoneHash))
-    .collect();
-  return rsvpsWithPhone.some((rsvp) => !isGuestClerkUserId(rsvp.clerkUserId));
-}
 
 function normalizeOptionalText(value: string | null | undefined): string | undefined {
   const trimmedValue = value?.trim();
@@ -370,7 +349,6 @@ function resolveRsvpSubmissionSmsConsent({
     smsConsent: boolean;
     smsConsentTimestamp?: number;
     smsConsentIpAddress?: string;
-    firstSmsOptInAt?: number;
   };
   now: number;
 }): ResolvedRsvpSubmissionSmsConsent {
@@ -385,14 +363,10 @@ function resolveRsvpSubmissionSmsConsent({
   const smsConsentIpAddress = smsConsent
     ? (submittedSmsConsentIpAddress ?? priorSmsConsentIpAddress)
     : priorSmsConsentIpAddress;
-  const smsConsentChange =
-    !shouldUpdateOrganizerPreference ||
-    smsConsent === organizerPreference.smsConsent ||
-    (smsConsent && organizerPreference.firstSmsOptInAt !== undefined)
-      ? null
-      : smsConsent
-        ? "enabled"
-        : "disabled";
+  const smsConsentChange = resolveSmsConsentChange(
+    organizerPreference.smsConsent,
+    submittedSmsConsent,
+  );
 
   return {
     smsConsent,
@@ -477,122 +451,162 @@ async function prepareRsvpSubmission(
   };
 }
 
-export const submitRequest = mutation({
-  args: {
-    eventId: v.id("events"),
-    siteKey: v.optional(v.string()),
-    listKey: v.string(),
-    note: v.optional(v.string()),
-    shareContact: v.boolean(),
-    attendees: v.optional(v.number()),
-    attendanceStatus: v.optional(v.union(v.literal("yes"), v.literal("no"), v.literal("maybe"))),
-    smsConsent: v.optional(v.boolean()), // SMS consent from user
-    smsConsentIpAddress: v.optional(v.string()), // IP address for compliance
-    // Contact is optional because the user may already have a phone on file.
-    email: v.optional(v.string()),
-    phone: v.optional(v.string()),
-    firstName: v.string(),
-    lastName: v.string(),
-    customFields: v.optional(v.record(v.string(), v.string())),
-    socialProfiles: v.optional(v.array(submittedSocialProfileValidator)),
-    invitedByName: v.optional(v.string()),
-    referralCode: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    // Require authenticated user
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
+const authenticatedRsvpSubmissionFields = {
+  ...guestRsvpSubmissionFields,
+  // Existing verified guests can use the phone already on their profile.
+  phone: v.optional(v.string()),
+  email: v.optional(v.string()),
+};
+const authenticatedRsvpSubmissionValidator = v.object(authenticatedRsvpSubmissionFields);
 
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
-      .unique();
+async function submitAuthenticatedRequest(
+  ctx: MutationCtx,
+  args: Infer<typeof authenticatedRsvpSubmissionValidator>,
+) {
+  // Require authenticated user
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthorized");
+  const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
-    const {
+  let user = await ctx.db
+    .query("users")
+    .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
+    .unique();
+
+  const {
+    event,
+    now,
+    sanitizedSocialProfiles,
+    configuredSocialPlatformKeys,
+    invitedByPatch,
+    referralPatch,
+    sanitizedCustomFieldValues,
+    requestedAttendees,
+    submittedAttendanceStatus,
+    sanitizedSmsConsentIpAddress,
+  } = await prepareRsvpSubmission(ctx, args, clerkUserId);
+  const submittedFirstName = args.firstName.trim();
+  const submittedLastName = args.lastName.trim();
+  if (!submittedFirstName) {
+    throw new Error("First name is required");
+  }
+  if (!submittedLastName) {
+    throw new Error("Last name is required");
+  }
+  const submittedUserName = resolveSubmittedGuestName(submittedFirstName, submittedLastName);
+  user = await mergeSubmittedUserProfile(ctx, {
+    user,
+    clerkUserId,
+    identityPhoneNumber: identity.phoneNumber,
+    submittedPhoneNumber: args.phone,
+    submittedFirstName,
+    submittedLastName,
+    fallbackDisplayName: submittedUserName,
+    imageUrl: identity.pictureUrl ?? undefined,
+    now,
+  });
+  const userName = resolveUserDisplayName(user, submittedUserName);
+
+  // Upsert RSVP per (eventId, clerkUserId)
+  const existing = await ctx.db
+    .query("rsvps")
+    .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+    .filter((q) => q.eq(q.field("clerkUserId"), clerkUserId))
+    .unique();
+
+  const existingOrganizerSmsPreference = await resolveSmsOrganizerPreference(ctx, {
+    clerkUserId,
+    event,
+    siteKey: args.siteKey,
+  });
+  const resolvedSmsConsent = resolveRsvpSubmissionSmsConsent({
+    submittedSmsConsent: args.smsConsent,
+    submittedSmsConsentIpAddress: sanitizedSmsConsentIpAddress,
+    existingRsvp: existing,
+    organizerPreference: existingOrganizerSmsPreference,
+    now,
+  });
+  let wasAutomaticallyApproved = false;
+
+  if (!existing) {
+    const rsvpId = await ctx.db.insert("rsvps", {
+      eventId: args.eventId,
+      clerkUserId,
+      listKey: args.listKey,
+      ticketStatus: "not-issued",
+      userName, // For search functionality
+      note: args.note,
+      shareContact: args.shareContact,
+      attendees: requestedAttendees,
+      smsConsent: resolvedSmsConsent.smsConsent,
+      smsConsentTimestamp: resolvedSmsConsent.smsConsentTimestamp,
+      smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
+      customFieldValues:
+        sanitizedCustomFieldValues && Object.keys(sanitizedCustomFieldValues).length > 0
+          ? sanitizedCustomFieldValues
+          : undefined,
+      ...invitedByPatch,
+      ...(referralPatch ?? {}),
+      status: "pending",
+      approvalStatus: "pending",
+      attendanceStatus: event.attendanceQuestionEnabled ? submittedAttendanceStatus : "yes",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const finalizationResult = await finalizeRsvpSubmissionThroughSharedService(ctx, {
       event,
-      now,
+      rsvpId,
+      clerkUserId,
+      registeredUser: user ?? undefined,
       sanitizedSocialProfiles,
       configuredSocialPlatformKeys,
-      invitedByPatch,
-      referralPatch,
-      sanitizedCustomFieldValues,
-      requestedAttendees,
-      submittedAttendanceStatus,
-      sanitizedSmsConsentIpAddress,
-    } = await prepareRsvpSubmission(ctx, args, clerkUserId);
-    const submittedFirstName = args.firstName.trim();
-    const submittedLastName = args.lastName.trim();
-    if (!submittedFirstName) {
-      throw new Error("First name is required");
-    }
-    if (!submittedLastName) {
-      throw new Error("Last name is required");
-    }
-    const submittedUserName = resolveSubmittedGuestName(submittedFirstName, submittedLastName);
-    user = await mergeSubmittedUserProfile(ctx, {
-      user,
-      clerkUserId,
-      identityPhoneNumber: identity.phoneNumber,
-      submittedPhoneNumber: args.phone,
-      submittedFirstName,
-      submittedLastName,
-      fallbackDisplayName: submittedUserName,
-      imageUrl: identity.pictureUrl ?? undefined,
+      persistUserProfiles: true,
+      updateOrganizerPreference: resolvedSmsConsent.shouldUpdateOrganizerPreference,
+      organizerSiteKey: args.siteKey,
+      smsConsent: resolvedSmsConsent.smsConsent,
+      smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
+      tryAutomaticApproval: true,
       now,
     });
-    const userName = resolveUserDisplayName(user, submittedUserName);
+    wasAutomaticallyApproved = finalizationResult.wasAutomaticallyApproved;
+  } else {
+    // Prevent re-requesting the same denied list
+    if (resolveApprovalStatus(existing) === "denied" && existing.listKey === args.listKey) {
+      throw new Error("Denied for this list; try a different password");
+    }
+    // Get old state before update for aggregate sync
+    const oldRsvp = await ctx.db.get(existing._id);
 
-    // Upsert RSVP per (eventId, clerkUserId)
-    const existing = await ctx.db
-      .query("rsvps")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .filter((q) => q.eq(q.field("clerkUserId"), clerkUserId))
-      .unique();
-
-    const existingOrganizerSmsPreference = await resolveSmsOrganizerPreference(ctx, {
-      clerkUserId,
-      event,
-      siteKey: args.siteKey,
-    });
-    const resolvedSmsConsent = resolveRsvpSubmissionSmsConsent({
-      submittedSmsConsent: args.smsConsent,
-      submittedSmsConsentIpAddress: sanitizedSmsConsentIpAddress,
-      existingRsvp: existing,
-      organizerPreference: existingOrganizerSmsPreference,
-      now,
-    });
-    let wasAutomaticallyApproved = false;
-
-    if (!existing) {
-      const rsvpId = await ctx.db.insert("rsvps", {
-        eventId: args.eventId,
-        clerkUserId,
-        listKey: args.listKey,
-        ticketStatus: "not-issued",
-        userName, // For search functionality
-        note: args.note,
-        shareContact: args.shareContact,
-        attendees: requestedAttendees,
-        smsConsent: resolvedSmsConsent.smsConsent,
-        smsConsentTimestamp: resolvedSmsConsent.smsConsentTimestamp,
-        smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
-        customFieldValues:
-          sanitizedCustomFieldValues && Object.keys(sanitizedCustomFieldValues).length > 0
+    await ctx.db.patch(existing._id, {
+      listKey: args.listKey,
+      userName, // Keep userName in sync
+      note: args.note,
+      shareContact: args.shareContact,
+      attendees: requestedAttendees,
+      smsConsent: resolvedSmsConsent.smsConsent,
+      smsConsentTimestamp: resolvedSmsConsent.smsConsentTimestamp,
+      smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
+      customFieldValues:
+        sanitizedCustomFieldValues !== undefined
+          ? Object.keys(sanitizedCustomFieldValues).length > 0
             ? sanitizedCustomFieldValues
-            : undefined,
-        ...invitedByPatch,
-        ...(referralPatch ?? {}),
-        status: "pending",
-        approvalStatus: "pending",
-        attendanceStatus: event.attendanceQuestionEnabled ? submittedAttendanceStatus : "yes",
-        createdAt: now,
-        updatedAt: now,
-      });
+            : undefined
+          : existing.customFieldValues,
+      ...invitedByPatch,
+      ...(referralPatch ?? {}),
+      // Reset to pending when re-requesting (unless already approved)
+      status: resolveApprovalStatus(existing) === "approved" ? "approved" : "pending",
+      approvalStatus: resolveApprovalStatus(existing) === "approved" ? "approved" : "pending",
+      attendanceStatus: event.attendanceQuestionEnabled ? submittedAttendanceStatus : "yes",
+      updatedAt: now,
+    });
 
+    if (oldRsvp) {
       const finalizationResult = await finalizeRsvpSubmissionThroughSharedService(ctx, {
         event,
-        rsvpId,
+        rsvpId: existing._id,
+        previousRsvp: oldRsvp,
         clerkUserId,
         registeredUser: user ?? undefined,
         sanitizedSocialProfiles,
@@ -602,120 +616,57 @@ export const submitRequest = mutation({
         organizerSiteKey: args.siteKey,
         smsConsent: resolvedSmsConsent.smsConsent,
         smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
-        tryAutomaticApproval: true,
+        tryAutomaticApproval:
+          resolveApprovalStatus(oldRsvp) !== "approved" && oldRsvp.listKey !== args.listKey,
         now,
       });
       wasAutomaticallyApproved = finalizationResult.wasAutomaticallyApproved;
-    } else {
-      // Prevent re-requesting the same denied list
-      if (resolveApprovalStatus(existing) === "denied" && existing.listKey === args.listKey) {
-        throw new Error("Denied for this list; try a different password");
-      }
-      // Get old state before update for aggregate sync
-      const oldRsvp = await ctx.db.get(existing._id);
-
-      await ctx.db.patch(existing._id, {
-        listKey: args.listKey,
-        userName, // Keep userName in sync
-        note: args.note,
-        shareContact: args.shareContact,
-        attendees: requestedAttendees,
-        smsConsent: resolvedSmsConsent.smsConsent,
-        smsConsentTimestamp: resolvedSmsConsent.smsConsentTimestamp,
-        smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
-        customFieldValues:
-          sanitizedCustomFieldValues !== undefined
-            ? Object.keys(sanitizedCustomFieldValues).length > 0
-              ? sanitizedCustomFieldValues
-              : undefined
-            : existing.customFieldValues,
-        ...invitedByPatch,
-        ...(referralPatch ?? {}),
-        // Reset to pending when re-requesting (unless already approved)
-        status: resolveApprovalStatus(existing) === "approved" ? "approved" : "pending",
-        approvalStatus: resolveApprovalStatus(existing) === "approved" ? "approved" : "pending",
-        attendanceStatus: event.attendanceQuestionEnabled ? submittedAttendanceStatus : "yes",
-        updatedAt: now,
-      });
-
-      if (oldRsvp) {
-        const finalizationResult = await finalizeRsvpSubmissionThroughSharedService(ctx, {
-          event,
-          rsvpId: existing._id,
-          previousRsvp: oldRsvp,
-          clerkUserId,
-          registeredUser: user ?? undefined,
-          sanitizedSocialProfiles,
-          configuredSocialPlatformKeys,
-          persistUserProfiles: true,
-          updateOrganizerPreference: resolvedSmsConsent.shouldUpdateOrganizerPreference,
-          organizerSiteKey: args.siteKey,
-          smsConsent: resolvedSmsConsent.smsConsent,
-          smsConsentIpAddress: resolvedSmsConsent.smsConsentIpAddress,
-          tryAutomaticApproval:
-            resolveApprovalStatus(oldRsvp) !== "approved" && oldRsvp.listKey !== args.listKey,
-          now,
-        });
-        wasAutomaticallyApproved = finalizationResult.wasAutomaticallyApproved;
-      }
     }
+  }
 
-    if (resolvedSmsConsent.smsConsentChange) {
-      await ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
+  if (resolvedSmsConsent.smsConsentChange) {
+    await ctx.scheduler.runAfter(0, api.notifications.sendSmsConsentStatusMessage, {
+      eventId: args.eventId,
+      clerkUserId,
+      consentEnabled: resolvedSmsConsent.smsConsentChange === "enabled",
+      organizerName: existingOrganizerSmsPreference.organizerName,
+    });
+  }
+
+  const rsvpConfirmationMessage =
+    !existing && resolvedSmsConsent.smsConsent && !wasAutomaticallyApproved
+      ? formatRsvpConfirmationMessage(
+          event,
+          {
+            firstName: user?.firstName ?? submittedFirstName,
+            lastName: user?.lastName ?? submittedLastName,
+            fullName: userName,
+          },
+          { organizerName: existingOrganizerSmsPreference.organizerName },
+        )
+      : undefined;
+  if (rsvpConfirmationMessage) {
+    await ctx.scheduler.runAfter(
+      resolvedSmsConsent.smsConsentChange === "enabled" ? 1000 : 0,
+      api.notifications.sendRsvpConfirmationSms,
+      {
         eventId: args.eventId,
         clerkUserId,
-        consentEnabled: resolvedSmsConsent.smsConsentChange === "enabled",
-        organizerName: existingOrganizerSmsPreference.organizerName,
-      });
-    }
+        message: rsvpConfirmationMessage,
+      },
+    );
+  }
 
-    const rsvpConfirmationMessage =
-      !existing && resolvedSmsConsent.smsConsent && !wasAutomaticallyApproved
-        ? formatRsvpConfirmationMessage(
-            event,
-            {
-              firstName: user?.firstName ?? submittedFirstName,
-              lastName: user?.lastName ?? submittedLastName,
-              fullName: userName,
-            },
-            { organizerName: existingOrganizerSmsPreference.organizerName },
-          )
-        : undefined;
-    if (rsvpConfirmationMessage) {
-      await ctx.scheduler.runAfter(
-        resolvedSmsConsent.smsConsentChange === "enabled" ? 1000 : 0,
-        api.notifications.sendRsvpConfirmationSms,
-        {
-          eventId: args.eventId,
-          clerkUserId,
-          message: rsvpConfirmationMessage,
-        },
-      );
-    }
+  return { ok: true as const };
+}
 
-    return { ok: true as const };
-  },
+export const submitRequest = mutation({
+  args: authenticatedRsvpSubmissionFields,
+  handler: submitAuthenticatedRequest,
 });
 
 export const submitGuestRequest = mutation({
-  args: {
-    eventId: v.id("events"),
-    siteKey: v.optional(v.string()),
-    listKey: v.string(),
-    firstName: v.string(),
-    lastName: v.string(),
-    phone: v.string(),
-    note: v.optional(v.string()),
-    shareContact: v.boolean(),
-    attendees: v.optional(v.number()),
-    attendanceStatus: v.optional(v.union(v.literal("yes"), v.literal("no"), v.literal("maybe"))),
-    smsConsent: v.optional(v.boolean()),
-    smsConsentIpAddress: v.optional(v.string()),
-    customFields: v.optional(v.record(v.string(), v.string())),
-    socialProfiles: v.optional(v.array(submittedSocialProfileValidator)),
-    invitedByName: v.optional(v.string()),
-    referralCode: v.optional(v.string()),
-  },
+  args: guestRsvpSubmissionFields,
   handler: async (ctx, args) => {
     const submittedFirstName = args.firstName.trim();
     const submittedLastName = args.lastName.trim();
@@ -947,11 +898,106 @@ export const resolveGuestRsvpHandoff = query({
       rsvpId: handoff.rsvpId,
       phoneNumber: handoff.phoneNumber,
       expiresAt: handoff.expiresAt,
-      canAutoSendCode: await canAutoSendGuestRsvpHandoffCode(ctx, {
-        phoneNumber: handoff.phoneNumber,
-        phoneHash: handoff.phoneHash,
-      }),
+      canAutoSendCode: true,
     } as const;
+  },
+});
+
+/** Save form data only. RSVP records, capacity, and notifications wait for verified authentication. */
+export const prepareGuestRequest = mutation({
+  args: guestRsvpSubmissionFields,
+  handler: async (ctx, args) => {
+    const firstName = args.firstName.trim();
+    const lastName = args.lastName.trim();
+    if (!firstName || !lastName) throw new Error("First and last name are required");
+    const { normalizedPhoneNumber, phoneHash } = await normalizeAndHashPhoneNumber(args.phone);
+    const { now } = await prepareRsvpSubmission(ctx, args, buildGuestClerkUserId(phoneHash));
+    const list = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", args.eventId))
+      .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("listKey"), args.listKey))
+      .first();
+    if (!list) throw new Error("This RSVP list is no longer available.");
+    const rsvpHandoffToken = generateRsvpHandoffToken();
+    const expiresAt = now + RSVP_HANDOFF_TTL_MS;
+    await ctx.db.insert("rsvpGuestHandoffs", {
+      tokenHash: await hashOpaqueValue(rsvpHandoffToken),
+      submission: { ...args, firstName, lastName, phone: normalizedPhoneNumber },
+      phoneNumber: normalizedPhoneNumber,
+      phoneHash,
+      createdAt: now,
+      expiresAt,
+    });
+    return { rsvpHandoffToken, expiresAt };
+  },
+});
+
+export const completeGuestRequest = internalMutation({
+  args: { token: v.string(), verifiedPhoneNumbers: v.array(v.string()) },
+  handler: async (ctx, { token, verifiedPhoneNumbers }): Promise<{ rsvpId: Id<"rsvps"> }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Please verify your phone number first.");
+    const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
+    const tokenHash = await hashOpaqueValue(token.trim());
+    const handoff = await ctx.db
+      .query("rsvpGuestHandoffs")
+      .withIndex("by_tokenHash", (queryBuilder) => queryBuilder.eq("tokenHash", tokenHash))
+      .unique();
+    if (!handoff) throw new Error("Your RSVP draft was not found. Please return to the event.");
+    if (handoff.rsvpId && handoff.submittedByClerkUserId === clerkUserId)
+      return { rsvpId: handoff.rsvpId };
+    if (handoff.usedAt || !handoff.submission)
+      throw new Error("This RSVP draft has already been used.");
+    if (handoff.expiresAt <= Date.now())
+      throw new Error("Your RSVP draft expired. Please return to the event and try again.");
+    const verifiedPhoneHashes = await Promise.all(
+      verifiedPhoneNumbers.map(
+        async (phone) => (await normalizeAndHashPhoneNumber(phone)).phoneHash,
+      ),
+    );
+    if (!verifiedPhoneHashes.includes(handoff.phoneHash))
+      throw new Error("Please sign in with the phone number on your RSVP.");
+    const submission = handoff.submission;
+    const list = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", submission.eventId))
+      .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("listKey"), submission.listKey))
+      .first();
+    if (!list) throw new Error("This RSVP list is no longer available.");
+    await submitAuthenticatedRequest(ctx, submission);
+    const rsvp = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event_user", (queryBuilder) =>
+        queryBuilder.eq("eventId", submission.eventId).eq("clerkUserId", clerkUserId),
+      )
+      .unique();
+    if (!rsvp) throw new Error("Unable to finish your RSVP. Please try again.");
+    await ctx.db.patch(handoff._id, {
+      rsvpId: rsvp._id,
+      submittedByClerkUserId: clerkUserId,
+      submission: undefined,
+      usedAt: Date.now(),
+    });
+    return { rsvpId: rsvp._id };
+  },
+});
+
+export const finalizeGuestRequest = action({
+  args: { token: v.string() },
+  handler: async (ctx, { token }): Promise<{ rsvpId: Id<"rsvps"> }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Please verify your phone number first.");
+    const secretKey = process.env.CLERK_SECRET_KEY;
+    if (!secretKey)
+      throw new Error("Phone verification is temporarily unavailable. Please try again.");
+    const clerkUser = await createClerkClient({ secretKey }).users.getUser(identity.subject);
+    const verifiedPhoneNumbers = clerkUser.phoneNumbers
+      .filter((phone) => phone.verification?.status === "verified")
+      .map((phone) => phone.phoneNumber);
+    return await ctx.runMutation(internal.rsvps.completeGuestRequest, {
+      token,
+      verifiedPhoneNumbers,
+    });
   },
 });
 
@@ -1620,11 +1666,7 @@ export const updateSmsPreference = mutation({
         sourceRsvpId,
         now,
       });
-      if (
-        existingOrganizerPreference.smsConsent === smsConsent ||
-        (smsConsent && existingOrganizerPreference.firstSmsOptInAt !== undefined)
-      )
-        return;
+      if (!resolveSmsConsentChange(existingOrganizerPreference.smsConsent, smsConsent)) return;
 
       const organizerKey = existingOrganizerPreference.organizerKey ?? `event:${event._id}`;
       if (!notificationsByOrganizer.has(organizerKey)) {
@@ -3534,43 +3576,7 @@ export const updateRsvpListKey = mutation({
       workspaceSlug: args.workspaceSlug,
     });
 
-    // Get old state before update for aggregate sync
-    const oldRsvp = await ctx.db.get(args.rsvpId);
-
-    await ctx.db.patch(args.rsvpId, {
-      listKey: args.listKey,
-    });
-
-    // Sync with aggregate
-    const newRsvp = await ctx.db.get(args.rsvpId);
-    if (oldRsvp && newRsvp) {
-      await updateRsvpInAggregate(ctx, oldRsvp, newRsvp);
-    }
-
-    // Update related records with the new list key
-    // Update redemption record if it exists
-    const redemption = await ctx.db
-      .query("redemptions")
-      .withIndex("by_event_user", (q) =>
-        q.eq("eventId", rsvp.eventId).eq("clerkUserId", rsvp.clerkUserId),
-      )
-      .unique();
-    if (redemption) {
-      await ctx.db.patch(redemption._id, {
-        listKey: args.listKey,
-      });
-    }
-
-    // Update approval records if they exist
-    const approvals = await ctx.db
-      .query("approvals")
-      .filter((q) => q.eq(q.field("rsvpId"), args.rsvpId))
-      .collect();
-    for (const approval of approvals) {
-      await ctx.db.patch(approval._id, {
-        listKey: args.listKey,
-      });
-    }
+    await updateRsvpListKeyRecords(ctx, rsvp, args.listKey);
 
     return { status: "ok" as const };
   },
@@ -3596,59 +3602,27 @@ export const bulkUpdateListKey = mutation({
 
     const results = { success: 0, failed: 0, errors: [] as string[] };
 
-    // Process all updates in a single transaction
     for (const update of args.updates) {
-      try {
-        const rsvp = await ctx.db.get(update.rsvpId);
-        if (!rsvp) {
-          results.failed++;
-          results.errors.push(`RSVP ${update.rsvpId} not found`);
-          continue;
-        }
-        await ensureEventInSiteScope(ctx, rsvp.eventId, {
-          siteKey: args.siteKey,
-          workspaceSlug: args.workspaceSlug,
-        });
-
-        // Get old state before update for aggregate sync
-        const oldRsvp = await ctx.db.get(update.rsvpId);
-
-        // Update RSVP
-        await ctx.db.patch(update.rsvpId, { listKey: update.listKey });
-
-        // Sync with aggregate
-        const newRsvp = await ctx.db.get(update.rsvpId);
-        if (oldRsvp && newRsvp) {
-          await updateRsvpInAggregate(ctx, oldRsvp, newRsvp);
-        }
-
-        // Update related redemption if exists
-        const redemption = await ctx.db
-          .query("redemptions")
-          .withIndex("by_event_user", (q) =>
-            q.eq("eventId", rsvp.eventId).eq("clerkUserId", rsvp.clerkUserId),
-          )
-          .unique();
-        if (redemption) {
-          await ctx.db.patch(redemption._id, { listKey: update.listKey });
-        }
-
-        // Update approvals
-        const approvals = await ctx.db
-          .query("approvals")
-          .filter((q) => q.eq(q.field("rsvpId"), update.rsvpId))
-          .collect();
-        for (const approval of approvals) {
-          await ctx.db.patch(approval._id, { listKey: update.listKey });
-        }
-
-        results.success++;
-      } catch (error) {
+      const rsvp = await ctx.db.get(update.rsvpId);
+      if (!rsvp) {
         results.failed++;
-        results.errors.push(
-          `Failed to update ${update.rsvpId}: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        results.errors.push(`RSVP ${update.rsvpId} not found`);
+        continue;
       }
+      const event = await getEventInSiteScope(ctx, rsvp.eventId, {
+        siteKey: args.siteKey,
+        workspaceSlug: args.workspaceSlug,
+      });
+      if (!event) {
+        results.failed++;
+        results.errors.push(`Failed to update ${update.rsvpId}: Event not found`);
+        continue;
+      }
+
+      // Only validation failures above are recoverable per RSVP. Let write errors
+      // abort the transaction so related records and aggregate entries roll back.
+      await updateRsvpListKeyRecords(ctx, rsvp, update.listKey);
+      results.success++;
     }
 
     return results;

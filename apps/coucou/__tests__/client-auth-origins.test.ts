@@ -5,6 +5,21 @@ import {
 } from "../lib/client-auth-origins";
 
 describe("client auth origins", () => {
+  for (const [requestOrigin, satelliteOrigin] of [
+    ["http://localhost:5680", "http://localhost:5678"],
+    ["https://dev.coucou.events", "https://dev.dojopomodoro.club"],
+    ["https://coucou-preview.vercel.app", "https://dojo-preview.vercel.app"],
+    ["https://coucou.events", "https://dojopomodoro.club"],
+  ]) {
+    it(`keeps the Dojo return origin in the ${requestOrigin} context`, () => {
+      const context = {
+        requestOrigin,
+        candidateOrigins: [`${satelliteOrigin}/events/night/status?ref=friend`],
+      };
+      expect(buildClientAuthAllowedRedirectOrigins("dojo", context)).toContain(satelliteOrigin);
+      expect(resolveSatelliteHomeUrl("dojo", context)).toBe(`${satelliteOrigin}/`);
+    });
+  }
   it("allows Club Chlorine primary and backup production origins", () => {
     const allowedRedirectOrigins = buildClientAuthAllowedRedirectOrigins("club-chlorine");
 

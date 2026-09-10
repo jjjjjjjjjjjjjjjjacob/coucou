@@ -229,14 +229,17 @@ describe("contact audience selection", () => {
   it("starts with no recipients and preserves explicit selections across pages and sorting", () => {
     render(<Picker />);
     expect(screen.getByLabelText("Audience").textContent).toBe("null");
+    expect(screen.getByText("0 people selected")).toBeTruthy();
     expect(screen.getByText("Showing 1-1 contacts (filtered)")).toBeTruthy();
     expect(screen.getByText("Page 1")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Ada"));
+    expect(screen.getByText("1 person selected")).toBeTruthy();
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Showing 21-21 contacts (filtered)")).toBeTruthy();
     expect(screen.getByText("Page 2")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Bea"));
     fireEvent.click(screen.getByText("Change sort"));
+    expect(screen.getByText("2 people selected")).toBeTruthy();
     expect(JSON.parse(screen.getByLabelText("Audience").textContent ?? "null")).toEqual({
       type: "contacts",
       contactIds: ["contact_0", "contact_1"],
@@ -270,11 +273,12 @@ describe("contact audience selection", () => {
     });
     const audience = JSON.parse(screen.getByLabelText("Audience").textContent ?? "null");
     expect(audience).toEqual({ type: "filter", filters: { smsConsentFilter: "consented" } });
-    expect(await screen.findByText("460 selected of 460 eligible (3 not eligible)")).toBeTruthy();
+    expect(await screen.findByText("463 people selected")).toBeTruthy();
     fireEvent.click(screen.getByText("Change sort"));
     expect(JSON.parse(screen.getByLabelText("Audience").textContent ?? "null")).toEqual(audience);
     fireEvent.click(screen.getByText("Clear selection"));
     expect(screen.getByLabelText("Audience").textContent).toBe("null");
+    expect(screen.getByText("0 people selected")).toBeTruthy();
   });
 
   it("shows a retryable query error without presenting an empty directory", () => {
