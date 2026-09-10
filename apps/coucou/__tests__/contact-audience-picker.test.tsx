@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { Id } from "@convex/_generated/dataModel";
 import type { ContactAudience } from "@convex/lib/contactValidators";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import { useState } from "react";
 import type { GuestDirectoryFilterState } from "../lib/text-blast-filters";
@@ -10,17 +10,25 @@ let directoryError: string | null = null;
 const retry = mock(async () => undefined);
 const workspace = { workspaceSlug: "dojo-pomodoro", queryArgs: { workspaceSlug: "dojo-pomodoro" } };
 
-mock.module("@/lib/use-workspace-scope", () => ({ useWorkspaceScope: () => workspace }));
+mock.module("@/lib/use-workspace-scope", () => ({
+  useWorkspaceScope: () => workspace,
+  useWorkspaceOperationPath: () => "/workspaces/dojo-pomodoro/host/guests",
+}));
+const savePreference = mock(async () => undefined);
 mock.module("@convex-dev/react-query", () => ({
+  useConvexMutation: () => savePreference,
   convexQuery: (reference: Parameters<typeof getFunctionName>[0]) => ({
     queryKey: [getFunctionName(reference)],
   }),
 }));
 mock.module("@tanstack/react-query", () => ({
+  useMutation: () => ({ mutateAsync: savePreference }),
   useQuery: ({ queryKey }: { queryKey: string[] }) => ({
-    data: queryKey[0].includes("Facets")
-      ? { events: [], tags: [], defaultListKeys: [], customFieldOptions: [] }
-      : [],
+    data: queryKey[0].includes("TablePreference")
+      ? null
+      : queryKey[0].includes("Facets")
+        ? { events: [], tags: [], defaultListKeys: [], customFieldOptions: [] }
+        : [],
     error: null,
   }),
 }));
@@ -81,6 +89,11 @@ mock.module("@/lib/hooks/use-contact-directory", () => ({
               hasPhone: true,
               hasOptedOut: false,
               eventCount: 2,
+              eventsAttendedCount: 1,
+              events: [],
+              socialProfiles: [
+                { platformKey: "instagram", handle: "ada", normalizedHandle: "ada" },
+              ],
             },
           ],
       configured: true,
@@ -98,6 +111,15 @@ mock.module("@/lib/hooks/use-contact-directory", () => ({
 
 const { ContactAudiencePicker } = await import("../components/guests/contact-audience-picker");
 const { HapticProvider } = await import("../contexts/haptic-context");
+const { useDashboardTableColumnLayout } = await import(
+  "../lib/hooks/use-dashboard-table-column-layout"
+);
+const { GUEST_DIRECTORY_COLUMN_IDS, GUEST_DIRECTORY_DEFAULT_VISIBLE_COLUMN_IDS } = await import(
+  "../lib/guest-directory-columns"
+);
+const { HOST_GUEST_DIRECTORY_TABLE_KEY, HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY } = await import(
+  "../lib/dashboard-table-preferences"
+);
 
 function Picker() {
   const [audience, setAudience] = useState<ContactAudience | null>(null);
@@ -109,12 +131,73 @@ function Picker() {
   );
 }
 
+let testNumber = 0;
 beforeEach(() => {
+  workspace.workspaceSlug = `picker-test-${++testNumber}`;
+  workspace.queryArgs.workspaceSlug = workspace.workspaceSlug;
   directoryError = null;
   retry.mockClear();
 });
 
 describe("contact audience selection", () => {
+  it("shares Contacts layout changes immediately and keeps them when the picker reopens", () => {
+    const contactsLayout = renderHook(() =>
+      useDashboardTableColumnLayout({
+        tableKey: HOST_GUEST_DIRECTORY_TABLE_KEY,
+        scopeKey: HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
+        availableColumnIds: GUEST_DIRECTORY_COLUMN_IDS,
+        defaultVisibleColumnIds: GUEST_DIRECTORY_DEFAULT_VISIBLE_COLUMN_IDS,
+        queryArgs: workspace.queryArgs,
+        isEnabled: true,
+      }),
+    );
+    const picker = render(<Picker />);
+    expect(screen.getByRole("link", { name: "Instagram: @ada" }).getAttribute("href")).toBe(
+      "https://instagram.com/ada",
+    );
+    act(() => {
+      contactsLayout.result.current.setHiddenColumnIds(["notes", "events"]);
+      contactsLayout.result.current.onColumnSizingChange({ person: 320 });
+    });
+    expect(screen.queryByRole("columnheader", { name: /^Notes(?: |$)/ })).toBeNull();
+    expect(screen.getByRole("columnheader", { name: /^Contact(?: |$)/ }).style.width).toBe("320px");
+
+    const tagsHeader = screen.getByRole("columnheader", { name: /^Tags(?: |$)/ });
+    fireEvent.dragStart(tagsHeader.querySelector("[draggable]") as HTMLElement, {
+      dataTransfer: { setData: () => undefined, setDragImage: () => undefined },
+    });
+    fireEvent.drop(screen.getByRole("columnheader", { name: /^Contact(?: |$)/ }));
+    expect(contactsLayout.result.current.columnOrder.slice(0, 3)).toEqual([
+      "select",
+      "tags",
+      "person",
+    ]);
+    const headers = screen.getAllByRole("columnheader").map((header) => header.title);
+    picker.unmount();
+    contactsLayout.unmount();
+    render(<Picker />);
+    expect(screen.getAllByRole("columnheader").map((header) => header.title)).toEqual(headers);
+    expect(screen.getByRole("columnheader", { name: /^Contact(?: |$)/ }).style.width).toBe("320px");
+    expect(screen.queryByRole("columnheader", { name: /^Notes(?: |$)/ })).toBeNull();
+  });
+
+  it("resizes columns without changing recipient selections", () => {
+    render(<Picker />);
+    fireEvent.click(screen.getByLabelText("Select Ada"));
+    const contactHeader = screen.getByRole("columnheader", { name: /^Contact(?: |$)/ });
+    const initialWidth = Number.parseFloat(contactHeader.style.width);
+    fireEvent.mouseDown(screen.getByRole("separator", { name: "Resize Contact column" }), {
+      clientX: 100,
+    });
+    fireEvent.mouseMove(document, { clientX: 180 });
+    fireEvent.mouseUp(document, { clientX: 180 });
+    expect(Number.parseFloat(contactHeader.style.width)).toBe(initialWidth + 80);
+    expect(JSON.parse(screen.getByLabelText("Audience").textContent ?? "null")).toEqual({
+      type: "contacts",
+      contactIds: ["contact_0"],
+    });
+  });
+
   it("starts with no recipients and preserves explicit selections across pages and sorting", () => {
     render(<Picker />);
     expect(screen.getByLabelText("Audience").textContent).toBe("null");

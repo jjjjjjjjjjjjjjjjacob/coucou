@@ -370,6 +370,7 @@ function resolveRsvpSubmissionSmsConsent({
     smsConsent: boolean;
     smsConsentTimestamp?: number;
     smsConsentIpAddress?: string;
+    firstSmsOptInAt?: number;
   };
   now: number;
 }): ResolvedRsvpSubmissionSmsConsent {
@@ -385,7 +386,9 @@ function resolveRsvpSubmissionSmsConsent({
     ? (submittedSmsConsentIpAddress ?? priorSmsConsentIpAddress)
     : priorSmsConsentIpAddress;
   const smsConsentChange =
-    !shouldUpdateOrganizerPreference || smsConsent === organizerPreference.smsConsent
+    !shouldUpdateOrganizerPreference ||
+    smsConsent === organizerPreference.smsConsent ||
+    (smsConsent && organizerPreference.firstSmsOptInAt !== undefined)
       ? null
       : smsConsent
         ? "enabled"
@@ -1617,7 +1620,11 @@ export const updateSmsPreference = mutation({
         sourceRsvpId,
         now,
       });
-      if (existingOrganizerPreference.smsConsent === smsConsent) return;
+      if (
+        existingOrganizerPreference.smsConsent === smsConsent ||
+        (smsConsent && existingOrganizerPreference.firstSmsOptInAt !== undefined)
+      )
+        return;
 
       const organizerKey = existingOrganizerPreference.organizerKey ?? `event:${event._id}`;
       if (!notificationsByOrganizer.has(organizerKey)) {

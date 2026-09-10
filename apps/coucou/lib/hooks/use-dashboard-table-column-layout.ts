@@ -1,16 +1,16 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { ColumnSizingState, OnChangeFn, VisibilityState } from "@tanstack/react-table";
 import React from "react";
+import { getDashboardTablePreferenceStore } from "@/lib/dashboard-table-preference-store";
 import {
-  areDashboardTableColumnIdsEqual,
   mergeDashboardTablePreferenceState,
   moveDashboardTableColumnId,
   serializeDashboardTablePreferenceState,
-  shouldHydrateDashboardTablePreferenceState,
 } from "@/lib/dashboard-table-preferences";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 
@@ -58,199 +58,144 @@ interface UseDashboardTableColumnLayoutOptions {
   queryArgs: { siteKey?: string; workspaceSlug?: string };
 }
 
-/**
- * Owns a dashboard table's column order, visibility, sizing, and header
- * drag-to-reorder state, persisting order + visibility (never widths) per
- * user via dashboardPreferences. Extracted from the GuestManager pattern in
- * host/rsvps/page.tsx so other tables can reuse it; migrating GuestManager
- * itself onto this hook is a flagged follow-up.
- */
+/** Shares a browser/user/workspace layout immediately; account preferences seed new browsers. */
 export function useDashboardTableColumnLayout(
   options: UseDashboardTableColumnLayoutOptions,
 ): DashboardTableColumnLayout {
-  const availableColumnIdSignature = options.availableColumnIds.join("");
+  const { userId } = useAuth();
+  const storageKey = JSON.stringify([
+    "dashboard-table-layout-v1",
+    userId,
+    options.queryArgs.workspaceSlug ?? options.queryArgs.siteKey,
+    options.tableKey,
+    options.scopeKey,
+  ]);
+  const store = React.useMemo(() => getDashboardTablePreferenceStore(storageKey), [storageKey]);
+  const browserPreference = React.useSyncExternalStore(
+    store.subscribe,
+    store.getSnapshot,
+    () => null,
+  );
+  const availableColumnIdSignature = options.availableColumnIds.join("\u001e");
+  const defaultVisibleColumnIdSignature = options.defaultVisibleColumnIds.join("\u001e");
   const availableColumnIds = React.useMemo(
     () => [...options.availableColumnIds],
     [availableColumnIdSignature],
   );
-  const defaultVisibleColumnIdSignature = options.defaultVisibleColumnIds.join("");
   const defaultVisibleColumnIds = React.useMemo(
     () => [...options.defaultVisibleColumnIds],
     [defaultVisibleColumnIdSignature],
   );
-
-  const [columnOrder, setColumnOrder] = React.useState<string[]>(() => [...availableColumnIds]);
-  const [hiddenColumnIds, setHiddenColumnIdsState] = React.useState<string[]>(() =>
-    availableColumnIds.filter((columnId) => !defaultVisibleColumnIds.includes(columnId)),
-  );
-  const [columnSizing, setColumnSizing] = React.useState<ColumnSizingState>({});
-  const [hasHydratedPreference, setHasHydratedPreference] = React.useState(false);
-
-  const hasPendingLocalPreferenceEditRef = React.useRef(false);
-  const lastSavedPreferenceSignatureRef = React.useRef<string | null>(null);
-  const hydratedPreferenceKeyRef = React.useRef<string | null>(null);
-  const previousStructureSignatureRef = React.useRef(availableColumnIdSignature);
-
-  React.useEffect(() => {
-    if (previousStructureSignatureRef.current === availableColumnIdSignature) {
-      return;
-    }
-    previousStructureSignatureRef.current = availableColumnIdSignature;
-    hasPendingLocalPreferenceEditRef.current = false;
-    hydratedPreferenceKeyRef.current = null;
-    setColumnSizing({});
-  }, [availableColumnIdSignature]);
-
+  const isEnabled = options.isEnabled && Boolean(userId);
   const savedPreferenceQuery = useQuery({
     ...convexQuery(api.dashboardPreferences.getCurrentUserTablePreference, {
       tableKey: options.tableKey,
       scopeKey: options.scopeKey,
       ...options.queryArgs,
     }),
-    enabled: options.isEnabled,
+    enabled: isEnabled,
   });
-  const savedPreference = savedPreferenceQuery.data as
-    | { columnOrder?: string[]; hiddenColumnIds?: string[] }
-    | null
-    | undefined;
-  const savedPreferenceSignature =
-    savedPreference === undefined
-      ? ""
-      : serializeDashboardTablePreferenceState(
-          savedPreference?.columnOrder ?? [],
-          savedPreference?.hiddenColumnIds ?? [],
-        );
+  const savedPreference = savedPreferenceQuery.data;
+  const preference = React.useMemo(() => {
+    const source = browserPreference ?? savedPreference;
+    const merged = mergeDashboardTablePreferenceState({
+      availableColumnIds,
+      defaultVisibleColumnIds,
+      savedColumnOrder: source?.columnOrder,
+      hiddenColumnIds: source?.hiddenColumnIds,
+    });
+    return {
+      columnOrder: merged.columnOrder,
+      hiddenColumnIds: merged.hiddenColumnIds,
+      columnSizing: browserPreference?.columnSizing ?? {},
+    };
+  }, [availableColumnIds, defaultVisibleColumnIds, browserPreference, savedPreference]);
+  const { columnOrder, hiddenColumnIds, columnSizing } = preference;
+
+  // Persist synchronously on each edit, before navigation can unmount either table.
+  // Both mounted views subscribe to this store, including a blast opened from Contacts.
+  const updatePreference = React.useCallback(
+    (patch: Partial<typeof preference>) => {
+      if (isEnabled) store.set({ ...preference, ...store.getSnapshot(), ...patch });
+    },
+    [isEnabled, preference, store],
+  );
+  const setColumnOrder = React.useCallback(
+    (updater: (previous: string[]) => string[]) => {
+      updatePreference({ columnOrder: updater(columnOrder) });
+    },
+    [columnOrder, updatePreference],
+  );
+  const setHiddenColumnIds = React.useCallback(
+    (nextHiddenColumnIds: string[]) => {
+      updatePreference({ hiddenColumnIds: nextHiddenColumnIds });
+    },
+    [updatePreference],
+  );
+  const onColumnSizingChange = React.useCallback<OnChangeFn<ColumnSizingState>>(
+    (updater) => {
+      const previous = store.getSnapshot()?.columnSizing ?? columnSizing;
+      updatePreference({
+        columnSizing: typeof updater === "function" ? updater(previous) : updater,
+      });
+    },
+    [columnSizing, store, updatePreference],
+  );
 
   const saveTablePreference = useMutation({
     mutationFn: useConvexMutation(api.dashboardPreferences.upsertCurrentUserTablePreference),
   });
   const saveTablePreferenceAsync = saveTablePreference.mutateAsync;
+  const preferenceSignature = serializeDashboardTablePreferenceState(columnOrder, hiddenColumnIds);
+  const debouncedSignature = useDebounce(preferenceSignature, PREFERENCE_SAVE_DEBOUNCE_MS);
+  const lastSaveAttempt = React.useRef<string | null>(null);
 
-  const preferencePayload = React.useMemo(() => {
-    const normalizedColumnOrder = columnOrder.filter((columnId) =>
-      availableColumnIds.includes(columnId),
-    );
-    const missingColumnIds = availableColumnIds.filter(
-      (columnId) => !normalizedColumnOrder.includes(columnId),
-    );
-    const completeColumnOrder = [...normalizedColumnOrder, ...missingColumnIds];
-    const normalizedHiddenColumnIds = availableColumnIds.filter((columnId) =>
-      hiddenColumnIds.includes(columnId),
-    );
-
-    return {
-      columnOrder: completeColumnOrder,
-      hiddenColumnIds: normalizedHiddenColumnIds,
-      signature: serializeDashboardTablePreferenceState(
-        completeColumnOrder,
-        normalizedHiddenColumnIds,
-      ),
-    };
-  }, [availableColumnIds, columnOrder, hiddenColumnIds]);
-
-  // Hydrate saved preferences (skipped while unsaved local edits are pending).
   React.useEffect(() => {
-    if (savedPreference === undefined || availableColumnIds.length === 0) {
-      return;
-    }
     if (
-      !shouldHydrateDashboardTablePreferenceState({
-        currentPreferenceSignature: preferencePayload.signature,
-        savedPreferenceSignature,
-        hasLocalPreferenceEdits: hasPendingLocalPreferenceEditRef.current,
-      })
-    ) {
+      !isEnabled ||
+      !browserPreference ||
+      savedPreference === undefined ||
+      debouncedSignature !== preferenceSignature
+    )
       return;
-    }
-    if (preferencePayload.signature === savedPreferenceSignature) {
-      hasPendingLocalPreferenceEditRef.current = false;
-    }
-    const hydrationKey = [availableColumnIdSignature, savedPreferenceSignature].join("");
-    if (hydratedPreferenceKeyRef.current === hydrationKey) {
-      return;
-    }
-    hydratedPreferenceKeyRef.current = hydrationKey;
-
-    const mergedPreferenceState = mergeDashboardTablePreferenceState({
-      availableColumnIds,
-      defaultVisibleColumnIds,
-      savedColumnOrder: savedPreference?.columnOrder,
-      hiddenColumnIds: savedPreference?.hiddenColumnIds,
-    });
-
-    setColumnOrder((previousColumnOrder) =>
-      areDashboardTableColumnIdsEqual(previousColumnOrder, mergedPreferenceState.columnOrder)
-        ? previousColumnOrder
-        : mergedPreferenceState.columnOrder,
-    );
-    setHiddenColumnIdsState((previousHiddenColumnIds) =>
-      areDashboardTableColumnIdsEqual(
-        previousHiddenColumnIds,
-        mergedPreferenceState.hiddenColumnIds,
-      )
-        ? previousHiddenColumnIds
-        : mergedPreferenceState.hiddenColumnIds,
-    );
-    lastSavedPreferenceSignatureRef.current = serializeDashboardTablePreferenceState(
-      mergedPreferenceState.columnOrder,
-      mergedPreferenceState.hiddenColumnIds,
-    );
-    hasPendingLocalPreferenceEditRef.current = false;
-    setHasHydratedPreference(true);
-  }, [
-    availableColumnIdSignature,
-    availableColumnIds,
-    defaultVisibleColumnIds,
-    preferencePayload.signature,
-    savedPreference,
-    savedPreferenceSignature,
-  ]);
-
-  const debouncedPreferencePayload = useDebounce(preferencePayload, PREFERENCE_SAVE_DEBOUNCE_MS);
-
-  React.useEffect(() => {
-    if (!options.isEnabled || savedPreference === undefined) {
-      return;
-    }
-    if (debouncedPreferencePayload.signature !== preferencePayload.signature) {
-      return;
-    }
-    if (lastSavedPreferenceSignatureRef.current === debouncedPreferencePayload.signature) {
-      return;
-    }
-
-    lastSavedPreferenceSignatureRef.current = debouncedPreferencePayload.signature;
+    const savedSignature =
+      savedPreference === null
+        ? null
+        : serializeDashboardTablePreferenceState(
+            savedPreference.columnOrder,
+            savedPreference.hiddenColumnIds,
+          );
+    const saveKey = storageKey + preferenceSignature;
+    if (savedSignature === preferenceSignature || lastSaveAttempt.current === saveKey) return;
+    lastSaveAttempt.current = saveKey;
     void saveTablePreferenceAsync({
       tableKey: options.tableKey,
       scopeKey: options.scopeKey,
-      columnOrder: debouncedPreferencePayload.columnOrder,
-      hiddenColumnIds: debouncedPreferencePayload.hiddenColumnIds,
+      columnOrder,
+      hiddenColumnIds,
       ...options.queryArgs,
     }).catch((error: unknown) => {
-      lastSavedPreferenceSignatureRef.current = null;
-      console.error("Failed to save table preferences", error);
+      lastSaveAttempt.current = null;
+      console.error("Failed to save account table preferences", error);
     });
   }, [
-    debouncedPreferencePayload,
-    options.isEnabled,
-    options.queryArgs,
-    options.scopeKey,
-    options.tableKey,
-    preferencePayload.signature,
+    isEnabled,
+    browserPreference,
     savedPreference,
+    debouncedSignature,
+    preferenceSignature,
+    storageKey,
+    columnOrder,
+    hiddenColumnIds,
+    options.tableKey,
+    options.scopeKey,
+    options.queryArgs,
     saveTablePreferenceAsync,
   ]);
 
-  const setHiddenColumnIds = React.useCallback((nextHiddenColumnIds: string[]) => {
-    hasPendingLocalPreferenceEditRef.current = true;
-    setHiddenColumnIdsState(nextHiddenColumnIds);
-  }, []);
-
   const columnVisibility = React.useMemo(() => {
     const visibility: VisibilityState = {};
-    for (const columnId of hiddenColumnIds) {
-      visibility[columnId] = false;
-    }
+    for (const columnId of hiddenColumnIds) visibility[columnId] = false;
     return visibility;
   }, [hiddenColumnIds]);
 
@@ -463,7 +408,6 @@ export function useDashboardTableColumnLayout(
         return;
       }
 
-      hasPendingLocalPreferenceEditRef.current = true;
       setColumnOrder((previousColumnOrder) =>
         moveDashboardTableColumnId(
           previousColumnOrder,
@@ -473,7 +417,7 @@ export function useDashboardTableColumnLayout(
         ),
       );
     },
-    [draggedColumnIdentifier, dragHoverDetails, removeDragPreviewElement],
+    [draggedColumnIdentifier, dragHoverDetails, removeDragPreviewElement, setColumnOrder],
   );
 
   const handleColumnDragEnd = React.useCallback(() => {
@@ -525,10 +469,10 @@ export function useDashboardTableColumnLayout(
     columnOrder,
     columnVisibility,
     columnSizing,
-    onColumnSizingChange: setColumnSizing,
+    onColumnSizingChange,
     hiddenColumnIds,
     setHiddenColumnIds,
-    hasHydratedPreference,
+    hasHydratedPreference: browserPreference !== null || savedPreference !== undefined,
     draggedColumnIdentifier,
     dragHoverDetails,
     handleColumnDragStart,

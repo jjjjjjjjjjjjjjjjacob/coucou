@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { resolveSmsRecipientClerkUserIds } from "./smsRecipientIdentity";
 import { resolveTenantWorkspaceScope } from "./workspaceScope";
 
 type SmsOrganizerPreferenceSource = "organizer" | "none";
@@ -31,7 +32,11 @@ async function resolveSmsOrganizerScope(
   fallbackSiteKey?: string,
 ): Promise<ResolvedSmsOrganizerScope | null> {
   const workspaceSlug = normalizeOptionalText(event.workspaceSlug);
-  const siteKey = normalizeOptionalText(event.siteKey) ?? normalizeOptionalText(fallbackSiteKey);
+  // Unscoped events predate multiple organizers and belong to Dojo (as in siteScope).
+  const siteKey =
+    normalizeOptionalText(event.siteKey) ??
+    normalizeOptionalText(fallbackSiteKey) ??
+    (workspaceSlug ? undefined : "dojo");
   const workspaceScope = await resolveTenantWorkspaceScope(ctx, {
     workspaceSlug,
     siteKey,
@@ -82,33 +87,73 @@ async function resolveSmsOrganizerPreferenceRecord(
   const organizerScope = await resolveSmsOrganizerScope(ctx, event, siteKey);
   if (!organizerScope) return null;
 
-  const preference = await ctx.db
-    .query("userSmsOrganizerPreferences")
-    .withIndex("by_user_organizer", (queryBuilder) =>
-      queryBuilder.eq("clerkUserId", clerkUserId).eq("organizerKey", organizerScope.organizerKey),
-    )
-    .unique();
+  const clerkUserIds = await resolveSmsRecipientClerkUserIds(ctx, clerkUserId);
+  const matchingPreferences: Doc<"userSmsOrganizerPreferences">[] = [];
+  for (const recipientClerkUserId of clerkUserIds) {
+    const preferences = await ctx.db
+      .query("userSmsOrganizerPreferences")
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", recipientClerkUserId))
+      .collect();
+    for (const preference of preferences) {
+      if (preference.organizerKey === organizerScope.organizerKey) {
+        matchingPreferences.push(preference);
+      } else if (preference.siteKey || preference.workspaceSlug) {
+        // Resolve pre-workspace keys through the current organizer mapping.
+        const preferenceScope = await resolveSmsOrganizerScope(ctx, preference);
+        if (preferenceScope?.organizerKey === organizerScope.organizerKey) {
+          matchingPreferences.push(preference);
+        }
+      }
+    }
+  }
+  matchingPreferences.sort(
+    (left, right) =>
+      (right.smsConsentTimestamp ?? right.updatedAt) -
+        (left.smsConsentTimestamp ?? left.updatedAt) || right._creationTime - left._creationTime,
+  );
 
   return {
     organizerScope,
-    preference,
+    clerkUserIds,
+    preference: matchingPreferences[0],
+    firstSmsOptInAt: earliestTimestamp(
+      matchingPreferences.map(
+        (preference) =>
+          preference.firstSmsOptInAt ??
+          (preference.smsConsent
+            ? (preference.smsConsentTimestamp ?? preference.createdAt)
+            : undefined),
+      ),
+    ),
   };
+}
+
+function earliestTimestamp(timestamps: (number | undefined)[]): number | undefined {
+  const definedTimestamps = timestamps.filter((timestamp) => timestamp !== undefined);
+  return definedTimestamps.length > 0 ? Math.min(...definedTimestamps) : undefined;
 }
 
 async function findLatestSmsConsentFromOrganizerRsvp(
   ctx: QueryCtx | MutationCtx,
   {
-    clerkUserId,
+    clerkUserIds,
     organizerScope,
   }: {
-    clerkUserId: string;
+    clerkUserIds: string[];
     organizerScope: ResolvedSmsOrganizerScope;
   },
 ) {
-  const rsvps = await ctx.db
-    .query("rsvps")
-    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
-    .collect();
+  const rsvps = (
+    await Promise.all(
+      clerkUserIds.map((clerkUserId) =>
+        ctx.db
+          .query("rsvps")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
+          .collect(),
+      ),
+    )
+  ).flat();
+  let firstSmsOptInAt: number | undefined;
 
   let latestPreference: {
     smsConsent: boolean;
@@ -127,6 +172,9 @@ async function findLatestSmsConsentFromOrganizerRsvp(
     if (rsvpOrganizerScope?.organizerKey !== organizerScope.organizerKey) continue;
 
     const rsvpUpdatedAt = rsvp.smsConsentTimestamp ?? rsvp.updatedAt ?? rsvp.createdAt;
+    if (rsvp.smsConsent) {
+      firstSmsOptInAt = earliestTimestamp([firstSmsOptInAt, rsvpUpdatedAt]);
+    }
     if (latestPreference && latestPreference.updatedAt >= rsvpUpdatedAt) continue;
 
     latestPreference = {
@@ -137,7 +185,7 @@ async function findLatestSmsConsentFromOrganizerRsvp(
     };
   }
 
-  return latestPreference;
+  return { latestPreference, firstSmsOptInAt };
 }
 
 export async function resolveSmsOrganizerPreference(
@@ -158,6 +206,7 @@ export async function resolveSmsOrganizerPreference(
   source: SmsOrganizerPreferenceSource;
   organizerKey?: string;
   organizerName?: string;
+  firstSmsOptInAt?: number;
 }> {
   const resolvedPreference = await resolveSmsOrganizerPreferenceRecord(ctx, {
     clerkUserId,
@@ -168,7 +217,15 @@ export async function resolveSmsOrganizerPreference(
     return { smsConsent: false, source: "none" };
   }
 
-  const { organizerScope, preference } = resolvedPreference;
+  const { organizerScope, preference, clerkUserIds } = resolvedPreference;
+  const history =
+    !preference || resolvedPreference.firstSmsOptInAt === undefined
+      ? await findLatestSmsConsentFromOrganizerRsvp(ctx, { clerkUserIds, organizerScope })
+      : undefined;
+  const firstSmsOptInAt = earliestTimestamp([
+    resolvedPreference.firstSmsOptInAt,
+    history?.firstSmsOptInAt,
+  ]);
   if (preference) {
     return {
       smsConsent: preference.smsConsent,
@@ -177,13 +234,11 @@ export async function resolveSmsOrganizerPreference(
       source: "organizer",
       organizerKey: organizerScope.organizerKey,
       organizerName: organizerScope.organizerName,
+      firstSmsOptInAt,
     };
   }
 
-  const historicalPreference = await findLatestSmsConsentFromOrganizerRsvp(ctx, {
-    clerkUserId,
-    organizerScope,
-  });
+  const historicalPreference = history?.latestPreference;
   if (!historicalPreference) {
     return {
       smsConsent: false,
@@ -200,6 +255,7 @@ export async function resolveSmsOrganizerPreference(
     source: "organizer",
     organizerKey: organizerScope.organizerKey,
     organizerName: organizerScope.organizerName,
+    firstSmsOptInAt,
   };
 }
 
@@ -233,6 +289,12 @@ export async function upsertSmsOrganizerPreference(
   if (!resolvedPreference) return;
 
   const { organizerScope, preference } = resolvedPreference;
+  const previousPreference = await resolveSmsOrganizerPreference(ctx, {
+    clerkUserId,
+    event,
+    siteKey,
+  });
+  const firstSmsOptInAt = previousPreference.firstSmsOptInAt ?? (smsConsent ? now : undefined);
   const nextSmsConsentIpAddress = smsConsent
     ? (smsConsentIpAddress ?? preference?.smsConsentIpAddress)
     : preference?.smsConsentIpAddress;
@@ -243,6 +305,7 @@ export async function upsertSmsOrganizerPreference(
       workspaceSlug: organizerScope.workspaceSlug,
       siteKey: organizerScope.siteKey,
       smsConsent,
+      firstSmsOptInAt,
       smsConsentTimestamp: now,
       smsConsentIpAddress: nextSmsConsentIpAddress,
       sourceEventId,
@@ -259,6 +322,7 @@ export async function upsertSmsOrganizerPreference(
     workspaceSlug: organizerScope.workspaceSlug,
     siteKey: organizerScope.siteKey,
     smsConsent,
+    firstSmsOptInAt,
     smsConsentTimestamp: now,
     smsConsentIpAddress: nextSmsConsentIpAddress,
     sourceEventId,

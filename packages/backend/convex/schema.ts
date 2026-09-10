@@ -586,6 +586,7 @@ export default defineSchema({
     workspaceSlug: v.optional(v.string()),
     siteKey: v.optional(v.string()),
     smsConsent: v.boolean(),
+    firstSmsOptInAt: v.optional(v.number()), // retained through opt-outs to avoid repeat enrollment texts
     smsConsentTimestamp: v.optional(v.number()),
     smsConsentIpAddress: v.optional(v.string()),
     sourceEventId: v.optional(v.id("events")),
@@ -688,6 +689,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index("by_user", ["clerkUserId"])
     .index("by_event", ["eventId"])
     .index("by_rsvp", ["rsvpId"])
     .index("by_rsvp_platform", ["rsvpId", "platformKey"])

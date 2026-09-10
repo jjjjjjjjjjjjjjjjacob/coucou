@@ -938,6 +938,20 @@ async function mergeSmsOrganizerPreferences(
     const sourceTimestamp = sourcePreference.smsConsentTimestamp ?? sourcePreference.updatedAt;
     const canonicalTimestamp =
       canonicalPreference.smsConsentTimestamp ?? canonicalPreference.updatedAt;
+    const firstOptInTimestamps = [sourcePreference, canonicalPreference]
+      .map(
+        (preference) =>
+          preference.firstSmsOptInAt ??
+          (preference.smsConsent
+            ? (preference.smsConsentTimestamp ?? preference.createdAt)
+            : undefined),
+      )
+      .filter((timestamp) => timestamp !== undefined);
+    if (firstOptInTimestamps.length > 0) {
+      await ctx.db.patch(canonicalPreference._id, {
+        firstSmsOptInAt: Math.min(...firstOptInTimestamps),
+      });
+    }
     if (sourceTimestamp > canonicalTimestamp) {
       await ctx.db.patch(canonicalPreference._id, {
         smsConsent: sourcePreference.smsConsent,

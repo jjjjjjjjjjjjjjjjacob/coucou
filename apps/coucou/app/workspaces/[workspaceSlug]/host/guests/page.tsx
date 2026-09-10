@@ -5,19 +5,14 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  type ColumnDef,
-  getCoreRowModel,
-  type OnChangeFn,
-  type RowSelectionState,
-  useReactTable,
-} from "@tanstack/react-table";
-import { Columns3, MessageSquare, Tag, Users } from "lucide-react";
+import { type OnChangeFn, type RowSelectionState } from "@tanstack/react-table";
+import { MessageSquare, Tag, Users } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 import { toast } from "sonner";
 import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { ContactHistory } from "@/components/guests/contact-history";
+import { GuestDirectoryColumnsMenu } from "@/components/guests/guest-directory-columns-menu";
 import { GuestDirectoryFilters } from "@/components/guests/guest-directory-filters";
 import { GuestDirectoryTable } from "@/components/guests/guest-directory-table";
 import { type GuestProfilePatch, GuestProfileSheet } from "@/components/guests/guest-profile-sheet";
@@ -26,18 +21,14 @@ import {
   GuestRowActionsContextMenuContent,
   GuestRowActionsDropdownMenuContent,
 } from "@/components/guests/guest-row-actions";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { useGuestDirectoryTable } from "@/components/guests/use-guest-directory-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Chip, ChipGroup } from "@/components/ui/chip-group";
 import { DropdownMenu, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectOption } from "@/components/ui/select";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserDetailContent } from "@/components/users/user-detail-content";
 import { useWorkspaceAccess } from "@/components/workspace-access-gate";
 import {
@@ -48,12 +39,16 @@ import {
   HOST_GUEST_DIRECTORY_TABLE_KEY,
   HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
 } from "@/lib/dashboard-table-preferences";
+import {
+  GUEST_DIRECTORY_COLUMN_IDS,
+  GUEST_DIRECTORY_COLUMN_LABELS,
+  GUEST_DIRECTORY_DEFAULT_VISIBLE_COLUMN_IDS,
+} from "@/lib/guest-directory-columns";
 import { buildGuestDirectoryPersonKey } from "@/lib/guest-directory-helpers";
 import { useContactDirectory } from "@/lib/hooks/use-contact-directory";
 import { useContactFilterOptions } from "@/lib/hooks/use-contact-filter-options";
 import { useDashboardTableColumnLayout } from "@/lib/hooks/use-dashboard-table-column-layout";
 import { useIsViewportAtLeast } from "@/lib/hooks/use-viewport-at-least";
-import { getRsvpTableColumnSizing, RSVP_SELECT_COLUMN_SIZING } from "@/lib/rsvp-table-layout";
 import { type GuestDirectoryFilterState } from "@/lib/text-blast-filters";
 import type { GuestDirectoryFacets, GuestDirectoryPerson, TextBlast } from "@/lib/types";
 import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
@@ -61,49 +56,6 @@ import TextBlastDialog, { type TextBlastInitialTargeting } from "../text-blasts/
 
 const GUEST_DETAIL_PANEL_QUERY_PARAM = "guest";
 const GUEST_DETAIL_PANEL_MIN_VIEWPORT_WIDTH = 1024;
-
-const ALL_COLUMN_IDS = [
-  "select",
-  "person",
-  "tags",
-  "notes",
-  "defaultListKey",
-  "latestEventStatus",
-  "smsConsent",
-  "receivedTexts",
-  "eventCount",
-  "eventsAttended",
-  "role",
-  "firstRsvpAt",
-  "events",
-  "actions",
-] as const;
-
-const COLUMN_LABELS: Record<string, string> = {
-  person: "Contact",
-  tags: "Tags",
-  notes: "Notes",
-  defaultListKey: "Default List",
-  latestEventStatus: "Latest Event",
-  smsConsent: "SMS Consent",
-  receivedTexts: "Received Texts",
-  eventCount: "Events",
-  eventsAttended: "Attended",
-  role: "Role",
-  firstRsvpAt: "First RSVP",
-  events: "Recent events",
-  actions: "Actions",
-};
-
-const DEFAULT_HIDDEN_COLUMN_IDS = ["events"] as const;
-
-const DEFAULT_VISIBLE_COLUMN_IDS = ALL_COLUMN_IDS.filter(
-  (columnId) => !(DEFAULT_HIDDEN_COLUMN_IDS as readonly string[]).includes(columnId),
-);
-
-const TOGGLEABLE_COLUMN_IDS = ALL_COLUMN_IDS.filter(
-  (columnId) => columnId !== "select" && columnId !== "person",
-);
 
 function normalizeRole(role: string): string {
   return role?.replace(/^org:/, "") || role;
@@ -211,8 +163,8 @@ export default function GuestDirectoryPage() {
   const columnLayout = useDashboardTableColumnLayout({
     tableKey: HOST_GUEST_DIRECTORY_TABLE_KEY,
     scopeKey: HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
-    availableColumnIds: ALL_COLUMN_IDS,
-    defaultVisibleColumnIds: DEFAULT_VISIBLE_COLUMN_IDS,
+    availableColumnIds: GUEST_DIRECTORY_COLUMN_IDS,
+    defaultVisibleColumnIds: GUEST_DIRECTORY_DEFAULT_VISIBLE_COLUMN_IDS,
     isEnabled: !!isSignedIn && !!workspaceScope,
     queryArgs: workspaceScope?.queryArgs ?? {},
   });
@@ -451,302 +403,25 @@ export default function GuestDirectoryPage() {
     [canManageRoles, handleRoleChange, openPersonDetail, openProfileSheet],
   );
 
-  const columns = React.useMemo<ColumnDef<GuestDirectoryPerson>[]>(() => {
-    return [
-      {
-        id: "select",
-        ...RSVP_SELECT_COLUMN_SIZING,
-        header: ({ table }) => (
-          <Checkbox
-            checked={
-              table.getIsAllRowsSelected() ||
-              (table.getIsSomeRowsSelected() ? "indeterminate" : false)
-            }
-            onCheckedChange={(checkedState) => table.toggleAllRowsSelected(checkedState === true)}
-            aria-label="Select all contacts on this page"
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(checkedState) => row.toggleSelected(checkedState === true)}
-            aria-label={`Select ${row.original.name}`}
-          />
-        ),
-      },
-      {
-        id: "person",
-        header: "Contact",
-        ...getRsvpTableColumnSizing({
-          label: "Contact",
-          contentValues: people.map((person) => person.name),
-          minContentWidth: 180,
-        }),
-        cell: ({ row }) => {
-          const person = row.original;
-          return (
-            <div className="flex items-center gap-3">
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={person.imageUrl || undefined} />
-                <AvatarFallback>
-                  {(person.firstName || person.name || "G").charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <span className="block truncate font-medium text-[var(--text-primary)]">
-                  {person.name}
-                </span>
-                {person.phoneObfuscated ? (
-                  <div className="text-xs text-[var(--text-secondary)]">
-                    {person.phoneObfuscated}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          );
-        },
-      },
-      {
-        id: "tags",
-        header: "Tags",
-        ...getRsvpTableColumnSizing({
-          label: "Tags",
-          contentValues: people.map((person) => person.tags.join(" ")),
-          minContentWidth: 120,
-        }),
-        cell: ({ row }) =>
-          row.original.tags.length > 0 ? (
-            <ChipGroup aria-label={`Tags for ${row.original.name}`}>
-              {row.original.tags.map((tag) => (
-                <Chip key={tag} label={tag} />
-              ))}
-            </ChipGroup>
-          ) : (
-            <span className="text-xs text-[var(--text-secondary)]">—</span>
-          ),
-      },
-      {
-        id: "notes",
-        header: "Notes",
-        ...getRsvpTableColumnSizing({
-          label: "Notes",
-          minContentWidth: 160,
-          contentWidthCap: 280,
-        }),
-        cell: ({ row }) =>
-          row.original.notes ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="block max-w-full truncate text-[var(--text-secondary)]">
-                  {row.original.notes}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs whitespace-pre-wrap">
-                {row.original.notes}
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <span className="text-xs text-[var(--text-secondary)]">—</span>
-          ),
-      },
-      {
-        id: "defaultListKey",
-        header: "Default List",
-        ...getRsvpTableColumnSizing({ label: "Default List" }),
-        cell: ({ row }) =>
-          row.original.defaultListKey ? (
-            <Badge variant="secondary">{row.original.defaultListKey}</Badge>
-          ) : (
-            <span className="text-xs text-[var(--text-secondary)]">—</span>
-          ),
-      },
-      {
-        id: "latestEventStatus",
-        header: "Latest Event",
-        ...getRsvpTableColumnSizing({ label: "Latest Event" }),
-        cell: ({ row }) =>
-          row.original.rsvpedToLatestEvent ? (
-            <Badge variant="success">RSVP'd</Badge>
-          ) : (
-            <Badge variant="outline" className="text-[var(--text-secondary)]">
-              No RSVP
-            </Badge>
-          ),
-      },
-      {
-        id: "smsConsent",
-        header: "SMS Consent",
-        ...getRsvpTableColumnSizing({ label: "SMS Consent" }),
-        cell: ({ row }) => {
-          const person = row.original;
-          if (person.hasOptedOut) {
-            return <Badge variant="destructive">Opted out</Badge>;
-          }
-          return person.smsConsent ? (
-            <Badge variant="success">Yes</Badge>
-          ) : (
-            <Badge variant="outline" className="text-[var(--text-secondary)]">
-              No
-            </Badge>
-          );
-        },
-      },
-      {
-        id: "receivedTexts",
-        header: "Received Texts",
-        ...getRsvpTableColumnSizing({ label: "Received Texts" }),
-        cell: ({ row }) => (
-          <span className="tabular-nums text-[var(--text-secondary)]">
-            {row.original.receivedTextCount ?? 0}
-          </span>
-        ),
-      },
-      {
-        id: "eventCount",
-        header: "Events",
-        ...getRsvpTableColumnSizing({ label: "Events" }),
-        cell: ({ row }) => (
-          <span className="tabular-nums text-[var(--text-secondary)]">
-            {row.original.eventCount}
-          </span>
-        ),
-      },
-      {
-        id: "eventsAttended",
-        header: "Attended",
-        ...getRsvpTableColumnSizing({ label: "Attended" }),
-        cell: ({ row }) => (
-          <span className="tabular-nums text-[var(--text-secondary)]">
-            {row.original.eventsAttendedCount}
-          </span>
-        ),
-      },
-      {
-        id: "role",
-        header: "Role",
-        ...getRsvpTableColumnSizing({ label: "Role" }),
-        cell: ({ row }) => {
-          const person = row.original;
-          const roleLabel = person.role ? normalizeRole(person.role) : "guest";
-          return (
-            <Badge
-              variant="secondary"
-              className="bg-[var(--surface-3)] capitalize text-[var(--text-primary)]"
-            >
-              {roleLabel}
-            </Badge>
-          );
-        },
-      },
-      {
-        id: "firstRsvpAt",
-        header: "First RSVP",
-        ...getRsvpTableColumnSizing({ label: "First RSVP" }),
-        cell: ({ row }) => (
-          <span className="text-[var(--text-secondary)]">
-            {row.original.firstRsvpAt
-              ? new Date(row.original.firstRsvpAt).toLocaleDateString()
-              : "No RSVPs"}
-          </span>
-        ),
-      },
-      {
-        id: "events",
-        header: "Recent events",
-        ...getRsvpTableColumnSizing({
-          label: "Recent events",
-          minContentWidth: 220,
-          contentWidthCap: 360,
-        }),
-        cell: ({ row }) => {
-          const person = row.original;
-          const visibleEventEntries = person.events.slice(0, 2);
-          const overflowCount = person.events.length - visibleEventEntries.length;
-          return (
-            <div className="flex flex-wrap items-center gap-1">
-              {visibleEventEntries.map((eventEntry) => (
-                <Badge
-                  key={eventEntry.rsvpId}
-                  variant="outline"
-                  className="max-w-40 truncate font-normal"
-                >
-                  {eventEntry.eventName}
-                </Badge>
-              ))}
-              {overflowCount > 0 ? (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-1.5 text-xs text-[var(--text-secondary)]"
-                    >
-                      +{overflowCount}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="max-h-72 w-72 overflow-y-auto p-2">
-                    <div className="space-y-1.5">
-                      {person.events.map((eventEntry) => (
-                        <div
-                          key={eventEntry.rsvpId}
-                          className="flex items-center justify-between gap-2 text-sm"
-                        >
-                          <span className="min-w-0 truncate text-[var(--text-primary)]">
-                            {eventEntry.eventName}
-                          </span>
-                          <span className="shrink-0 text-xs text-[var(--text-secondary)]">
-                            {eventEntry.listKey ? `${eventEntry.listKey} · ` : ""}
-                            {eventEntry.approvalStatus}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              ) : null}
-            </div>
-          );
-        },
-      },
-      {
-        id: "actions",
-        header: "Actions",
-        ...getRsvpTableColumnSizing({ label: "Actions" }),
-        cell: ({ row }) => (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="border-[var(--border-subtle)] text-xs">
-                Actions
-              </Button>
-            </DropdownMenuTrigger>
-            <GuestRowActionsDropdownMenuContent
-              descriptors={buildRowActionDescriptors(row.original)}
-            />
-          </DropdownMenu>
-        ),
-      },
-    ];
-  }, [buildRowActionDescriptors, people]);
-
-  const table = useReactTable<GuestDirectoryPerson>({
-    data: people,
-    columns,
-    state: {
-      rowSelection,
-      columnVisibility: columnLayout.columnVisibility,
-      columnOrder: columnLayout.columnOrder,
-      columnSizing: columnLayout.columnSizing,
-    },
-    getRowId: (person) => person.contactId ?? person.personKey,
-    enableRowSelection: true,
-    enableColumnResizing: true,
-    columnResizeMode: "onChange",
+  const renderActions = React.useCallback(
+    (person: GuestDirectoryPerson) => (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="border-[var(--border-subtle)] text-xs">
+            Actions
+          </Button>
+        </DropdownMenuTrigger>
+        <GuestRowActionsDropdownMenuContent descriptors={buildRowActionDescriptors(person)} />
+      </DropdownMenu>
+    ),
+    [buildRowActionDescriptors],
+  );
+  const table = useGuestDirectoryTable({
+    people,
+    columnLayout,
+    rowSelection,
     onRowSelectionChange: handleRowSelectionChange,
-    onColumnSizingChange: columnLayout.onColumnSizingChange,
-    getCoreRowModel: getCoreRowModel(),
-    manualPagination: true,
-    manualSorting: true,
-    pageCount: -1,
+    renderActions,
   });
 
   const isDirectoryLoading = directory.isLoading;
@@ -803,40 +478,7 @@ export default function GuestDirectoryPage() {
                 </div>
               ) : null}
             </div>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-[var(--border-subtle)] text-xs"
-                >
-                  <Columns3 className="mr-1.5 h-3.5 w-3.5" />
-                  Columns
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-56 p-2">
-                {TOGGLEABLE_COLUMN_IDS.map((columnId) => (
-                  <label
-                    key={columnId}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--text-primary)] hover:bg-[var(--surface-3)]"
-                  >
-                    <Checkbox
-                      checked={!columnLayout.hiddenColumnIds.includes(columnId)}
-                      onCheckedChange={(checkedState) => {
-                        columnLayout.setHiddenColumnIds(
-                          checkedState === true
-                            ? columnLayout.hiddenColumnIds.filter(
-                                (hiddenId) => hiddenId !== columnId,
-                              )
-                            : [...columnLayout.hiddenColumnIds, columnId],
-                        );
-                      }}
-                    />
-                    {COLUMN_LABELS[columnId] ?? columnId}
-                  </label>
-                ))}
-              </PopoverContent>
-            </Popover>
+            <GuestDirectoryColumnsMenu columnLayout={columnLayout} />
           </div>
 
           {selectedPeople.length > 0 ? (
@@ -996,7 +638,7 @@ export default function GuestDirectoryPage() {
                 <GuestDirectoryTable
                   table={table}
                   columnLayout={columnLayout}
-                  columnLabels={COLUMN_LABELS}
+                  columnLabels={GUEST_DIRECTORY_COLUMN_LABELS}
                   onRowClick={openPersonDetail}
                   renderRowContextMenuContent={(person) => (
                     <GuestRowActionsContextMenuContent

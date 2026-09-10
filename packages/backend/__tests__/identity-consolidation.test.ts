@@ -95,6 +95,21 @@ describe("same-phone identity consolidation", () => {
         createdAt: 200,
         updatedAt: 400,
       });
+      for (const preference of [
+        { clerkUserId: "user_canonical", firstSmsOptInAt: 100, smsConsentTimestamp: 300 },
+        { clerkUserId: "user_retired", firstSmsOptInAt: 50, smsConsentTimestamp: 400 },
+      ]) {
+        await databaseContext.db.insert("userSmsOrganizerPreferences", {
+          ...preference,
+          organizerKey: `workspace:${workspaceId}`,
+          workspaceId,
+          workspaceSlug: "club-chlorine",
+          siteKey: "club-chlorine",
+          smsConsent: false,
+          createdAt: preference.firstSmsOptInAt,
+          updatedAt: preference.smsConsentTimestamp,
+        });
+      }
       const canonicalRsvpId = await databaseContext.db.insert("rsvps", {
         eventId,
         clerkUserId: "user_canonical",
@@ -356,6 +371,15 @@ describe("same-phone identity consolidation", () => {
     });
 
     expect(state.users).toHaveLength(1);
+    const organizerPreference = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.query("userSmsOrganizerPreferences").unique();
+    });
+    expect(organizerPreference).toMatchObject({
+      clerkUserId: "user_canonical",
+      smsConsent: false,
+      firstSmsOptInAt: 50,
+      smsConsentTimestamp: 400,
+    });
     expect(state.retiredRsvp).toBeNull();
     expect(state.alias?.canonicalUserId).toBe(seededIds.canonicalUserId);
     expect(state.rsvpAlias?.canonicalRsvpId).toBe(seededIds.canonicalRsvpId);

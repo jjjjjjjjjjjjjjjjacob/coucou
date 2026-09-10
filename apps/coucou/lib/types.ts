@@ -759,6 +759,7 @@ export interface GuestDirectoryPersonEventEntry {
 
 export interface GuestDirectoryPerson {
   contactId?: Id<"workspaceContacts">;
+  socialProfiles?: Array<{ platformKey: string; handle: string; normalizedHandle: string }>;
   personKey: string;
   clerkUserIds: string[];
   primaryClerkUserId: string | null;

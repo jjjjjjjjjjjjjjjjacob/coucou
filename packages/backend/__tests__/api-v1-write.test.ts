@@ -699,6 +699,26 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
         expect(rsvp?.smsConsent).toBe(false);
         expect(preference?.smsConsent).toBe(false);
       });
+      const reenabledResponse = await testBackend.fetch(
+        "/api/v1/events/evt-write-api/rsvps",
+        buildJsonRequest(plaintextKey, "POST", { ...requestBody, smsConsent: true }),
+      );
+      expect(reenabledResponse.status).toBe(200);
+      await testBackend.run(async (databaseContext) => {
+        const preference = await databaseContext.db.query("userSmsOrganizerPreferences").unique();
+        expect(preference?.smsConsent).toBe(true);
+        expect(preference?.firstSmsOptInAt).toBeTypeOf("number");
+        const scheduledFunctions = await databaseContext.db.system
+          .query("_scheduled_functions")
+          .collect();
+        expect(
+          scheduledFunctions.filter(
+            (scheduledFunction) =>
+              scheduledFunction.name === "notifications:sendSmsConsentStatusMessage",
+          ),
+        ).toHaveLength(2);
+      });
+      await drainScheduledFunctions(testBackend);
     } finally {
       if (originalDevTwilioEnabled === undefined) {
         delete process.env.DEV_TWILIO_ENABLED;

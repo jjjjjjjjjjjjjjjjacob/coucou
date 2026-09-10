@@ -161,6 +161,86 @@ function countReads(context: Pick<QueryCtx, "db">) {
 }
 
 describe("contact directory and frozen audiences", () => {
+  it("shows current account and RSVP-only socials across linked identities without leaking other workspaces", async () => {
+    const { backend, host, workspaceId, eventId } = await setup();
+    const contactId = await seedContact(backend, workspaceId, {
+      clerkUserIds: ["account", "guest:test"],
+    });
+    await backend.run(async ({ db }) => {
+      for (const [platformKey, handle] of [
+        ["instagram", "old_account"],
+        ["linkedin", "ada"],
+      ]) {
+        await db.insert("userSocialProfiles", {
+          clerkUserId: "account",
+          platformKey,
+          handle,
+          normalizedHandle: handle,
+          createdAt: 1,
+          updatedAt: 10,
+        });
+      }
+      const otherWorkspaceId = await db.insert("workspaces", {
+        slug: "other",
+        name: "Other",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      // The useful snapshot predates the three events included in the table preview.
+      for (let position = 0; position < 5; position++) {
+        const rsvpId = await db.insert("rsvps", {
+          eventId,
+          clerkUserId: "guest:test",
+          listKey: "main",
+          status: "approved",
+          shareContact: false,
+          createdAt: position,
+          updatedAt: position,
+        });
+        await db.insert("contactEvents", {
+          workspaceId: position === 4 ? otherWorkspaceId : workspaceId,
+          contactId,
+          eventId,
+          rsvpId,
+          clerkUserId: "guest:test",
+          eventName: "Dojo",
+          eventDate: position,
+          approvalStatus: "approved",
+          rsvpCreatedAt: position,
+          consentUpdatedAt: 0,
+          hasAttended: false,
+          hasApprovalSms: false,
+          hasQrCode: false,
+          customFieldKeys: [],
+          missingCustomFieldKeys: [],
+        });
+        if (position === 0 || position === 4) {
+          for (const platformKey of ["instagram", "tiktok"]) {
+            const handle = position === 4 ? "other_workspace" : "guest_ada";
+            await db.insert("rsvpSocialProfiles", {
+              eventId,
+              rsvpId,
+              clerkUserId: "guest:test",
+              platformKey,
+              handle,
+              normalizedHandle: handle,
+              createdAt: 1,
+              updatedAt: position === 4 ? 100 : 20,
+            });
+          }
+        }
+      }
+    });
+    const result = await host.query(api.contacts.list, scope);
+    expect(result.people[0].socialProfiles).toEqual([
+      { platformKey: "instagram", handle: "guest_ada", normalizedHandle: "guest_ada" },
+      { platformKey: "linkedin", handle: "ada", normalizedHandle: "ada" },
+      { platformKey: "tiktok", handle: "guest_ada", normalizedHandle: "guest_ada" },
+    ]);
+    const detail = await host.query(api.contacts.get, { ...scope, contactId });
+    expect(detail.socialProfiles).toEqual(result.people[0].socialProfiles);
+  });
+
   it("shows profiles and all RSVP statuses, but never global accounts alone", async () => {
     const { backend, host, workspaceId, eventId } = await setup();
     await backend.run(async (context) => {

@@ -5,19 +5,34 @@ import type { Id } from "@convex/_generated/dataModel";
 import type { ContactAudience } from "@convex/lib/contactValidators";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table";
+import Link from "next/link";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  HOST_GUEST_DIRECTORY_TABLE_KEY,
+  HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
+} from "@/lib/dashboard-table-preferences";
+import {
+  GUEST_DIRECTORY_COLUMN_IDS,
+  GUEST_DIRECTORY_COLUMN_LABELS,
+  GUEST_DIRECTORY_DEFAULT_VISIBLE_COLUMN_IDS,
+} from "@/lib/guest-directory-columns";
 import { useContactDirectory } from "@/lib/hooks/use-contact-directory";
 import { useContactFilterOptions } from "@/lib/hooks/use-contact-filter-options";
+import { useDashboardTableColumnLayout } from "@/lib/hooks/use-dashboard-table-column-layout";
 import {
   createDefaultGuestDirectoryFilterState,
   decodeRecipientFilter,
   encodeGuestDirectoryFilterArgs,
   type GuestDirectoryFilterState,
 } from "@/lib/text-blast-filters";
-import { useWorkspaceScope } from "@/lib/use-workspace-scope";
+import type { GuestDirectoryPerson } from "@/lib/types";
+import { useWorkspaceOperationPath, useWorkspaceScope } from "@/lib/use-workspace-scope";
+import { GuestDirectoryColumnsMenu } from "./guest-directory-columns-menu";
 import { GuestDirectoryFilters } from "./guest-directory-filters";
+import { GuestDirectoryTable } from "./guest-directory-table";
+import { useGuestDirectoryTable } from "./use-guest-directory-table";
 
 export function ContactAudiencePicker({
   audience,
@@ -86,8 +101,53 @@ export function ContactAudiencePicker({
       },
     });
   };
+  const columnLayout = useDashboardTableColumnLayout({
+    tableKey: HOST_GUEST_DIRECTORY_TABLE_KEY,
+    scopeKey: HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
+    availableColumnIds: GUEST_DIRECTORY_COLUMN_IDS,
+    defaultVisibleColumnIds: GUEST_DIRECTORY_DEFAULT_VISIBLE_COLUMN_IDS,
+    isEnabled: Boolean(workspace),
+    queryArgs: workspace?.queryArgs ?? {},
+  });
+  const rowSelection: RowSelectionState = Object.fromEntries(
+    (allMatching ? directory.people.map((person) => person.contactId) : selectedIds).map(
+      (identifier) => [identifier, true],
+    ),
+  );
+  const handleRowSelectionChange: OnChangeFn<RowSelectionState> = (updater) => {
+    if (allMatching) return;
+    const nextSelection = typeof updater === "function" ? updater(rowSelection) : updater;
+    setSelected(
+      Object.keys(nextSelection).filter(
+        (identifier) => nextSelection[identifier],
+      ) as Id<"workspaceContacts">[],
+    );
+  };
+  const contactsPath = useWorkspaceOperationPath("host", "guests");
+  const renderActions = useCallback(
+    (person: GuestDirectoryPerson) => (
+      <Button variant="outline" size="sm" className="border-[var(--border-subtle)] text-xs" asChild>
+        <Link
+          href={`${contactsPath}?contact=${person.contactId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View contact
+        </Link>
+      </Button>
+    ),
+    [contactsPath],
+  );
+  const table = useGuestDirectoryTable({
+    people: directory.people,
+    columnLayout,
+    rowSelection,
+    onRowSelectionChange: handleRowSelectionChange,
+    renderActions,
+    selectionDisabled: allMatching,
+  });
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       {audience?.type === "legacy_events" ? (
         <div className="rounded-md border border-[var(--border-subtle)] p-3 text-sm">
           This draft keeps its original event, list, RSVP status, and guest selections.{" "}
@@ -136,6 +196,9 @@ export function ContactAudiencePicker({
             <Button variant="ghost" size="sm" onClick={() => onChange(null)}>
               Clear selection
             </Button>
+            <div className="ml-auto">
+              <GuestDirectoryColumnsMenu columnLayout={columnLayout} />
+            </div>
           </div>
           {directory.error ? (
             <div role="alert">
@@ -151,94 +214,17 @@ export function ContactAudiencePicker({
           ) : directory.isLoading ? (
             <p role="status">Searching contacts…</p>
           ) : (
-            <div className="max-h-80 overflow-auto rounded-lg border border-[var(--border-subtle)]">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--border-subtle)]">
-                    <th className="p-3">
-                      <Checkbox
-                        aria-label="Select contacts on this page"
-                        disabled={allMatching}
-                        checked={
-                          directory.people.length > 0 &&
-                          directory.people.every(
-                            (person) => allMatching || selectedIds.includes(person.contactId),
-                          )
-                        }
-                        onCheckedChange={(checked) =>
-                          setSelected(
-                            checked === true
-                              ? Array.from(
-                                  new Set([
-                                    ...selectedIds,
-                                    ...directory.people.map((person) => person.contactId),
-                                  ]),
-                                )
-                              : selectedIds.filter(
-                                  (identifier) =>
-                                    !directory.people.some(
-                                      (person) => person.contactId === identifier,
-                                    ),
-                                ),
-                          )
-                        }
-                      />
-                    </th>
-                    <th>Contact</th>
-                    <th>Tags</th>
-                    <th>SMS</th>
-                    <th className="pr-3">Events</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {directory.people.map((person) => (
-                    <tr
-                      key={person.contactId}
-                      className="border-b border-[var(--border-subtle)] last:border-0"
-                    >
-                      <td className="p-3">
-                        <Checkbox
-                          aria-label={`Select ${person.name}`}
-                          checked={allMatching || selectedIds.includes(person.contactId)}
-                          disabled={allMatching}
-                          onCheckedChange={(checked) =>
-                            setSelected(
-                              checked === true
-                                ? [...selectedIds, person.contactId]
-                                : selectedIds.filter(
-                                    (identifier) => identifier !== person.contactId,
-                                  ),
-                            )
-                          }
-                        />
-                      </td>
-                      <td className="py-3">
-                        <div>{person.name}</div>
-                        <div className="text-xs text-[var(--text-secondary)]">
-                          {person.phoneObfuscated ?? "No phone"}
-                        </div>
-                      </td>
-                      <td>{person.tags.join(", ")}</td>
-                      <td>
-                        {person.smsConsent && person.hasPhone
-                          ? "Eligible"
-                          : person.hasOptedOut
-                            ? "Opted out"
-                            : !person.hasPhone
-                              ? "No phone"
-                              : "No consent"}
-                      </td>
-                      <td className="tabular-nums">{person.eventCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {directory.people.length === 0 ? (
+            <GuestDirectoryTable
+              className="max-h-80 overflow-auto rounded-lg border border-[var(--border-subtle)]"
+              table={table}
+              columnLayout={columnLayout}
+              columnLabels={GUEST_DIRECTORY_COLUMN_LABELS}
+              emptyState={
                 <p className="p-6 text-center text-[var(--text-secondary)]">
                   No contacts match these filters.
                 </p>
-              ) : null}
-            </div>
+              }
+            />
           )}
           <div className="flex justify-end gap-2">
             <Button

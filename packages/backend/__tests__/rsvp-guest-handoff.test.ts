@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import { normalizeAndHashPhoneNumber } from "../convex/lib/phoneHash";
 import schema from "../convex/schema";
 
 const convexModules = {
@@ -209,8 +210,17 @@ describe("guest RSVP handoff", () => {
     expect(handoff?.canAutoSendCode).toBe(false);
   });
 
-  it("sends configured RSVP confirmations without repeating organizer opt-in confirmation", async () => {
+  it.each([
+    "guest",
+    "signed-in",
+  ] as const)("sends subscription text once and RSVP confirmations for each %s signup", async (submissionType) => {
     const testBackend = setupTestBackend();
+    const submissionBackend =
+      submissionType === "signed-in"
+        ? testBackend.withIdentity(createPhoneIdentity("user_confirmations", "+13104996272"))
+        : testBackend;
+    const submitRequest =
+      submissionType === "signed-in" ? api.rsvps.submitRequest : api.rsvps.submitGuestRequest;
     const firstEventId = await seedActiveEvent(testBackend);
     const secondEventId = await seedActiveEvent(testBackend);
     await testBackend.run(async (databaseContext) => {
@@ -235,12 +245,17 @@ describe("guest RSVP handoff", () => {
       customFields: {},
       socialProfiles: [],
     };
-    await testBackend.mutation(api.rsvps.submitGuestRequest, {
+    await submissionBackend.mutation(submitRequest, {
       ...submissionArgs,
       eventId: firstEventId,
       smsConsent: true,
     });
-    await testBackend.mutation(api.rsvps.submitGuestRequest, {
+    await submissionBackend.mutation(submitRequest, {
+      ...submissionArgs,
+      eventId: firstEventId,
+      smsConsent: true,
+    });
+    await submissionBackend.mutation(submitRequest, {
       ...submissionArgs,
       eventId: secondEventId,
     });
@@ -278,6 +293,151 @@ describe("guest RSVP handoff", () => {
         ],
       ]),
     );
+  });
+
+  it.each([
+    { priorIdentity: "signed-in", submissionType: "guest", legacyEvent: false },
+    { priorIdentity: "guest", submissionType: "signed-in", legacyEvent: false },
+    { priorIdentity: "signed-in", submissionType: "signed-in", legacyEvent: true },
+    { priorIdentity: "signed-in", submissionType: "guest", legacyEvent: true },
+  ] as const)("recognizes year-old $priorIdentity consent on $submissionType signup (legacy event: $legacyEvent)", async ({
+    priorIdentity,
+    submissionType,
+    legacyEvent,
+  }) => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedWorkspaceActiveEvent(testBackend, {
+      workspaceSlug: "dojo-pomodoro",
+      workspaceName: "Dojo Pomodoro",
+      siteKey: "dojo",
+    });
+    const phoneNumber = "+13104996272";
+    const { phoneHash } = await normalizeAndHashPhoneNumber(phoneNumber);
+    const historicalConsentTimestamp = Date.now() - 365 * 24 * 60 * 60 * 1000;
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: "returning_user",
+        phone: phoneNumber,
+        createdAt: historicalConsentTimestamp,
+        updatedAt: historicalConsentTimestamp,
+      });
+      await databaseContext.db.patch(eventId, {
+        rsvpConfirmationMessage: "Welcome back, {{firstName}}. Your RSVP is pending.",
+      });
+      for (let eventNumber = 0; eventNumber < 4; eventNumber++) {
+        const previousEventId = await databaseContext.db.insert("events", {
+          siteKey: legacyEvent ? undefined : "dojo",
+          name: `Previous Dojo ${eventNumber + 1}`,
+          hosts: ["Dojo Pomodoro"],
+          location: "Dojo",
+          eventDate: historicalConsentTimestamp + eventNumber,
+          status: "past",
+          createdAt: historicalConsentTimestamp,
+          updatedAt: historicalConsentTimestamp,
+        });
+        await databaseContext.db.insert("rsvps", {
+          eventId: previousEventId,
+          clerkUserId: priorIdentity === "guest" ? `guest:${phoneHash}` : "returning_user",
+          guestPhoneHash: priorIdentity === "guest" ? phoneHash : undefined,
+          listKey: "ga",
+          status: "approved",
+          shareContact: true,
+          smsConsent: true,
+          smsConsentTimestamp: historicalConsentTimestamp,
+          smsConsentIpAddress: "203.0.113.10",
+          createdAt: historicalConsentTimestamp,
+          updatedAt: historicalConsentTimestamp,
+        });
+      }
+    });
+    const submissionBackend =
+      submissionType === "signed-in"
+        ? testBackend.withIdentity(createPhoneIdentity("returning_user", phoneNumber))
+        : testBackend;
+    const submitRequest =
+      submissionType === "signed-in" ? api.rsvps.submitRequest : api.rsvps.submitGuestRequest;
+    await submissionBackend.mutation(submitRequest, {
+      eventId,
+      siteKey: "dojo",
+      listKey: "ga",
+      firstName: "Ava",
+      lastName: "Green",
+      phone: phoneNumber,
+      shareContact: true,
+      smsConsent: true,
+    });
+
+    const scheduledFunctions = await testBackend.run(async (databaseContext) => {
+      const preference = await databaseContext.db.query("userSmsOrganizerPreferences").unique();
+      expect(preference).toMatchObject({
+        smsConsent: true,
+        firstSmsOptInAt: historicalConsentTimestamp,
+      });
+      return await databaseContext.db.system.query("_scheduled_functions").collect();
+    });
+    expect(scheduledFunctions).toEqual([
+      expect.objectContaining({
+        name: "notifications:sendRsvpConfirmationSms",
+        args: [
+          expect.objectContaining({
+            eventId,
+            message: "DOJO POMODORO: Welcome back, Ava. Your RSVP is pending.",
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it.each([
+    true,
+    false,
+  ])("inherits legacy organizer preferences across identities (consent: %s)", async (smsConsent) => {
+    const testBackend = setupTestBackend();
+    const eventId = await seedWorkspaceActiveEvent(testBackend, {
+      workspaceSlug: "dojo-pomodoro",
+      workspaceName: "Dojo Pomodoro",
+      siteKey: "dojo",
+    });
+    const firstSmsOptInAt = Date.now() - 365 * 24 * 60 * 60 * 1000;
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: "legacy_subscriber",
+        phone: "+13104996272",
+        createdAt: firstSmsOptInAt,
+        updatedAt: firstSmsOptInAt,
+      });
+      // This survives even if the source campaign/RSVP has since been removed.
+      await databaseContext.db.insert("userSmsOrganizerPreferences", {
+        clerkUserId: "legacy_subscriber",
+        organizerKey: "site:dojo",
+        siteKey: "dojo",
+        smsConsent,
+        firstSmsOptInAt: smsConsent ? undefined : firstSmsOptInAt,
+        smsConsentTimestamp: smsConsent ? firstSmsOptInAt : Date.now() - 1000,
+        createdAt: firstSmsOptInAt,
+        updatedAt: Date.now() - 1000,
+      });
+    });
+    const result = await testBackend.mutation(api.rsvps.submitGuestRequest, {
+      eventId,
+      siteKey: "dojo",
+      listKey: "ga",
+      firstName: "Ava",
+      lastName: "Green",
+      phone: "+13104996272",
+      shareContact: true,
+    });
+    expect((await getRsvp(testBackend, result.rsvpId))?.smsConsent).toBe(smsConsent);
+    const scheduledFunctions = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.system.query("_scheduled_functions").collect();
+    });
+    expect(scheduledFunctions).toHaveLength(smsConsent ? 1 : 0);
+    expect(
+      scheduledFunctions.some(
+        (scheduledFunction) =>
+          scheduledFunction.name === "notifications:sendSmsConsentStatusMessage",
+      ),
+    ).toBe(false);
   });
 
   it("auto-approves only the first configured submissions across signed-in and guest web flows", async () => {
@@ -785,7 +945,7 @@ describe("guest RSVP handoff", () => {
     });
   });
 
-  it("sends enrollment again after an organizer opt-out and re-enrollment", async () => {
+  it("preserves the first opt-in across opt-out and re-enrollment without repeating the subscription text", async () => {
     const testBackend = setupTestBackend();
     const eventId = await seedActiveEvent(testBackend);
     const authedBackend = testBackend.withIdentity(
@@ -835,7 +995,11 @@ describe("guest RSVP handoff", () => {
         )
         .map((scheduledFunction) => scheduledFunction.args[0]?.consentEnabled);
     });
-    expect(consentTransitions).toEqual([true, false, true]);
+    expect(consentTransitions).toEqual([true, false]);
+    const organizerPreference = await testBackend.run(async (databaseContext) => {
+      return await databaseContext.db.query("userSmsOrganizerPreferences").unique();
+    });
+    expect(organizerPreference).toMatchObject({ smsConsent: true, firstSmsOptInAt: Date.now() });
   });
 
   it("does not repeat enrollment when another event has stale per-event consent", async () => {

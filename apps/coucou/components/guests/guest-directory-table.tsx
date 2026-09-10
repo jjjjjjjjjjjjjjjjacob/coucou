@@ -22,6 +22,7 @@ interface GuestDirectoryTableProps {
   renderRowContextMenuContent?: (person: GuestDirectoryPerson) => React.ReactNode;
   activePersonDetailReference?: string | null;
   emptyState?: React.ReactNode;
+  className?: string;
 }
 
 const INTERACTIVE_ELEMENT_SELECTOR =
@@ -35,6 +36,7 @@ export function GuestDirectoryTable({
   renderRowContextMenuContent,
   activePersonDetailReference,
   emptyState,
+  className,
 }: GuestDirectoryTableProps) {
   const rows = table.getRowModel().rows;
   const isDraggingColumn = columnLayout.draggedColumnIdentifier !== null;
@@ -123,7 +125,7 @@ export function GuestDirectoryTable({
   return (
     <div
       ref={columnLayout.setTableContainerElement}
-      className="w-full max-w-full min-w-0 overflow-x-auto"
+      className={cn("w-full max-w-full min-w-0 overflow-x-auto", className)}
     >
       <table
         className="text-sm text-[var(--text-primary)]"

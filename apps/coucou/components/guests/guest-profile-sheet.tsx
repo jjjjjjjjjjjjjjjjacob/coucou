@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/sheet";
 import type { GuestDirectoryPerson } from "@/lib/types";
 import { ContactHistory } from "./contact-history";
+import { ContactSocialProfiles } from "./contact-social-profiles";
 
 export interface GuestProfilePatch {
   tags: string[];
@@ -68,6 +69,10 @@ export function GuestProfileSheet({
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-4 pb-4">
+          <div className="mb-5 space-y-2">
+            <div className="text-sm font-medium text-[var(--text-primary)]">Socials</div>
+            <ContactSocialProfiles profiles={person.socialProfiles ?? []} />
+          </div>
           <div className="mb-5 space-y-2">
             <div className="text-sm font-medium text-[var(--text-primary)]">Invited by</div>
             {person.invitedByNames.length > 0 ? (

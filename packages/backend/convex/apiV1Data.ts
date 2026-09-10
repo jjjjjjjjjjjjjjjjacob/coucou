@@ -722,7 +722,9 @@ export const createRsvpFromApiClient = internalMutation({
       siteKey: event.siteKey,
     });
     const smsConsentChange =
-      args.smsConsent === undefined || args.smsConsent === existingOrganizerPreference.smsConsent
+      args.smsConsent === undefined ||
+      args.smsConsent === existingOrganizerPreference.smsConsent ||
+      (args.smsConsent && existingOrganizerPreference.firstSmsOptInAt !== undefined)
         ? null
         : args.smsConsent
           ? "enabled"

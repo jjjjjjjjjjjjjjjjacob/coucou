@@ -1,6 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { contactConsent } from "./contactRecords";
+import { contactSocialProfiles } from "./contactSocialProfiles";
 import { CONTACT_BATCH_SIZE, type ContactAudience, type ContactFilters } from "./contactValidators";
 import { obfuscatePhoneNumber } from "./phoneUtils";
 import { parseRecipientFilter, statusesForFilter } from "./recipientFiltering";
@@ -302,6 +303,7 @@ export async function contactToPerson(
     imageUrl: contact.imageUrl,
     phoneObfuscated: contact.phoneNumber ? obfuscatePhoneNumber(contact.phoneNumber) : undefined,
     hasPhone: Boolean(contact.phoneNumber && /^\+[1-9]\d{6,14}$/.test(contact.phoneNumber)),
+    socialProfiles: await contactSocialProfiles(ctx, contact),
     events: events.map((entry) => ({
       eventId: entry.eventId,
       eventName: entry.eventName,

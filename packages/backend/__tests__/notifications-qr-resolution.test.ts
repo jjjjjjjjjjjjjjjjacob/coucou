@@ -161,6 +161,20 @@ describe("event-level automated SMS templates", () => {
   };
   const recipient = { firstName: "Riley", lastName: "Stone" };
 
+  it("brands subscription text for the organizer rather than the event's production company", () => {
+    expect(formatSmsConsentMessage(event, true, recipient, "Dojo Pomodoro")).toContain(
+      "DOJO POMODORO: You’re subscribed to recurring Dojo Pomodoro texts",
+    );
+    expect(
+      formatSmsConsentMessage(
+        { ...event, smsOptInConfirmationMessage: "Welcome to our texts, {{firstName}}." },
+        true,
+        recipient,
+        "Dojo Pomodoro",
+      ),
+    ).toBe("DOJO POMODORO: Welcome to our texts, Riley.");
+  });
+
   it("uses customized subscribed and unsubscribed copy with event variables", () => {
     expect(
       formatSmsConsentMessage(
