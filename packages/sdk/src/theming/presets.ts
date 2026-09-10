@@ -119,7 +119,7 @@ export const PRESET_DEFINITIONS: Record<PresetKey, PresetDefinition> = {
     authCopy: {
       heading: "Sign in to RSVP.",
       sub: "We'll text a code. Use the same number you'll show at the door.",
-      eyebrow: "Members & guests",
+      eyebrow: "",
     },
   },
   // Atrium remains defined for future use but is not assigned to any tenant.

@@ -136,12 +136,16 @@ export default async function ClientAuthSignInPage({
   const headersList = await headers();
   const refererHeader = headersList.get("referer");
   const candidateOrigins = [redirectUrlParam, refererHeader] as const;
+  const requestOrigin =
+    headersList.get("x-forwarded-host")?.split(",")[0]?.trim() ?? headersList.get("host");
 
   const allowedRedirectOrigins = buildClientAuthAllowedRedirectOrigins(siteKey, {
     candidateOrigins,
+    requestOrigin,
   });
   const satelliteHomeUrl = resolveSatelliteHomeUrl(siteKey, {
     candidateOrigins,
+    requestOrigin,
   });
 
   const redirectUrl = resolveSafeRedirectUrl(
@@ -168,7 +172,10 @@ export default async function ClientAuthSignInPage({
   // concept that doesn't apply to client/satellite handoffs. Defaults
   // come straight from the site auth configuration.
   const loginAuthBranding: AuthBrandingOverrides = {
-    heading: siteAuthConfiguration.heading,
+    heading:
+      siteKey === "dojo" && rsvpHandoffToken
+        ? "Verify your number to RSVP"
+        : siteAuthConfiguration.heading,
     sub: siteAuthConfiguration.description,
     eyebrow: undefined,
     brandMarkStyle: "square-serif",

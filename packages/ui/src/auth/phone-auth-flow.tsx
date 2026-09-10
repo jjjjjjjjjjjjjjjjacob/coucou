@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { PhoneAuthStep } from "./config/types";
 import { usePhoneAuthFlow } from "./hooks/use-phone-auth-flow";
@@ -32,8 +32,7 @@ export function PhoneAuthFlow({
     usePhoneAuthFlow({ onSuccess, initialPhoneNumber, autoSendInitialCode });
 
   const [otpValue, setOtpValue] = useState("");
-  const visiblePhoneAuthStep: PhoneAuthStep =
-    state.step === "phone" && state.isLoading && autoSendInitialCode ? "verification" : state.step;
+  const visiblePhoneAuthStep: PhoneAuthStep = state.step;
 
   useEffect(() => {
     onStepChange?.(visiblePhoneAuthStep);
@@ -69,53 +68,23 @@ export function PhoneAuthFlow({
       {/* Clerk requires this exact id for the bot-protection challenge. */}
       <div
         id="clerk-captcha"
+        data-cl-size="flexible"
         className={combineClassNames(state.step === "captcha" ? "flex justify-center" : "")}
       />
 
-      {state.step === "captcha" ? (
-        <div className="flex animate-in fade-in slide-in-from-bottom-1 flex-col gap-4 duration-300">
-          <div
-            className="flex items-center justify-center gap-2 text-[13px]"
-            style={{ color: "var(--tt-fg-dim)" }}
-          >
-            <span>For {formattedPhone}</span>
-            <button
-              type="button"
-              onClick={handleGoBack}
-              className="font-medium transition-opacity hover:opacity-80"
-              style={{ color: "var(--tt-fg)" }}
-            >
-              edit
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleGoBack}
-            className="inline-flex h-11 items-center justify-center gap-2 border px-4 text-sm font-medium transition-opacity hover:opacity-80"
-            style={{
-              borderColor: "var(--tt-fg)",
-              color: "var(--tt-fg)",
-              background: "transparent",
-            }}
-            aria-label="Captcha not showing up? Back to phone entry"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Captcha not showing up?
+      {state.step === "captcha" && state.isLoading ? (
+        <div
+          className="flex flex-col items-center gap-3 text-[13px]"
+          style={{ color: "var(--tt-fg-dim)" }}
+        >
+          <p>Complete the security check to receive your code.</p>
+          <button type="button" onClick={handleGoBack} className="underline underline-offset-4">
+            Edit phone number
           </button>
         </div>
       ) : null}
 
-      {state.step === "phone" && state.isLoading && autoSendInitialCode ? (
-        <div className="flex flex-col items-center gap-4 py-8">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: "var(--tt-fg)" }} />
-          <p className="text-[13px]" style={{ color: "var(--tt-fg-dim)" }}>
-            Sending code…
-          </p>
-        </div>
-      ) : null}
-
-      {state.step === "phone" && !(state.isLoading && autoSendInitialCode) ? (
+      {state.step === "phone" || state.step === "captcha" ? (
         <div className="animate-in fade-in slide-in-from-bottom-1 duration-300">
           <PhoneInput
             value={state.phoneNumber}
@@ -124,6 +93,7 @@ export function PhoneAuthFlow({
             onCountryCodeChange={setCountryCode}
             onSubmit={sendVerificationCode}
             isLoading={state.isLoading}
+            resendCooldown={state.resendCooldown}
             error={state.error?.message}
           />
         </div>
@@ -138,6 +108,7 @@ export function PhoneAuthFlow({
             <span>Sent to {formattedPhone}</span>
             <button
               type="button"
+              disabled={state.isLoading}
               onClick={handleGoBack}
               className="font-medium transition-opacity hover:opacity-80"
               style={{ color: "var(--tt-fg)" }}

@@ -9,6 +9,17 @@ export function normalizeSmsCode(value: string): string {
   return normalizeCredentialPassword(value);
 }
 
+/** Compare destinations only after the caller has matched the normalized SMS code. */
+export function isReplyActionForListCredential(
+  replyAction: Pick<Doc<"textBlastReplyActions">, "targetEventId" | "targetListKey">,
+  credential: Pick<Doc<"listCredentials">, "eventId" | "listKey">,
+): boolean {
+  return (
+    replyAction.targetEventId === credential.eventId &&
+    replyAction.targetListKey.trim() === credential.listKey
+  );
+}
+
 export function isSmsExecutableEvent(
   event: Pick<Doc<"events">, "status" | "lifecycle" | "eventDate" | "eventEndDate">,
   now: number = Date.now(),

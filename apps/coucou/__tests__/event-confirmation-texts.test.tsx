@@ -296,68 +296,68 @@ describe("event confirmation texts", () => {
     setNavigationSearchParams();
   });
 
-  it.each([
-    "club-chlorine",
-    "dojo",
-    "danza-organica",
-  ])("prefills colors and lists but requires an event sharing opt-in for %s", async (siteKey) => {
-    workspaceQueryResult = {
-      slug: siteKey,
-      name: "Test Workspace",
-      eventDefaults: {
-        themeBackgroundColor: "#101820",
-        themeTextColor: "#FEE715",
-        listKeys: ["pool", "cabana"],
-        referralSharingEnabled: true,
-      },
-      sites: [{ siteKey }],
-    };
-    workspaceScope = {
-      workspaceSlug: siteKey,
-      siteKey,
-      brandName: "Test Workspace",
-      queryArgs: {
-        siteKey,
+  for (const siteKey of ["club-chlorine", "dojo", "danza-organica"]) {
+    it(`prefills colors and lists but requires an event sharing opt-in for ${siteKey}`, async () => {
+      workspaceQueryResult = {
+        slug: siteKey,
+        name: "Test Workspace",
+        eventDefaults: {
+          themeBackgroundColor: "#101820",
+          themeTextColor: "#FEE715",
+          listKeys: ["pool", "cabana"],
+          referralSharingEnabled: true,
+        },
+        sites: [{ siteKey }],
+      };
+      workspaceScope = {
         workspaceSlug: siteKey,
-      },
-    };
+        siteKey,
+        brandName: "Test Workspace",
+        queryArgs: {
+          siteKey,
+          workspaceSlug: siteKey,
+        },
+      };
 
-    render(<EventCreateWizard />);
+      render(<EventCreateWizard />);
 
-    fireEvent.change(screen.getByPlaceholderText("Pomodoro 14"), {
-      target: { value: "Pool Night" },
+      fireEvent.change(screen.getByPlaceholderText("Pomodoro 14"), {
+        target: { value: "Pool Night" },
+      });
+      await clickContinue();
+      await screen.findByRole("heading", { name: "Schedule & capacity" });
+      fireEvent.change(screen.getByPlaceholderText(/Bushwick/), {
+        target: { value: "Pool Deck" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set event date" }));
+      await clickContinue();
+      await screen.findByRole("heading", { name: "Branding" });
+
+      expect(screen.getAllByDisplayValue("#101820").length).toBeGreaterThan(0);
+      expect(screen.getAllByDisplayValue("#FEE715").length).toBeGreaterThan(0);
+
+      await clickContinue();
+      await screen.findByRole("heading", { name: "Flyer" });
+      await clickContinue();
+      await screen.findByRole("heading", { name: "Guest page" });
+      if (siteKey === "danza-organica") {
+        const sharingToggle = screen.getByRole("switch", { name: "Show referral sharing CTA" });
+        expect(sharingToggle).not.toBeChecked();
+        fireEvent.click(sharingToggle);
+        expect(sharingToggle).toBeChecked();
+      } else {
+        expect(screen.queryByRole("switch", { name: "Show referral sharing CTA" })).toBeNull();
+        expect(
+          screen.getByText("Guest sharing buttons are unavailable on this site."),
+        ).toBeVisible();
+      }
+      await clickContinue();
+      await screen.findByRole("heading", { name: "Lists & access" });
+
+      expect(screen.getByDisplayValue("pool")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("cabana")).toBeInTheDocument();
     });
-    await clickContinue();
-    await screen.findByRole("heading", { name: "Schedule & capacity" });
-    fireEvent.change(screen.getByPlaceholderText(/Bushwick/), {
-      target: { value: "Pool Deck" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Set event date" }));
-    await clickContinue();
-    await screen.findByRole("heading", { name: "Branding" });
-
-    expect(screen.getAllByDisplayValue("#101820").length).toBeGreaterThan(0);
-    expect(screen.getAllByDisplayValue("#FEE715").length).toBeGreaterThan(0);
-
-    await clickContinue();
-    await screen.findByRole("heading", { name: "Flyer" });
-    await clickContinue();
-    await screen.findByRole("heading", { name: "Guest page" });
-    if (siteKey === "danza-organica") {
-      const sharingToggle = screen.getByRole("switch", { name: "Show referral sharing CTA" });
-      expect(sharingToggle).not.toBeChecked();
-      fireEvent.click(sharingToggle);
-      expect(sharingToggle).toBeChecked();
-    } else {
-      expect(screen.queryByRole("switch", { name: "Show referral sharing CTA" })).toBeNull();
-      expect(screen.getByText("Guest sharing buttons are unavailable on this site.")).toBeVisible();
-    }
-    await clickContinue();
-    await screen.findByRole("heading", { name: "Lists & access" });
-
-    expect(screen.getByDisplayValue("pool")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("cabana")).toBeInTheDocument();
-  });
+  }
 
   it("uses the tenant site preset when workspace event colors are absent", async () => {
     workspaceQueryResult = {

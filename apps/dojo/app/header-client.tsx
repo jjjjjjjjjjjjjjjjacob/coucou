@@ -1,9 +1,8 @@
 "use client";
 import { SignedIn, SignedOut, SignOutButton, useUser } from "@clerk/nextjs";
-import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl, getSiteOrigin } from "@coucou/sdk";
 import { Cog, DoorOpen, LogIn, LogOut, Settings, User } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import DojoPomodoreIcon from "@/components/icons/dojo-pomodoro-icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,29 +12,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { siteConfiguration } from "@/lib/site";
+import { buildRedirectPathWithSearch } from "@/lib/auth-redirects";
+import { resolveCoucouBaseUrl, siteConfiguration } from "@/lib/site";
 
 const workspaceSlug = siteConfiguration.workspaceSlug;
 const workspaceOrganizationId = process.env.NEXT_PUBLIC_DOJO_CLERK_ORGANIZATION_ID ?? "";
-const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
-  /\/+$/,
-  "",
-);
-
-function buildCoucouWorkspaceHref(surface: "host" | "door") {
+function buildCoucouWorkspaceHref(surface: "host" | "door", satelliteOrigin: string) {
+  const coucouBaseUrl = resolveCoucouBaseUrl(satelliteOrigin);
   return `${coucouBaseUrl}/workspaces/${workspaceSlug}/${surface}`;
-}
-
-function buildPrimarySignInHref(redirectPath: string): string {
-  const satelliteReturnUrl = buildSatelliteReturnUrl(
-    getSiteOrigin(siteConfiguration),
-    redirectPath,
-  );
-  return buildTenantPrimarySignInUrl({
-    primaryBaseUrl: coucouBaseUrl,
-    siteConfiguration,
-    redirectUrl: satelliteReturnUrl,
-  });
 }
 
 function useRoleFlags() {
@@ -50,12 +34,21 @@ function useRoleFlags() {
   return { isHost, isDoor };
 }
 
-export default function HeaderClient() {
+export default function HeaderClient({
+  satelliteOrigin = siteConfiguration.domain,
+}: {
+  satelliteOrigin?: string;
+}) {
   const { isHost, isDoor } = useRoleFlags();
   const pathname = usePathname();
-  const signInHref = buildPrimarySignInHref(pathname ?? siteConfiguration.auth.signInRedirectPath);
-  const hostHref = buildCoucouWorkspaceHref("host");
-  const doorHref = buildCoucouWorkspaceHref("door");
+  const searchParameters = useSearchParams();
+  const redirectPath = buildRedirectPathWithSearch(
+    pathname ?? siteConfiguration.auth.signInRedirectPath,
+    searchParameters.toString(),
+  );
+  const signInHref = `/sign-in?${new URLSearchParams({ redirect_url: redirectPath })}`;
+  const hostHref = buildCoucouWorkspaceHref("host", satelliteOrigin);
+  const doorHref = buildCoucouWorkspaceHref("door", satelliteOrigin);
 
   return (
     <header className="fixed top-0 z-50 w-full flex items-center justify-end gap-2 px-2 py-2 sm:px-3 sm:py-3 pointer-events-none">
@@ -110,19 +103,16 @@ export default function HeaderClient() {
             <DropdownMenuSeparator />
             */}
             <SignOutButton>
-              <DropdownMenuItem className="flex items-center gap-2 text-primary! hover:text-primary!">
-                <LogOut size={16} className="text-primary" />
+              <DropdownMenuItem>
+                <LogOut size={16} />
                 Sign Out
               </DropdownMenuItem>
             </SignOutButton>
           </SignedIn>
           <SignedOut>
             <DropdownMenuItem asChild>
-              <Link
-                href={signInHref}
-                className="flex items-center gap-2 text-primary! hover:text-primary!"
-              >
-                <LogIn size={16} className="text-primary" />
+              <Link href={signInHref} className="flex items-center gap-2">
+                <LogIn size={16} />
                 Sign In
               </Link>
             </DropdownMenuItem>

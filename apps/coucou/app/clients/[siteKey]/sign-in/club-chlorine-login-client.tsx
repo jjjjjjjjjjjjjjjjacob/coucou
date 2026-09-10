@@ -44,9 +44,7 @@ export function ClubChlorineLoginClient({
   initialPhoneNumber,
   autoSendInitialCode = false,
 }: ClubChlorineLoginClientProps) {
-  const [phoneAuthStep, setPhoneAuthStep] = useState<PhoneAuthStep>(() =>
-    autoSendInitialCode && initialPhoneNumber ? "verification" : "phone",
-  );
+  const [phoneAuthStep, setPhoneAuthStep] = useState<PhoneAuthStep>("phone");
   const heading =
     phoneAuthStep === "verification" || phoneAuthStep === "completing"
       ? "Enter your verification code"

@@ -4,7 +4,9 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
-import { useConvexAuth, useQuery as useConvexQuery, useMutation } from "convex/react";
+import { useAction, useConvexAuth, useQuery as useConvexQuery, useMutation } from "convex/react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import React, { use } from "react";
 import { toast } from "sonner";
 import { SmsOptInPrompt } from "@/components/sms-opt-in-prompt";
@@ -12,16 +14,26 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { resolveEventMessagingBrandName } from "@/lib/event-display";
 import { getEventThemeColors } from "@/lib/event-theme";
+import { clearRsvpDraftStorage } from "@/lib/rsvp-form-state";
+import { buildRsvpFlowPath, existingRsvpPath } from "@/lib/rsvp-routing";
 import { siteConfiguration } from "@/lib/site";
 import { fetchSmsConsentIpAddress } from "@/lib/sms-consent";
 
 export default function StatusPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId: eventRouteId } = use(params);
-  const { isSignedIn, isLoaded } = useAuth();
+  const router = useRouter();
+  const searchParameters = useSearchParams();
+  const { isSignedIn, isLoaded, userId } = useAuth();
   const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
     useConvexAuth();
   const canLoadAuthenticatedStatus = isLoaded && isSignedIn && isConvexAuthenticated;
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
+  const claimGuestRsvps = useMutation(api.rsvps.claimGuestRsvpsForCurrentUser);
+  const finalizeGuestRsvp = useAction(api.rsvps.finalizeGuestRequest);
+  const handoffToken = searchParameters.get("rsvp_handoff");
+  const hasStartedGuestRsvpClaimRef = React.useRef(false);
+  const [hasAttemptedGuestRsvpClaim, setHasAttemptedGuestRsvpClaim] = React.useState(false);
+  const [guestRsvpClaimError, setGuestRsvpClaimError] = React.useState<string | null>(null);
   const [isUpdatingSmsPreference, setIsUpdatingSmsPreference] = React.useState(false);
   const [smsConsentIpAddress, setSmsConsentIpAddress] = React.useState<string | undefined>(
     undefined,
@@ -47,6 +59,58 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
 
   const status = statusQuery.data;
   const event = eventQuery.data;
+  const refetchStatus = statusQuery.refetch;
+  const claimGuestRsvpsAndRefresh = React.useCallback(async () => {
+    setHasAttemptedGuestRsvpClaim(false);
+    setGuestRsvpClaimError(null);
+    try {
+      if (handoffToken) await finalizeGuestRsvp({ token: handoffToken });
+      else await claimGuestRsvps();
+      await refetchStatus();
+    } catch (error: unknown) {
+      console.error("Failed to claim guest RSVPs:", error);
+      setGuestRsvpClaimError(
+        error instanceof Error ? error.message : "We couldn't finish your RSVP. Please try again.",
+      );
+    } finally {
+      setHasAttemptedGuestRsvpClaim(true);
+    }
+  }, [claimGuestRsvps, finalizeGuestRsvp, handoffToken, refetchStatus]);
+
+  React.useEffect(() => {
+    if (!canLoadAuthenticatedStatus || hasStartedGuestRsvpClaimRef.current) return;
+    hasStartedGuestRsvpClaimRef.current = true;
+    void claimGuestRsvpsAndRefresh();
+  }, [canLoadAuthenticatedStatus, claimGuestRsvpsAndRefresh]);
+
+  const destination = existingRsvpPath(eventRouteId, status?.status);
+  const shouldRedirect =
+    canLoadAuthenticatedStatus &&
+    hasAttemptedGuestRsvpClaim &&
+    !guestRsvpClaimError &&
+    destination !== null &&
+    status?.status !== "pending";
+  React.useEffect(() => {
+    if (!canLoadAuthenticatedStatus || !hasAttemptedGuestRsvpClaim || guestRsvpClaimError) return;
+    if (status?.status) clearRsvpDraftStorage(eventRouteId, userId);
+    const nextSearchParameters = new URLSearchParams(searchParameters.toString());
+    nextSearchParameters.delete("rsvp_handoff");
+    if (destination && (shouldRedirect || handoffToken))
+      router.replace(buildRsvpFlowPath(destination, nextSearchParameters));
+  }, [
+    canLoadAuthenticatedStatus,
+    hasAttemptedGuestRsvpClaim,
+    guestRsvpClaimError,
+    shouldRedirect,
+    destination,
+    handoffToken,
+    router,
+    searchParameters,
+    eventRouteId,
+    userId,
+    status?.status,
+  ]);
+
   const eventThemeColors = React.useMemo(() => getEventThemeColors(event ?? null), [event]);
   const smsSenderDisplayName = React.useMemo(
     () =>
@@ -105,7 +169,12 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
   };
 
   // Show loading while auth is initializing
-  if (!isLoaded || (isSignedIn && (isConvexAuthLoading || !isConvexAuthenticated))) {
+  if (
+    !isLoaded ||
+    (isSignedIn &&
+      (isConvexAuthLoading || !isConvexAuthenticated || !hasAttemptedGuestRsvpClaim)) ||
+    shouldRedirect
+  ) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
         <div className="flex items-center text-primary justify-center py-10">
@@ -121,6 +190,30 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
       <main className="min-h-screen flex items-center justify-center p-6">
         <div className="text-center text-red-500">
           <p>Please sign in to view your RSVP status.</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (guestRsvpClaimError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6 text-primary">
+        <div className="space-y-4 text-center">
+          <p role="alert">{guestRsvpClaimError}</p>
+          <Button onClick={() => void claimGuestRsvpsAndRefresh()}>Try again</Button>
+          <p>
+            <Link
+              className="underline underline-offset-4"
+              href={buildRsvpFlowPath(
+                `/events/${eventRouteId}/rsvp`,
+                new URLSearchParams(
+                  [...searchParameters.entries()].filter(([key]) => key !== "rsvp_handoff"),
+                ),
+              )}
+            >
+              Return to RSVP
+            </Link>
+          </p>
         </div>
       </main>
     );

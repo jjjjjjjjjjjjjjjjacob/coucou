@@ -104,9 +104,11 @@ export default clerkMiddleware(async (auth, req) => {
       const candidateOrigins = [redirectUrlParam, refererHeader];
       const allowedOrigins = buildClientAuthAllowedRedirectOrigins(clientAuthSiteKey, {
         candidateOrigins,
+        requestOrigin: req.nextUrl.origin,
       });
       const satelliteHomeUrl = resolveSatelliteHomeUrl(clientAuthSiteKey, {
         candidateOrigins,
+        requestOrigin: req.nextUrl.origin,
       });
       const resolvedRedirect = resolveSafeRedirectUrl(
         redirectUrlParam,

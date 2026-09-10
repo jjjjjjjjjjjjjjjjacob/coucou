@@ -1,26 +1,18 @@
 import type { ClerkMiddlewareOptions } from "@clerk/nextjs/server";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { api } from "@convex/_generated/api";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { resolveSafeRedirectPath } from "@coucou/sdk/routes";
-import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
-import { fetchQuery } from "convex/nextjs";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { buildRedirectPathWithSearch } from "@/lib/auth-redirects";
-import { siteConfiguration } from "@/lib/site";
+import { resolveCoucouBaseUrl, siteConfiguration } from "@/lib/site";
 import type { AuthObject } from "@/lib/types";
 
-const coucouBaseUrl = (process.env.NEXT_PUBLIC_COUCOU_BASE_URL ?? "http://localhost:5680").replace(
-  /\/+$/,
-  "",
-);
-const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
-  primaryBaseUrl: coucouBaseUrl,
-  siteConfiguration,
-});
-
 function buildClerkSatelliteOptions(req: NextRequest): ClerkMiddlewareOptions {
+  const primaryTenantSignInUrl = buildTenantPrimarySignInUrl({
+    primaryBaseUrl: resolveCoucouBaseUrl(req.nextUrl.origin),
+    siteConfiguration,
+  });
   return {
     isSatellite: true,
     domain: req.nextUrl.host,
@@ -61,7 +53,7 @@ function redirectToSignIn(req: NextRequest): NextResponse {
   const redirectPath = buildRedirectPathWithSearch(req.nextUrl.pathname, req.nextUrl.search);
   const satelliteReturnUrl = buildSatelliteReturnUrl(req.nextUrl.origin, redirectPath);
   const signInUrl = buildTenantPrimarySignInUrl({
-    primaryBaseUrl: coucouBaseUrl,
+    primaryBaseUrl: resolveCoucouBaseUrl(req.nextUrl.origin),
     siteConfiguration,
     redirectUrl: satelliteReturnUrl,
   });
@@ -76,11 +68,14 @@ function redirectToPrimarySignIn(req: NextRequest): NextResponse {
   );
   const satelliteReturnUrl = buildSatelliteReturnUrl(req.nextUrl.origin, redirectPath);
   const signInUrl = buildTenantPrimarySignInUrl({
-    primaryBaseUrl: coucouBaseUrl,
+    primaryBaseUrl: resolveCoucouBaseUrl(req.nextUrl.origin),
     siteConfiguration,
     redirectUrl: satelliteReturnUrl,
   });
-  return NextResponse.redirect(signInUrl);
+  const destination = new URL(signInUrl);
+  const rsvpHandoffToken = req.nextUrl.searchParams.get("rsvp_handoff");
+  if (rsvpHandoffToken) destination.searchParams.set("rsvp_handoff", rsvpHandoffToken);
+  return NextResponse.redirect(destination);
 }
 
 export default clerkMiddleware(async (auth, req) => {
@@ -102,106 +97,24 @@ export default clerkMiddleware(async (auth, req) => {
     return redirectToPrimarySignIn(req);
   }
 
-  // Handle root path - check for featured event and redirect
-  if (pathname === "/") {
-    try {
-      const featuredEvent = await fetchQuery(api.events.getFeaturedEvent, {
-        siteKey: siteConfiguration.siteKey,
-      });
-      if (featuredEvent?._id) {
-        const redirectUrl = new URL(`/events/${getEventRouteId(featuredEvent)}`, req.url);
-        return NextResponse.redirect(redirectUrl);
-      }
-    } catch (error) {
-      console.error("Error checking featured event in middleware:", error);
-      // If there's an error, continue to home page
-    }
-  }
+  if (isPublicRoute(req)) return NextResponse.next();
 
-  if (isPublicRoute(req)) {
-    return NextResponse.next();
-  }
-
-  // Handle event routes with conditional auth
   const eventRoute = parseEventRoute(pathname);
-  if (eventRoute.isEvent && eventRoute.eventId) {
-    const authObj = (await auth()) as AuthObject;
-    const { userId } = authObj;
-
-    // For unauthenticated users, handle different subpaths
-    if (!userId) {
-      const isMainEventPage = pathname === `/events/${eventRoute.eventId}`;
-      const isStatusPage = pathname === `/events/${eventRoute.eventId}/status`;
-      const isTicketPage = pathname === `/events/${eventRoute.eventId}/ticket`;
-
-      // If trying to access status or ticket page, redirect to sign-in
-      if (isStatusPage || isTicketPage) {
-        return redirectToSignIn(req);
-      }
-
-      // For other subpaths, redirect to main event page
-      if (!isMainEventPage) {
-        const redirectUrl = new URL(`/events/${eventRoute.eventId}`, req.url);
-        for (const [queryKey, queryValue] of searchParams.entries()) {
-          redirectUrl.searchParams.append(queryKey, queryValue);
-        }
-        return NextResponse.redirect(redirectUrl);
-      }
-      return NextResponse.next(); // Allow main event page
+  if (eventRoute.isEvent) {
+    // Entry pages decide list access and existing-RSVP navigation after auth syncs.
+    // A public list never requires a password or sign-in to view the form.
+    if (
+      eventRoute.subpath === "" ||
+      eventRoute.subpath === "/" ||
+      eventRoute.subpath === "/rsvp" ||
+      eventRoute.subpath === "/rsvp/"
+    ) {
+      return NextResponse.next();
     }
-
-    // For authenticated users, check RSVP status and route accordingly
-    try {
-      // Get RSVP status for this user and event
-      const status = await fetchQuery(api.rsvps.statusForUserEventServerByRouteId, {
-        eventRouteId: eventRoute.eventId,
-        clerkUserId: userId,
-        siteKey: siteConfiguration.siteKey,
-      });
-
-      // Get password from search params
-      const password = searchParams.get("password");
-
-      // Determine the correct path based on status
-      let correctPath: string;
-      if (!status && !password) {
-        // No RSVP found - should be on main page to enter password
-        correctPath = `/events/${eventRoute.eventId}`;
-      } else if (!status && password) {
-        correctPath = `/events/${eventRoute.eventId}/rsvp`;
-      } else if (status) {
-        switch (status.status) {
-          case "pending":
-            correctPath = `/events/${eventRoute.eventId}/status`;
-            break;
-          case "denied":
-            correctPath = `/events/${eventRoute.eventId}/denied`;
-            break;
-          case "approved":
-            correctPath = `/events/${eventRoute.eventId}/ticket`;
-            break;
-          default:
-            correctPath = `/events/${eventRoute.eventId}/rsvp`;
-        }
-      } else {
-        // Status is null but password exists - redirect to main event page
-        correctPath = `/events/${eventRoute.eventId}`;
-      }
-
-      // Redirect if not on the correct page
-      if (pathname !== correctPath) {
-        const redirectUrl = new URL(correctPath, req.url);
-        // Preserve password, referral, and any other route state.
-        for (const [queryKey, queryValue] of searchParams.entries()) {
-          redirectUrl.searchParams.append(queryKey, queryValue);
-        }
-        return NextResponse.redirect(redirectUrl);
-      }
-    } catch (error) {
-      console.error("Error checking RSVP status in middleware:", error);
-      // If there's an error, let the page handle it
-    }
-
+    const authentication = await auth();
+    if (!authentication.userId) return redirectToSignIn(req);
+    // The status page claims guest RSVPs after Convex authentication is ready.
+    // Checking status here would redirect newly verified guests before that claim.
     return NextResponse.next();
   }
 

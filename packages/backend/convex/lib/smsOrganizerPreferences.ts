@@ -133,6 +133,16 @@ function earliestTimestamp(timestamps: (number | undefined)[]): number | undefin
   return definedTimestamps.length > 0 ? Math.min(...definedTimestamps) : undefined;
 }
 
+export function resolveSmsConsentChange(
+  previousSmsConsent: boolean,
+  submittedSmsConsent: boolean | undefined,
+): "enabled" | "disabled" | null {
+  // Confirm each organizer subscription transition, including re-enrollment.
+  // Additional event RSVPs with unchanged consent should not send another confirmation.
+  if (submittedSmsConsent === undefined || submittedSmsConsent === previousSmsConsent) return null;
+  return submittedSmsConsent ? "enabled" : "disabled";
+}
+
 async function findLatestSmsConsentFromOrganizerRsvp(
   ctx: QueryCtx | MutationCtx,
   {

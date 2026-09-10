@@ -96,6 +96,7 @@ describe("PhoneAuthPage", () => {
   });
 
   beforeEach(() => {
+    sessionStorage.clear();
     isSignedIn = true;
     authenticationMode = "signin";
     routerReplaceCalls.length = 0;
@@ -203,7 +204,7 @@ describe("PhoneAuthPage", () => {
     expect(renderResult.queryByText(siteAuthConfigurations.coucou.description)).toBeNull();
   });
 
-  it("uses captcha copy without returning to the phone heading", async () => {
+  it("keeps the phone heading when a security error has no visible challenge", async () => {
     isSignedIn = false;
     authenticationMode = "signup-captcha";
 
@@ -217,12 +218,15 @@ describe("PhoneAuthPage", () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(renderResult.getByRole("heading", { name: "Captcha verification" })).toBeTruthy();
-    });
+    await renderResult.findByText(
+      "The security check didn't finish. Please try sending the code again.",
+    );
+    expect(Boolean(renderResult.queryByRole("heading", { name: "Captcha verification" }))).toBe(
+      false,
+    );
     expect(
-      renderResult.queryByRole("heading", { name: siteAuthConfigurations.coucou.heading }),
-    ).toBeNull();
+      Boolean(renderResult.queryByRole("heading", { name: siteAuthConfigurations.coucou.heading })),
+    ).toBe(true);
     expect(renderResult.queryByText(siteAuthConfigurations.coucou.description)).toBeNull();
   });
 });

@@ -163,14 +163,12 @@ function HomeEventRow({
   const brickHref = existingRsvpHref ?? rsvpFormHref;
   const brickLabel =
     status === "approved"
-      ? "TICKET"
-      : status === "pending"
-        ? "MY RSVP"
-        : status === "denied"
-          ? "STATUS"
-          : rowSeed.isOpenForRsvp
-            ? "RSVP"
-            : "CLOSED";
+      ? "VIEW TICKET"
+      : status === "pending" || status === "denied"
+        ? "RSVP STATUS"
+        : rowSeed.isOpenForRsvp
+          ? "RSVP"
+          : "CLOSED";
   const rsvpFlowRouteIsLoading =
     !existingRsvpHref &&
     rowSeed.isOpenForRsvp &&

@@ -564,6 +564,84 @@ describe("deterministic SMS code router", () => {
     expect(state.redemption).toBeNull();
   });
 
+  it.each([
+    true,
+    false,
+  ])("routes a shared list/action password once (blast recipient: %s)", async (receivedBlast) => {
+    const testBackend = setupTestBackend();
+    const phoneNumber = "+15551230015";
+    const destination = await seedEvent(testBackend, { name: "VIP night", code: "FANCY" });
+    await testBackend.run(async (databaseContext) => {
+      const now = Date.now();
+      if (!destination.listCredentialId) throw new Error("Missing list credential");
+      await databaseContext.db.patch(destination.listCredentialId, { listKey: "vip" });
+      await databaseContext.db.insert("users", {
+        clerkUserId: "fancy_guest",
+        phone: phoneNumber,
+        firstName: "Fancy",
+        lastName: "Guest",
+        createdAt: now,
+        updatedAt: now,
+      });
+      const textBlastId = await databaseContext.db.insert("textBlasts", {
+        eventId: destination.eventId,
+        name: "VIP invite",
+        message: "Reply FANCY",
+        targetLists: ["vip"],
+        recipientCount: 1,
+        sentCount: 1,
+        failedCount: 0,
+        sentBy: "host",
+        status: "sent",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await databaseContext.db.insert("textBlastReplyActions", {
+        textBlastId,
+        replyCode: "FANCY",
+        replyCodeNormalized: "fancy",
+        targetEventId: destination.eventId,
+        targetListKey: "vip",
+        isEnabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      if (receivedBlast) {
+        const { phoneHash } = await normalizeAndHashPhoneNumber(phoneNumber);
+        await databaseContext.db.insert("textBlastRecipients", {
+          textBlastId,
+          phoneHash,
+          status: "sent",
+          sourceEventIds: [destination.eventId],
+          sourceRsvpIds: [],
+          sourceListKeys: ["vip"],
+          recipientClerkUserIds: ["fancy_guest"],
+          sentAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+    const inbound = { messageSid: "SM_same_list", phoneNumber, body: " fancy " };
+    expect(await processInbound(testBackend, inbound)).toMatchObject({
+      outcome: "submitted",
+      targetEventId: destination.eventId,
+    });
+    expect(
+      await testBackend.mutation(internal.smsCodeRouter.beginInboundReceipt, {
+        providerMessageId: inbound.messageSid,
+        fromPhoneNumber: phoneNumber,
+        toPhoneNumber: "+18449054257",
+        body: inbound.body,
+      }),
+    ).toMatchObject({ accepted: false });
+    const rsvps = await testBackend.run(async (databaseContext) =>
+      databaseContext.db.query("rsvps").collect(),
+    );
+    expect(rsvps).toHaveLength(1);
+    expect(rsvps[0]).toMatchObject({ eventId: destination.eventId, listKey: "vip" });
+  });
+
   it("gives an event password priority over a custom reply action with the same code", async () => {
     const testBackend = setupTestBackend();
     const phoneNumber = "+15551230014";

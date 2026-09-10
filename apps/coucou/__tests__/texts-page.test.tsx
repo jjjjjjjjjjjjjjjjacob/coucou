@@ -95,6 +95,8 @@ function buildMessage(patch: Partial<SmsConversationMessage> = {}): SmsConversat
 
 let currentThreads: SmsConversationThreadSummary[] | undefined;
 let currentThreadDetail: ThreadDetail | undefined;
+let currentThreadStatus: "CanLoadMore" | "LoadingMore" | "Exhausted" = "Exhausted";
+const loadMoreThreads = mock(() => {});
 let sendResult: { sent: boolean; failureReason?: string } = { sent: true };
 const actionCalls: Array<{ actionReference: ActionReference; args: unknown }> = [];
 const queryCalls: Array<{ functionName: string; args: unknown }> = [];
@@ -104,7 +106,7 @@ function mockUseQuery(queryReference: QueryReference, args: unknown) {
   const functionName = getFunctionName(queryReference);
   queryCalls.push({ functionName, args });
   if (functionName === "events:listAll") return [eventRecord];
-  if (functionName === "smsConversations:listThreads") return currentThreads;
+  if (functionName === "smsConversations:listThreadsPage") return currentThreads;
   if (functionName === "smsConversations:getThread") return currentThreadDetail;
   return undefined;
 }
@@ -120,6 +122,14 @@ mock.module("convex/react", () => ({
   useAction: mockUseAction,
   useMutation: () => async () => undefined,
   useQuery: mockUseQuery,
+  usePaginatedQuery: (queryReference: QueryReference, args: unknown) => {
+    const results = mockUseQuery(queryReference, args);
+    return {
+      results: results ?? [],
+      status: results === undefined ? "LoadingFirstPage" : currentThreadStatus,
+      loadMore: loadMoreThreads,
+    };
+  },
 }));
 
 mock.module("@/lib/use-workspace-scope", () => ({
@@ -146,6 +156,8 @@ describe("TextsPage", () => {
       searchParams: "",
     });
     currentThreads = [];
+    currentThreadStatus = "Exhausted";
+    loadMoreThreads.mockClear();
     currentThreadDetail = undefined;
     sendResult = { sent: true };
     actionCalls.length = 0;
@@ -158,7 +170,7 @@ describe("TextsPage", () => {
     expect(screen.getByRole("combobox", { name: "Select event" })).toHaveValue("all");
     expect(screen.getByText("No SMS conversations in this workspace yet.")).toBeTruthy();
     const latestListThreadsCall = queryCalls
-      .filter((queryCall) => queryCall.functionName === "smsConversations:listThreads")
+      .filter((queryCall) => queryCall.functionName === "smsConversations:listThreadsPage")
       .at(-1);
     expect(latestListThreadsCall?.args).toMatchObject({
       conversationStates: [],
@@ -167,6 +179,50 @@ describe("TextsPage", () => {
       workspaceSlug: "dojo-pomodoro",
     });
     expect(latestListThreadsCall?.args).not.toHaveProperty("eventId");
+  });
+
+  it("loads the next batch without clearing the current conversations", () => {
+    currentThreads = [buildThread()];
+    currentThreadStatus = "CanLoadMore";
+    render(<TextsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more conversations" }));
+
+    expect(loadMoreThreads).toHaveBeenCalledWith(50);
+    expect(screen.getByText("Riley Park")).toBeTruthy();
+  });
+
+  it("keeps looking through empty filtered pages before showing no results", () => {
+    currentThreadStatus = "CanLoadMore";
+    render(<TextsPage />);
+
+    expect(loadMoreThreads).toHaveBeenCalledWith(50);
+    expect(screen.getByText("Loading conversations...")).toBeTruthy();
+    expect(screen.queryByText("No SMS conversations in this workspace yet.")).toBeNull();
+  });
+
+  it("continues a Load more request across a batch with no additional matches", () => {
+    currentThreads = [buildThread()];
+    currentThreadStatus = "CanLoadMore";
+    const view = render(<TextsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Load more conversations" }));
+    expect(loadMoreThreads).toHaveBeenCalledTimes(1);
+
+    currentThreadStatus = "LoadingMore";
+    view.rerender(<TextsPage />);
+    currentThreadStatus = "CanLoadMore";
+    view.rerender(<TextsPage />);
+
+    expect(loadMoreThreads).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Riley Park")).toBeTruthy();
+  });
+
+  it("disables loading more while a batch is in flight", () => {
+    currentThreads = [buildThread()];
+    currentThreadStatus = "LoadingMore";
+    render(<TextsPage />);
+
+    expect(screen.getByRole("button", { name: "Loading conversations..." })).toBeDisabled();
   });
 
   it("honors a valid eventId deep link", () => {
@@ -178,7 +234,7 @@ describe("TextsPage", () => {
 
     expect(screen.getByRole("combobox", { name: "Select event" })).toHaveValue("event_123");
     const latestListThreadsCall = queryCalls
-      .filter((queryCall) => queryCall.functionName === "smsConversations:listThreads")
+      .filter((queryCall) => queryCall.functionName === "smsConversations:listThreadsPage")
       .at(-1);
     expect(latestListThreadsCall?.args).toMatchObject({ eventId: "event_123" });
   });
@@ -194,7 +250,7 @@ describe("TextsPage", () => {
       expect(screen.getByRole("combobox", { name: "Select event" })).toHaveValue("all");
     });
     const latestListThreadsCall = queryCalls
-      .filter((queryCall) => queryCall.functionName === "smsConversations:listThreads")
+      .filter((queryCall) => queryCall.functionName === "smsConversations:listThreadsPage")
       .at(-1);
     expect(latestListThreadsCall?.args).not.toHaveProperty("eventId");
   });
@@ -210,7 +266,7 @@ describe("TextsPage", () => {
 
     await waitFor(() => {
       const latestListThreadsCall = queryCalls
-        .filter((queryCall) => queryCall.functionName === "smsConversations:listThreads")
+        .filter((queryCall) => queryCall.functionName === "smsConversations:listThreadsPage")
         .at(-1);
       expect(latestListThreadsCall?.args).toMatchObject({
         conversationStates: ["needs_reply", "has_incoming"],
@@ -225,7 +281,7 @@ describe("TextsPage", () => {
     });
 
     const resetListThreadsCall = queryCalls
-      .filter((queryCall) => queryCall.functionName === "smsConversations:listThreads")
+      .filter((queryCall) => queryCall.functionName === "smsConversations:listThreadsPage")
       .at(-1);
     expect(resetListThreadsCall?.args).toMatchObject({
       conversationStates: [],

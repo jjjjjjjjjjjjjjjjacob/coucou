@@ -117,14 +117,12 @@ export default function EventPageClient({ params }: EventPageClientProps) {
   const focusedBrickHref = focusedExistingRsvpHref ?? focusedRsvpFormHref;
   const focusedBrickLabel =
     focusedRsvpStatus === "approved"
-      ? "TICKET"
-      : focusedRsvpStatus === "pending"
-        ? "MY RSVP"
-        : focusedRsvpStatus === "denied"
-          ? "STATUS"
-          : focusedEventIsOpen
-            ? "RSVP"
-            : "CLOSED";
+      ? "VIEW TICKET"
+      : focusedRsvpStatus === "pending" || focusedRsvpStatus === "denied"
+        ? "RSVP STATUS"
+        : focusedEventIsOpen
+          ? "RSVP"
+          : "CLOSED";
 
   const expandedContent =
     resolvedFocusedEvent.productionCompany || resolvedFocusedEvent.description ? (

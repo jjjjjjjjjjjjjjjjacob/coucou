@@ -19,6 +19,7 @@ interface PhoneInputProps {
   disabled?: boolean;
   isLoading?: boolean;
   error?: string | null;
+  resendCooldown?: number;
 }
 
 /**
@@ -35,6 +36,7 @@ export function PhoneInput({
   disabled,
   isLoading,
   error,
+  resendCooldown = 0,
 }: PhoneInputProps) {
   const { preset } = usePresetOptional();
 
@@ -47,12 +49,12 @@ export function PhoneInput({
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === "Enter" && !disabled && !isLoading) {
+      if (event.key === "Enter" && !disabled && !isLoading && resendCooldown === 0) {
         event.preventDefault();
         onSubmit();
       }
     },
-    [disabled, isLoading, onSubmit],
+    [disabled, isLoading, onSubmit, resendCooldown],
   );
 
   const isValid = isPhoneNumberLikelyValid(value, countryCode);
@@ -104,11 +106,11 @@ export function PhoneInput({
 
       <CtaButton
         preset={preset.ctaShape}
-        disabled={!isReady}
+        disabled={!isReady || resendCooldown > 0}
         onClick={onSubmit}
         isLoading={isLoading}
       >
-        Text me a code
+        {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Text me a code"}
       </CtaButton>
 
       {error ? (

@@ -407,6 +407,7 @@ export interface EventFormData extends BaseEventFormValues {
 export interface EditEventFormData extends BaseEventFormValues {}
 
 export interface RSVPFormData extends Record<string, unknown> {
+  phone: string;
   name: string; // Keep during migration phase
   firstName: string;
   lastName: string;

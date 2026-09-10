@@ -7,6 +7,7 @@ import {
   eventStatusValidator,
 } from "./lib/eventMetadata";
 import { eventPartnerValidator } from "./lib/eventPartners";
+import { guestRsvpSubmissionFields } from "./lib/rsvpSubmissionArgs";
 
 const socialPlatformConfigValidator = v.object({
   platformKey: v.string(),
@@ -605,7 +606,7 @@ export default defineSchema({
     workspaceSlug: v.optional(v.string()),
     siteKey: v.optional(v.string()),
     smsConsent: v.boolean(),
-    firstSmsOptInAt: v.optional(v.number()), // retained through opt-outs to avoid repeat enrollment texts
+    firstSmsOptInAt: v.optional(v.number()), // historical first opt-in, retained through opt-outs
     smsConsentTimestamp: v.optional(v.number()),
     smsConsentIpAddress: v.optional(v.string()),
     sourceEventId: v.optional(v.id("events")),
@@ -619,7 +620,9 @@ export default defineSchema({
 
   rsvpGuestHandoffs: defineTable({
     tokenHash: v.string(),
-    rsvpId: v.id("rsvps"),
+    rsvpId: v.optional(v.id("rsvps")),
+    submission: v.optional(v.object(guestRsvpSubmissionFields)),
+    submittedByClerkUserId: v.optional(v.string()),
     phoneNumber: v.string(),
     phoneHash: v.string(),
     expiresAt: v.number(),
@@ -627,6 +630,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_tokenHash", ["tokenHash"])
+    .index("by_phone", ["phoneHash"])
     .index("by_rsvp", ["rsvpId"])
     .index("by_expiresAt", ["expiresAt"]),
 
@@ -724,7 +728,9 @@ export default defineSchema({
     decidedBy: v.string(), // clerkUserId of host
     decidedAt: v.number(),
     denialReason: v.optional(v.string()),
-  }).index("by_event", ["eventId"]),
+  })
+    .index("by_event", ["eventId"])
+    .index("by_rsvp", ["rsvpId"]),
 
   redemptions: defineTable({
     eventId: v.id("events"),
@@ -1006,6 +1012,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_event", ["eventId"])
+    .index("by_event_last_message", ["eventId", "lastMessageAt"])
+    .index("by_last_message", ["lastMessageAt"])
     .index("by_event_phone", ["eventId", "phoneHash"])
     .index("by_workspace_phone", ["workspaceId", "phoneHash"])
     .index("by_workspace", ["workspaceId"])

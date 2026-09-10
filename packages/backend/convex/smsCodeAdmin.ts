@@ -9,6 +9,7 @@ type AuditRoute = {
   kind: "event_list" | "blast_action";
   ownerId: string;
   eventId: Id<"events">;
+  listKey: string;
   phoneHash?: string;
 };
 
@@ -42,6 +43,7 @@ async function collectExecutableRoutes(
       kind: "event_list",
       ownerId: credential._id,
       eventId: event._id,
+      listKey: credential.listKey,
     });
   }
 
@@ -68,6 +70,7 @@ async function collectExecutableRoutes(
         kind: "blast_action",
         ownerId: replyAction._id,
         eventId: targetEvent._id,
+        listKey: targetList.listKey,
         phoneHash: delivery.phoneHash,
       });
     }
@@ -87,11 +90,19 @@ function findRouteConflicts(routesByCode: Map<string, AuditRoute[]>): AuditConfl
         ownerIds: Array.from(new Set(eventRoutes.map((route) => route.ownerId))),
       });
     }
-    if (eventRoutes.length > 0 && actionRoutes.length > 0) {
+    const conflictingActionRoutes = actionRoutes.filter((actionRoute) =>
+      eventRoutes.some(
+        (eventRoute) =>
+          eventRoute.eventId !== actionRoute.eventId || eventRoute.listKey !== actionRoute.listKey,
+      ),
+    );
+    if (conflictingActionRoutes.length > 0) {
       conflicts.push({
         normalizedCode,
         type: "event_action",
-        ownerIds: Array.from(new Set(routes.map((route) => route.ownerId))),
+        ownerIds: Array.from(
+          new Set([...eventRoutes, ...conflictingActionRoutes].map((route) => route.ownerId)),
+        ),
       });
     }
     const actionRoutesByPhone = new Map<string, AuditRoute[]>();

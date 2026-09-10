@@ -1,27 +1,68 @@
 "use client";
 
 import { api } from "@convex/_generated/api";
-import { useAction } from "convex/react";
-import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
+import { useAction, useQuery } from "convex/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { EventEntry } from "@/components/event-entry";
+import { EventThemeProvider } from "@/components/event-theme-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import { buildRsvpFlowPath } from "@/lib/rsvp-routing";
 import { siteConfiguration } from "@/lib/site";
 
 export function HomePageClient() {
+  const featuredEvent = useQuery(api.events.getFeaturedEvent, {
+    siteKey: siteConfiguration.siteKey,
+  });
+  const hasNoPasswordList = useQuery(
+    api.events.hasNoPasswordList,
+    featuredEvent ? { eventId: featuredEvent._id } : "skip",
+  );
+  const iconResponse = useQuery(
+    api.files.getUrl,
+    featuredEvent?.customIconStorageId ? { storageId: featuredEvent.customIconStorageId } : "skip",
+  );
+  const router = useRouter();
+  const searchParameters = useSearchParams();
+  useEffect(() => {
+    if (featuredEvent && hasNoPasswordList === false) {
+      router.replace(
+        buildRsvpFlowPath(`/events/${getEventRouteId(featuredEvent)}`, searchParameters),
+      );
+    }
+  }, [featuredEvent, hasNoPasswordList, router, searchParameters]);
+  if (featuredEvent === undefined || (featuredEvent && hasNoPasswordList !== true)) {
+    return (
+      <main className="flex min-h-screen items-center justify-center text-primary">
+        <Spinner />
+      </main>
+    );
+  }
+  if (!featuredEvent) return <PasswordHome />;
+  return (
+    <EventThemeProvider
+      event={featuredEvent}
+      iconUrl={iconResponse?.url}
+      brandingSourceId={`home-event:${featuredEvent._id}`}
+    >
+      <EventEntry event={featuredEvent} />
+    </EventThemeProvider>
+  );
+}
+
+function PasswordHome() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParameters = useSearchParams();
   const resolve = useAction(api.credentialsNode.resolveEventByPassword);
 
   const onSubmit = useCallback(async () => {
     const normalizedPassword = password.trim();
-    console.log("[DEBUG] Home page password entry:", {
-      original: password,
-      normalized: normalizedPassword,
-      length: normalizedPassword.length,
-    });
     if (!normalizedPassword) {
       setMessage("Enter your list code.");
       return;
@@ -29,17 +70,17 @@ export function HomePageClient() {
     try {
       setLoading(true);
       setMessage("");
-      console.log("[DEBUG] Sending password to backend:", normalizedPassword);
       const resolutionResult = await resolve({
         password: normalizedPassword,
         siteKey: siteConfiguration.siteKey,
       });
       if (resolutionResult?.ok && resolutionResult.eventRouteId) {
         // Pass the code along in search params to the event page
-        const searchParams = new URLSearchParams({
-          password: normalizedPassword,
-        }).toString();
-        router.push(`/events/${resolutionResult.eventRouteId}?${searchParams}`);
+        const nextSearchParameters = new URLSearchParams(searchParameters.toString());
+        nextSearchParameters.set("password", normalizedPassword);
+        router.push(
+          buildRsvpFlowPath(`/events/${resolutionResult.eventRouteId}`, nextSearchParameters),
+        );
       } else {
         setMessage("No active event matches that password.");
       }
@@ -49,7 +90,7 @@ export function HomePageClient() {
     } finally {
       setLoading(false);
     }
-  }, [password, resolve, router]);
+  }, [password, resolve, router, searchParameters]);
 
   return (
     <main className="min-h-[calc(100vh-56px)] flex items-center justify-center p-6">

@@ -37,19 +37,16 @@ import { useGuestDirectoryTable } from "./use-guest-directory-table";
 
 function buildFilterAudience(
   filters: GuestDirectoryFilterState,
-  options: { includeSmsConsent: boolean },
 ): Extract<ContactAudience, { type: "filter" }> {
   const {
     sortBy: _sortBy,
     sortDirection: _sortDirection,
-    smsConsentFilter,
     ...encodedFilters
   } = encodeGuestDirectoryFilterArgs(filters);
   return {
     type: "filter",
     filters: {
       ...encodedFilters,
-      ...(options.includeSmsConsent && smsConsentFilter ? { smsConsentFilter } : {}),
       eventIds: encodedFilters.eventIds as Id<"events">[] | undefined,
       recipientHistoryFilter: encodedFilters.recipientHistoryFilter
         ? {
@@ -105,11 +102,7 @@ export function ContactAudiencePicker({
   const allMatching = audience?.type === "filter";
   const debouncedSearchText = useDebounce(filters.searchText, 250);
   const eligibilityAudience = useMemo(
-    () =>
-      buildFilterAudience(
-        { ...filters, searchText: debouncedSearchText },
-        { includeSmsConsent: false },
-      ),
+    () => buildFilterAudience({ ...filters, searchText: debouncedSearchText }),
     [debouncedSearchText, filters],
   );
   const eligibilityFilterKey = JSON.stringify(eligibilityAudience);
@@ -163,17 +156,19 @@ export function ContactAudiencePicker({
     if (changedAudience) clearAudience();
   };
   const selectAllMatching = () => {
-    onChange(buildFilterAudience(filters, { includeSmsConsent: true }));
+    onChange(buildFilterAudience(filters));
   };
-  const explicitSelectedCount = selectedIds.length;
+  const selectedCount = allMatching
+    ? eligibilityPreview?.status === "ready"
+      ? eligibilityPreview.processedCount
+      : undefined
+    : selectedIds.length;
   const selectionLabel =
-    eligibilityPreview?.status === "ready"
-      ? `${(allMatching ? eligibilityPreview.eligibleCount : explicitSelectedCount).toLocaleString()} selected of ${eligibilityPreview.eligibleCount.toLocaleString()} eligible (${eligibilityPreview.excludedCount.toLocaleString()} not eligible)`
+    selectedCount !== undefined
+      ? `${selectedCount.toLocaleString()} ${selectedCount === 1 ? "person" : "people"} selected`
       : eligibilityPreview?.status === "failed" || eligibilityCountError
-        ? `${explicitSelectedCount.toLocaleString()} selected · eligibility totals unavailable`
-        : allMatching
-          ? "All matching selected · checking eligibility…"
-          : `${explicitSelectedCount.toLocaleString()} selected · checking eligibility…`;
+        ? "Selected count unavailable"
+        : "Counting selected people…";
   const columnLayout = useDashboardTableColumnLayout({
     tableKey: HOST_GUEST_DIRECTORY_TABLE_KEY,
     scopeKey: HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,

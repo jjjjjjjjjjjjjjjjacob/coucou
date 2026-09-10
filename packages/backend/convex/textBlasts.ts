@@ -63,6 +63,7 @@ import {
   getTextBlastInSiteScope,
 } from "./lib/siteScope";
 import {
+  isReplyActionForListCredential,
   isSmsExecutableEvent,
   normalizeSmsCode,
   SMS_CODE_RESERVATION_DURATION_MS,
@@ -280,6 +281,7 @@ async function hasExecutableEventCodeCollision(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   normalizedCode: string,
   now: number,
+  destination?: Pick<ReplyActionInput, "targetEventId" | "targetListKey">,
 ): Promise<boolean> {
   const matchingCredentials = await ctx.db
     .query("listCredentials")
@@ -289,7 +291,11 @@ async function hasExecutableEventCodeCollision(
     .collect();
   for (const matchingCredential of matchingCredentials) {
     const event = await ctx.db.get(matchingCredential.eventId);
-    if (event && isSmsExecutableEvent(event, now)) {
+    if (
+      event &&
+      isSmsExecutableEvent(event, now) &&
+      (!destination || !isReplyActionForListCredential(destination, matchingCredential))
+    ) {
       return true;
     }
   }
@@ -301,8 +307,9 @@ async function assertNoExecutableEventCodeCollision(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   normalizedCode: string,
   now: number,
+  destination: Pick<ReplyActionInput, "targetEventId" | "targetListKey">,
 ): Promise<void> {
-  if (await hasExecutableEventCodeCollision(ctx, normalizedCode, now)) {
+  if (await hasExecutableEventCodeCollision(ctx, normalizedCode, now, destination)) {
     throwSmsCodeConflict();
   }
 }
@@ -403,7 +410,7 @@ export async function normalizeReplyActionsForStorage(
       if (!isSmsExecutableEvent(targetEvent, now)) {
         throw new Error(`Destination event "${targetEvent.name}" is not open for RSVPs`);
       }
-      await assertNoExecutableEventCodeCollision(ctx, replyCodeNormalized, now);
+      await assertNoExecutableEventCodeCollision(ctx, replyCodeNormalized, now, replyAction);
     }
 
     const targetListKey = replyAction.targetListKey.trim();
@@ -474,7 +481,12 @@ async function reserveReplyActionClaims(
   const uniquePhoneHashes = Array.from(new Set(args.phoneHashes));
 
   for (const replyAction of replyActions) {
-    await assertNoExecutableEventCodeCollision(ctx, replyAction.replyCodeNormalized, args.now);
+    await assertNoExecutableEventCodeCollision(
+      ctx,
+      replyAction.replyCodeNormalized,
+      args.now,
+      replyAction,
+    );
     const targetEvent = await ctx.db.get(replyAction.targetEventId);
     if (!targetEvent || !isSmsExecutableEvent(targetEvent, args.now)) {
       throw new ConvexError(
@@ -2461,6 +2473,7 @@ export const updateReplyActions = mutation({
             ctx,
             existingReplyAction.replyCodeNormalized,
             now,
+            existingReplyAction,
           );
           await ensureListExistsForEvent(ctx, targetEvent._id, existingReplyAction.targetListKey);
           enabledTransitionActionIds.add(existingReplyAction._id);
@@ -2553,6 +2566,8 @@ export const validateReplyActionCodes = query({
       v.object({
         replyCode: v.string(),
         isEnabled: v.boolean(),
+        targetEventId: v.optional(v.id("events")),
+        targetListKey: v.optional(v.string()),
       }),
     ),
   },
@@ -2643,14 +2658,28 @@ export const validateReplyActionCodes = query({
         continue;
       }
 
-      if (await hasExecutableEventCodeCollision(ctx, sanitizedReplyCode.replyCodeNormalized, now)) {
+      let destination: Pick<ReplyActionInput, "targetEventId" | "targetListKey"> | undefined;
+      if (replyAction.targetEventId && replyAction.targetListKey?.trim()) {
+        const targetEvent = await ensureEventInSiteScope(ctx, replyAction.targetEventId, args);
+        const targetListKey = replyAction.targetListKey.trim();
+        await ensureListExistsForEvent(ctx, targetEvent._id, targetListKey);
+        destination = { targetEventId: targetEvent._id, targetListKey };
+      }
+      if (
+        await hasExecutableEventCodeCollision(
+          ctx,
+          sanitizedReplyCode.replyCodeNormalized,
+          now,
+          destination,
+        )
+      ) {
         results.push({
           replyCode: sanitizedReplyCode.replyCode,
           normalizedReplyCode: sanitizedReplyCode.replyCodeNormalized,
           status: "event_code_conflict",
           isAvailable: false,
           message:
-            "This code is already active as an event list password. Choose another reply code.",
+            "This code is an active list password. Select that same event and list, or choose another reply code.",
         });
         continue;
       }

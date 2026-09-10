@@ -207,7 +207,7 @@ describe("guest RSVP handoff", () => {
       token: result.rsvpHandoffToken,
     });
     expect(handoff?.phoneNumber).toBe("+13104996272");
-    expect(handoff?.canAutoSendCode).toBe(false);
+    expect(handoff?.canAutoSendCode).toBe(true);
   });
 
   it.each([
@@ -945,15 +945,18 @@ describe("guest RSVP handoff", () => {
     });
   });
 
-  it("preserves the first opt-in across opt-out and re-enrollment without repeating the subscription text", async () => {
+  it.each([
+    false,
+    true,
+  ])("confirms each subscription transition once per organizer (apply to all: %s)", async (applyToAll) => {
     const testBackend = setupTestBackend();
     const eventId = await seedActiveEvent(testBackend);
+    const otherEventId = await seedActiveEvent(testBackend);
     const authedBackend = testBackend.withIdentity(
       createPhoneIdentity("user_sms_reenrollment", "+13104996272"),
     );
 
-    await authedBackend.mutation(api.rsvps.submitRequest, {
-      eventId,
+    const submissionArgs = {
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Mina",
@@ -964,7 +967,13 @@ describe("guest RSVP handoff", () => {
       smsConsent: true,
       customFields: {},
       socialProfiles: [],
-    });
+    };
+    for (const submittedEventId of [eventId, otherEventId]) {
+      await authedBackend.mutation(api.rsvps.submitRequest, {
+        ...submissionArgs,
+        eventId: submittedEventId,
+      });
+    }
     const rsvp = await testBackend.run(async (databaseContext) => {
       return await databaseContext.db
         .query("rsvps")
@@ -975,14 +984,13 @@ describe("guest RSVP handoff", () => {
     });
     if (!rsvp) throw new Error("Expected RSVP for SMS re-enrollment test");
 
-    await authedBackend.mutation(api.rsvps.updateSmsPreference, {
-      rsvpId: rsvp._id,
-      smsConsent: false,
-    });
-    await authedBackend.mutation(api.rsvps.updateSmsPreference, {
-      rsvpId: rsvp._id,
-      smsConsent: true,
-    });
+    for (const smsConsent of [false, false, true, true]) {
+      await authedBackend.mutation(api.rsvps.updateSmsPreference, {
+        rsvpId: rsvp._id,
+        smsConsent,
+        applyToAll,
+      });
+    }
 
     const consentTransitions = await testBackend.run(async (databaseContext) => {
       const scheduledFunctions = await databaseContext.db.system
@@ -995,11 +1003,74 @@ describe("guest RSVP handoff", () => {
         )
         .map((scheduledFunction) => scheduledFunction.args[0]?.consentEnabled);
     });
-    expect(consentTransitions).toEqual([true, false]);
+    expect(consentTransitions).toEqual([true, false, true]);
     const organizerPreference = await testBackend.run(async (databaseContext) => {
       return await databaseContext.db.query("userSmsOrganizerPreferences").unique();
     });
     expect(organizerPreference).toMatchObject({ smsConsent: true, firstSmsOptInAt: Date.now() });
+  });
+
+  it.each([
+    "signed-in",
+    "guest",
+  ])("confirms re-enrollment through an RSVP without repeating it for other events (%s)", async (submissionType) => {
+    const testBackend = setupTestBackend();
+    const firstEventId = await seedActiveEvent(testBackend);
+    const secondEventId = await seedActiveEvent(testBackend);
+    const thirdEventId = await seedActiveEvent(testBackend);
+    const phoneNumber = "+13104996272";
+    const submissionBackend =
+      submissionType === "signed-in"
+        ? testBackend.withIdentity(createPhoneIdentity("user_resubscribing", phoneNumber))
+        : testBackend;
+    const submitRequest =
+      submissionType === "signed-in" ? api.rsvps.submitRequest : api.rsvps.submitGuestRequest;
+    const submissionArgs = {
+      siteKey: "club-chlorine",
+      listKey: "ga",
+      firstName: "Mina",
+      lastName: "Park",
+      phone: phoneNumber,
+      shareContact: true,
+    };
+    for (const smsConsent of [true, false]) {
+      await submissionBackend.mutation(submitRequest, {
+        ...submissionArgs,
+        eventId: firstEventId,
+        smsConsent,
+      });
+    }
+    // A new RSVP without an explicit choice must keep the organizer opt-out.
+    await submissionBackend.mutation(submitRequest, {
+      ...submissionArgs,
+      eventId: secondEventId,
+    });
+    const optedOutRsvp = await testBackend.run((databaseContext) =>
+      databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", secondEventId))
+        .unique(),
+    );
+    expect(optedOutRsvp?.smsConsent).toBe(false);
+    for (const eventId of [secondEventId, secondEventId, thirdEventId]) {
+      await submissionBackend.mutation(submitRequest, {
+        ...submissionArgs,
+        eventId,
+        smsConsent: true,
+      });
+    }
+    const consentTransitions = await testBackend.run(async (databaseContext) => {
+      const scheduledFunctions = await databaseContext.db.system
+        .query("_scheduled_functions")
+        .collect();
+      return scheduledFunctions
+        .filter(
+          (scheduledFunction) =>
+            scheduledFunction.name === "notifications:sendSmsConsentStatusMessage",
+        )
+        .map((scheduledFunction) => scheduledFunction.args[0]?.consentEnabled);
+    });
+    expect(consentTransitions).toEqual([true, false, true]);
   });
 
   it("does not repeat enrollment when another event has stale per-event consent", async () => {

@@ -1,4 +1,8 @@
 import { getSiteOrigin, getSiteOrigins, siteConfigurations } from "@coucou/sdk";
+import {
+  resolvePublicOriginEnvironment,
+  resolvePublicSiteOrigin,
+} from "@coucou/sdk/shared/event-routes";
 import type { SiteKey } from "@coucou/sdk/site-config";
 import { normalizeDomainOrigin } from "./workspace-login-branding";
 
@@ -7,7 +11,11 @@ const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
 function isLocalhostOrigin(origin: string): boolean {
   try {
     const url = new URL(origin);
-    return LOCAL_HOSTNAMES.has(url.hostname) || url.hostname.endsWith(".local");
+    return (
+      LOCAL_HOSTNAMES.has(url.hostname) ||
+      url.hostname.endsWith(".localhost") ||
+      url.hostname.endsWith(".local")
+    );
   } catch {
     return false;
   }
@@ -23,6 +31,7 @@ function isVercelPreviewOrigin(origin: string): boolean {
 }
 
 interface AllowedOriginContext {
+  requestOrigin?: string | null;
   /**
    * Origins observed on the inbound request — typically the parsed
    * origins of the `redirect_url` query param and the `Referer` header.
@@ -65,6 +74,23 @@ export function buildClientAuthAllowedRedirectOrigins(
 
   const isProduction = process.env.NODE_ENV === "production";
   const isVercelPreview = process.env.VERCEL_ENV === "preview";
+  const requestEnvironment = context.requestOrigin
+    ? resolvePublicOriginEnvironment({ currentOrigin: context.requestOrigin })
+    : null;
+  const allowsLocalOrigins = !isProduction || requestEnvironment === "local";
+  const allowsDevelopmentOrigins =
+    !isProduction || isVercelPreview || requestEnvironment === "development";
+  if (siteConfig && allowsDevelopmentOrigins) {
+    for (const siteOrigin of getSiteOrigins(siteConfig)) {
+      allowed.add(
+        resolvePublicSiteOrigin({
+          siteConfiguration: siteConfig,
+          domain: siteOrigin,
+          vercelEnvironment: "preview",
+        }),
+      );
+    }
+  }
 
   for (const candidate of context.candidateOrigins ?? []) {
     if (!candidate) continue;
@@ -74,9 +100,9 @@ export function buildClientAuthAllowedRedirectOrigins(
     } catch {
       continue;
     }
-    if (!isProduction && isLocalhostOrigin(candidateOrigin)) {
+    if (allowsLocalOrigins && isLocalhostOrigin(candidateOrigin)) {
       allowed.add(candidateOrigin);
-    } else if ((isVercelPreview || !isProduction) && isVercelPreviewOrigin(candidateOrigin)) {
+    } else if (allowsDevelopmentOrigins && isVercelPreviewOrigin(candidateOrigin)) {
       allowed.add(candidateOrigin);
     }
   }

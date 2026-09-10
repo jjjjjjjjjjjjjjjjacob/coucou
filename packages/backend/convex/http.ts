@@ -97,6 +97,12 @@ export const clerkWebhook = httpAction(async (ctx, request) => {
           phone: userProfile.phone,
         });
       }
+    } else if (type === "user.deleted") {
+      const userProfile = extractClerkUserWebhookProfile(data);
+      if (userProfile)
+        await ctx.runMutation(internal.users.deleteFromClerk, {
+          clerkUserId: userProfile.clerkUserId,
+        });
     } else if (type === "organization.created" || type === "organization.updated") {
       const organizationPayload = extractClerkOrganizationWorkspacePayload(data);
       if (organizationPayload) {

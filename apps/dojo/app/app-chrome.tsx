@@ -5,7 +5,13 @@ import type { ReactNode } from "react";
 import { Footer } from "@/components/footer";
 import HeaderClient from "./header-client";
 
-export function AppChrome({ children }: { children: ReactNode }) {
+export function AppChrome({
+  children,
+  satelliteOrigin,
+}: {
+  children: ReactNode;
+  satelliteOrigin?: string;
+}) {
   const pathname = usePathname();
   const isSignInRoute = pathname?.startsWith("/sign-in") ?? false;
 
@@ -18,7 +24,7 @@ export function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <HeaderClient />
+      <HeaderClient satelliteOrigin={satelliteOrigin} />
       <main className="flex-1">{children}</main>
       <Footer />
     </>
