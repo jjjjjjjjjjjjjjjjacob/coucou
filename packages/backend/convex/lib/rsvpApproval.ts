@@ -119,6 +119,7 @@ export async function applyApprovalStatusTransition(
     });
     if (redemption && rsvp.shareContact && rsvp.listKey) {
       await ctx.scheduler.runAfter(0, api.notifications.sendApprovalSms, {
+        rsvpId: rsvp._id,
         eventId: rsvp.eventId,
         clerkUserId: rsvp.clerkUserId,
         listKey: rsvp.listKey,

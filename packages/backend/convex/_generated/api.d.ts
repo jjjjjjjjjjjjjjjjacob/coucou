@@ -71,6 +71,7 @@ import type * as lib_rsvpApproval from "../lib/rsvpApproval.js";
 import type * as lib_rsvpConfirmationMessages from "../lib/rsvpConfirmationMessages.js";
 import type * as lib_rsvpFilters from "../lib/rsvpFilters.js";
 import type * as lib_rsvpListKey from "../lib/rsvpListKey.js";
+import type * as lib_rsvpReconciliationRecords from "../lib/rsvpReconciliationRecords.js";
 import type * as lib_rsvpStatus from "../lib/rsvpStatus.js";
 import type * as lib_rsvpSubmissionArgs from "../lib/rsvpSubmissionArgs.js";
 import type * as lib_rsvpSubmissionService from "../lib/rsvpSubmissionService.js";
@@ -196,6 +197,7 @@ declare const fullApi: ApiFromModules<{
   "lib/rsvpConfirmationMessages": typeof lib_rsvpConfirmationMessages;
   "lib/rsvpFilters": typeof lib_rsvpFilters;
   "lib/rsvpListKey": typeof lib_rsvpListKey;
+  "lib/rsvpReconciliationRecords": typeof lib_rsvpReconciliationRecords;
   "lib/rsvpStatus": typeof lib_rsvpStatus;
   "lib/rsvpSubmissionArgs": typeof lib_rsvpSubmissionArgs;
   "lib/rsvpSubmissionService": typeof lib_rsvpSubmissionService;

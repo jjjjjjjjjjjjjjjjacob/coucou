@@ -23,7 +23,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
   const { eventId: eventRouteId } = use(params);
   const router = useRouter();
   const searchParameters = useSearchParams();
-  const { isSignedIn, isLoaded, userId } = useAuth();
+  const { isSignedIn, isLoaded, userId, signOut } = useAuth();
   const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
     useConvexAuth();
   const canLoadAuthenticatedStatus = isLoaded && isSignedIn && isConvexAuthenticated;
@@ -294,7 +294,22 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
             </div>
           )}
           {!status?.status && (
-            <div className="text-sm text-foreground/70">No request on file yet.</div>
+            <div className="space-y-3 text-sm text-foreground/70">
+              <p>
+                No RSVP matches the verified phone on this account. Sign in with the number you used
+                to RSVP.
+              </p>
+              <button
+                type="button"
+                className="underline"
+                onClick={() => void signOut({ redirectUrl: window.location.href })}
+              >
+                Switch accounts
+              </button>
+              <Link className="block underline" href={`/events/${eventRouteId}`}>
+                Back to event
+              </Link>
+            </div>
           )}
         </div>
       )}

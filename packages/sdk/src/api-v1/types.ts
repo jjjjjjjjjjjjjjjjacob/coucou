@@ -19,6 +19,7 @@ export interface ApiErrorBody {
 
 export type ApiApprovalStatus = "pending" | "approved" | "denied";
 export type ApiAttendanceStatus = "yes" | "no" | "maybe";
+export type ApiRsvpSource = "text" | "form" | "api" | "unknown";
 export type ApiTicketStatus = "issued" | "disabled" | "redeemed";
 export type PartnerEventAccessMode = "all" | "selected";
 
@@ -100,6 +101,7 @@ export interface ApiEventDetail extends ApiEvent {
 /** RSVP shape returned by the lookup and write endpoints. */
 export interface ApiRsvp {
   rsvpId: string;
+  source: ApiRsvpSource;
   approvalStatus: ApiApprovalStatus;
   attendanceStatus: ApiAttendanceStatus;
   listKey: string;
@@ -174,6 +176,8 @@ export interface CoucouWebhookEventSnapshot {
 
 export interface CoucouWebhookRsvpSnapshot {
   id: string;
+  /** Missing only on immutable webhook payloads emitted before RSVP source tracking. */
+  source?: ApiRsvpSource;
   listKey: string;
   approvalStatus: ApiApprovalStatus;
   attendanceStatus: ApiAttendanceStatus;

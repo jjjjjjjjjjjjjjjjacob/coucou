@@ -319,6 +319,7 @@ export async function enqueueRsvpWebhookDeliveries(
       event: buildEventSnapshot(event),
       rsvp: {
         id: rsvp._id,
+        source: rsvp.source ?? "unknown",
         listKey: rsvp.listKey,
         approvalStatus: resolveApprovalStatus(rsvp),
         attendanceStatus: sanitizeAttendanceStatus(rsvp.attendanceStatus),

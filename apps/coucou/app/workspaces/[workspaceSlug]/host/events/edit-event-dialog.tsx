@@ -83,6 +83,7 @@ import {
   extractTimeFromTimestamp,
 } from "@/lib/date-utils";
 import { sanitizeEventActsForSubmit } from "@/lib/event-metadata";
+import { buildPublicEventUrl } from "@/lib/event-public-url";
 import {
   EVENT_THEME_DEFAULT_ACCENT_COLOR,
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
@@ -503,9 +504,11 @@ export default function EditEventDialog({
     name: currentEventName,
     secondaryTitle: currentEventSecondaryTitle,
   });
+  const statusPreviewEventUrl = buildPublicEventUrl(workspace ?? null, event);
   const confirmationPreviewVariables = React.useMemo(
     () =>
       buildConfirmationPreviewVariables({
+        eventStatusUrl: statusPreviewEventUrl ? `${statusPreviewEventUrl}/status` : undefined,
         name: currentEventName,
         secondaryTitle: currentEventSecondaryTitle,
         eventDate: currentEventDate,
@@ -520,6 +523,7 @@ export default function EditEventDialog({
       currentEventTime,
       currentEventTimezone,
       currentEventLocation,
+      statusPreviewEventUrl,
     ],
   );
 

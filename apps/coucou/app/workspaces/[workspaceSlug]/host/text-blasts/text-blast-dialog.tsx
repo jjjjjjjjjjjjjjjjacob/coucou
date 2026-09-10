@@ -4,11 +4,13 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import type { ContactAudience } from "@convex/lib/contactValidators";
 import { useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ContactAudiencePicker } from "@/components/guests/contact-audience-picker";
 import { ContactAudiencePreview } from "@/components/guests/contact-audience-preview";
 import { MessageTemplateVariableButtons } from "@/components/message-template-variable-buttons";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -42,9 +44,21 @@ interface TextBlastDialogProps {
 interface ReplyActionRow {
   key: string;
   replyCode: string;
+  useDifferentPassword: boolean;
   targetEventId: Id<"events"> | "";
   targetListKey: string;
   isEnabled: boolean;
+}
+
+function getListPassword(
+  targets: FunctionReturnType<typeof api.textBlasts.getReplyActionTargetOptions> | undefined,
+  action: Pick<ReplyActionRow, "targetEventId" | "targetListKey">,
+) {
+  return (
+    targets
+      ?.find((event) => event.eventId === action.targetEventId)
+      ?.lists.find((list) => list.listKey === action.targetListKey)?.password ?? ""
+  );
 }
 
 const EVENT_SPECIFIC_MESSAGE_VARIABLES = [
@@ -52,6 +66,7 @@ const EVENT_SPECIFIC_MESSAGE_VARIABLES = [
   "eventDate",
   "eventLocation",
   "qrCodeUrl",
+  "eventStatusUrl",
 ] as const;
 const MESSAGE_EVENT_REQUIRED_REASON =
   "Choose a message event above to use event details or a QR code.";
@@ -99,11 +114,19 @@ function ContactBlastComposer({
     [events],
   );
   const effectiveQrCodes = includeQrCodes || messageContainsQrCodeUrlVariable(message);
+  const effectiveReplyActions = replyActions.map((row) => ({
+    replyCode: row.useDifferentPassword
+      ? row.replyCode
+      : getListPassword(replyActionTargets, row) || row.replyCode,
+    targetEventId: row.targetEventId,
+    targetListKey: row.targetListKey,
+    isEnabled: row.isEnabled,
+  }));
   const previewKey = JSON.stringify({
     audience,
     messageEventId,
     includeQrCodes: effectiveQrCodes,
-    replyActions: replyActions.map(({ key: _key, ...row }) => row),
+    replyActions: effectiveReplyActions,
   });
   const previewId = previewState?.key === previewKey ? previewState.id : undefined;
   const preview = useQuery(
@@ -124,7 +147,7 @@ function ContactBlastComposer({
 
   useEffect(() => {
     const blast = existingBlast;
-    if (!blast || loaded) return;
+    if (!blast || loaded || !replyActionTargets) return;
     setName(blast.name);
     setMessage(blast.message);
     setMessageEventId(blast.eventId ?? "");
@@ -147,6 +170,10 @@ function ContactBlastComposer({
       blast.replyActions.map((action) => ({
         key: action._id,
         replyCode: action.replyCode,
+        useDifferentPassword: Boolean(
+          action.replyCode.trim() &&
+            action.replyCode !== getListPassword(replyActionTargets, action),
+        ),
         targetEventId: action.targetEventId,
         targetListKey: action.targetListKey,
         isEnabled: action.isEnabled,
@@ -170,10 +197,10 @@ function ContactBlastComposer({
       setStep(3);
     }
     setLoaded(true);
-  }, [existingBlast, loaded]);
+  }, [existingBlast, loaded, replyActionTargets]);
 
   const resolveReplyActions = () =>
-    replyActions.map((row) => {
+    effectiveReplyActions.map((row) => {
       if (!row.replyCode.trim() || !row.targetEventId || !row.targetListKey)
         throw new Error("Complete each reply code, event, and list.");
       return {
@@ -362,6 +389,7 @@ function ContactBlastComposer({
                           {
                             key: crypto.randomUUID(),
                             replyCode: "",
+                            useDifferentPassword: false,
                             targetEventId: "",
                             targetListKey: "",
                             isEnabled: true,
@@ -372,64 +400,100 @@ function ContactBlastComposer({
                       Add reply action
                     </Button>
                   </div>
-                  {replyActions.map((row) => (
-                    <div key={row.key} className="flex flex-wrap items-center gap-2">
-                      <Input
-                        aria-label="Reply code"
-                        className="w-32"
-                        value={row.replyCode}
-                        onChange={(event) =>
-                          updateReplyRow(row.key, { replyCode: event.target.value })
-                        }
-                      />
-                      <Select
-                        value={row.targetEventId}
-                        onValueChange={(value) =>
-                          updateReplyRow(row.key, {
-                            targetEventId: value as Id<"events">,
-                            targetListKey: "",
-                          })
-                        }
-                      >
-                        <SelectOption value="">Destination event</SelectOption>
-                        {(replyActionTargets ?? []).map((event) => (
-                          <SelectOption key={event.eventId} value={event.eventId}>
-                            {event.eventName}
-                          </SelectOption>
-                        ))}
-                      </Select>
-                      <Select
-                        value={row.targetListKey}
-                        onValueChange={(value) => updateReplyRow(row.key, { targetListKey: value })}
-                      >
-                        <SelectOption value="">Destination list</SelectOption>
-                        {(replyActionTargets ?? [])
-                          .find((event) => event.eventId === row.targetEventId)
-                          ?.lists.map((list) => (
-                            <SelectOption key={list.listKey} value={list.listKey}>
-                              {list.listKey}
+                  {replyActions.map((row) => {
+                    const listPassword = getListPassword(replyActionTargets, row);
+                    return (
+                      <div key={row.key} className="flex flex-wrap items-center gap-2">
+                        <div className="w-full space-y-2">
+                          <Label htmlFor={`reply-password-${row.key}`}>Reply password</Label>
+                          <Input
+                            id={`reply-password-${row.key}`}
+                            value={
+                              row.useDifferentPassword
+                                ? row.replyCode
+                                : listPassword || row.replyCode
+                            }
+                            disabled={Boolean(listPassword) && !row.useDifferentPassword}
+                            onChange={(event) =>
+                              updateReplyRow(row.key, { replyCode: event.target.value })
+                            }
+                          />
+                          {listPassword ? (
+                            <label className="flex min-h-10 items-center gap-2 text-sm">
+                              <Checkbox
+                                checked={row.useDifferentPassword}
+                                onCheckedChange={(checked) =>
+                                  updateReplyRow(row.key, {
+                                    useDifferentPassword: checked === true,
+                                    replyCode: row.replyCode || listPassword,
+                                  })
+                                }
+                              />
+                              Use a different password
+                            </label>
+                          ) : null}
+                        </div>
+                        <Select
+                          aria-label="Destination event"
+                          value={row.targetEventId}
+                          onValueChange={(value) =>
+                            updateReplyRow(row.key, {
+                              targetEventId: value as Id<"events">,
+                              targetListKey: "",
+                              replyCode: "",
+                              useDifferentPassword: false,
+                            })
+                          }
+                        >
+                          <SelectOption value="">Destination event</SelectOption>
+                          {(replyActionTargets ?? []).map((event) => (
+                            <SelectOption key={event.eventId} value={event.eventId}>
+                              {event.eventName}
                             </SelectOption>
                           ))}
-                      </Select>
-                      <label className="flex gap-2 text-sm">
-                        <Checkbox
-                          checked={row.isEnabled}
-                          onCheckedChange={(checked) =>
-                            updateReplyRow(row.key, { isEnabled: checked === true })
+                        </Select>
+                        <Select
+                          aria-label="Destination list"
+                          value={row.targetListKey}
+                          onValueChange={(value) =>
+                            updateReplyRow(row.key, {
+                              targetListKey: value,
+                              replyCode: "",
+                              useDifferentPassword: false,
+                            })
                           }
-                        />
-                        Enabled
-                      </label>
-                      <Button
-                        variant="ghost"
-                        onClick={() =>
-                          setReplyActions((rows) => rows.filter((action) => action.key !== row.key))
-                        }
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ))}
+                        >
+                          <SelectOption value="">Destination list</SelectOption>
+                          {(replyActionTargets ?? [])
+                            .find((event) => event.eventId === row.targetEventId)
+                            ?.lists.map((list) => (
+                              <SelectOption key={list.listKey} value={list.listKey}>
+                                {list.listKey}
+                              </SelectOption>
+                            ))}
+                        </Select>
+                        <label className="flex gap-2 text-sm">
+                          <Checkbox
+                            checked={row.isEnabled}
+                            onCheckedChange={(checked) =>
+                              updateReplyRow(row.key, { isEnabled: checked === true })
+                            }
+                          />
+                          Enabled
+                        </label>
+                        <Button
+                          variant="ghost"
+                          onClick={() =>
+                            setReplyActions((rows) =>
+                              rows.filter((action) => action.key !== row.key),
+                            )
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </section>
               </div>
             ) : null}
@@ -439,6 +503,50 @@ function ContactBlastComposer({
                 <div className="whitespace-pre-wrap rounded-lg border border-[var(--border-subtle)] p-4">
                   {message}
                 </div>
+                {effectiveReplyActions.length > 0 ? (
+                  <section aria-labelledby="review-reply-actions-heading" className="space-y-3">
+                    <h3 id="review-reply-actions-heading" className="font-medium">
+                      Reply actions
+                    </h3>
+                    <ul className="space-y-2">
+                      {effectiveReplyActions.map((action) => {
+                        const destinationEventName =
+                          replyActionTargets?.find(
+                            (event) => event.eventId === action.targetEventId,
+                          )?.eventName ??
+                          events?.find((event) => event._id === action.targetEventId)?.name ??
+                          "Unavailable event";
+                        return (
+                          <li
+                            key={`${action.targetEventId}-${action.targetListKey}-${action.replyCode}`}
+                            className="flex flex-col gap-3 rounded-lg border border-[var(--border-subtle)] p-4 sm:flex-row sm:items-start"
+                          >
+                            <dl className="grid min-w-0 flex-1 gap-3 text-sm sm:grid-cols-3">
+                              <div className="min-w-0 space-y-1">
+                                <dt className="text-[var(--text-secondary)]">Reply password</dt>
+                                <dd className="break-words font-mono">{action.replyCode}</dd>
+                              </div>
+                              <div className="min-w-0 space-y-1">
+                                <dt className="text-[var(--text-secondary)]">Destination event</dt>
+                                <dd className="break-words">{destinationEventName}</dd>
+                              </div>
+                              <div className="min-w-0 space-y-1">
+                                <dt className="text-[var(--text-secondary)]">Destination list</dt>
+                                <dd className="break-words">{action.targetListKey}</dd>
+                              </div>
+                            </dl>
+                            <Badge
+                              variant={action.isEnabled ? "secondary" : "outline"}
+                              className="self-start"
+                            >
+                              {action.isEnabled ? "Enabled" : "Disabled"}
+                            </Badge>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                ) : null}
                 {preview?.status === "failed" ? (
                   <div role="alert">
                     {preview.error}

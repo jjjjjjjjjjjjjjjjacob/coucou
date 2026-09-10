@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import { writeAuditEntry } from "./audit";
 import { mutation, query } from "./functions";
-import { resolveCanonicalClerkUserId } from "./lib/canonicalUserIdentity";
+import { resolveCanonicalClerkUserId, resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
 import { appendInviterHistoryForContact } from "./lib/inviterHistory";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { requireCoucouPlatformMember } from "./lib/platformAuth";
@@ -12,6 +13,117 @@ import {
 } from "./lib/userIdentityMerge";
 
 const EXECUTION_CONFIRMATION = "CONSOLIDATE_SAME_PHONE_USERS";
+
+/** Paginate each evidence table independently; never guess source from a user's profile. */
+export const repairTextRsvpAssociations = mutation({
+  args: {
+    evidence: v.union(v.literal("reply_attempts"), v.literal("sessions")),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { evidence, cursor, batchSize, dryRun = true }) => {
+    await requireCoucouPlatformMember(ctx);
+    const pagination = { cursor: cursor ?? null, numItems: resolveBatchSize(batchSize, 100) };
+    const page =
+      evidence === "reply_attempts"
+        ? await ctx.db.query("textBlastReplyAttempts").paginate(pagination)
+        : await ctx.db.query("smsRsvpSessions").paginate(pagination);
+    const updates: Array<{
+      evidenceId: string;
+      rsvpId: Id<"rsvps">;
+      source?: "text";
+      associatePhone: boolean;
+      linkSession: boolean;
+    }> = [];
+    let unresolved = 0;
+    for (const record of page.page) {
+      const isSession = "missingFields" in record;
+      if (
+        isSession
+          ? record.status !== "completed"
+          : !["submitted", "already_exists"].includes(record.status)
+      )
+        continue;
+      let rsvp = record.destinationRsvpId
+        ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, record.destinationRsvpId))
+        : null;
+      if (!rsvp && isSession) {
+        const clerkUserId = await resolveCanonicalClerkUserId(ctx, record.clerkUserId);
+        const candidates = await ctx.db
+          .query("rsvps")
+          .withIndex("by_event_user", (queryBuilder) =>
+            queryBuilder.eq("eventId", record.eventId).eq("clerkUserId", clerkUserId),
+          )
+          .collect();
+        if (candidates.length === 1) rsvp = candidates[0];
+      }
+      const eventId = isSession ? record.eventId : record.targetEventId;
+      if (
+        !rsvp ||
+        rsvp.eventId !== eventId ||
+        (rsvp.smsPhoneHash && rsvp.smsPhoneHash !== record.phoneHash)
+      ) {
+        unresolved += 1;
+        continue;
+      }
+      let provesCreation = !isSession
+        ? record.status === "submitted" && record.destinationRsvpId === rsvp._id
+        : record.submissionDisposition === "submitted" && record.destinationRsvpId === rsvp._id;
+      if (
+        isSession &&
+        !record.submissionDisposition &&
+        rsvp.createdAt === record.updatedAt &&
+        rsvp.createdAt >= record.createdAt
+      ) {
+        const receipt = await ctx.db
+          .query("smsInboundReceipts")
+          .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", record.phoneHash))
+          .filter((queryBuilder) =>
+            queryBuilder.and(
+              queryBuilder.eq(queryBuilder.field("targetEventId"), rsvp.eventId),
+              queryBuilder.eq(queryBuilder.field("receivedAt"), rsvp.createdAt),
+              queryBuilder.eq(queryBuilder.field("outcome"), "submitted"),
+            ),
+          )
+          .first();
+        provesCreation = receipt !== null;
+      }
+      const source = !rsvp.source && provesCreation ? ("text" as const) : undefined;
+      const associatePhone = rsvp.smsPhoneHash !== record.phoneHash;
+      const needsSessionLink = isSession && record.destinationRsvpId !== rsvp._id;
+      if (!source && !associatePhone && !needsSessionLink) continue;
+      updates.push({
+        evidenceId: String(record._id),
+        rsvpId: rsvp._id,
+        source,
+        associatePhone,
+        linkSession: needsSessionLink,
+      });
+      if (dryRun) continue;
+      await writeAuditEntry(ctx, {
+        action: "rsvp.text_association_repaired",
+        targetKind: "rsvp",
+        targetId: rsvp._id,
+        metadata: { evidenceId: String(record._id), previousRsvp: JSON.stringify(rsvp) },
+      });
+      if (source || associatePhone)
+        await ctx.db.patch(rsvp._id, {
+          ...(source ? { source } : {}),
+          smsPhoneHash: record.phoneHash,
+        });
+      if (isSession && needsSessionLink)
+        await ctx.db.patch(record._id, { destinationRsvpId: rsvp._id });
+    }
+    return {
+      dryRun,
+      updates,
+      unresolved,
+      isDone: page.isDone,
+      nextCursor: page.isDone ? null : page.continueCursor,
+    };
+  },
+});
 
 function resolveBatchSize(batchSize: number | undefined, maximumBatchSize: number): number {
   return Math.max(1, Math.min(batchSize ?? 1, maximumBatchSize));

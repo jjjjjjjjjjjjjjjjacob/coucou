@@ -43,6 +43,10 @@ describe("partner API documentation parity", () => {
       expect(repositoryDocumentation).toContain(route);
     }
     expect(sdkTypes).toContain("interface ApiRsvpContactList");
+    expect(sdkTypes).toContain('type ApiRsvpSource = "text" | "form" | "api" | "unknown"');
+    expect(repositoryDocumentation).toContain(
+      'source` as `"text"`, `"form"`, `"api"`, or `"unknown"`',
+    );
     expect(sdkTypes).toContain('{ type: "api"; apiClientId: string }');
   });
 });

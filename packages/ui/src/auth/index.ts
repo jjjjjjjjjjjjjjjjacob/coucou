@@ -17,3 +17,5 @@ export * from "./otp-input";
 export * from "./phone-auth-flow";
 export * from "./phone-auth-page";
 export * from "./phone-input";
+
+export { RsvpReconciliationBoundary } from "./rsvp-reconciliation-boundary";

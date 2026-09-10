@@ -13,6 +13,7 @@ import {
   isGuestDirectoryFilterConfigured,
 } from "@/lib/text-blast-filters";
 import type { WorkspaceScope } from "@/lib/use-workspace-scope";
+import { useContactMatchCount } from "./use-contact-match-count";
 import { useDebounce } from "./use-debounce";
 
 type ContactDirectoryBatch = FunctionReturnType<typeof api.contacts.list>;
@@ -21,6 +22,7 @@ export function useContactDirectory(
   filterState: GuestDirectoryFilterState,
   workspaceScope: WorkspaceScope | null,
   pageSize = 20,
+  { includeTotalCount = false }: { includeTotalCount?: boolean } = {},
 ) {
   const debouncedSearch = useDebounce(filterState.searchText, 250);
   const filterArgs = useMemo(() => {
@@ -143,6 +145,20 @@ export function useContactDirectory(
       (directoryStatus === "ready" && !batches.isExhausted && batches.people.length <= pageEnd));
   const hasNextPage =
     !isLoading && !batches.error && batches.people.length > (pageIndex + 1) * pageSize;
+  const loadedTotalCount =
+    workspaceScope && configured && !isLoading && !batches.error && batches.isExhausted
+      ? batches.people.length
+      : undefined;
+  const { sortBy: _sortBy, sortDirection: _sortDirection, ...countFilters } = filterArgs;
+  const matchCount = useContactMatchCount(
+    includeTotalCount &&
+      workspaceScope &&
+      configured &&
+      !isDebouncing &&
+      loadedTotalCount === undefined
+      ? { ...countFilters, ...workspaceScope.queryArgs }
+      : null,
+  );
   return {
     // Never let a consumer display results from the previous debounced search term.
     people:
@@ -150,6 +166,9 @@ export function useContactDirectory(
         ? []
         : batches.people.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
     configured,
+    totalCount: loadedTotalCount ?? matchCount.totalCount,
+    countError: matchCount.error,
+    retryCount: matchCount.retry,
     isLoading,
     isPreparing: directoryStatus === "not_started" || directoryStatus === "building",
     error:

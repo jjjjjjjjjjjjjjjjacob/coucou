@@ -32,6 +32,7 @@ const DEFAULT_PREVIEW_VARIABLES: MessageTemplateVariables = {
   eventDate: "12.31.2024",
   eventLocation: "Sample Location",
   qrCodeUrl: "https://example.com/ticket",
+  eventStatusUrl: "https://example.com/events/sample/status",
 };
 
 export function ListConfirmationTextsSection<ListRow extends ListConfirmationTextRow>({
@@ -103,6 +104,7 @@ export function ListConfirmationTextsSection<ListRow extends ListConfirmationTex
                   />
                   <MessageTemplateVariableButtons
                     message={list.approvalMessage}
+                    statusCtaDefaultMessage={defaultApprovalMessage}
                     onMessageChange={(approvalMessage) =>
                       onApprovalMessageChange(listIndex, approvalMessage)
                     }

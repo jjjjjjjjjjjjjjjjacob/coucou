@@ -91,10 +91,10 @@ export const clerkWebhook = httpAction(async (ctx, request) => {
         phone: userProfile.phone,
         imageUrl: userProfile.imageUrl,
       });
-      if (userProfile.phone) {
+      for (const verifiedPhone of userProfile.verifiedPhoneNumbers) {
         await ctx.runMutation(internal.rsvps.claimGuestRsvpsForClerkPhoneInternal, {
           clerkUserId: userProfile.clerkUserId,
-          phone: userProfile.phone,
+          phone: verifiedPhone,
         });
       }
     } else if (type === "user.deleted") {

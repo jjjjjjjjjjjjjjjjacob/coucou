@@ -36,7 +36,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
   const { eventId: eventRouteId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded, signOut } = useAuth();
   const updateSmsPreference = useMutation(api.rsvps.updateSmsPreference);
   const claimGuestRsvps = useMutation(api.rsvps.claimGuestRsvpsForCurrentUser);
   const [isUpdatingSmsPreference, setIsUpdatingSmsPreference] = useState(false);
@@ -183,11 +183,18 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
               ← Back to event
             </EyebrowPill>
           }
-          heading="No request on file."
-          description="It looks like you haven't sent in a request yet. Head back and enter your password."
-          statusLabel="Awaiting"
+          heading="No matching RSVP."
+          description="No RSVP matches the verified phone on this account. Sign in with the number you used to RSVP."
+          statusLabel="No RSVP"
           noShell
         />
+        <button
+          type="button"
+          className="mt-4 underline"
+          onClick={() => void signOut({ redirectUrl: window.location.href })}
+        >
+          Switch accounts
+        </button>
       </div>
     );
   }

@@ -258,6 +258,7 @@ describe("webhook pipeline", () => {
     expect(payload.data.identity.isGuest).toBe(true);
     expect(payload.data.identity.name).toBe("Ava Green");
     expect(payload.data.rsvp.approvalStatus).toBe("pending");
+    expect(payload.data.rsvp.source).toBe("form");
     expect(payload.data.origin.type).toBe("app");
     expect(payload.data.event.name).toBe("Webhook Event");
 
@@ -283,6 +284,10 @@ describe("webhook pipeline", () => {
     await drainScheduledFunctions(testBackend);
     expect(capturedWebhookRequests).toHaveLength(0); // not subscribed to rsvp.created
 
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(submissionResult.rsvpId, { source: undefined });
+    });
+
     const hostBackend = testBackend.withIdentity(createHostIdentity("user_host"));
     await hostBackend.mutation(api.rsvps.bulkUpdateApproval, {
       workspaceSlug: WORKSPACE_SLUG,
@@ -296,6 +301,7 @@ describe("webhook pipeline", () => {
       endpoint.encryptionSecretBase64,
     );
     expect(payload.eventType).toBe("rsvp.approved");
+    expect(payload.data.rsvp.source).toBe("unknown");
     expect(payload.data.changes.previousApprovalStatus).toBe("pending");
     expect(payload.data.origin.type).toBe("app");
     expect(payload.data.ticket.status).toBe("issued");

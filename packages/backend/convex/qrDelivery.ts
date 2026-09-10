@@ -12,10 +12,11 @@ import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, query } from "./functions";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
-import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import { buildEventStatusUrl, resolveEventMessageBaseUrl } from "./lib/publicBaseUrl";
 import { ensureEventInSiteScope } from "./lib/siteScope";
 import { getSmsErrorDetails, type SmsErrorDetails } from "./lib/smsErrorDetails";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
+import { resolveRsvpSmsRecipient } from "./lib/smsRecipientIdentity";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 type QrBatchResult = {
@@ -39,7 +40,7 @@ type QrDeliveryEvent = Pick<
   | "eventDate"
   | "eventTimezone"
   | "qrDeliveryMessage"
->;
+> & { _id?: string; shortId?: string };
 
 type QrDeliveryMessageRecipient = {
   firstName?: string | null;
@@ -81,6 +82,7 @@ export function formatQrDeliveryMessage(
     eventDate: formatEventDateForMessageTemplate(event.eventDate, event.eventTimezone),
     eventLocation: event.location?.trim() ?? "",
     qrCodeUrl: ticketUrl,
+    eventStatusUrl: buildEventStatusUrl(event, new URL(ticketUrl).origin),
   });
   return formatSmsMessageForSite(event.siteKey, message);
 }
@@ -124,16 +126,11 @@ async function listEligibleQrDeliveryRecipients(
     if (!rsvp || rsvp.smsConsent !== true) continue;
     if (args.rsvpId && rsvp._id !== args.rsvpId) continue;
 
-    const userRecord = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", redemption.clerkUserId),
-      )
-      .unique();
-    if (!userRecord?.phone) continue;
+    const recipient = await resolveRsvpSmsRecipient(ctx, rsvp);
+    if (!recipient.phone) continue;
 
     try {
-      const phoneResolution = await normalizeAndHashPhoneNumber(userRecord.phone);
+      const phoneResolution = await normalizeAndHashPhoneNumber(recipient.phone);
       const activeOptOut = await ctx.db
         .query("smsOptOuts")
         .withIndex("by_phone", (queryBuilder) =>
@@ -151,8 +148,8 @@ async function listEligibleQrDeliveryRecipients(
         phone: phoneResolution.normalizedPhoneNumber,
         phoneHash: phoneResolution.phoneHash,
         phoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
-        firstName: userRecord.firstName,
-        lastName: userRecord.lastName,
+        firstName: recipient.firstName,
+        lastName: recipient.lastName,
       });
     } catch (error) {
       console.warn(
@@ -211,15 +208,22 @@ export const markRedemptionDelivered = internalMutation({
   args: {
     eventId: v.id("events"),
     clerkUserId: v.string(),
+    code: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const redemption = await ctx.db
-      .query("redemptions")
-      .withIndex("by_event_user", (q) =>
-        q.eq("eventId", args.eventId).eq("clerkUserId", args.clerkUserId),
-      )
-      .first();
-    if (!redemption) return null;
+    const deliveredCode = args.code;
+    const redemption = deliveredCode
+      ? await ctx.db
+          .query("redemptions")
+          .withIndex("by_code", (queryBuilder) => queryBuilder.eq("code", deliveredCode))
+          .unique()
+      : await ctx.db
+          .query("redemptions")
+          .withIndex("by_event_user", (q) =>
+            q.eq("eventId", args.eventId).eq("clerkUserId", args.clerkUserId),
+          )
+          .first();
+    if (!redemption || redemption.eventId !== args.eventId) return null;
     await ctx.db.patch(redemption._id, { qrDeliveredAt: Date.now() });
     return redemption._id;
   },
@@ -312,6 +316,7 @@ async function deliverQrToRecipient(
     await ctx.runMutation(internal.qrDelivery.markRedemptionDelivered, {
       eventId: args.event._id,
       clerkUserId: args.recipient.clerkUserId,
+      code: args.recipient.code,
     });
     return { sent: true };
   } catch (error) {
@@ -352,7 +357,7 @@ export const sendQrToRsvp = action({
       workspaceSlug: args.workspaceSlug,
     })) as Doc<"events"> | null;
     if (!event) throw new Error("Event not found");
-    const validatedBaseUrl = resolvePublicBaseUrlForEvent(event);
+    const validatedBaseUrl = await resolveEventMessageBaseUrl(ctx, event);
     if (!validatedBaseUrl) throw new Error("Missing public base URL for event site");
 
     const recipients = (await ctx.runQuery(api.qrDelivery.listPendingDeferredRecipients, {
@@ -405,7 +410,7 @@ export const sendDeferredQrBatch = action({
       throw new Error("Event not found");
     }
 
-    const validatedBaseUrl = resolvePublicBaseUrlForEvent(event);
+    const validatedBaseUrl = await resolveEventMessageBaseUrl(ctx, event);
     if (!validatedBaseUrl) {
       throw new Error("Missing public base URL for event site");
     }

@@ -134,7 +134,7 @@ reconciliation. Query params: `limit` (1–100, default 25) and `cursor`.
   "data": [
     {
       "rsvpId": "...", "approvalStatus": "approved", "attendanceStatus": "yes",
-      "listKey": "ga", "attendees": 2, "name": "Jane Doe", "isGuest": false,
+      "source": "form", "listKey": "ga", "attendees": 2, "name": "Jane Doe", "isGuest": false,
       "phone": "+15551234567", "phoneHash": "<sha256 hex of E.164>",
       "createdAt": 0, "updatedAt": 0, "ticket": null
     }
@@ -149,7 +149,7 @@ Looks up the RSVP for a phone number at an event (real account match first, then
 match by phone hash). 404 if none.
 
 ```json
-{ "rsvpId": "...", "approvalStatus": "approved", "attendanceStatus": "yes",
+{ "rsvpId": "...", "source": "form", "approvalStatus": "approved", "attendanceStatus": "yes",
   "listKey": "ga", "attendees": 2, "name": "Jane Doe", "isGuest": false,
   "createdAt": 0, "updatedAt": 0 }
 ```
@@ -183,6 +183,10 @@ Program URLs use Coucou's canonical, publicly accessible Terms and Privacy Polic
 Consumers can create RSVPs, change attendance, and update event details. **Approval/denial,
 ticket state, and publish state are host-only** and cannot be influenced through the API —
 fields like `approvalStatus` or `lifecycle` in a request body are ignored.
+
+RSVP responses include `source` as `"text"`, `"form"`, `"api"`, or `"unknown"`.
+Historical RSVPs without stored provenance are returned as `"unknown"`. API-created RSVPs
+always use `"api"`; clients cannot set or change this field.
 
 ### `PATCH /api/v1/events/{eventRouteId}` — scope `events:write`
 
@@ -302,7 +306,7 @@ RSVP-specific `rsvp`, `identity`, and `ticket` fields):
     "event": { "id": "...", "shortId": "abc123", "name": "...", "eventDate": 1753000000000,
                "eventEndDate": null, "eventTimezone": "America/New_York",
                "location": "...", "flyerUrl": null },
-    "rsvp": { "id": "...", "listKey": "ga", "approvalStatus": "approved",
+    "rsvp": { "id": "...", "source": "form", "listKey": "ga", "approvalStatus": "approved",
               "attendanceStatus": "yes", "attendees": 2, "createdAt": 0, "updatedAt": 0 },
     "identity": { "phone": "+15551234567", "phoneHash": "<sha256 hex of E.164>",
                   "name": "Jane Doe", "isGuest": false },
@@ -315,6 +319,9 @@ RSVP-specific `rsvp`, `identity`, and `ticket` fields):
 
 Notes:
 
+- Newly emitted RSVP webhook snapshots always include `source` as `"text"`, `"form"`,
+  `"api"`, or `"unknown"`. SDK consumers allow it to be absent when replaying immutable
+  payloads emitted before source tracking was introduced.
 - `identity.phone` can be `null` for guests who RSVP'd before phone persistence shipped —
   fall back to matching `identity.phoneHash` against `SHA-256(normalized E.164)` of your
   own users' phones.

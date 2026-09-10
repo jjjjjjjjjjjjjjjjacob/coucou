@@ -4,9 +4,9 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import type { ContactAudience } from "@convex/lib/contactValidators";
 import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table";
-import { useQuery as useConvexQuery, useMutation } from "convex/react";
+import { useQuery as useConvexQuery } from "convex/react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DirectoryPagination } from "@/components/ui/directory-pagination";
 import {
@@ -21,7 +21,6 @@ import {
 import { useContactDirectory } from "@/lib/hooks/use-contact-directory";
 import { useContactFilterOptions } from "@/lib/hooks/use-contact-filter-options";
 import { useDashboardTableColumnLayout } from "@/lib/hooks/use-dashboard-table-column-layout";
-import { useDebounce } from "@/lib/hooks/use-debounce";
 import {
   createDefaultGuestDirectoryFilterState,
   decodeRecipientFilter,
@@ -85,13 +84,7 @@ export function ContactAudiencePicker({
         audience.filters.recipientHistoryFilter ?? defaults.recipientHistoryFilter,
     };
   });
-  const [eligibilityPreviewState, setEligibilityPreviewState] = useState<{
-    filterKey: string;
-    previewId: Id<"contactAudiencePreviews">;
-  } | null>(null);
-  const eligibilityRequest = useRef({ filterKey: null as string | null, version: 0 });
-  const [eligibilityCountError, setEligibilityCountError] = useState<string | null>(null);
-  const directory = useContactDirectory(filters, workspace);
+  const directory = useContactDirectory(filters, workspace, 20, { includeTotalCount: true });
   const facetsQuery = useContactFilterOptions(workspace);
   const facets = facetsQuery.data;
   const blasts = useConvexQuery(
@@ -100,47 +93,6 @@ export function ContactAudiencePicker({
   );
   const selectedIds = audience?.type === "contacts" ? audience.contactIds : [];
   const allMatching = audience?.type === "filter";
-  const debouncedSearchText = useDebounce(filters.searchText, 250);
-  const eligibilityAudience = useMemo(
-    () => buildFilterAudience({ ...filters, searchText: debouncedSearchText }),
-    [debouncedSearchText, filters],
-  );
-  const eligibilityFilterKey = JSON.stringify(eligibilityAudience);
-  const activeEligibilityPreviewId =
-    eligibilityPreviewState?.filterKey === eligibilityFilterKey
-      ? eligibilityPreviewState.previewId
-      : undefined;
-  const eligibilityPreview = useConvexQuery(
-    api.contactAudiences.get,
-    workspace && activeEligibilityPreviewId
-      ? {
-          workspaceSlug: workspace.workspaceSlug,
-          siteKey: workspace.siteKey,
-          previewId: activeEligibilityPreviewId,
-        }
-      : "skip",
-  );
-  const prepareEligibilityCount = useMutation(api.contactAudiences.prepare);
-  useEffect(() => {
-    if (!workspace || eligibilityRequest.current.filterKey === eligibilityFilterKey) return;
-    const requestVersion = eligibilityRequest.current.version + 1;
-    eligibilityRequest.current = { filterKey: eligibilityFilterKey, version: requestVersion };
-    setEligibilityCountError(null);
-    prepareEligibilityCount({
-      ...workspace.queryArgs,
-      audience: eligibilityAudience,
-    })
-      .then((previewId) => {
-        if (eligibilityRequest.current.version === requestVersion)
-          setEligibilityPreviewState({ filterKey: eligibilityFilterKey, previewId });
-      })
-      .catch((error: unknown) => {
-        if (eligibilityRequest.current.version === requestVersion)
-          setEligibilityCountError(
-            error instanceof Error ? error.message : "Could not count matching contacts",
-          );
-      });
-  }, [eligibilityAudience, eligibilityFilterKey, prepareEligibilityCount, workspace]);
   const clearAudience = () => {
     onChange(null);
   };
@@ -158,17 +110,13 @@ export function ContactAudiencePicker({
   const selectAllMatching = () => {
     onChange(buildFilterAudience(filters));
   };
-  const selectedCount = allMatching
-    ? eligibilityPreview?.status === "ready"
-      ? eligibilityPreview.processedCount
-      : undefined
-    : selectedIds.length;
+  const selectedCount = allMatching ? directory.totalCount : selectedIds.length;
   const selectionLabel =
     selectedCount !== undefined
       ? `${selectedCount.toLocaleString()} ${selectedCount === 1 ? "person" : "people"} selected`
-      : eligibilityPreview?.status === "failed" || eligibilityCountError
-        ? "Selected count unavailable"
-        : "Counting selected people…";
+      : directory.countError
+        ? "All matching contacts selected (count unavailable)"
+        : "All matching contacts selected";
   const columnLayout = useDashboardTableColumnLayout({
     tableKey: HOST_GUEST_DIRECTORY_TABLE_KEY,
     scopeKey: HOST_GUEST_DIRECTORY_TABLE_SCOPE_KEY,
@@ -253,6 +201,11 @@ export function ContactAudiencePicker({
           ) : null}
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="tabular-nums">{selectionLabel}</span>
+            {allMatching && directory.countError ? (
+              <Button variant="link" size="sm" onClick={() => void directory.retryCount()}>
+                Retry count
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               size="sm"
@@ -296,6 +249,7 @@ export function ContactAudiencePicker({
           )}
           <DirectoryPagination
             itemCount={directory.people.length}
+            totalCount={directory.totalCount}
             itemLabel="contacts"
             currentPage={directory.pageIndex + 1}
             pageSize={20}

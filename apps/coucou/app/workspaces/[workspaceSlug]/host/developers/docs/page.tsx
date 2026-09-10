@@ -139,7 +139,7 @@ const EXAMPLE_EVENT_DETAIL_EXTRA = `{
 }`;
 
 const EXAMPLE_RSVP_LOOKUP_RESPONSE = `{
-  "rsvpId": "k97d…", "approvalStatus": "approved", "attendanceStatus": "yes",
+  "rsvpId": "k97d…", "source": "text", "approvalStatus": "approved", "attendanceStatus": "yes",
   "listKey": "ga", "attendees": 2, "name": "Jane Doe", "isGuest": false,
   "createdAt": 1752500000000, "updatedAt": 1752600000000
 }`;
@@ -147,7 +147,7 @@ const EXAMPLE_RSVP_LOOKUP_RESPONSE = `{
 const EXAMPLE_RSVP_LIST_RESPONSE = `{
   "data": [
     {
-      "rsvpId": "k97d…", "approvalStatus": "approved", "attendanceStatus": "yes",
+      "rsvpId": "k97d…", "source": "text", "approvalStatus": "approved", "attendanceStatus": "yes",
       "listKey": "ga", "attendees": 2, "name": "Jane Doe", "isGuest": false,
       "phone": "+15551234567", "phoneHash": "<sha256 hex of E.164>",
       "createdAt": 1752500000000, "updatedAt": 1752600000000,
@@ -223,7 +223,7 @@ const EXAMPLE_WEBHOOK_PAYLOAD = `{
     "event": { "id": "…", "shortId": "abc123", "name": "…",
                "eventDate": 1753000000000, "eventEndDate": null,
                "eventTimezone": "America/New_York", "location": "…", "flyerUrl": null },
-    "rsvp": { "id": "…", "listKey": "ga", "approvalStatus": "approved",
+    "rsvp": { "id": "…", "source": "text", "listKey": "ga", "approvalStatus": "approved",
               "attendanceStatus": "yes", "attendees": 2,
               "createdAt": 1752500000000, "updatedAt": 1752700000000 },
     "identity": { "phone": "+15551234567",
@@ -570,11 +570,13 @@ function PartnerApiDocumentation({
                   default, then the event fallback. Invalid passwords never fall back.
                 </>,
                 <>
-                  New RSVPs start as <InlineCode>approvalStatus: "pending"</InlineCode> unless the
-                  selected list still has automatic approvals available. Immediate automatic
-                  approvals return the issued ticket in the same response; delayed automatic
-                  approvals remain pending until their configured time or the event start, whichever
-                  comes first.
+                  RSVP responses include a server-controlled <InlineCode>source</InlineCode>: text,
+                  form, api, or unknown for historical records. Updates preserve the original
+                  source. New API RSVPs use api. New RSVPs start as{" "}
+                  <InlineCode>approvalStatus: "pending"</InlineCode> unless the selected list still
+                  has automatic approvals available. Immediate automatic approvals return the issued
+                  ticket in the same response; delayed automatic approvals remain pending until
+                  their configured time or the event start, whichever comes first.
                 </>,
                 <>
                   <InlineCode>smsConsent: true</InlineCode> enrolls in Coucou SMS; false revokes

@@ -25,6 +25,7 @@ const RSVP_CONFIRMATION_VARIABLES = [
   "eventName",
   "eventDate",
   "eventLocation",
+  "eventStatusUrl",
 ] as const;
 
 export function RsvpConfirmationTextSection({
@@ -75,6 +76,7 @@ export function RsvpConfirmationTextSection({
             message={rsvpConfirmationMessage}
             onMessageChange={onMessageChange}
             variableNames={RSVP_CONFIRMATION_VARIABLES}
+            statusCtaDefaultMessage={defaultRsvpConfirmationMessage}
           />
         ) : null}
         <FieldDescription className="text-xs">

@@ -10,6 +10,7 @@ import {
 } from "@coucou/sdk/shared/message-template";
 import { resolveRsvpConfirmationMessageText } from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import type { Doc } from "../_generated/dataModel";
+import { buildEventStatusUrl } from "./publicBaseUrl";
 import { CLUB_CHLORINE_BRAND_NAME, isClubChlorineSite } from "./smsProgramCopy";
 
 type RsvpConfirmationEvent = Pick<
@@ -24,7 +25,7 @@ type RsvpConfirmationEvent = Pick<
   | "productionCompany"
   | "rsvpConfirmationMessage"
   | "rsvpConfirmationMessageEnabled"
->;
+> & { _id?: string; shortId?: string; workspaceSlug?: string };
 
 type RsvpConfirmationRecipient = {
   firstName?: string | null;
@@ -35,7 +36,7 @@ type RsvpConfirmationRecipient = {
 export function formatRsvpConfirmationMessage(
   event: RsvpConfirmationEvent,
   recipient: RsvpConfirmationRecipient,
-  options: { organizerName?: string } = {},
+  options: { organizerName?: string; publicBaseUrl?: string | null } = {},
 ): string | undefined {
   const messageTemplate = resolveRsvpConfirmationMessageText({
     eventName: event.name,
@@ -64,6 +65,7 @@ export function formatRsvpConfirmationMessage(
       eventDate: formatEventDateForMessageTemplate(event.eventDate, event.eventTimezone),
       eventLocation: event.location?.trim() ?? "",
       qrCodeUrl: "",
+      eventStatusUrl: buildEventStatusUrl(event, options.publicBaseUrl),
     }),
   );
 }

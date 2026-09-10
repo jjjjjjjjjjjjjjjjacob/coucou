@@ -12,6 +12,7 @@ export function buildConfirmationPreviewVariables(values: {
   eventTime?: string;
   eventTimezone?: string;
   location?: string;
+  eventStatusUrl?: string;
 }): MessageTemplateVariables {
   let eventDate = "12.31.2024";
   if (values.eventDate) {
@@ -38,5 +39,6 @@ export function buildConfirmationPreviewVariables(values: {
     eventDate,
     eventLocation: values.location?.trim() || "Sample Location",
     qrCodeUrl: "https://example.com/ticket",
+    eventStatusUrl: values.eventStatusUrl ?? "https://example.com/events/sample/status",
   };
 }

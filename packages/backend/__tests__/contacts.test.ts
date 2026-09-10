@@ -161,6 +161,79 @@ function countReads(context: Pick<QueryCtx, "db">) {
 }
 
 describe("contact directory and frozen audiences", () => {
+  it("counts filtered search matches across pages without preparing recipients or requiring a phone", async () => {
+    const { backend, host, workspaceId } = await setup();
+    for (let position = 0; position < 125; position++) {
+      await seedContact(backend, workspaceId, {
+        name: `Guest ${position}`,
+        normalizedName: `guest ${String(position).padStart(3, "0")}`,
+        tags: position < 40 ? [] : ["vip"],
+        smsConsent: position % 5 !== 0,
+        phoneNumber: undefined,
+        phoneHash: undefined,
+      });
+    }
+    const filters = { searchText: "guest", tags: ["vip"], smsConsentFilter: "consented" as const };
+    let cursor: string | undefined;
+    let totalCount = 0;
+    let countPages = 0;
+    let isDone = false;
+    while (!isDone) {
+      const result = await host.query(api.contacts.countPage, { ...scope, ...filters, cursor });
+      expect(result.directoryStatus).toBe("ready");
+      expect(result.count).toBeLessThanOrEqual(40);
+      totalCount += result.count;
+      cursor = result.nextCursor ?? undefined;
+      isDone = result.isDone;
+      if (++countPages > 10) throw new Error("Count did not finish");
+    }
+    expect(countPages).toBeGreaterThan(1);
+    expect(totalCount).toBe(68);
+    const directoryIds = new Set<Id<"workspaceContacts">>();
+    cursor = undefined;
+    isDone = false;
+    while (!isDone) {
+      const page = await host.query(api.contacts.list, { ...scope, ...filters, cursor });
+      for (const person of page.people) directoryIds.add(person.contactId);
+      cursor = page.nextCursor ?? undefined;
+      isDone = page.isDone;
+    }
+    expect(totalCount).toBe(directoryIds.size);
+    expect(
+      await host.query(api.contacts.countPage, { ...scope, searchText: "no-match" }),
+    ).toMatchObject({ count: 0, isDone: true });
+    await backend.run(async ({ db }) => {
+      expect(await db.query("contactAudiencePreviews").collect()).toEqual([]);
+      expect(await db.query("contactAudienceEvaluations").collect()).toEqual([]);
+      expect(await db.query("contactAudienceMembers").collect()).toEqual([]);
+      expect(await db.system.query("_scheduled_functions").collect()).toEqual([]);
+    });
+  });
+
+  it("authorizes contact counts and validates workspace filters before reading matches", async () => {
+    const { backend, host, stateId } = await setup();
+    await expect(backend.query(api.contacts.countPage, scope)).rejects.toThrow();
+    const foreignEventId = await backend.run(async ({ db }) =>
+      db.insert("events", {
+        workspaceSlug: "another-workspace",
+        name: "Private event",
+        eventDate: 1,
+        location: "Elsewhere",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    );
+    await expect(
+      host.query(api.contacts.countPage, { ...scope, eventIds: [foreignEventId] }),
+    ).rejects.toThrow();
+    await backend.run(async ({ db }) => db.patch(stateId, { status: "building" }));
+    expect(await host.query(api.contacts.countPage, scope)).toMatchObject({
+      directoryStatus: "building",
+      isDone: false,
+    });
+  });
+
   it("shows current account and RSVP-only socials across linked identities without leaking other workspaces", async () => {
     const { backend, host, workspaceId, eventId } = await setup();
     const contactId = await seedContact(backend, workspaceId, {

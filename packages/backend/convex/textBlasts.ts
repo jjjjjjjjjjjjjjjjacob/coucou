@@ -24,6 +24,8 @@ import {
   mutation,
   query,
 } from "./functions";
+import { canonicalizeClerkUserIds, resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
+import { isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import {
@@ -31,8 +33,11 @@ import {
   buildInvitedByPatch,
   sanitizeSubmittedSocialProfiles,
 } from "./lib/primaryFields";
-import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./lib/profileValueRecords";
-import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import {
+  buildEventStatusUrl,
+  resolveEventMessageBaseUrl,
+  resolvePublicBaseUrlForEvent,
+} from "./lib/publicBaseUrl";
 import {
   customFieldIsMissing,
   getExcludedClerkUserIdsForFilter,
@@ -47,14 +52,13 @@ import {
   type SiteScopeArgs,
   statusesForFilter,
 } from "./lib/recipientFiltering";
-import { insertRsvpIntoAggregate } from "./lib/rsvpAggregate";
-import { tryAutoApproveRsvp } from "./lib/rsvpApproval";
 import { formatRsvpConfirmationMessage } from "./lib/rsvpConfirmationMessages";
 import {
   type ApprovalStatus,
   resolveApprovalStatus,
   sanitizeAttendanceStatus,
 } from "./lib/rsvpStatus";
+import { finalizeRsvpSubmissionThroughSharedService } from "./lib/rsvpSubmissionService";
 import {
   ensureEventInSiteScope,
   ensureTextBlastInSiteScope,
@@ -75,7 +79,7 @@ import {
 import { getSmsErrorDetails, type SmsErrorDetails } from "./lib/smsErrorDetails";
 import { resolveSmsOrganizerPreference } from "./lib/smsOrganizerPreferences";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
-import { replaceRsvpSocialProfileSnapshots } from "./lib/socialProfileRecords";
+import { upsertSmsPhoneContact } from "./lib/smsRecipientIdentity";
 import { ConvexError } from "./lib/types";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
@@ -969,6 +973,7 @@ type TemplateVariables = {
   eventDate: string;
   eventLocation: string;
   qrCodeUrl?: string;
+  eventStatusUrl?: string;
 };
 
 const FIRST_NAME_FALLBACK = "there";
@@ -1289,6 +1294,10 @@ async function createSmsRecipientsForBlast(args: {
       args.primaryEvent.eventTimezone,
     ),
     eventLocation: args.primaryEvent.location?.trim() ?? "",
+    eventStatusUrl: buildEventStatusUrl(
+      args.primaryEvent,
+      await resolveEventMessageBaseUrl(args.ctx, args.primaryEvent),
+    ),
   };
   const baseUrl = getEventBaseUrl(args.primaryEvent);
   const smsRecipients: SmsRecipientPayload[] = [];
@@ -3472,7 +3481,10 @@ export const processIncomingSmsReply = internalMutation({
       return { shouldRespond: true, responseMessage, status: "invalid_code" };
     }
 
-    const uniqueRecipientClerkUserIds = getUniqueIds(candidate.delivery.recipientClerkUserIds);
+    const uniqueRecipientClerkUserIds = await canonicalizeClerkUserIds(
+      ctx,
+      candidate.delivery.recipientClerkUserIds,
+    );
     if (uniqueRecipientClerkUserIds.length !== 1) {
       const responseMessage = formatSmsMessageForSite(
         sourceEvent?.siteKey,
@@ -3511,13 +3523,21 @@ export const processIncomingSmsReply = internalMutation({
       return { shouldRespond: true, responseMessage, status: "ambiguous_recipient" };
     }
 
-    const clerkUserId = uniqueRecipientClerkUserIds[0];
+    let clerkUserId = uniqueRecipientClerkUserIds[0];
     const sourceRsvps = (
       await Promise.all(
-        candidate.delivery.sourceRsvpIds.map((sourceRsvpId) => ctx.db.get(sourceRsvpId)),
+        candidate.delivery.sourceRsvpIds.map(async (sourceRsvpId) =>
+          ctx.db.get(await resolveCanonicalRsvpId(ctx, sourceRsvpId)),
+        ),
       )
     ).filter((sourceRsvp): sourceRsvp is Doc<"rsvps"> => sourceRsvp !== null);
-    const sourceRsvp = selectSourceRsvpForReplyAction(sourceRsvps, clerkUserId);
+    const sourceRsvp =
+      selectSourceRsvpForReplyAction(sourceRsvps, clerkUserId) ??
+      sourceRsvps.find(
+        (rsvp) =>
+          rsvp.smsPhoneHash === phoneResolution.phoneHash ||
+          rsvp.guestPhoneHash === phoneResolution.phoneHash,
+      );
     if (!sourceRsvp) {
       const responseMessage = formatSmsMessageForSite(
         sourceEvent?.siteKey,
@@ -3558,6 +3578,7 @@ export const processIncomingSmsReply = internalMutation({
     }
 
     const targetEvent = await ctx.db.get(matchingReplyAction.targetEventId);
+    clerkUserId = sourceRsvp.clerkUserId;
     const targetListCredential = targetEvent
       ? await ctx.db
           .query("listCredentials")
@@ -3606,13 +3627,27 @@ export const processIncomingSmsReply = internalMutation({
       return { shouldRespond: true, responseMessage, status: "target_unavailable" };
     }
 
-    const existingDestinationRsvp = await ctx.db
+    const associatedDestinationRsvp = await ctx.db
       .query("rsvps")
-      .withIndex("by_event_user", (queryBuilder) =>
-        queryBuilder.eq("eventId", targetEvent._id).eq("clerkUserId", clerkUserId),
+      .withIndex("by_event_smsPhoneHash", (queryBuilder) =>
+        queryBuilder.eq("eventId", targetEvent._id).eq("smsPhoneHash", phoneResolution.phoneHash),
       )
-      .unique();
+      .first();
+    const existingDestinationRsvp =
+      associatedDestinationRsvp ??
+      (await ctx.db
+        .query("rsvps")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder.eq("eventId", targetEvent._id).eq("clerkUserId", clerkUserId),
+        )
+        .unique());
     if (existingDestinationRsvp) {
+      await upsertSmsPhoneContact(ctx, {
+        phoneHash: phoneResolution.phoneHash,
+        phoneNumber: phoneResolution.normalizedPhoneNumber,
+        now: receivedAt,
+      });
+      await ctx.db.patch(existingDestinationRsvp._id, { smsPhoneHash: phoneResolution.phoneHash });
       const existingStatus = resolveApprovalStatus(existingDestinationRsvp);
       const responseMessage = formatSmsMessageForSite(
         targetEvent.siteKey,
@@ -3701,7 +3736,10 @@ export const processIncomingSmsReply = internalMutation({
       .query("users")
       .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
       .unique();
-    const userName = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") || "" : "";
+    const userName =
+      (user ? [user.firstName, user.lastName].filter(Boolean).join(" ") : "") ||
+      sourceRsvp.userName ||
+      "";
     const configuredSocialPlatformKeys = new Set(
       (targetEvent.primaryFieldConfig?.socialPlatforms ?? []).map(
         (platform) => platform.platformKey,
@@ -3716,7 +3754,16 @@ export const processIncomingSmsReply = internalMutation({
         ? buildInvitedByPatch(copiedPrimaryFields.invitedByName)
         : {};
     const now = Date.now();
+    await upsertSmsPhoneContact(ctx, {
+      phoneHash: phoneResolution.phoneHash,
+      phoneNumber: phoneResolution.normalizedPhoneNumber,
+      now,
+    });
     const destinationRsvpId = await ctx.db.insert("rsvps", {
+      source: "text",
+      smsPhoneHash: phoneResolution.phoneHash,
+      guestPhoneHash: isGuestClerkUserId(clerkUserId) ? phoneResolution.phoneHash : undefined,
+      guestPhoneObfuscated: isGuestClerkUserId(clerkUserId) ? fromPhoneObfuscated : undefined,
       eventId: targetEvent._id,
       clerkUserId,
       listKey: matchingReplyAction.targetListKey,
@@ -3737,34 +3784,20 @@ export const processIncomingSmsReply = internalMutation({
       updatedAt: now,
     });
 
-    if (configuredSocialPlatformKeys.size > 0) {
-      await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
-        event: targetEvent,
-        rsvpId: destinationRsvpId,
-        clerkUserId,
-        userId: user?._id,
-        submittedProfiles: sanitizedSocialProfiles,
-      });
-      await replaceRsvpSocialProfileSnapshots(ctx, {
-        eventId: targetEvent._id,
-        rsvpId: destinationRsvpId,
-        clerkUserId,
-        userId: user?._id,
-        configuredPlatformKeys: configuredSocialPlatformKeys,
-        submittedProfiles: sanitizedSocialProfiles,
-      });
-    }
-
-    const destinationRsvp = await ctx.db.get(destinationRsvpId);
-    let wasAutomaticallyApproved = false;
-    if (destinationRsvp) {
-      try {
-        await insertRsvpIntoAggregate(ctx, destinationRsvp);
-      } catch (error) {
-        console.error("[processIncomingSmsReply] Failed to sync RSVP aggregate", error);
-      }
-      wasAutomaticallyApproved = await tryAutoApproveRsvp(ctx, destinationRsvp);
-    }
+    const { wasAutomaticallyApproved } = await finalizeRsvpSubmissionThroughSharedService(ctx, {
+      event: targetEvent,
+      rsvpId: destinationRsvpId,
+      clerkUserId,
+      registeredUser: user ?? undefined,
+      sanitizedSocialProfiles,
+      configuredSocialPlatformKeys,
+      persistUserProfiles: Boolean(user),
+      updateOrganizerPreference: true,
+      organizerSiteKey: targetEvent.siteKey,
+      smsConsent: true,
+      tryAutomaticApproval: true,
+      now,
+    });
 
     const organizerPreference = await resolveSmsOrganizerPreference(ctx, {
       clerkUserId,
@@ -3780,7 +3813,10 @@ export const processIncomingSmsReply = internalMutation({
             lastName: user?.lastName,
             fullName: userName || sourceRsvp.userName,
           },
-          { organizerName: organizerPreference.organizerName },
+          {
+            organizerName: organizerPreference.organizerName,
+            publicBaseUrl: await resolveEventMessageBaseUrl(ctx, targetEvent),
+          },
         );
     const replyAttemptId = await logReplyAttempt(ctx, {
       textBlastId: candidate.blast._id,

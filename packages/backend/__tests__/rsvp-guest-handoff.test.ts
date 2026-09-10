@@ -89,6 +89,7 @@ function createPhoneIdentity(subject: string, phoneNumber: string): Partial<User
   return {
     subject,
     phoneNumber,
+    phoneNumberVerified: true,
   } as unknown as Partial<UserIdentity>;
 }
 

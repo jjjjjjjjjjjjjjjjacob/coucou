@@ -37,7 +37,7 @@ function requireClerkUserId(user: Doc<"users">): string {
   return user.clerkUserId;
 }
 
-async function replaceRsvpAggregateSafely(
+export async function replaceRsvpAggregateSafely(
   ctx: MutationCtx,
   previousRsvp: Doc<"rsvps">,
   nextRsvp: Doc<"rsvps">,
@@ -206,14 +206,16 @@ function redemptionRank(redemption: Doc<"redemptions">): number {
   return 1;
 }
 
-function ticketStatusFromRedemption(redemption: Doc<"redemptions"> | null): string | undefined {
+export function ticketStatusFromRedemption(
+  redemption: Doc<"redemptions"> | null,
+): string | undefined {
   if (!redemption) return undefined;
   if (redemption.disabledAt !== undefined) return "disabled";
   if (redemption.redeemedAt !== undefined) return "redeemed";
   return "issued";
 }
 
-async function mergeRedemptions(
+export async function mergeRedemptions(
   ctx: MutationCtx,
   input: {
     eventId: Id<"events">;
@@ -271,7 +273,7 @@ async function mergeRedemptions(
   return { ...canonicalRedemption, unredeemHistory };
 }
 
-async function upsertRsvpAlias(
+export async function upsertRsvpAlias(
   ctx: MutationCtx,
   input: {
     retiredRsvpId: Id<"rsvps">;
@@ -281,6 +283,19 @@ async function upsertRsvpAlias(
     now: number;
   },
 ): Promise<void> {
+  const earlierAliases = await ctx.db
+    .query("rsvpIdentityAliases")
+    .withIndex("by_canonical", (queryBuilder) =>
+      queryBuilder.eq("canonicalRsvpId", input.retiredRsvpId),
+    )
+    .collect();
+  for (const alias of earlierAliases) {
+    await ctx.db.patch(alias._id, {
+      canonicalRsvpId: input.canonicalRsvpId,
+      canonicalClerkUserId: input.canonicalClerkUserId,
+      updatedAt: input.now,
+    });
+  }
   const existingAlias = await ctx.db
     .query("rsvpIdentityAliases")
     .withIndex("by_retired", (queryBuilder) =>
@@ -442,6 +457,8 @@ async function mergeRsvpCollision(
   const oldTargetRsvp = await ctx.db.get(targetRsvp._id);
   await ctx.db.patch(targetRsvp._id, {
     listKey: statusSource.listKey,
+    source: statusSource.source,
+    smsPhoneHash: sourceRsvp.smsPhoneHash ?? targetRsvp.smsPhoneHash,
     userName: newestRsvp.userName ?? targetRsvp.userName ?? sourceRsvp.userName,
     ticketStatus:
       ticketStatusFromRedemption(redemption) ??

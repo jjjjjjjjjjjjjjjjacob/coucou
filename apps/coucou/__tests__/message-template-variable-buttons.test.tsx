@@ -17,6 +17,21 @@ describe("MessageTemplateVariableButtons", () => {
     informationToast.mockClear();
   });
 
+  it("inserts an editable sign-in CTA after the default confirmation copy", () => {
+    const onMessageChange = mock(() => undefined);
+    render(
+      <MessageTemplateVariableButtons
+        message=""
+        onMessageChange={onMessageChange}
+        statusCtaDefaultMessage="Your request is pending approval."
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Insert sign-in CTA" }));
+    expect(onMessageChange).toHaveBeenCalledWith(
+      "Your request is pending approval.\n\nWant to view your RSVP status? Sign in here: {{eventStatusUrl}}",
+    );
+  });
+
   it("keeps unavailable variables visible and explains why they cannot be inserted", () => {
     const onMessageChange = mock(() => undefined);
     const disabledReason = "Choose a message event to use event details.";
@@ -25,7 +40,13 @@ describe("MessageTemplateVariableButtons", () => {
       <MessageTemplateVariableButtons
         message="Hello"
         onMessageChange={onMessageChange}
-        disabledVariableNames={["eventName", "eventDate", "eventLocation", "qrCodeUrl"]}
+        disabledVariableNames={[
+          "eventName",
+          "eventDate",
+          "eventLocation",
+          "qrCodeUrl",
+          "eventStatusUrl",
+        ]}
         disabledVariableReason={disabledReason}
       />,
     );

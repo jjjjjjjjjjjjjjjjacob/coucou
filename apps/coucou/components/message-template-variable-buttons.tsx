@@ -1,3 +1,4 @@
+import { appendRsvpStatusCta } from "@coucou/sdk/shared/message-template";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MESSAGE_TEMPLATE_VARIABLES } from "@/lib/text-blast-message";
@@ -10,6 +11,7 @@ interface MessageTemplateVariableButtonsProps {
   variableNames?: readonly MessageTemplateVariableName[];
   disabledVariableNames?: readonly MessageTemplateVariableName[];
   disabledVariableReason?: string;
+  statusCtaDefaultMessage?: string;
 }
 
 function appendTemplateVariable(
@@ -28,6 +30,7 @@ export function MessageTemplateVariableButtons({
   variableNames = MESSAGE_TEMPLATE_VARIABLES,
   disabledVariableNames = [],
   disabledVariableReason = "This variable is not available for the current message.",
+  statusCtaDefaultMessage,
 }: MessageTemplateVariableButtonsProps) {
   const disabledVariables = new Set(disabledVariableNames);
 
@@ -67,6 +70,17 @@ export function MessageTemplateVariableButtons({
           );
         })}
       </div>
+      {statusCtaDefaultMessage !== undefined && !disabledVariables.has("eventStatusUrl") ? (
+        <button
+          type="button"
+          className="text-xs underline underline-offset-4"
+          onClick={() =>
+            onMessageChange(appendRsvpStatusCta(message.trim() ? message : statusCtaDefaultMessage))
+          }
+        >
+          Insert sign-in CTA
+        </button>
+      ) : null}
     </div>
   );
 }

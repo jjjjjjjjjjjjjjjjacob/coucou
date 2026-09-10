@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import { contactToPerson, readContactPage, validateContactFilters } from "./lib/contactQueries";
 import { resolveContact } from "./lib/contactRecords";
 import {
+  CONTACT_BATCH_SIZE,
   contactDirectionValidator,
   contactFilterFields,
   contactSortValidator,
@@ -43,6 +44,43 @@ export const list = query({
       people.push(await contactToPerson(ctx, contact, scope, result.latestEvent?._id));
     return {
       people,
+      nextCursor: result.nextCursor,
+      isDone: result.isDone,
+      directoryStatus: "ready" as const,
+    };
+  },
+});
+
+// Count the same matches as list, without hydrating rows or preparing SMS recipients.
+export const countPage = query({
+  args: {
+    workspaceSlug: v.string(),
+    siteKey: v.optional(v.string()),
+    ...contactFilterFields,
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const scope = await requireWorkspaceHost(ctx, args);
+    await validateContactFilters(ctx, scope, args);
+    const state = await ctx.db
+      .query("contactDirectoryState")
+      .withIndex("by_workspace", (builder) => builder.eq("workspaceId", scope.workspaceId))
+      .first();
+    if (state?.status !== "ready")
+      return {
+        count: 0,
+        nextCursor: null,
+        isDone: false,
+        directoryStatus: state?.status ?? "not_started",
+      };
+    const result = await readContactPage(ctx, {
+      ...args,
+      workspaceId: scope.workspaceId,
+      filters: args,
+      pageSize: CONTACT_BATCH_SIZE,
+    });
+    return {
+      count: result.contacts.length,
       nextCursor: result.nextCursor,
       isDone: result.isDone,
       directoryStatus: "ready" as const,

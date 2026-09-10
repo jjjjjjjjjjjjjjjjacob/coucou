@@ -141,6 +141,24 @@ describe("deterministic SMS code router", () => {
     expect(storedRsvp?.userName).toBe("Taylor Morgan");
     expect(storedRsvp?.customFieldValues).toEqual({ city: "Brooklyn" });
     expect(storedRsvp?.smsConsent).toBe(true);
+    expect(storedRsvp?.source).toBe("text");
+    expect(storedRsvp?.smsPhoneHash).toBe(
+      (await normalizeAndHashPhoneNumber("+15551230001")).phoneHash,
+    );
+    const evidence = await testBackend.run(async (databaseContext) => ({
+      session: await databaseContext.db.query("smsRsvpSessions").first(),
+      receipt: await databaseContext.db
+        .query("smsInboundReceipts")
+        .withIndex("by_provider_message", (queryBuilder) =>
+          queryBuilder.eq("providerMessageId", "SM_complete"),
+        )
+        .unique(),
+    }));
+    expect(evidence.session).toMatchObject({
+      destinationRsvpId: storedRsvp?._id,
+      submissionDisposition: "submitted",
+    });
+    expect(evidence.receipt?.destinationRsvpId).toBe(storedRsvp?._id);
   });
 
   it("deduplicates a verified MessageSid before executing it again", async () => {

@@ -2,6 +2,7 @@
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useConvexMutation } from "@convex-dev/react-query";
+import { getRsvpSourceLabel } from "@coucou/sdk/shared/rsvp-source";
 import { useMutation } from "@tanstack/react-query";
 import {
   type CellContext,
@@ -701,6 +702,7 @@ export function GuestManager({
   const [includeAttendees, setIncludeAttendees] = React.useState(true);
   const [includeNote, setIncludeNote] = React.useState(true);
   const [includeCustomFields, setIncludeCustomFields] = React.useState(true);
+  const [includeSource, setIncludeSource] = React.useState(true);
   const [includePhone, setIncludePhone] = React.useState(true);
   const [isExportingCsv, setIsExportingCsv] = React.useState(false);
   const runExportRsvpsCsv = useAction(api.exports.exportRsvpsCsv);
@@ -1568,6 +1570,14 @@ export function GuestManager({
             </Tooltip>
           );
         },
+      },
+      {
+        id: "source",
+        header: "Source",
+        accessorKey: "source",
+        enableSorting: false,
+        ...getRsvpTableColumnSizing({ label: "Source", contentValues: ["Unknown"] }),
+        cell: ({ row }) => getRsvpSourceLabel(row.original.source),
       },
       {
         id: "createdAt",
@@ -2960,6 +2970,7 @@ export function GuestManager({
         referredByName: "Referred By",
         noteForHosts: "Note for Hosts",
         createdAt: "Created",
+        source: "Source",
         approvalStatus: "Approval",
         attendanceStatus: "Attendance",
         ticketStatus: "Ticket",
@@ -3002,6 +3013,7 @@ export function GuestManager({
         includeNote,
         includeCustomFields,
         includePhone,
+        includeSource,
         includeSocialPlatformKeys: selectedSocialPlatformKeysForExport,
         includeInvitedBy,
         ...workspaceScope.queryArgs,
@@ -3040,6 +3052,7 @@ export function GuestManager({
     includeInvitedBy,
     includeNote,
     includePhone,
+    includeSource,
     runExportRsvpsCsv,
     selectedListsForExport,
     selectedSocialPlatformKeysForExport,
@@ -3562,6 +3575,8 @@ export function GuestManager({
           setIncludeNote={setIncludeNote}
           includeCustomFields={includeCustomFields}
           setIncludeCustomFields={setIncludeCustomFields}
+          includeSource={includeSource}
+          setIncludeSource={setIncludeSource}
           includePhone={includePhone}
           setIncludePhone={setIncludePhone}
           currentEventInvitedByPrimaryFieldConfig={currentEventInvitedByPrimaryFieldConfig}

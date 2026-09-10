@@ -11,6 +11,7 @@ export interface ClerkUserWebhookProfile {
   clerkUserId: string;
   email?: string;
   phone?: string;
+  verifiedPhoneNumbers: string[];
   imageUrl?: string;
 }
 
@@ -99,6 +100,13 @@ export function extractClerkUserWebhookProfile(value: unknown): ClerkUserWebhook
 
   return {
     clerkUserId,
+    verifiedPhoneNumbers: phoneNumbers
+      .filter(
+        (phoneNumber) =>
+          getString(getRecord(phoneNumber, "verification") ?? {}, "status") === "verified",
+      )
+      .map((phoneNumber) => getString(phoneNumber, "phone_number"))
+      .filter((phoneNumber): phoneNumber is string => Boolean(phoneNumber)),
     email,
     phone,
     imageUrl: getString(value, "image_url"),

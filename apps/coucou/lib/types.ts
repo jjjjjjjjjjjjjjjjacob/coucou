@@ -222,6 +222,7 @@ export interface Profile {
 }
 
 export interface RSVP {
+  source?: "text" | "form" | "api" | "unknown";
   _id: Id<"rsvps">;
   eventId: Id<"events">;
   clerkUserId: string;
@@ -462,6 +463,7 @@ export interface RecentActivityEntry {
 }
 
 export interface HostRsvp {
+  source?: "text" | "form" | "api" | "unknown";
   id: Id<"rsvps">;
   userId?: Id<"users">;
   clerkUserId: string;

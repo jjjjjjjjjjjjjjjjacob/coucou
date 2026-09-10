@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
-import type { FunctionArgs } from "convex/server";
+import { type FunctionArgs, type FunctionReturnType, getFunctionName } from "convex/server";
 import {
   createDefaultGuestDirectoryFilterState,
   type GuestDirectoryFilterState,
@@ -10,6 +10,8 @@ import {
 import type { WorkspaceScope } from "../lib/use-workspace-scope";
 
 type DirectoryArgs = FunctionArgs<typeof api.contacts.list>;
+type CountArgs = FunctionArgs<typeof api.contacts.countPage>;
+type CountBatch = FunctionReturnType<typeof api.contacts.countPage>;
 type Batch = {
   people: Array<{ contactId: Id<"workspaceContacts">; name: string }>;
   nextCursor: string | null;
@@ -24,6 +26,9 @@ const workspace: WorkspaceScope = {
   queryArgs: { workspaceSlug: "dojo-pomodoro", siteKey: "dojo" },
 };
 const batches = new Map<string, Batch>();
+const countBatches = new Map<string, CountBatch>();
+const countErrors = new Map<string, Error>();
+const countArguments: CountArgs[] = [];
 const errors = new Map<string, Error>();
 const queriedArguments: DirectoryArgs[] = [];
 const refetch = mock(async (_cursor: string) => undefined);
@@ -34,11 +39,23 @@ mock.module("@/lib/hooks/use-debounce", () => ({
   useDebounce: (value: string) => debouncedSearchOverride ?? value,
 }));
 mock.module("@convex-dev/react-query", () => ({
-  convexQuery: (_reference: unknown, args: DirectoryArgs) => ({ args }),
+  convexQuery: (reference: Parameters<typeof getFunctionName>[0], args: DirectoryArgs) => ({
+    name: getFunctionName(reference),
+    args,
+  }),
 }));
 mock.module("@tanstack/react-query", () => ({
-  useQueries: ({ queries }: { queries: Array<{ args: DirectoryArgs }> }) =>
-    queries.map(({ args }) => {
+  useQueries: ({ queries }: { queries: Array<{ name: string; args: DirectoryArgs }> }) =>
+    queries.map(({ name, args }) => {
+      if (name === "contacts:countPage") {
+        countArguments.push(args);
+        const cursor = args.cursor ?? "count-first";
+        return {
+          data: countBatches.get(cursor),
+          error: countErrors.get(cursor) ?? null,
+          refetch: () => refetch(cursor),
+        };
+      }
       queriedArguments.push(args);
       const cursor = args.cursor ?? "first";
       return {
@@ -100,6 +117,9 @@ function Directory({ filters }: { filters: GuestDirectoryFilterState }) {
 beforeEach(() => {
   batches.clear();
   errors.clear();
+  countBatches.clear();
+  countErrors.clear();
+  countArguments.length = 0;
   queriedArguments.length = 0;
   debouncedSearchOverride = undefined;
   refetch.mockClear();
@@ -107,6 +127,132 @@ beforeEach(() => {
 });
 
 describe("contact directory pagination", () => {
+  it("reuses a fully loaded search total without requesting a separate count", () => {
+    seedBatches([5, 0, 3]);
+    const { result, rerender } = renderHook(() =>
+      useContactDirectory(createDefaultGuestDirectoryFilterState(), workspace, 20, {
+        includeTotalCount: true,
+      }),
+    );
+    expect(result.current.totalCount).toBe(8);
+    // Counting may start while the directory is loading, but stops once all matches are known.
+    countArguments.length = 0;
+    act(() => result.current.previousPage());
+    expect(countArguments).toEqual([]);
+    seedBatches([0]);
+    rerender();
+    expect(result.current.totalCount).toBe(0);
+  });
+
+  it("counts all search matches across empty batches without loading additional directory rows", () => {
+    seedBatches([20, 20, 5]);
+    countBatches.set("count-first", {
+      count: 40,
+      nextCursor: "count-empty",
+      isDone: false,
+      directoryStatus: "ready",
+    });
+    countBatches.set("count-empty", {
+      count: 0,
+      nextCursor: "count-last",
+      isDone: false,
+      directoryStatus: "ready",
+    });
+    const filters = {
+      ...createDefaultGuestDirectoryFilterState(),
+      searchText: "Ada",
+      tags: ["vip"],
+      smsConsentFilter: "consented" as const,
+    };
+    const { result, rerender } = renderHook(
+      (currentFilters) =>
+        useContactDirectory(currentFilters, workspace, 20, { includeTotalCount: true }),
+      { initialProps: filters },
+    );
+    expect(result.current.people).toHaveLength(20);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.totalCount).toBeUndefined();
+    countBatches.set("count-last", {
+      count: 423,
+      nextCursor: null,
+      isDone: true,
+      directoryStatus: "ready",
+    });
+    rerender(filters);
+    expect(result.current.totalCount).toBe(463);
+    expect(queriedArguments.some((args) => args.cursor === "cursor-2")).toBe(false);
+    expect(
+      countArguments.every(
+        (args) =>
+          args.searchText === "Ada" &&
+          args.tags?.[0] === "vip" &&
+          args.smsConsentFilter === "consented",
+      ),
+    ).toBe(true);
+    countArguments.length = 0;
+    rerender({ ...filters, sortDirection: "desc" });
+    expect(result.current.totalCount).toBe(463);
+    expect(countArguments.every((args) => !("sortDirection" in args) && !("sortBy" in args))).toBe(
+      true,
+    );
+
+    debouncedSearchOverride = "Ada";
+    countArguments.length = 0;
+    rerender({ ...filters, searchText: "Bea" });
+    expect(result.current.totalCount).toBeUndefined();
+    expect(countArguments).toEqual([]);
+    countBatches.clear();
+    debouncedSearchOverride = "Bea";
+    rerender({ ...filters, searchText: "Bea" });
+    expect(result.current.totalCount).toBeUndefined();
+    expect(countArguments.every((args) => args.searchText === "Bea" && !args.cursor)).toBe(true);
+  });
+
+  it("discards stale count continuations and retries count errors without hiding the table", async () => {
+    seedBatches([20, 20, 5]);
+    countBatches.set("count-first", {
+      count: 40,
+      nextCursor: "old-count",
+      isDone: false,
+      directoryStatus: "ready",
+    });
+    countBatches.set("old-count", {
+      count: 5,
+      nextCursor: null,
+      isDone: true,
+      directoryStatus: "ready",
+    });
+    const { result, rerender } = renderHook(() =>
+      useContactDirectory(createDefaultGuestDirectoryFilterState(), workspace, 20, {
+        includeTotalCount: true,
+      }),
+    );
+    expect(result.current.totalCount).toBe(45);
+    countBatches.set("count-first", {
+      count: 30,
+      nextCursor: "new-count",
+      isDone: false,
+      directoryStatus: "ready",
+    });
+    countErrors.set("new-count", new Error("Count unavailable"));
+    rerender();
+    expect(result.current.totalCount).toBeUndefined();
+    expect(result.current.countError).toBe("Count unavailable");
+    expect(result.current.error).toBeNull();
+    expect(result.current.people).toHaveLength(20);
+    await act(async () => result.current.retryCount());
+    expect(refetch).toHaveBeenCalledWith("new-count");
+    countErrors.clear();
+    countBatches.set("new-count", {
+      count: 3,
+      nextCursor: null,
+      isDone: true,
+      directoryStatus: "ready",
+    });
+    rerender();
+    expect(result.current.totalCount).toBe(33);
+  });
+
   it("fills filtered pages across short and empty batches with contiguous displayed ranges", () => {
     seedBatches([5, 0, 9, 6, 0, 8, 0]);
     const filters = {

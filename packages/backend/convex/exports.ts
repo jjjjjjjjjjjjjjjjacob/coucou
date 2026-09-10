@@ -1,5 +1,6 @@
 "use node";
 import { createClerkClient } from "@clerk/backend";
+import { getRsvpSourceLabel } from "@coucou/sdk/shared/rsvp-source";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -11,6 +12,7 @@ import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 type ExportRsvpRow = {
   rsvpId: Id<"rsvps">;
+  source: string;
   listKey: string;
   name: string;
   attendees: number;
@@ -40,6 +42,7 @@ type ExportRsvpsCsvArgs = {
   includePrimaryFields?: boolean;
   includeSocialPlatformKeys?: string[];
   includeInvitedBy?: boolean;
+  includeSource?: boolean;
   includePhone?: boolean;
   exportTimestamp?: string;
 };
@@ -65,6 +68,7 @@ export const exportRsvpsCsv = action({
     includePrimaryFields: v.optional(v.boolean()),
     includeSocialPlatformKeys: v.optional(v.array(v.string())),
     includeInvitedBy: v.optional(v.boolean()),
+    includeSource: v.optional(v.boolean()),
     includePhone: v.optional(v.boolean()),
     exportTimestamp: v.optional(v.string()),
   },
@@ -85,6 +89,7 @@ export const exportRsvpsCsv = action({
       includePrimaryFields = true,
       includeSocialPlatformKeys,
       includeInvitedBy = true,
+      includeSource = true,
       includePhone = true,
       exportTimestamp,
     }: ExportRsvpsCsvArgs,
@@ -179,6 +184,7 @@ export const exportRsvpsCsv = action({
         name: fullName,
         attendees: rsvp.attendees ?? 1,
         note: rsvp.note || "",
+        source: getRsvpSourceLabel(rsvp.source),
         invitedByName: rsvp.invitedByName ?? "",
         referredByName: rsvp.referredByName ?? "",
         socialProfiles: socialProfilesByRsvpId.get(rsvp._id) ?? {},
@@ -246,6 +252,7 @@ export const exportRsvpsCsv = action({
         "Ticket Status",
         "Entry Status",
       ];
+      if (includeSource) headerRow.push("Source");
       if (includePhone) headerRow.push("Phone");
       if (shouldIncludeInvitedBy) {
         headerRow.push(event.primaryFieldConfig?.invitedBy?.label ?? "Invited By");
@@ -266,6 +273,7 @@ export const exportRsvpsCsv = action({
           rsvp.ticketStatus,
           rsvp.ticketStatus === "redeemed" ? "checked-in" : "not-checked-in",
         ];
+        if (includeSource) row.push(rsvp.source);
         if (includePhone) row.push(rsvp.phoneNumber);
         if (shouldIncludeInvitedBy) row.push(rsvp.invitedByName);
         row.push(rsvp.referredByName);

@@ -376,6 +376,7 @@ async function buildApiRsvpSummary(
 ) {
   return {
     rsvpId: rsvp._id,
+    source: rsvp.source ?? "unknown",
     approvalStatus: resolveApprovalStatus(rsvp),
     attendanceStatus: sanitizeAttendanceStatus(rsvp.attendanceStatus),
     listKey: rsvp.listKey,
@@ -895,6 +896,7 @@ export const createRsvpFromApiClient = internalMutation({
     const rsvpId = await ctx.db.insert("rsvps", {
       eventId: event._id,
       clerkUserId,
+      source: "api",
       listKey: selectedListKey,
       ticketStatus: "not-issued",
       userName: trimmedName,

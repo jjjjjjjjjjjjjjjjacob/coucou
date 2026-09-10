@@ -8,6 +8,7 @@ import {
   sanitizeSubmittedSocialProfiles,
 } from "./primaryFields";
 import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./profileValueRecords";
+import { resolveEventMessageBaseUrl } from "./publicBaseUrl";
 import { insertRsvpIntoAggregate, updateRsvpInAggregate } from "./rsvpAggregate";
 import { tryAutoApproveRsvp } from "./rsvpApproval";
 import { formatRsvpConfirmationMessage } from "./rsvpConfirmationMessages";
@@ -16,6 +17,7 @@ import {
   resolveSmsOrganizerPreference,
   upsertSmsOrganizerPreference,
 } from "./smsOrganizerPreferences";
+import { upsertSmsPhoneContact } from "./smsRecipientIdentity";
 import { replaceRsvpSocialProfileSnapshots } from "./socialProfileRecords";
 
 export type RsvpSubmissionServiceResult = {
@@ -44,6 +46,7 @@ type FinalizeRsvpSubmissionInput = {
 
 type SharedRsvpSubmissionInput = {
   submissionOrigin: "sms" | "web";
+  smsPhoneHash?: string;
   event: Doc<"events">;
   listKey: string;
   clerkUserId: string;
@@ -65,6 +68,15 @@ async function findExistingRsvp(
   ctx: MutationCtx,
   input: SharedRsvpSubmissionInput,
 ): Promise<Doc<"rsvps"> | null> {
+  if (input.submissionOrigin === "sms" && input.smsPhoneHash) {
+    const associatedRsvp = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event_smsPhoneHash", (queryBuilder) =>
+        queryBuilder.eq("eventId", input.event._id).eq("smsPhoneHash", input.smsPhoneHash),
+      )
+      .first();
+    if (associatedRsvp) return associatedRsvp;
+  }
   if (input.guestPhoneHash && isGuestClerkUserId(input.clerkUserId)) {
     const matchingRsvps = await ctx.db
       .query("rsvps")
@@ -88,29 +100,14 @@ async function upsertGuestContact(
   input: SharedRsvpSubmissionInput,
   now: number,
 ): Promise<void> {
-  const guestPhoneHash = input.guestPhoneHash;
+  const guestPhoneHash = input.smsPhoneHash ?? input.guestPhoneHash;
   const normalizedPhoneNumber = input.normalizedPhoneNumber;
   if (!guestPhoneHash || !normalizedPhoneNumber) return;
 
-  const existingGuestContact = await ctx.db
-    .query("guestContacts")
-    .withIndex("by_phoneHash", (queryBuilder) => queryBuilder.eq("phoneHash", guestPhoneHash))
-    .unique();
-  if (existingGuestContact) {
-    if (existingGuestContact.phoneNumber !== normalizedPhoneNumber) {
-      await ctx.db.patch(existingGuestContact._id, {
-        phoneNumber: normalizedPhoneNumber,
-        updatedAt: now,
-      });
-    }
-    return;
-  }
-
-  await ctx.db.insert("guestContacts", {
+  await upsertSmsPhoneContact(ctx, {
     phoneHash: guestPhoneHash,
     phoneNumber: normalizedPhoneNumber,
-    createdAt: now,
-    updatedAt: now,
+    now,
   });
 }
 
@@ -257,6 +254,28 @@ export async function submitRsvpThroughSharedService(
       : {};
   const userName = `${firstName} ${lastName}`.trim();
   const existingRsvp = await findExistingRsvp(ctx, input);
+  // A previous sign-in may have reconciled the RSVP to another verified account.
+  // Keep using that row and its owner instead of creating a second RSVP.
+  if (existingRsvp && existingRsvp.clerkUserId !== input.clerkUserId) {
+    const registeredUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", existingRsvp.clerkUserId),
+      )
+      .unique();
+    input = {
+      ...input,
+      clerkUserId: existingRsvp.clerkUserId,
+      registeredUser: registeredUser ?? undefined,
+      guestPhoneHash: isGuestClerkUserId(existingRsvp.clerkUserId) ? input.smsPhoneHash : undefined,
+      guestPhoneObfuscated: isGuestClerkUserId(existingRsvp.clerkUserId)
+        ? input.guestPhoneObfuscated
+        : undefined,
+    };
+  }
+  if (existingRsvp && input.smsPhoneHash && existingRsvp.smsPhoneHash !== input.smsPhoneHash) {
+    await ctx.db.patch(existingRsvp._id, { smsPhoneHash: input.smsPhoneHash });
+  }
   const existingOrganizerPreference = await resolveSmsOrganizerPreference(ctx, {
     clerkUserId: input.clerkUserId,
     event: input.event,
@@ -271,6 +290,7 @@ export async function submitRsvpThroughSharedService(
     seenAt: now,
   });
 
+  await upsertGuestContact(ctx, input, now);
   if (existingRsvp?.listKey === input.listKey) {
     if (input.smsConsent && existingRsvp.smsConsent !== true) {
       await ctx.db.patch(existingRsvp._id, {
@@ -300,7 +320,6 @@ export async function submitRsvpThroughSharedService(
     };
   }
 
-  await upsertGuestContact(ctx, input, now);
   if (input.registeredUser) {
     const userPatch: Partial<Doc<"users">> = { updatedAt: now };
     if (!input.registeredUser.firstName) userPatch.firstName = firstName;
@@ -313,6 +332,8 @@ export async function submitRsvpThroughSharedService(
   if (!existingRsvp) {
     disposition = "submitted";
     rsvpId = await ctx.db.insert("rsvps", {
+      source: input.submissionOrigin === "sms" ? "text" : "form",
+      smsPhoneHash: input.smsPhoneHash,
       eventId: input.event._id,
       clerkUserId: input.clerkUserId,
       listKey: input.listKey,
@@ -397,7 +418,10 @@ export async function submitRsvpThroughSharedService(
             lastName,
             fullName: userName,
           },
-          { organizerName: existingOrganizerPreference.organizerName },
+          {
+            organizerName: existingOrganizerPreference.organizerName,
+            publicBaseUrl: await resolveEventMessageBaseUrl(ctx, input.event),
+          },
         ),
   };
 }

@@ -29,6 +29,7 @@
     "./theming": "./src/theming/index.ts",
     "./theming/presets": "./src/theming/presets.ts",
     "./theming/build-event-theme": "./src/theming/build-event-theme.ts",
-    "./theming/resolve-preset": "./src/theming/resolve-preset.ts"
+    "./theming/resolve-preset": "./src/theming/resolve-preset.ts",
+    "./shared/rsvp-source": "./src/shared/rsvp-source.ts"
   }
 }

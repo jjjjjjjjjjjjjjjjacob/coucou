@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { type CustomFieldDef, CustomFieldsEditor } from "@/components/custom-fields-builder";
 import { EventActsEditor } from "@/components/event-acts-editor";
 import { HostEventForm } from "@/components/host-event-form";
+import { MessageTemplateVariableButtons } from "@/components/message-template-variable-buttons";
 import { RsvpConfirmationTextSection } from "@/components/rsvp-confirmation-text-section";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { buildConfirmationPreviewVariables } from "@/lib/confirmation-text-preview";
 import { createTimestamp } from "@/lib/date-utils";
 import { sanitizeEventActsForSubmit } from "@/lib/event-metadata";
+import { buildPublicEventUrl } from "@/lib/event-public-url";
 import {
   EVENT_THEME_DEFAULT_BACKGROUND_COLOR,
   EVENT_THEME_DEFAULT_TEXT_COLOR,
@@ -116,9 +118,11 @@ export default function NewEventClient() {
     name: eventName,
     secondaryTitle: eventSecondaryTitle,
   });
+  const statusPreviewEventUrl = buildPublicEventUrl(workspace ?? null, "sample");
   const confirmationPreviewVariables = React.useMemo(
     () =>
       buildConfirmationPreviewVariables({
+        eventStatusUrl: statusPreviewEventUrl ? `${statusPreviewEventUrl}/status` : undefined,
         name: eventName,
         secondaryTitle: eventSecondaryTitle,
         eventDate: eventDateValue,
@@ -133,6 +137,7 @@ export default function NewEventClient() {
       eventTimeValue,
       eventTimezoneValue,
       eventLocation,
+      statusPreviewEventUrl,
     ],
   );
   const [lists, setLists] = React.useState<ListRow[]>([
@@ -440,6 +445,11 @@ export default function NewEventClient() {
                           placeholder={defaultApprovalMessage}
                           value={list.approvalMessage}
                           onChange={(event) => setList(idx, "approvalMessage", event.target.value)}
+                        />
+                        <MessageTemplateVariableButtons
+                          message={list.approvalMessage}
+                          onMessageChange={(message) => setList(idx, "approvalMessage", message)}
+                          statusCtaDefaultMessage={defaultApprovalMessage}
                         />
                         <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
                           <Checkbox

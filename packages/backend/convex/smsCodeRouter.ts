@@ -6,7 +6,11 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
-import { canonicalizeClerkUserIds, resolveCanonicalClerkUserId } from "./lib/canonicalUserIdentity";
+import {
+  canonicalizeClerkUserIds,
+  resolveCanonicalClerkUserId,
+  resolveCanonicalRsvpId,
+} from "./lib/canonicalUserIdentity";
 import { isGuestClerkUserId } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { formatPhoneNumberForSms, obfuscatePhoneNumber } from "./lib/phoneUtils";
@@ -72,6 +76,7 @@ type SmsIdentity = {
 };
 
 type ProcessedInboundResult = {
+  destinationRsvpId?: Id<"rsvps">;
   duplicate?: boolean;
   shouldRespond: boolean;
   responseMessage?: string;
@@ -528,19 +533,24 @@ async function findWorkspaceRsvpCandidates(
   const prioritizedRsvps: Doc<"rsvps">[] = [];
   if (route.kind === "blast_action" && !identity.ambiguous) {
     const sourceRsvps = (
-      await Promise.all(route.delivery.sourceRsvpIds.map((rsvpId) => ctx.db.get(rsvpId)))
+      await Promise.all(
+        route.delivery.sourceRsvpIds.map(async (rsvpId) =>
+          ctx.db.get(await resolveCanonicalRsvpId(ctx, rsvpId)),
+        ),
+      )
     )
       .filter((rsvp): rsvp is Doc<"rsvps"> => rsvp !== null)
       .filter(
         (rsvp) =>
           identity.historyClerkUserIds.includes(rsvp.clerkUserId) ||
-          rsvp.guestPhoneHash === phoneHash,
+          rsvp.guestPhoneHash === phoneHash ||
+          rsvp.smsPhoneHash === phoneHash,
       )
       .sort((firstRsvp, secondRsvp) => secondRsvp.updatedAt - firstRsvp.updatedAt);
     prioritizedRsvps.push(...sourceRsvps);
   }
 
-  const [identityRsvpCollections, phoneRsvps] = await Promise.all([
+  const [identityRsvpCollections, phoneRsvps, textRsvps] = await Promise.all([
     Promise.all(
       Array.from(new Set([identity.clerkUserId, ...identity.historyClerkUserIds])).map(
         async (clerkUserId) =>
@@ -556,14 +566,19 @@ async function findWorkspaceRsvpCandidates(
         queryBuilder.eq("guestPhoneHash", phoneHash),
       )
       .collect(),
+    ctx.db
+      .query("rsvps")
+      .withIndex("by_smsPhoneHash", (queryBuilder) => queryBuilder.eq("smsPhoneHash", phoneHash))
+      .collect(),
   ]);
   const identityRsvps = identityRsvpCollections.flat();
   const candidateRsvpsById = new Map(
-    [...identityRsvps, ...phoneRsvps]
+    [...identityRsvps, ...phoneRsvps, ...textRsvps]
       .filter(
         (rsvp) =>
           identity.historyClerkUserIds.includes(rsvp.clerkUserId) ||
           rsvp.clerkUserId === identity.clerkUserId ||
+          rsvp.smsPhoneHash === phoneHash ||
           (identity.registeredUser !== undefined && isGuestClerkUserId(rsvp.clerkUserId)),
       )
       .map((rsvp) => [rsvp._id, rsvp]),
@@ -922,6 +937,7 @@ async function finalizeSessionSubmission(
 ): Promise<ProcessedInboundResult> {
   const submissionResult = await submitRsvpThroughSharedService(ctx, {
     submissionOrigin: "sms",
+    smsPhoneHash: args.session.phoneHash,
     event: args.route.event,
     listKey: args.route.listKey,
     clerkUserId: args.session.clerkUserId,
@@ -934,11 +950,13 @@ async function finalizeSessionSubmission(
     smsConsent: true,
     guestPhoneHash: args.identity.registeredUser ? undefined : args.session.phoneHash,
     guestPhoneObfuscated: args.identity.registeredUser ? undefined : args.session.phoneObfuscated,
-    normalizedPhoneNumber: args.identity.registeredUser ? undefined : args.normalizedPhoneNumber,
+    normalizedPhoneNumber: args.normalizedPhoneNumber,
     now: args.now,
   });
   await ctx.db.patch(args.session._id, {
     status: "completed",
+    destinationRsvpId: submissionResult.rsvpId,
+    submissionDisposition: submissionResult.disposition,
     missingFields: [],
     updatedAt: args.now,
   });
@@ -946,6 +964,7 @@ async function finalizeSessionSubmission(
     shouldRespond: Boolean(submissionResult.responseMessage),
     responseMessage: submissionResult.responseMessage,
     outcome: submissionResult.disposition === "existing" ? "existing" : "submitted",
+    destinationRsvpId: submissionResult.rsvpId,
     targetEventId: args.route.event._id,
     phoneHash: args.session.phoneHash,
     phoneObfuscated: args.session.phoneObfuscated,
@@ -1231,6 +1250,7 @@ async function finishReceipt(
   await ctx.db.patch(receipt._id, {
     status: "processed",
     outcome: result.outcome,
+    destinationRsvpId: result.destinationRsvpId,
     responseMessage: result.responseMessage,
     targetEventId: result.targetEventId,
     updatedAt: now,

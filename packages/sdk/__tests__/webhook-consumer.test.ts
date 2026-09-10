@@ -6,6 +6,7 @@ import {
   generateWebhookEndpointSecrets,
 } from "../../backend/convex/lib/webhookCrypto";
 import { API_VERSION } from "../src/api-v1/constants";
+import type { CoucouWebhookRsvpSnapshot } from "../src/api-v1/types";
 import {
   decryptCoucouWebhookEnvelope,
   parseCoucouSignatureHeader,
@@ -23,6 +24,16 @@ const SAMPLE_PAYLOAD = {
     identity: { phone: "+15551234567", isGuest: true },
     origin: { type: "app" },
   },
+};
+
+const HISTORICAL_RSVP_SNAPSHOT_WITHOUT_SOURCE: CoucouWebhookRsvpSnapshot = {
+  id: "rsvp_historical",
+  listKey: "ga",
+  approvalStatus: "approved",
+  attendanceStatus: "yes",
+  attendees: 1,
+  createdAt: 1752600000000,
+  updatedAt: 1752600000000,
 };
 
 async function buildSignedDelivery() {
@@ -43,6 +54,10 @@ async function buildSignedDelivery() {
 }
 
 describe("coucou webhook consumer helpers", () => {
+  it("accepts historical RSVP snapshots without a source", () => {
+    expect(HISTORICAL_RSVP_SNAPSHOT_WITHOUT_SOURCE.source).toBeUndefined();
+  });
+
   it("verifies and decrypts a producer-built delivery end to end", async () => {
     const { secrets, rawBody, signatureHeader } = await buildSignedDelivery();
 

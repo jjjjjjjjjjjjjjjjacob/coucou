@@ -41,6 +41,8 @@ interface RsvpExportDialogProps {
   setIncludeNote: (value: boolean) => void;
   includeCustomFields: boolean;
   setIncludeCustomFields: (value: boolean) => void;
+  includeSource: boolean;
+  setIncludeSource: (includeSource: boolean) => void;
   includePhone: boolean;
   setIncludePhone: (value: boolean) => void;
   currentEventInvitedByPrimaryFieldConfig: PrimaryFieldConfig["invitedBy"] | undefined;
@@ -68,6 +70,8 @@ export function RsvpExportDialog({
   setIncludeNote,
   includeCustomFields,
   setIncludeCustomFields,
+  includeSource,
+  setIncludeSource,
   includePhone,
   setIncludePhone,
   currentEventInvitedByPrimaryFieldConfig,
@@ -170,6 +174,13 @@ export function RsvpExportDialog({
               Select Columns
             </legend>
             <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={includeSource}
+                  onCheckedChange={(checked) => setIncludeSource(checked === true)}
+                />
+                Source
+              </label>
               <div className="flex items-center">
                 <Checkbox
                   id="col-phone"

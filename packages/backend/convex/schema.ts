@@ -532,6 +532,9 @@ export default defineSchema({
   rsvps: defineTable({
     eventId: v.id("events"),
     clerkUserId: v.string(),
+    source: v.optional(v.union(v.literal("text"), v.literal("form"), v.literal("api"))),
+    // Written only from a verified inbound SMS, retained after account reconciliation.
+    smsPhoneHash: v.optional(v.string()),
     listKey: v.string(), // Primary reference to list credentials
     userName: v.optional(v.string()), // Denormalized from users table
     guestPhoneHash: v.optional(v.string()),
@@ -571,6 +574,8 @@ export default defineSchema({
     .index("by_event", ["eventId"]) // host view
     .index("by_user", ["clerkUserId"]) // user lookup
     .index("by_event_user", ["eventId", "clerkUserId"])
+    .index("by_smsPhoneHash", ["smsPhoneHash"])
+    .index("by_event_smsPhoneHash", ["eventId", "smsPhoneHash"])
     .index("by_guestPhoneHash", ["guestPhoneHash"])
     .index("by_event_guestPhoneHash", ["eventId", "guestPhoneHash"])
     // NEW indexes for efficient filtering
@@ -908,6 +913,10 @@ export default defineSchema({
 
   smsRsvpSessions: defineTable({
     phoneHash: v.string(),
+    destinationRsvpId: v.optional(v.id("rsvps")),
+    submissionDisposition: v.optional(
+      v.union(v.literal("submitted"), v.literal("existing"), v.literal("moved")),
+    ),
     phoneObfuscated: v.string(),
     eventId: v.id("events"),
     listKey: v.string(),
@@ -941,11 +950,13 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_phone_status", ["phoneHash", "status"])
+    .index("by_destination_rsvp", ["destinationRsvpId"])
     .index("by_event", ["eventId"])
     .index("by_expires_at", ["expiresAt"]),
 
   smsInboundReceipts: defineTable({
     providerMessageId: v.string(),
+    destinationRsvpId: v.optional(v.id("rsvps")),
     phoneHash: v.string(),
     toPhoneNumber: v.string(),
     body: v.string(),

@@ -4,6 +4,7 @@ export const MESSAGE_TEMPLATE_VARIABLES = [
   "eventDate",
   "eventLocation",
   "qrCodeUrl",
+  "eventStatusUrl",
 ] as const;
 
 export type MessageTemplateVariableName = (typeof MESSAGE_TEMPLATE_VARIABLES)[number];
@@ -14,6 +15,7 @@ export type MessageTemplateVariables = {
   eventDate: string;
   eventLocation: string;
   qrCodeUrl?: string;
+  eventStatusUrl?: string;
 };
 
 const variableReplacementPatterns: Record<MessageTemplateVariableName, RegExp> = {
@@ -22,10 +24,11 @@ const variableReplacementPatterns: Record<MessageTemplateVariableName, RegExp> =
   eventDate: /\{\{\s*eventDate\s*\}\}/g,
   eventLocation: /\{\{\s*eventLocation\s*\}\}/g,
   qrCodeUrl: /\{\{\s*qrCodeUrl\s*\}\}/g,
+  eventStatusUrl: /\{\{\s*eventStatusUrl\s*\}\}/g,
 };
 
 const multiEventRestrictedVariablePattern =
-  /\{\{\s*(eventName|eventDate|eventLocation|qrCodeUrl)\s*\}\}/;
+  /\{\{\s*(eventName|eventDate|eventLocation|qrCodeUrl|eventStatusUrl)\s*\}\}/;
 
 const qrCodeUrlVariablePattern = /\{\{\s*qrCodeUrl\s*\}\}/;
 
@@ -60,7 +63,15 @@ export function applyMessageTemplateVariables(
     .replace(variableReplacementPatterns.eventName, variables.eventName)
     .replace(variableReplacementPatterns.eventDate, variables.eventDate)
     .replace(variableReplacementPatterns.eventLocation, variables.eventLocation)
-    .replace(variableReplacementPatterns.qrCodeUrl, variables.qrCodeUrl ?? "");
+    .replace(variableReplacementPatterns.qrCodeUrl, () => variables.qrCodeUrl ?? "")
+    .replace(variableReplacementPatterns.eventStatusUrl, () => variables.eventStatusUrl ?? "");
+}
+
+export const RSVP_STATUS_CTA = "Want to view your RSVP status? Sign in here: {{eventStatusUrl}}";
+
+export function appendRsvpStatusCta(message: string): string {
+  if (/\{\{\s*eventStatusUrl\s*\}\}/.test(message)) return message;
+  return message.trim() ? `${message.trimEnd()}\n\n${RSVP_STATUS_CTA}` : RSVP_STATUS_CTA;
 }
 
 export function replaceQrCodeUrlVariable(message: string, qrCodeUrl: string): string {

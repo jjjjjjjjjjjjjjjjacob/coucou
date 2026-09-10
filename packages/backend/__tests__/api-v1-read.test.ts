@@ -274,6 +274,7 @@ describe("GET /api/v1/events/{eventRouteId}/rsvps/lookup", () => {
       await databaseContext.db.insert("rsvps", {
         eventId,
         clerkUserId: "user_phone",
+        source: "form",
         listKey: "ga",
         userName: "Jane Doe",
         status: "approved",
@@ -310,6 +311,7 @@ describe("GET /api/v1/events/{eventRouteId}/rsvps/lookup", () => {
     expect(body.attendanceStatus).toBe("yes");
     expect(body.name).toBe("Jane Doe");
     expect(body.isGuest).toBe(false);
+    expect(body.source).toBe("form");
     expect(body.ticket).toMatchObject({
       status: "issued",
       qrEnabled: true,
@@ -349,6 +351,7 @@ describe("GET /api/v1/events/{eventRouteId}/rsvps/lookup", () => {
     expect(guestResponse.status).toBe(200);
     const guestBody = await guestResponse.json();
     expect(guestBody.isGuest).toBe(true);
+    expect(guestBody.source).toBe("unknown");
 
     const missingResponse = await testBackend.fetch(
       "/api/v1/events/evt-guest-lookup/rsvps/lookup?phone=%2B15550000000",
@@ -544,6 +547,7 @@ describe("event-scoped API reads and RSVP reconciliation", () => {
       await databaseContext.db.insert("rsvps", {
         eventId,
         clerkUserId: "user_reconcile",
+        source: "text",
         listKey: "ga",
         userName: "Account Guest",
         status: "approved",
@@ -603,6 +607,8 @@ describe("event-scoped API reads and RSVP reconciliation", () => {
       phone: guestPhone,
       phoneHash: guestPhoneHash,
       listKey: "vip",
+      source: "unknown",
     });
+    expect(contacts.find((contact: { isGuest: boolean }) => !contact.isGuest)?.source).toBe("text");
   });
 });

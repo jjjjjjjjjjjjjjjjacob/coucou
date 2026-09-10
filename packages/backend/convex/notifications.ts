@@ -24,7 +24,7 @@ import type { Id } from "./_generated/dataModel";
 import { action } from "./_generated/server";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
-import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import { buildEventStatusUrl, resolveEventMessageBaseUrl } from "./lib/publicBaseUrl";
 import { getSmsErrorDetails } from "./lib/smsErrorDetails";
 import {
   CLUB_CHLORINE_BRAND_NAME,
@@ -36,6 +36,9 @@ import {
 } from "./lib/smsProgramCopy";
 
 type ApprovalEventSummary = {
+  _id?: string;
+  shortId?: string;
+  publicBaseUrl?: string | null;
   name: string;
   siteKey?: string;
   secondaryTitle?: string;
@@ -53,6 +56,9 @@ type ApprovalRecipientSummary = {
 };
 
 type SmsConsentEventSummary = {
+  _id?: string;
+  shortId?: string;
+  publicBaseUrl?: string | null;
   name?: string | null;
   siteKey?: string | null;
   secondaryTitle?: string | null;
@@ -159,6 +165,7 @@ function buildApprovalTemplateVariables(
     eventDate: formatEventDateForMessageTemplate(event.eventDate, event.eventTimezone),
     eventLocation: event.location?.trim() ?? "",
     qrCodeUrl,
+    eventStatusUrl: buildEventStatusUrl(event, event.publicBaseUrl),
   };
 }
 
@@ -296,6 +303,7 @@ export function formatSmsConsentMessage(
 
 export const sendApprovalSms = action({
   args: {
+    rsvpId: v.optional(v.id("rsvps")),
     eventId: v.id("events"),
     clerkUserId: v.string(),
     listKey: v.string(),
@@ -322,27 +330,24 @@ export const sendApprovalSms = action({
       return { skipped: "no_event" };
     }
 
-    const validatedBaseUrl = resolvePublicBaseUrlForEvent(event);
+    const validatedBaseUrl = await resolveEventMessageBaseUrl(ctx, event);
     if (!validatedBaseUrl) {
       throw new Error("Missing public base URL for event site");
     }
 
-    const userRecord = await ctx.runQuery(api.users.getByClerkUser, {
+    const recipient = await ctx.runQuery(internal.rsvps.getApprovalSmsContext, {
+      eventId: args.eventId,
+      rsvpId: args.rsvpId,
       clerkUserId: args.clerkUserId,
+      code: args.code,
     });
 
-    if (!userRecord?.phone) {
+    if (!recipient?.phone) {
       return { skipped: "no_phone" };
     }
 
-    // Check SMS consent for this RSVP
-    const consentCheck = await ctx.runQuery(internal.rsvps.checkSmsConsentForUserEvent, {
-      eventId: args.eventId,
-      clerkUserId: args.clerkUserId,
-    });
-
     // Check if user has consented to SMS notifications for this event
-    if (!consentCheck.hasConsented) {
+    if (!recipient.hasConsented) {
       return { skipped: "no_consent" };
     }
 
@@ -354,7 +359,7 @@ export const sendApprovalSms = action({
         siteKey: event.siteKey ?? undefined,
       })) as PublicListCredential[];
       const matchingCredential = listCredentials.find(
-        (credential) => credential.listKey === args.listKey,
+        (credential) => credential.listKey === recipient.listKey,
       );
       const generateQrCode = matchingCredential?.generateQR === true;
       const sendNow = resolveSendQrOnApproval(event, matchingCredential);
@@ -368,24 +373,24 @@ export const sendApprovalSms = action({
       const approvalMessage =
         generateQrCode && !sendNow && !shouldIncludeTicketLink
           ? formatDeferredApprovalMessage(
-              event as ApprovalEventSummary,
-              userRecord as ApprovalRecipientSummary,
+              { ...event, publicBaseUrl: validatedBaseUrl } as ApprovalEventSummary,
+              recipient,
               matchingCredential?.approvalMessage,
             )
           : formatApprovalMessage(
-              event as ApprovalEventSummary,
-              userRecord as ApprovalRecipientSummary,
-              args.code,
+              { ...event, publicBaseUrl: validatedBaseUrl } as ApprovalEventSummary,
+              recipient,
+              recipient.code,
               validatedBaseUrl,
               matchingCredential?.approvalMessage,
               shouldIncludeTicketLink,
             );
-      const phoneResolution = await normalizeAndHashPhoneNumber(userRecord.phone);
+      const phoneResolution = await normalizeAndHashPhoneNumber(recipient.phone);
 
       // Create SMS notification record
       const notificationId = await ctx.runMutation(internal.sms.createNotification, {
         eventId: args.eventId,
-        recipientClerkUserId: args.clerkUserId,
+        recipientClerkUserId: recipient.clerkUserId,
         recipientPhoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
         recipientPhoneHash: phoneResolution.phoneHash,
         type: "approval",
@@ -395,7 +400,7 @@ export const sendApprovalSms = action({
       let qrCodeMediaUrl: string | undefined;
       if (shouldIncludeQrCode) {
         try {
-          const ticketUrl = `${validatedBaseUrl}/redeem/${args.code}`;
+          const ticketUrl = `${validatedBaseUrl}/redeem/${recipient.code}`;
           const qrCodeStorageId = await ctx.runAction(
             internal.lib.qrCodeGenerator.generateAndUploadQrCode,
             {
@@ -422,7 +427,7 @@ export const sendApprovalSms = action({
             eventId: args.eventId,
             phoneHash: phoneResolution.phoneHash,
             phoneObfuscated: obfuscatePhoneNumber(phoneResolution.normalizedPhoneNumber),
-            participantClerkUserIds: [args.clerkUserId],
+            participantClerkUserIds: [recipient.clerkUserId],
             direction: "outbound",
             kind: "approval",
             body: approvalMessage,
@@ -440,7 +445,7 @@ export const sendApprovalSms = action({
       // Send SMS/MMS via Twilio
       const result = (await ctx.runAction(internal.smsActions.sendSmsInternal, {
         eventId: args.eventId,
-        phoneNumber: userRecord.phone,
+        phoneNumber: recipient.phone,
         message: approvalMessage,
         notificationId,
         mediaUrl: qrCodeMediaUrl,
@@ -457,7 +462,8 @@ export const sendApprovalSms = action({
       if (shouldIncludeQrCode) {
         await ctx.runMutation(internal.qrDelivery.markRedemptionDelivered, {
           eventId: args.eventId,
-          clerkUserId: args.clerkUserId,
+          clerkUserId: recipient.clerkUserId,
+          code: recipient.code,
         });
       }
 
@@ -595,7 +601,10 @@ export const sendSmsConsentStatusMessage = action({
 
     try {
       const message = formatSmsConsentMessage(
-        event as SmsConsentEventSummary,
+        {
+          ...event,
+          publicBaseUrl: await resolveEventMessageBaseUrl(ctx, event),
+        } as SmsConsentEventSummary,
         args.consentEnabled,
         (userRecord ?? {}) as ApprovalRecipientSummary,
         args.organizerName,

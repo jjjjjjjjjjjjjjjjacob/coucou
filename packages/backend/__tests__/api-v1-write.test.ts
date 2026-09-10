@@ -352,6 +352,7 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
         name: "Consumer Guest",
         listKey: "ga",
         attendanceStatus: "yes",
+        source: "text",
       }),
     );
     expect(response.status).toBe(201);
@@ -359,6 +360,7 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
     expect(body.created).toBe(true);
     expect(body.rsvp.isGuest).toBe(true);
     expect(body.rsvp.approvalStatus).toBe("pending");
+    expect(body.rsvp.source).toBe("api");
 
     const { phoneHash } = await normalizeAndHashPhoneNumber("+15551230001");
     const storedRsvp = await testBackend.run(async (databaseContext) => {
@@ -371,6 +373,7 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
     });
     expect(storedRsvp?.clerkUserId).toBe(`guest:${phoneHash}`);
     expect(storedRsvp?.apiClientId).toBeDefined();
+    expect(storedRsvp?.source).toBe("api");
 
     const guestContact = await testBackend.run(async (databaseContext) => {
       return await databaseContext.db
@@ -536,6 +539,15 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
     await drainScheduledFunctions(testBackend);
     expect(capturedWebhookRequestCount).toBe(1); // rsvp.created
 
+    // Simulate an RSVP whose original provenance predates this API update.
+    await testBackend.run(async (databaseContext) => {
+      const existingRsvp = await databaseContext.db.query("rsvps").unique();
+      if (!existingRsvp) {
+        throw new Error("RSVP was not created");
+      }
+      await databaseContext.db.patch(existingRsvp._id, { source: "form" });
+    });
+
     // Identical re-POST: no field changes → 200, no new row, no webhook.
     const secondResponse = await testBackend.fetch(
       "/api/v1/events/evt-write-api/rsvps",
@@ -549,6 +561,7 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
     expect(secondResponse.status).toBe(200);
     const secondBody = await secondResponse.json();
     expect(secondBody.created).toBe(false);
+    expect(secondBody.rsvp.source).toBe("form");
     await drainScheduledFunctions(testBackend);
     expect(capturedWebhookRequestCount).toBe(1); // unchanged
 
@@ -572,6 +585,7 @@ describe("POST /api/v1/events/{eventRouteId}/rsvps", () => {
       }),
     );
     expect(thirdResponse.status).toBe(200);
+    expect((await thirdResponse.json()).rsvp.source).toBe("form");
     await drainScheduledFunctions(testBackend);
     expect(capturedWebhookRequestCount).toBe(2); // rsvp.attendance_updated
   });
@@ -854,6 +868,7 @@ describe("PATCH and DELETE /api/v1/rsvps/{rsvpId}", () => {
     const patchBody = await patchResponse.json();
     expect(patchBody.rsvp.attendanceStatus).toBe("maybe");
     expect(patchBody.rsvp.approvalStatus).toBe("pending");
+    expect(patchBody.rsvp.source).toBe("api");
 
     const deleteResponse = await testBackend.fetch(
       `/api/v1/rsvps/${rsvpId}`,
@@ -863,6 +878,7 @@ describe("PATCH and DELETE /api/v1/rsvps/{rsvpId}", () => {
     const deleteBody = await deleteResponse.json();
     expect(deleteBody.cancelled).toBe(true);
     expect(deleteBody.rsvp.attendanceStatus).toBe("no");
+    expect(deleteBody.rsvp.source).toBe("api");
 
     // Soft cancel: the row still exists with approval status untouched.
     const storedRsvp = await testBackend.run(async (databaseContext) => {
@@ -871,6 +887,7 @@ describe("PATCH and DELETE /api/v1/rsvps/{rsvpId}", () => {
     });
     expect(storedRsvp).not.toBeNull();
     expect(storedRsvp?.approvalStatus).toBe("pending");
+    expect(storedRsvp?.source).toBe("api");
   });
 
   it("404s for RSVPs in another workspace and unknown ids", async () => {

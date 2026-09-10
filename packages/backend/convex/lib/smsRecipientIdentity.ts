@@ -1,3 +1,4 @@
+import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { resolveCanonicalUserIdentity } from "./canonicalUserIdentity";
 import {
@@ -6,6 +7,50 @@ import {
   isGuestClerkUserId,
 } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
+
+export async function upsertSmsPhoneContact(
+  context: MutationCtx,
+  input: { phoneHash: string; phoneNumber: string; now: number },
+): Promise<void> {
+  const contact = await context.db
+    .query("guestContacts")
+    .withIndex("by_phoneHash", (queryBuilder) => queryBuilder.eq("phoneHash", input.phoneHash))
+    .unique();
+  if (contact) {
+    if (contact.phoneNumber !== input.phoneNumber) {
+      await context.db.patch(contact._id, { phoneNumber: input.phoneNumber, updatedAt: input.now });
+    }
+  } else {
+    await context.db.insert("guestContacts", {
+      phoneHash: input.phoneHash,
+      phoneNumber: input.phoneNumber,
+      createdAt: input.now,
+      updatedAt: input.now,
+    });
+  }
+}
+
+export async function resolveRsvpSmsRecipient(
+  context: Pick<QueryCtx | MutationCtx, "db">,
+  rsvp: Doc<"rsvps">,
+) {
+  const user = await context.db
+    .query("users")
+    .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", rsvp.clerkUserId))
+    .unique();
+  const phoneHash = rsvp.smsPhoneHash ?? rsvp.guestPhoneHash;
+  const contact = phoneHash
+    ? await context.db
+        .query("guestContacts")
+        .withIndex("by_phoneHash", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
+        .unique()
+    : null;
+  return {
+    phone: contact?.phoneNumber ?? user?.phone,
+    firstName: user?.firstName ?? rsvp.userName?.split(" ")[0],
+    lastName: user?.lastName,
+  };
+}
 
 /** SMS subscriptions belong to the recipient, across guest and account signups. */
 export async function resolveSmsRecipientClerkUserIds(

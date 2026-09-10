@@ -5,6 +5,7 @@ import { type Infer, v } from "convex/values";
 import { api, components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { writeAuditEntry } from "./audit";
 import { action, internalMutation, mutation, query } from "./functions";
 import { resolveCanonicalClerkUserId, resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
 import { generateRsvpHandoffToken } from "./lib/codeGenerators";
@@ -20,11 +21,11 @@ import {
   submittedSocialProfileValidator,
 } from "./lib/primaryFields";
 import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./lib/profileValueRecords";
+import { resolveEventMessageBaseUrl } from "./lib/publicBaseUrl";
 import {
   countRsvpsWithAggregate,
   deleteRsvpFromAggregate,
   insertRsvpIntoAggregate,
-  updateRsvpInAggregate,
 } from "./lib/rsvpAggregate";
 import { AUTOMATIC_APPROVAL_ACTOR, applyApprovalStatusTransition } from "./lib/rsvpApproval";
 import { formatRsvpConfirmationMessage } from "./lib/rsvpConfirmationMessages";
@@ -42,6 +43,10 @@ import {
 } from "./lib/rsvpFilters";
 import { updateRsvpListKeyRecords } from "./lib/rsvpListKey";
 import {
+  reconcileRsvpOrganizerPreferences,
+  reconcileRsvpProfileGrants,
+} from "./lib/rsvpReconciliationRecords";
+import {
   type ApprovalStatus,
   type AttendanceStatus,
   deriveApprovalStatus,
@@ -57,11 +62,18 @@ import {
   resolveSmsOrganizerPreference,
   upsertSmsOrganizerPreference,
 } from "./lib/smsOrganizerPreferences";
+import { resolveRsvpSmsRecipient } from "./lib/smsRecipientIdentity";
 import {
   replaceRsvpSocialProfileSnapshots,
   upsertUserSocialProfile,
 } from "./lib/socialProfileRecords";
 import { NotFoundError } from "./lib/types";
+import {
+  mergeRedemptions,
+  replaceRsvpAggregateSafely,
+  ticketStatusFromRedemption,
+  upsertRsvpAlias,
+} from "./lib/userIdentityMerge";
 import {
   requireWorkspaceDoor,
   requireWorkspaceHost,
@@ -530,6 +542,7 @@ async function submitAuthenticatedRequest(
 
   if (!existing) {
     const rsvpId = await ctx.db.insert("rsvps", {
+      source: "form",
       eventId: args.eventId,
       clerkUserId,
       listKey: args.listKey,
@@ -642,7 +655,10 @@ async function submitAuthenticatedRequest(
             lastName: user?.lastName ?? submittedLastName,
             fullName: userName,
           },
-          { organizerName: existingOrganizerSmsPreference.organizerName },
+          {
+            organizerName: existingOrganizerSmsPreference.organizerName,
+            publicBaseUrl: await resolveEventMessageBaseUrl(ctx, event),
+          },
         )
       : undefined;
   if (rsvpConfirmationMessage) {
@@ -742,6 +758,7 @@ export const submitGuestRequest = mutation({
     let previousRsvpForFinalization: Doc<"rsvps"> | undefined;
     if (!existing) {
       rsvpId = await ctx.db.insert("rsvps", {
+        source: "form",
         eventId: args.eventId,
         clerkUserId: guestClerkUserId,
         listKey: args.listKey,
@@ -852,7 +869,10 @@ export const submitGuestRequest = mutation({
               lastName: submittedLastName,
               fullName: guestName,
             },
-            { organizerName: existingOrganizerSmsPreference.organizerName },
+            {
+              organizerName: existingOrganizerSmsPreference.organizerName,
+              publicBaseUrl: await resolveEventMessageBaseUrl(ctx, event),
+            },
           )
         : undefined;
     if (rsvpConfirmationMessage) {
@@ -1050,11 +1070,21 @@ async function moveGuestRsvpDependentRecords(
     .collect();
 
   const event = await ctx.db.get(guestRsvp.eventId);
-  const submittedProfiles = guestSocialProfiles.map((profile) => ({
-    platformKey: profile.platformKey,
-    handle: profile.handle,
-    normalizedHandle: profile.normalizedHandle,
-  }));
+  const reconciliationInput = {
+    sourceRsvp: guestRsvp,
+    targetRsvpId,
+    targetClerkUserId,
+    targetUserId,
+  };
+  const copiedFields = await reconcileRsvpProfileGrants(ctx, reconciliationInput);
+  await reconcileRsvpOrganizerPreferences(ctx, reconciliationInput);
+  const submittedProfiles = guestSocialProfiles
+    .filter((profile) => !copiedFields.has(`social.${profile.platformKey}`))
+    .map((profile) => ({
+      platformKey: profile.platformKey,
+      handle: profile.handle,
+      normalizedHandle: profile.normalizedHandle,
+    }));
   if (event && submittedProfiles.length > 0) {
     await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
       event,
@@ -1108,33 +1138,41 @@ async function moveGuestRsvpDependentRecords(
     });
   }
 
-  const guestRedemption = await ctx.db
-    .query("redemptions")
-    .withIndex("by_event_user", (queryBuilder) =>
-      queryBuilder.eq("eventId", guestRsvp.eventId).eq("clerkUserId", guestRsvp.clerkUserId),
+  const notifications = await ctx.db
+    .query("smsNotifications")
+    .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", guestRsvp.eventId))
+    .filter((queryBuilder) =>
+      queryBuilder.eq(queryBuilder.field("recipientClerkUserId"), guestRsvp.clerkUserId),
     )
-    .unique();
-  const existingTargetRedemption = await ctx.db
-    .query("redemptions")
-    .withIndex("by_event_user", (queryBuilder) =>
-      queryBuilder.eq("eventId", guestRsvp.eventId).eq("clerkUserId", targetClerkUserId),
+    .collect();
+  for (const notification of notifications) {
+    await ctx.db.patch(notification._id, { recipientClerkUserId: targetClerkUserId });
+  }
+
+  const resolvedRedemption = await mergeRedemptions(ctx, {
+    eventId: guestRsvp.eventId,
+    sourceClerkUserId: guestRsvp.clerkUserId,
+    canonicalClerkUserId: targetClerkUserId,
+  });
+  const resolvedTicketStatus = ticketStatusFromRedemption(resolvedRedemption);
+  if (resolvedTicketStatus)
+    await ctx.db.patch(targetRsvpId, { ticketStatus: resolvedTicketStatus });
+  const targetRsvp = await ctx.db.get(targetRsvpId);
+  if (resolvedRedemption && targetRsvp && resolvedRedemption.listKey !== targetRsvp.listKey) {
+    await ctx.db.patch(resolvedRedemption._id, { listKey: targetRsvp.listKey });
+  }
+  const sessions = await ctx.db
+    .query("smsRsvpSessions")
+    .withIndex("by_destination_rsvp", (queryBuilder) =>
+      queryBuilder.eq("destinationRsvpId", guestRsvp._id),
     )
-    .unique();
-  let resolvedRedemption = existingTargetRedemption;
-  if (guestRedemption && !existingTargetRedemption) {
-    await ctx.db.patch(guestRedemption._id, {
+    .collect();
+  for (const session of sessions) {
+    await ctx.db.patch(session._id, {
+      destinationRsvpId: targetRsvpId,
       clerkUserId: targetClerkUserId,
+      registeredUserId: targetUserId,
     });
-    resolvedRedemption = {
-      ...guestRedemption,
-      clerkUserId: targetClerkUserId,
-    };
-  } else if (
-    guestRedemption &&
-    existingTargetRedemption &&
-    guestRedemption._id !== existingTargetRedemption._id
-  ) {
-    await ctx.db.delete(guestRedemption._id);
   }
 
   const handoffs = await ctx.db
@@ -1149,30 +1187,6 @@ async function moveGuestRsvpDependentRecords(
   }
 
   return resolvedRedemption;
-}
-
-async function maybeSendPairedApprovalSms(
-  ctx: MutationCtx,
-  {
-    guestRsvp,
-    targetClerkUserId,
-    redemption,
-  }: {
-    guestRsvp: Doc<"rsvps">;
-    targetClerkUserId: string;
-    redemption: Doc<"redemptions"> | null;
-  },
-) {
-  if (resolveApprovalStatus(guestRsvp) !== "approved") return;
-  if (!redemption || !guestRsvp.shareContact || !guestRsvp.listKey) return;
-
-  await ctx.scheduler.runAfter(0, api.notifications.sendApprovalSms, {
-    eventId: guestRsvp.eventId,
-    clerkUserId: targetClerkUserId,
-    listKey: guestRsvp.listKey,
-    code: redemption.code,
-    shareContact: guestRsvp.shareContact,
-  });
 }
 
 async function claimGuestRsvpsForPhone(
@@ -1191,14 +1205,32 @@ async function claimGuestRsvpsForPhone(
     .query("users")
     .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
     .unique();
-  const guestRsvps = (
-    await ctx.db
+  const candidateCollections = await Promise.all([
+    ctx.db
       .query("rsvps")
       .withIndex("by_guestPhoneHash", (queryBuilder) =>
         queryBuilder.eq("guestPhoneHash", phoneHash),
       )
-      .collect()
-  ).filter((rsvp) => isGuestClerkUserId(rsvp.clerkUserId));
+      .collect(),
+    ctx.db
+      .query("rsvps")
+      .withIndex("by_smsPhoneHash", (queryBuilder) => queryBuilder.eq("smsPhoneHash", phoneHash))
+      .collect(),
+    // Legacy reply actions sometimes retained the guest ID but omitted its phone field.
+    ctx.db
+      .query("rsvps")
+      .withIndex("by_user", (queryBuilder) =>
+        queryBuilder.eq("clerkUserId", buildGuestClerkUserId(phoneHash)),
+      )
+      .collect(),
+  ]);
+  const guestRsvps = [
+    ...new Map(candidateCollections.flat().map((rsvp) => [rsvp._id, rsvp])).values(),
+  ].filter(
+    (rsvp) =>
+      rsvp.clerkUserId !== clerkUserId &&
+      (isGuestClerkUserId(rsvp.clerkUserId) || rsvp.smsPhoneHash === phoneHash),
+  );
 
   let pairedCount = 0;
   let mergedCount = 0;
@@ -1221,6 +1253,13 @@ async function claimGuestRsvpsForPhone(
 
     if (existingUserRsvp && existingUserRsvp._id !== guestRsvp._id) {
       const statusSource = chooseStrongerRsvpStatusSource(existingUserRsvp, guestRsvp);
+      const consentSource =
+        guestRsvp.smsConsent !== undefined &&
+        (existingUserRsvp.smsConsent === undefined ||
+          (guestRsvp.smsConsentTimestamp ?? guestRsvp.updatedAt) >
+            (existingUserRsvp.smsConsentTimestamp ?? existingUserRsvp.updatedAt))
+          ? guestRsvp
+          : existingUserRsvp;
       const oldExistingUserRsvp = await ctx.db.get(existingUserRsvp._id);
       const mergedCustomFieldValues = {
         ...(existingUserRsvp.customFieldValues ?? {}),
@@ -1228,6 +1267,8 @@ async function claimGuestRsvpsForPhone(
       };
       await ctx.db.patch(existingUserRsvp._id, {
         listKey: statusSource.listKey,
+        source: statusSource.source,
+        smsPhoneHash: guestRsvp.smsPhoneHash ?? existingUserRsvp.smsPhoneHash,
         userName: resolveUserDisplayName(
           mergedUser,
           guestRsvp.userName ?? existingUserRsvp.userName ?? "",
@@ -1235,9 +1276,9 @@ async function claimGuestRsvpsForPhone(
         note: guestRsvp.note ?? existingUserRsvp.note,
         shareContact: guestRsvp.shareContact || existingUserRsvp.shareContact,
         attendees: guestRsvp.attendees ?? existingUserRsvp.attendees,
-        smsConsent: guestRsvp.smsConsent ?? existingUserRsvp.smsConsent,
-        smsConsentTimestamp: guestRsvp.smsConsentTimestamp ?? existingUserRsvp.smsConsentTimestamp,
-        smsConsentIpAddress: guestRsvp.smsConsentIpAddress ?? existingUserRsvp.smsConsentIpAddress,
+        smsConsent: consentSource.smsConsent,
+        smsConsentTimestamp: consentSource.smsConsentTimestamp,
+        smsConsentIpAddress: consentSource.smsConsentIpAddress,
         customFieldValues:
           Object.keys(mergedCustomFieldValues).length > 0 ? mergedCustomFieldValues : undefined,
         invitedByName: guestRsvp.invitedByName ?? existingUserRsvp.invitedByName,
@@ -1264,10 +1305,10 @@ async function claimGuestRsvpsForPhone(
       });
       const newExistingUserRsvp = await ctx.db.get(existingUserRsvp._id);
       if (oldExistingUserRsvp && newExistingUserRsvp) {
-        await updateRsvpInAggregate(ctx, oldExistingUserRsvp, newExistingUserRsvp);
+        await replaceRsvpAggregateSafely(ctx, oldExistingUserRsvp, newExistingUserRsvp);
       }
 
-      const redemption = await moveGuestRsvpDependentRecords(ctx, {
+      await moveGuestRsvpDependentRecords(ctx, {
         guestRsvp,
         targetRsvpId: existingUserRsvp._id,
         targetClerkUserId: clerkUserId,
@@ -1275,18 +1316,35 @@ async function claimGuestRsvpsForPhone(
         now,
       });
 
+      await writeAuditEntry(ctx, {
+        action: "rsvp.reconciled",
+        targetKind: "rsvp",
+        targetId: existingUserRsvp._id,
+        metadata: {
+          previousRsvp: JSON.stringify(guestRsvp),
+          previousTargetRsvp: JSON.stringify(existingUserRsvp),
+        },
+      });
+      await upsertRsvpAlias(ctx, {
+        retiredRsvpId: guestRsvp._id,
+        canonicalRsvpId: existingUserRsvp._id,
+        retiredClerkUserId: guestRsvp.clerkUserId,
+        canonicalClerkUserId: clerkUserId,
+        now,
+      });
       await ctx.db.delete(guestRsvp._id);
       await deleteRsvpFromAggregate(ctx, guestRsvp);
-      await maybeSendPairedApprovalSms(ctx, {
-        guestRsvp,
-        targetClerkUserId: clerkUserId,
-        redemption,
-      });
       pairedCount++;
       mergedCount++;
       continue;
     }
 
+    await writeAuditEntry(ctx, {
+      action: "rsvp.reconciled",
+      targetKind: "rsvp",
+      targetId: guestRsvp._id,
+      metadata: { previousRsvp: JSON.stringify(guestRsvp), canonicalClerkUserId: clerkUserId },
+    });
     const oldGuestRsvp = await ctx.db.get(guestRsvp._id);
     await ctx.db.patch(guestRsvp._id, {
       clerkUserId,
@@ -1297,20 +1355,25 @@ async function claimGuestRsvpsForPhone(
     });
     const newUserRsvp = await ctx.db.get(guestRsvp._id);
     if (oldGuestRsvp && newUserRsvp) {
-      await updateRsvpInAggregate(ctx, oldGuestRsvp, newUserRsvp);
+      await replaceRsvpAggregateSafely(ctx, oldGuestRsvp, newUserRsvp);
     }
 
-    const redemption = await moveGuestRsvpDependentRecords(ctx, {
+    const aliases = await ctx.db
+      .query("rsvpIdentityAliases")
+      .withIndex("by_canonical", (queryBuilder) =>
+        queryBuilder.eq("canonicalRsvpId", guestRsvp._id),
+      )
+      .collect();
+    for (const alias of aliases) {
+      await ctx.db.patch(alias._id, { canonicalClerkUserId: clerkUserId, updatedAt: now });
+    }
+
+    await moveGuestRsvpDependentRecords(ctx, {
       guestRsvp,
       targetRsvpId: guestRsvp._id,
       targetClerkUserId: clerkUserId,
       targetUserId: mergedUser?._id,
       now,
-    });
-    await maybeSendPairedApprovalSms(ctx, {
-      guestRsvp,
-      targetClerkUserId: clerkUserId,
-      redemption,
     });
     pairedCount++;
   }
@@ -1329,14 +1392,8 @@ export const claimGuestRsvpsForCurrentUser = mutation({
 
     const canonicalClerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", canonicalClerkUserId),
-      )
-      .unique();
-    const phoneNumber = identity.phoneNumber ?? user?.phone;
-    if (!phoneNumber) {
+    const phoneNumber = identity.phoneNumber;
+    if (!phoneNumber || identity.phoneNumberVerified !== true) {
       return { paired: 0, merged: 0 } as const;
     }
 
@@ -1344,6 +1401,39 @@ export const claimGuestRsvpsForCurrentUser = mutation({
       clerkUserId: canonicalClerkUserId,
       phoneNumber,
     });
+  },
+});
+
+/** Browser recovery never accepts a phone from the caller or an editable profile. */
+export const reconcileCurrentUserRsvps = action({
+  args: {},
+  handler: async (ctx): Promise<{ paired: number; merged: number }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Please sign in to view your RSVPs.");
+    const secretKey = process.env.CLERK_SECRET_KEY;
+    if (!secretKey)
+      throw new Error("Phone verification is temporarily unavailable. Please try again.");
+    const clerkUser = await createClerkClient({ secretKey }).users.getUser(identity.subject);
+    const verifiedPhoneNumbers = clerkUser.phoneNumbers
+      .filter((phone) => phone.verification?.status === "verified")
+      .map((phone) => phone.phoneNumber);
+    return await ctx.runMutation(internal.rsvps.reconcileVerifiedRsvps, { verifiedPhoneNumbers });
+  },
+});
+
+export const reconcileVerifiedRsvps = internalMutation({
+  args: { verifiedPhoneNumbers: v.array(v.string()) },
+  handler: async (ctx, { verifiedPhoneNumbers }): Promise<{ paired: number; merged: number }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    const clerkUserId = await resolveCanonicalClerkUserId(ctx, identity.subject);
+    const result = { paired: 0, merged: 0 };
+    for (const phoneNumber of new Set(verifiedPhoneNumbers)) {
+      const claimed = await claimGuestRsvpsForPhone(ctx, { clerkUserId, phoneNumber });
+      result.paired += claimed.paired;
+      result.merged += claimed.merged;
+    }
+    return result;
   },
 });
 
@@ -1394,6 +1484,50 @@ export const runScheduledAutoApproval = internalMutation({
  * Consent is copied onto an RSVP from the guest's explicit selection or their
  * existing organizer-level preference when they submit that event's RSVP.
  */
+export const getApprovalSmsContext = internalQuery({
+  args: {
+    eventId: v.id("events"),
+    rsvpId: v.optional(v.id("rsvps")),
+    clerkUserId: v.string(),
+    code: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Follow the RSVP through sign-in even if an approval job was already queued.
+    const queuedRedemption = await ctx.db
+      .query("redemptions")
+      .withIndex("by_code", (queryBuilder) => queryBuilder.eq("code", args.code))
+      .unique();
+    const clerkUserId = await resolveCanonicalClerkUserId(
+      ctx,
+      queuedRedemption?.eventId === args.eventId ? queuedRedemption.clerkUserId : args.clerkUserId,
+    );
+    const rsvp = args.rsvpId
+      ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, args.rsvpId))
+      : await ctx.db
+          .query("rsvps")
+          .withIndex("by_event_user", (queryBuilder) =>
+            queryBuilder.eq("eventId", args.eventId).eq("clerkUserId", clerkUserId),
+          )
+          .unique();
+    if (!rsvp || rsvp.eventId !== args.eventId || resolveApprovalStatus(rsvp) !== "approved")
+      return null;
+    const redemption = await ctx.db
+      .query("redemptions")
+      .withIndex("by_event_user", (queryBuilder) =>
+        queryBuilder.eq("eventId", args.eventId).eq("clerkUserId", rsvp.clerkUserId),
+      )
+      .unique();
+    if (!redemption || redemption.disabledAt) return null;
+    return {
+      ...(await resolveRsvpSmsRecipient(ctx, rsvp)),
+      clerkUserId: rsvp.clerkUserId,
+      listKey: rsvp.listKey,
+      code: redemption.code,
+      hasConsented: rsvp.smsConsent === true && rsvp.shareContact,
+    };
+  },
+});
+
 export const checkSmsConsentForUserEvent = internalQuery({
   args: {
     eventId: v.id("events"),
@@ -2274,6 +2408,7 @@ async function filterRsvpsByPrimaryFields(
 
 // Type definitions for enriched RSVP data
 type EnrichedRsvp = {
+  source: Doc<"rsvps">["source"] | "unknown";
   id: Id<"rsvps">;
   userId?: Id<"users">;
   clerkUserId: string;
@@ -2405,6 +2540,7 @@ async function enrichSelectedHostRsvps(
 
     return {
       id: rsvpRecord._id,
+      source: rsvpRecord.source ?? "unknown",
       userId: user?._id,
       clerkUserId: rsvpRecord.clerkUserId,
       name:
@@ -2750,6 +2886,7 @@ export const listForEventPaginated = query({
 
       return {
         id: rsvp._id,
+        source: rsvp.source ?? ("unknown" as const),
         clerkUserId: rsvp.clerkUserId,
         name:
           [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||

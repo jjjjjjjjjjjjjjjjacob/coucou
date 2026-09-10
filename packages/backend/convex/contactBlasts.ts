@@ -14,7 +14,7 @@ import { validateContactFilters } from "./lib/contactQueries";
 import { resolveContact } from "./lib/contactRecords";
 import { contactAudienceValidator, contactReplyActionValidator } from "./lib/contactValidators";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
-import { resolvePublicBaseUrlForEvent } from "./lib/publicBaseUrl";
+import { buildEventStatusUrl, resolveEventMessageBaseUrl } from "./lib/publicBaseUrl";
 import { ensureEventInSiteScope, ensureTextBlastInSiteScope } from "./lib/siteScope";
 import { getSmsErrorDetails } from "./lib/smsErrorDetails";
 import { formatSmsMessageForSite } from "./lib/smsProgramCopy";
@@ -456,6 +456,9 @@ export const sendBatch = internalAction({
         return;
       const batch = await ctx.runQuery(internal.contactBlasts.readSendBatch, args);
       if (!batch) return;
+      const messageBaseUrl = batch.event
+        ? await resolveEventMessageBaseUrl(ctx, batch.event)
+        : null;
       const results: DeliveryResult[] = [];
       let alreadySent = 0;
       let uncertain = 0;
@@ -503,7 +506,7 @@ export const sendBatch = internalAction({
           let mediaUrl: string | undefined;
           let qrCodeUrl: string | undefined;
           if (batch.blast.includeQrCodes && batch.event && prepared.redemptionCode) {
-            const baseUrl = resolvePublicBaseUrlForEvent(batch.event);
+            const baseUrl = messageBaseUrl;
             if (!baseUrl) throw new Error("Public event URL is unavailable");
             qrCodeUrl = `${baseUrl}/redeem/${prepared.redemptionCode}`;
             const storageId = await ctx.runAction(
@@ -531,6 +534,7 @@ export const sendBatch = internalAction({
                   )
                 : "",
               eventLocation: batch.event?.location ?? "",
+              eventStatusUrl: batch.event ? buildEventStatusUrl(batch.event, messageBaseUrl) : "",
               qrCodeUrl: qrCodeUrl ?? "",
             }),
           );

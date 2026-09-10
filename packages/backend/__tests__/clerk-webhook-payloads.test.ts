@@ -71,6 +71,7 @@ describe("Clerk webhook payload helpers", () => {
       clerkUserId: "user_123",
       email: "new@example.com",
       phone: "+15555555555",
+      verifiedPhoneNumbers: [],
       imageUrl: "https://img.example/avatar.png",
     });
   });

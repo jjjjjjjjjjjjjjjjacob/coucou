@@ -7,8 +7,12 @@ import { useState } from "react";
 import type { GuestDirectoryFilterState } from "../lib/text-blast-filters";
 
 let directoryError: string | null = null;
+let directoryTotalCount: number | undefined = 463;
+let countError: string | null = null;
 let latestDirectoryFilters: GuestDirectoryFilterState | null = null;
 const retry = mock(async () => undefined);
+const retryCount = mock(async () => undefined);
+const prepareAudience = mock(async () => "eligibility_preview");
 const workspace = { workspaceSlug: "dojo-pomodoro", queryArgs: { workspaceSlug: "dojo-pomodoro" } };
 
 mock.module("@/lib/use-workspace-scope", () => ({
@@ -27,22 +31,17 @@ mock.module("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: string[] }) => ({
     data: queryKey[0].includes("TablePreference")
       ? null
-      : queryKey[0].includes("contactAudiences:get")
-        ? { status: "ready", processedCount: 463, eligibleCount: 460, excludedCount: 3 }
-        : queryKey[0].includes("Facets")
-          ? { events: [], tags: [], defaultListKeys: [], customFieldOptions: [] }
-          : [],
+      : queryKey[0].includes("Facets")
+        ? { events: [], tags: [], defaultListKeys: [], customFieldOptions: [] }
+        : [],
     error: null,
   }),
 }));
 mock.module("convex/react", () => ({
-  useMutation: () => async () => "eligibility_preview",
+  useMutation: () => prepareAudience,
   useQuery: (reference: Parameters<typeof getFunctionName>[0], args: unknown) => {
     if (args === "skip") return undefined;
     const queryName = getFunctionName(reference);
-    if (queryName.includes("contactAudiences:get")) {
-      return { status: "ready", processedCount: 463, eligibleCount: 460, excludedCount: 3 };
-    }
     if (queryName.includes("getBlastsByWorkspaceWithSenderNames")) return [];
     return undefined;
   },
@@ -122,6 +121,9 @@ mock.module("@/lib/hooks/use-contact-directory", () => ({
             },
           ],
       configured: true,
+      totalCount: directoryTotalCount,
+      countError,
+      retryCount,
       error: directoryError,
       isPreparing: false,
       isLoading: false,
@@ -162,8 +164,12 @@ beforeEach(() => {
   workspace.workspaceSlug = `picker-test-${++testNumber}`;
   workspace.queryArgs.workspaceSlug = workspace.workspaceSlug;
   directoryError = null;
+  directoryTotalCount = 463;
+  countError = null;
   latestDirectoryFilters = null;
   retry.mockClear();
+  retryCount.mockClear();
+  prepareAudience.mockClear();
 });
 
 describe("contact audience selection", () => {
@@ -230,12 +236,12 @@ describe("contact audience selection", () => {
     render(<Picker />);
     expect(screen.getByLabelText("Audience").textContent).toBe("null");
     expect(screen.getByText("0 people selected")).toBeTruthy();
-    expect(screen.getByText("Showing 1-1 contacts (filtered)")).toBeTruthy();
+    expect(screen.getByText("Showing 1-1 of 463 contacts (filtered)")).toBeTruthy();
     expect(screen.getByText("Page 1")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Ada"));
     expect(screen.getByText("1 person selected")).toBeTruthy();
     fireEvent.click(screen.getByText("Next"));
-    expect(screen.getByText("Showing 21-21 contacts (filtered)")).toBeTruthy();
+    expect(screen.getByText("Showing 21-21 of 463 contacts (filtered)")).toBeTruthy();
     expect(screen.getByText("Page 2")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Bea"));
     fireEvent.click(screen.getByText("Change sort"));
@@ -266,7 +272,7 @@ describe("contact audience selection", () => {
     expect(latestDirectoryFilters?.smsConsentFilter).toBe("consented");
   });
 
-  it("selects and counts all matches only after an explicit action", async () => {
+  it("uses the search total for all matching selections without preparing recipients", async () => {
     render(<Picker />);
     await act(async () => {
       fireEvent.click(screen.getByText("Select all matching"));
@@ -279,6 +285,33 @@ describe("contact audience selection", () => {
     fireEvent.click(screen.getByText("Clear selection"));
     expect(screen.getByLabelText("Audience").textContent).toBe("null");
     expect(screen.getByText("0 people selected")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Search contacts"), { target: { value: "Ada" } });
+    expect(prepareAudience).not.toHaveBeenCalled();
+  });
+
+  it("confirms all matches immediately and updates the total when the search count arrives", () => {
+    directoryTotalCount = undefined;
+    const picker = render(<Picker />);
+    fireEvent.click(screen.getByText("Select all matching"));
+    expect(screen.getByText("All matching contacts selected")).toBeTruthy();
+    expect(screen.queryByText("Counting selected people…")).toBeNull();
+    directoryTotalCount = 512;
+    picker.rerender(<Picker />);
+    expect(screen.getByText("512 people selected")).toBeTruthy();
+    expect(screen.getByText("Showing 1-1 of 512 contacts (filtered)")).toBeTruthy();
+    expect(prepareAudience).not.toHaveBeenCalled();
+  });
+
+  it("keeps all matches selected when the count fails and allows retrying it", () => {
+    directoryTotalCount = undefined;
+    countError = "Count failed";
+    render(<Picker />);
+    fireEvent.click(screen.getByText("Select all matching"));
+    expect(screen.getByText("All matching contacts selected (count unavailable)")).toBeTruthy();
+    expect(JSON.parse(screen.getByLabelText("Audience").textContent ?? "null").type).toBe("filter");
+    fireEvent.click(screen.getByText("Retry count"));
+    expect(retryCount).toHaveBeenCalledOnce();
+    expect(prepareAudience).not.toHaveBeenCalled();
   });
 
   it("shows a retryable query error without presenting an empty directory", () => {
