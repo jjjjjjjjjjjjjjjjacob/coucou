@@ -11,14 +11,18 @@ import { ContactMessageHistory } from "./contact-message-history";
 export function ContactHistory({ contactId }: { contactId: Id<"workspaceContacts"> }) {
   const workspace = useWorkspaceScope();
   const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
-  const history = useQuery({
-    ...convexQuery(api.contacts.history, {
-      workspaceSlug: workspace?.workspaceSlug ?? "",
-      contactId,
-      cursor: cursors[cursors.length - 1],
-    }),
-    enabled: Boolean(workspace),
-  });
+  const history = useQuery(
+    convexQuery(
+      api.contacts.history,
+      workspace
+        ? {
+            workspaceSlug: workspace.workspaceSlug,
+            contactId,
+            cursor: cursors[cursors.length - 1],
+          }
+        : "skip",
+    ),
+  );
   return (
     <section className="space-y-3 border-b border-[var(--border-subtle)] pb-4 mb-4">
       <h3 className="font-medium">Event history</h3>

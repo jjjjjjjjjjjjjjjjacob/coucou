@@ -3,9 +3,7 @@
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import type { ContactAudience } from "@convex/lib/contactValidators";
-import { convexQuery } from "@convex-dev/react-query";
-import { useQuery } from "@tanstack/react-query";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ContactAudiencePicker } from "@/components/guests/contact-audience-picker";
@@ -87,24 +85,18 @@ function ContactBlastComposer({
     key: string;
   } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const existingQuery = useQuery({
-    ...convexQuery(api.textBlasts.getBlastById, {
-      ...workspace?.queryArgs,
-      blastId: initialBlastId as Id<"textBlasts">,
-    }),
-    enabled: Boolean(workspace && initialBlastId),
-  });
-  const eventsQuery = useQuery({
-    ...convexQuery(api.events.listAll, workspace?.queryArgs ?? {}),
-    enabled: Boolean(workspace),
-  });
-  const targetsQuery = useQuery({
-    ...convexQuery(api.textBlasts.getReplyActionTargetOptions, workspace?.queryArgs ?? {}),
-    enabled: Boolean(workspace),
-  });
+  const existingBlast = useQuery(
+    api.textBlasts.getBlastById,
+    workspace && initialBlastId ? { ...workspace.queryArgs, blastId: initialBlastId } : "skip",
+  );
+  const events = useQuery(api.events.listAll, workspace ? workspace.queryArgs : "skip");
+  const replyActionTargets = useQuery(
+    api.textBlasts.getReplyActionTargetOptions,
+    workspace ? workspace.queryArgs : "skip",
+  );
   const messageEventOptions = useMemo(
-    () => sortTextBlastMessageEventsNewestFirst(eventsQuery.data ?? []),
-    [eventsQuery.data],
+    () => sortTextBlastMessageEventsNewestFirst(events ?? []),
+    [events],
   );
   const effectiveQrCodes = includeQrCodes || messageContainsQrCodeUrlVariable(message);
   const previewKey = JSON.stringify({
@@ -114,22 +106,24 @@ function ContactBlastComposer({
     replyActions: replyActions.map(({ key: _key, ...row }) => row),
   });
   const previewId = previewState?.key === previewKey ? previewState.id : undefined;
-  const previewQuery = useQuery({
-    ...convexQuery(api.contactAudiences.get, {
-      ...workspace?.queryArgs,
-      workspaceSlug: workspace?.workspaceSlug ?? "",
-      previewId: previewId as Id<"contactAudiencePreviews">,
-    }),
-    enabled: Boolean(workspace && previewId),
-  });
-  const retrying = existingQuery.data?.status === "failed" && Boolean(existingQuery.data.audience);
+  const preview = useQuery(
+    api.contactAudiences.get,
+    workspace && previewId
+      ? {
+          ...workspace.queryArgs,
+          workspaceSlug: workspace.workspaceSlug,
+          previewId,
+        }
+      : "skip",
+  );
+  const retrying = existingBlast?.status === "failed" && Boolean(existingBlast.audience);
   const prepareAudience = useMutation(api.contactAudiences.prepare);
   const saveDraft = useMutation(api.contactBlasts.save);
   const sendBlast = useMutation(api.contactBlasts.send);
   const updateReplyActions = useMutation(api.textBlasts.updateReplyActions);
 
   useEffect(() => {
-    const blast = existingQuery.data;
+    const blast = existingBlast;
     if (!blast || loaded) return;
     setName(blast.name);
     setMessage(blast.message);
@@ -176,7 +170,7 @@ function ContactBlastComposer({
       setStep(3);
     }
     setLoaded(true);
-  }, [existingQuery.data, loaded]);
+  }, [existingBlast, loaded]);
 
   const resolveReplyActions = () =>
     replyActions.map((row) => {
@@ -218,7 +212,16 @@ function ContactBlastComposer({
   const review = () =>
     withBusy(async () => {
       if (retrying) {
-        await previewQuery.refetch();
+        if (!workspace || !audience) throw new Error("Select contacts first");
+        const identifier = await prepareAudience({
+          blastId,
+          replyActions: resolveReplyActions(),
+          ...workspace.queryArgs,
+          audience,
+          messageEventId: messageEventId || undefined,
+          includeQrCodes: effectiveQrCodes,
+        });
+        setPreviewState({ id: identifier, key: previewKey });
         return;
       }
       if (!workspace || !audience) throw new Error("Select contacts first");
@@ -235,7 +238,6 @@ function ContactBlastComposer({
       setPreviewState({ id: identifier, key: previewKey });
       setStep(3);
     });
-  const preview = previewQuery.data;
   const ready = previewId && preview?.status === "ready" && preview.eligibleCount > 0;
   const updateReplyRow = (key: string, patch: Partial<ReplyActionRow>) =>
     setReplyActions((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -275,13 +277,8 @@ function ContactBlastComposer({
             ))}
           </nav>
         ) : null}
-        {existingQuery.error ? (
-          <div role="alert">
-            Could not load the draft.{" "}
-            <Button variant="outline" onClick={() => void existingQuery.refetch()}>
-              Retry
-            </Button>
-          </div>
+        {initialBlastId && existingBlast === null ? (
+          <div role="alert">This draft no longer exists or is not available in this workspace.</div>
         ) : !loaded ? (
           <p role="status">Loading draft…</p>
         ) : (
@@ -395,7 +392,7 @@ function ContactBlastComposer({
                         }
                       >
                         <SelectOption value="">Destination event</SelectOption>
-                        {(targetsQuery.data ?? []).map((event) => (
+                        {(replyActionTargets ?? []).map((event) => (
                           <SelectOption key={event.eventId} value={event.eventId}>
                             {event.eventName}
                           </SelectOption>
@@ -406,7 +403,7 @@ function ContactBlastComposer({
                         onValueChange={(value) => updateReplyRow(row.key, { targetListKey: value })}
                       >
                         <SelectOption value="">Destination list</SelectOption>
-                        {(targetsQuery.data ?? [])
+                        {(replyActionTargets ?? [])
                           .find((event) => event.eventId === row.targetEventId)
                           ?.lists.map((list) => (
                             <SelectOption key={list.listKey} value={list.listKey}>
@@ -442,9 +439,9 @@ function ContactBlastComposer({
                 <div className="whitespace-pre-wrap rounded-lg border border-[var(--border-subtle)] p-4">
                   {message}
                 </div>
-                {previewQuery.error || preview?.status === "failed" ? (
+                {preview?.status === "failed" ? (
                   <div role="alert">
-                    {previewQuery.error?.message ?? preview?.error}
+                    {preview.error}
                     <Button variant="outline" onClick={() => void review()}>
                       {retrying ? "Retry loading reviewed audience" : "Prepare again"}
                     </Button>

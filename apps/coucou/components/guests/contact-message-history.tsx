@@ -10,14 +10,18 @@ import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 export function ContactMessageHistory({ contactId }: { contactId: Id<"workspaceContacts"> }) {
   const workspace = useWorkspaceScope();
   const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
-  const history = useQuery({
-    ...convexQuery(api.contacts.messageHistory, {
-      workspaceSlug: workspace?.workspaceSlug ?? "",
-      contactId,
-      cursor: cursors[cursors.length - 1],
-    }),
-    enabled: Boolean(workspace),
-  });
+  const history = useQuery(
+    convexQuery(
+      api.contacts.messageHistory,
+      workspace
+        ? {
+            workspaceSlug: workspace.workspaceSlug,
+            contactId,
+            cursor: cursors[cursors.length - 1],
+          }
+        : "skip",
+    ),
+  );
   return (
     <section className="mt-5 space-y-3">
       <h3 className="font-medium">Text blast history</h3>

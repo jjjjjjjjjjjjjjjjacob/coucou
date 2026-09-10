@@ -3,10 +3,8 @@
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import type { ContactAudience } from "@convex/lib/contactValidators";
-import { convexQuery } from "@convex-dev/react-query";
-import { useQuery } from "@tanstack/react-query";
 import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table";
-import { useMutation } from "convex/react";
+import { useQuery as useConvexQuery, useMutation } from "convex/react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -99,13 +97,10 @@ export function ContactAudiencePicker({
   const directory = useContactDirectory(filters, workspace);
   const facetsQuery = useContactFilterOptions(workspace);
   const facets = facetsQuery.data;
-  const blastsQuery = useQuery({
-    ...convexQuery(api.textBlasts.getBlastsByWorkspaceWithSenderNames, {
-      ...workspace?.queryArgs,
-      limit: 100,
-    }),
-    enabled: Boolean(workspace),
-  });
+  const blasts = useConvexQuery(
+    api.textBlasts.getBlastsByWorkspaceWithSenderNames,
+    workspace ? { ...workspace.queryArgs, limit: 100 } : "skip",
+  );
   const selectedIds = audience?.type === "contacts" ? audience.contactIds : [];
   const allMatching = audience?.type === "filter";
   const debouncedSearchText = useDebounce(filters.searchText, 250);
@@ -122,14 +117,16 @@ export function ContactAudiencePicker({
     eligibilityPreviewState?.filterKey === eligibilityFilterKey
       ? eligibilityPreviewState.previewId
       : undefined;
-  const eligibilityPreviewQuery = useQuery({
-    ...convexQuery(api.contactAudiences.get, {
-      workspaceSlug: workspace?.workspaceSlug ?? "",
-      siteKey: workspace?.siteKey,
-      previewId: activeEligibilityPreviewId as Id<"contactAudiencePreviews">,
-    }),
-    enabled: Boolean(workspace && activeEligibilityPreviewId),
-  });
+  const eligibilityPreview = useConvexQuery(
+    api.contactAudiences.get,
+    workspace && activeEligibilityPreviewId
+      ? {
+          workspaceSlug: workspace.workspaceSlug,
+          siteKey: workspace.siteKey,
+          previewId: activeEligibilityPreviewId,
+        }
+      : "skip",
+  );
   const prepareEligibilityCount = useMutation(api.contactAudiences.prepare);
   useEffect(() => {
     if (!workspace || eligibilityRequest.current.filterKey === eligibilityFilterKey) return;
@@ -168,14 +165,11 @@ export function ContactAudiencePicker({
   const selectAllMatching = () => {
     onChange(buildFilterAudience(filters, { includeSmsConsent: true }));
   };
-  const eligibilityPreview = activeEligibilityPreviewId ? eligibilityPreviewQuery.data : undefined;
   const explicitSelectedCount = selectedIds.length;
   const selectionLabel =
     eligibilityPreview?.status === "ready"
       ? `${(allMatching ? eligibilityPreview.eligibleCount : explicitSelectedCount).toLocaleString()} selected of ${eligibilityPreview.eligibleCount.toLocaleString()} eligible (${eligibilityPreview.excludedCount.toLocaleString()} not eligible)`
-      : eligibilityPreview?.status === "failed" ||
-          eligibilityPreviewQuery.error ||
-          eligibilityCountError
+      : eligibilityPreview?.status === "failed" || eligibilityCountError
         ? `${explicitSelectedCount.toLocaleString()} selected · eligibility totals unavailable`
         : allMatching
           ? "All matching selected · checking eligibility…"
@@ -247,7 +241,7 @@ export function ContactAudiencePicker({
             defaultListKeyOptions={facets?.defaultListKeys ?? []}
             listKeyOptions={facets?.workspaceListKeys ?? []}
             customFieldOptions={facets?.customFieldOptions ?? []}
-            blastOptions={(blastsQuery.data ?? []).map((blast) => ({
+            blastOptions={(blasts ?? []).map((blast) => ({
               id: blast._id,
               name: blast.name,
               deliveryTrackingEnabled: blast.deliveryTrackingEnabled === true,
