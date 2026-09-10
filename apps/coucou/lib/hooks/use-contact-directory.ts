@@ -47,16 +47,20 @@ export function useContactDirectory(
   );
   const cursor = cursors[cursors.length - 1];
   const configured = isGuestDirectoryFilterConfigured(filterState);
-  const directoryQuery = useQuery({
-    ...convexQuery(api.contacts.list, {
-      ...filterArgs,
-      workspaceSlug: workspaceScope?.workspaceSlug ?? "",
-      siteKey: workspaceScope?.siteKey,
-      cursor,
-      pageSize,
-    }),
-    enabled: Boolean(workspaceScope) && configured,
-  });
+  const directoryQuery = useQuery(
+    convexQuery(
+      api.contacts.list,
+      workspaceScope && configured
+        ? {
+            ...filterArgs,
+            workspaceSlug: workspaceScope.workspaceSlug,
+            siteKey: workspaceScope.siteKey,
+            cursor,
+            pageSize,
+          }
+        : "skip",
+    ),
+  );
   const startBackfill = useMutation(api.contactSync.startBackfill);
   const [backfillError, setBackfillError] = useState<string | null>(null);
   const directoryStatus = directoryQuery.data?.directoryStatus;

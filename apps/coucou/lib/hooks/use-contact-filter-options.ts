@@ -44,14 +44,18 @@ export function useContactFilterOptions(workspace: WorkspaceScope | null) {
   const workspaceSlug = workspace?.workspaceSlug ?? "";
   const facets = useOptionPages<Doc<"contactFacets">>(workspaceSlug);
   const events = useOptionPages<EventOption>(workspaceSlug);
-  const facetQuery = useQuery({
-    ...convexQuery(api.contacts.facetPage, { workspaceSlug, cursor: facets.cursor }),
-    enabled: Boolean(workspace),
-  });
-  const eventQuery = useQuery({
-    ...convexQuery(api.contacts.eventOptions, { workspaceSlug, cursor: events.cursor }),
-    enabled: Boolean(workspace),
-  });
+  const facetQuery = useQuery(
+    convexQuery(
+      api.contacts.facetPage,
+      workspace ? { workspaceSlug, cursor: facets.cursor } : "skip",
+    ),
+  );
+  const eventQuery = useQuery(
+    convexQuery(
+      api.contacts.eventOptions,
+      workspace ? { workspaceSlug, cursor: events.cursor } : "skip",
+    ),
+  );
   useEffect(() => {
     if (facetQuery.data) facets.acceptPage(facetQuery.data);
   }, [facetQuery.data, facets.acceptPage]);

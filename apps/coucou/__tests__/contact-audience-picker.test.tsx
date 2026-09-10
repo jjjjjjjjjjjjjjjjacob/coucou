@@ -35,6 +35,18 @@ mock.module("@tanstack/react-query", () => ({
     error: null,
   }),
 }));
+mock.module("convex/react", () => ({
+  useMutation: () => async () => "eligibility_preview",
+  useQuery: (reference: Parameters<typeof getFunctionName>[0], args: unknown) => {
+    if (args === "skip") return undefined;
+    const queryName = getFunctionName(reference);
+    if (queryName.includes("contactAudiences:get")) {
+      return { status: "ready", processedCount: 463, eligibleCount: 460, excludedCount: 3 };
+    }
+    if (queryName.includes("getBlastsByWorkspaceWithSenderNames")) return [];
+    return undefined;
+  },
+}));
 mock.module("@/components/guests/guest-directory-filters", () => ({
   GuestDirectoryFilters: ({
     value,
