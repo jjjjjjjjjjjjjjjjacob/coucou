@@ -6,10 +6,11 @@ import type { ContactAudience } from "@convex/lib/contactValidators";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useMutation } from "convex/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ContactAudiencePicker } from "@/components/guests/contact-audience-picker";
 import { ContactAudiencePreview } from "@/components/guests/contact-audience-preview";
+import { MessageTemplateVariableButtons } from "@/components/message-template-variable-buttons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -24,7 +25,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { messageContainsQrCodeUrlVariable } from "@/lib/text-blast-message";
+import {
+  messageContainsQrCodeUrlVariable,
+  sortTextBlastMessageEventsNewestFirst,
+} from "@/lib/text-blast-message";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 
 export interface TextBlastInitialTargeting {
@@ -44,6 +48,15 @@ interface ReplyActionRow {
   targetListKey: string;
   isEnabled: boolean;
 }
+
+const EVENT_SPECIFIC_MESSAGE_VARIABLES = [
+  "eventName",
+  "eventDate",
+  "eventLocation",
+  "qrCodeUrl",
+] as const;
+const MESSAGE_EVENT_REQUIRED_REASON =
+  "Choose a message event above to use event details or a QR code.";
 
 export default function TextBlastDialog(props: TextBlastDialogProps) {
   return props.isOpen ? <ContactBlastComposer {...props} /> : null;
@@ -89,6 +102,10 @@ function ContactBlastComposer({
     ...convexQuery(api.textBlasts.getReplyActionTargetOptions, workspace?.queryArgs ?? {}),
     enabled: Boolean(workspace),
   });
+  const messageEventOptions = useMemo(
+    () => sortTextBlastMessageEventsNewestFirst(eventsQuery.data ?? []),
+    [eventsQuery.data],
+  );
   const effectiveQrCodes = includeQrCodes || messageContainsQrCodeUrlVariable(message);
   const previewKey = JSON.stringify({
     audience,
@@ -294,7 +311,7 @@ function ContactBlastComposer({
                         }}
                       >
                         <SelectOption value="">General workspace message</SelectOption>
-                        {(eventsQuery.data ?? []).map((event) => (
+                        {messageEventOptions.map((event) => (
                           <SelectOption key={event._id} value={event._id}>
                             {event.name}
                           </SelectOption>
@@ -313,19 +330,14 @@ function ContactBlastComposer({
                         value={message}
                         onChange={(event) => setMessage(event.target.value)}
                       />
-                      <div className="flex flex-wrap gap-2">
-                        {(messageEventId
-                          ? ["firstName", "eventName", "eventDate", "eventLocation", "qrCodeUrl"]
-                          : ["firstName"]
-                        ).map((variable) => (
-                          <Button
-                            key={variable}
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setMessage((text) => `${text}{{${variable}}}`)}
-                          >{`{{${variable}}}`}</Button>
-                        ))}
-                      </div>
+                      <MessageTemplateVariableButtons
+                        message={message}
+                        onMessageChange={setMessage}
+                        disabledVariableNames={
+                          messageEventId ? undefined : EVENT_SPECIFIC_MESSAGE_VARIABLES
+                        }
+                        disabledVariableReason={MESSAGE_EVENT_REQUIRED_REASON}
+                      />
                       <p className="text-xs tabular-nums text-[var(--text-secondary)]">
                         {message.length} characters before personalization and branding
                       </p>

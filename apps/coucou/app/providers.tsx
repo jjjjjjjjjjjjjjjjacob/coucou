@@ -22,6 +22,7 @@ const queryClient = new QueryClient({
     },
   },
 });
+convexQueryClient.connect(queryClient);
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
