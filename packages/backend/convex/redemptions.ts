@@ -3,6 +3,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./functions";
 import { resolveCanonicalClerkUserId, resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
 import { generateRedemptionCode } from "./lib/codeGenerators";
+import { resolveListDisplayName } from "./lib/listIdentity";
 import { canManuallyEditTicket, resolveApprovalStatus } from "./lib/rsvpStatus";
 import { ensureEventInSiteScope, getEventInSiteScope } from "./lib/siteScope";
 import { requireWorkspaceDoor, requireWorkspaceHost } from "./lib/workspaceAuth";
@@ -59,9 +60,11 @@ export const byCode = query({
         ? `${user.firstName} ${user.lastName}`.trim()
         : user?.firstName || user?.lastName || undefined;
 
+    const listDisplayName = await resolveListDisplayName(ctx, rec.eventId, rec.listKey);
     if (rec.disabledAt) return { status: "invalid" as const };
-    if (rec.redeemedAt) return { status: "redeemed" as const, name, listKey: rec.listKey };
-    return { status: "valid" as const, name, listKey: rec.listKey };
+    if (rec.redeemedAt)
+      return { status: "redeemed" as const, name, listDisplayName, listKey: rec.listKey };
+    return { status: "valid" as const, name, listDisplayName, listKey: rec.listKey };
   },
 });
 
@@ -88,18 +91,21 @@ export const validate = query({
         ? `${user.firstName} ${user.lastName}`.trim()
         : user?.firstName || user?.lastName || undefined;
 
+    const listDisplayName = await resolveListDisplayName(ctx, rec.eventId, rec.listKey);
     if (rec.disabledAt) return { status: "invalid" as const, eventId: rec.eventId };
     if (rec.redeemedAt)
       return {
         status: "redeemed" as const,
         name,
         listKey: rec.listKey,
+        listDisplayName,
         eventId: rec.eventId,
       };
     return {
       status: "valid" as const,
       name,
       listKey: rec.listKey,
+      listDisplayName,
       eventId: rec.eventId,
     };
   },

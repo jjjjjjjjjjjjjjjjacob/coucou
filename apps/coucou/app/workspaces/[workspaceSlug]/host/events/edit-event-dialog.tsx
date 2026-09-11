@@ -1,10 +1,7 @@
 "use client";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import {
-  getDefaultApprovalMessage,
-  sanitizeOptionalApprovalMessage,
-} from "@coucou/sdk/shared/approval-messages";
+import { getDefaultApprovalMessage } from "@coucou/sdk/shared/approval-messages";
 import { sanitizeOptionalAutomatedEventMessage } from "@coucou/sdk/shared/automated-event-messages";
 import { DEFAULT_OPEN_GRAPH_IMAGE_SOURCE } from "@coucou/sdk/shared/open-graph";
 import {
@@ -12,6 +9,7 @@ import {
   sanitizeOptionalRsvpConfirmationMessage,
 } from "@coucou/sdk/shared/rsvp-confirmation-messages";
 import { useAction, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import {
   ClipboardList,
   KeyRound,
@@ -91,7 +89,6 @@ import {
   normalizeHexColorInput,
 } from "@/lib/event-theme";
 import type {
-  ApplicationError,
   CredentialResponse,
   EditEventFormData,
   Event,
@@ -427,6 +424,8 @@ export default function EditEventDialog({
       : "skip",
   ) as CredentialResponse[] | undefined;
   const [lists, setLists] = React.useState<ListCredentialEdit[]>([]);
+  const latestSavedRevisions = React.useRef(new Map<string, number>());
+  const [savedListsRevision, setSavedListsRevision] = React.useState(event.listsRevision ?? 0);
   const [savedLists, setSavedLists] = React.useState<ListCredentialEdit[]>([]);
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>(
     event.customFields ?? [],
@@ -594,12 +593,17 @@ export default function EditEventDialog({
   };
 
   useEffect(() => {
-    if (open && creds && workspaceScope) {
+    // Live updates must not replace a dirty draft, including after a failed save.
+    if (open && creds && workspaceScope && !saving && !listsAreDirty) {
+      const snapshotRevision = creds[0]?.listsRevision ?? event.listsRevision ?? 0;
+      if (snapshotRevision < (latestSavedRevisions.current.get(event._id) ?? 0)) return;
       const nextLists = creds.map((credential) => {
         const autoApproveDelay = splitAutoApproveDelayMinutes(credential.autoApproveDelayMinutes);
         return {
           id: credential._id,
           listKey: credential.listKey,
+          displayName: credential.displayName ?? credential.listKey,
+          archived: credential.archivedAt !== undefined,
           password: "",
           passwordEdited: false,
           requirePassword: credential.hasPassword ?? false,
@@ -620,6 +624,7 @@ export default function EditEventDialog({
           autoApproveDelayUnit: autoApproveDelay.unit,
         };
       });
+      setSavedListsRevision(snapshotRevision);
       setLists(nextLists);
       setSavedLists(nextLists.map((list) => ({ ...list })));
       // Fetch stored passwords for display.
@@ -641,7 +646,17 @@ export default function EditEventDialog({
           setStoredPasswords(new Map());
         });
     }
-  }, [open, creds, event._id, event.approvalMessage, getStoredPasswords, workspaceScope]);
+  }, [
+    open,
+    creds,
+    event._id,
+    event.approvalMessage,
+    event.listsRevision,
+    getStoredPasswords,
+    workspaceScope,
+    saving,
+    listsAreDirty,
+  ]);
 
   const addList = () =>
     setLists((array) => [
@@ -714,7 +729,11 @@ export default function EditEventDialog({
     [],
   );
   const removeList = (index: number) =>
-    setLists((array) => array.filter((_, position) => position !== index));
+    setLists((array) =>
+      array.flatMap((list, position) =>
+        position !== index ? [list] : list.id ? [{ ...list, archived: true }] : [],
+      ),
+    );
 
   const handleSubmit = async (values: EditEventFormData, section: EventEditorSection) => {
     try {
@@ -947,6 +966,17 @@ export default function EditEventDialog({
         }
       }
       const outgoingLists = lists.map((list) => {
+        if (
+          !list.archived &&
+          list.requirePassword &&
+          !list.password.trim() &&
+          (list.passwordEdited ||
+            !creds?.find((credential) => credential._id === list.id)?.hasPassword)
+        ) {
+          throw new Error(
+            `Enter a password for ${list.displayName ?? list.listKey}, or turn off Require password.`,
+          );
+        }
         let password: string | undefined;
         if (!list.requirePassword) {
           password = "";
@@ -960,16 +990,27 @@ export default function EditEventDialog({
           list.autoApproveDelay,
           list.autoApproveDelayUnit,
         );
+        const original = list.id ? savedLists.find((saved) => saved.id === list.id) : undefined;
+        const changed = (field: keyof ListCredentialEdit) =>
+          !original || list[field] !== original[field];
         return {
           id: list.id as Id<"listCredentials"> | undefined,
           listKey: list.listKey.trim(),
-          password,
-          generateQR: list.generateQR,
-          sendQrOnApproval: list.sendQrOnApprovalOverride,
-          includeTicketLinkOnApproval: list.includeTicketLinkOnApproval,
-          approvalMessage: sanitizeOptionalApprovalMessage(list.approvalMessage),
-          autoApproveLimit: autoApproveLimit ?? 0,
-          autoApproveDelayMinutes: autoApproveDelayMinutes ?? 0,
+          ...(changed("displayName") ? { displayName: list.displayName ?? list.listKey } : {}),
+          ...(changed("archived") ? { archived: list.archived ?? false } : {}),
+          ...(changed("password") || changed("requirePassword") ? { password } : {}),
+          ...(changed("generateQR") ? { generateQR: list.generateQR } : {}),
+          ...(changed("sendQrOnApprovalOverride")
+            ? { sendQrOnApproval: list.sendQrOnApprovalOverride ?? null }
+            : {}),
+          ...(changed("includeTicketLinkOnApproval")
+            ? { includeTicketLinkOnApproval: list.includeTicketLinkOnApproval ?? null }
+            : {}),
+          ...(changed("approvalMessage") ? { approvalMessage: list.approvalMessage.trim() } : {}),
+          ...(changed("autoApproveLimit") ? { autoApproveLimit: autoApproveLimit ?? 0 } : {}),
+          ...(changed("autoApproveDelay") || changed("autoApproveDelayUnit")
+            ? { autoApproveDelayMinutes: autoApproveDelayMinutes ?? 0 }
+            : {}),
         };
       });
       const nextCustomFields = sanitizeCustomFieldsForSubmit(customFields);
@@ -1003,13 +1044,19 @@ export default function EditEventDialog({
       const scopedUnsetFields = unsetFields.filter((fieldKey) => allowedUnsetFields.has(fieldKey));
       const shouldSaveLists = section === "confirmations" || section === "lists";
 
-      await update({
+      const result = await update({
         eventId: event._id,
         ...workspaceScope.queryArgs,
         ...(Object.keys(scopedPatch).length > 0 ? { patch: scopedPatch } : {}),
         ...(scopedUnsetFields.length > 0 ? { unsetFields: scopedUnsetFields } : {}),
-        ...(shouldSaveLists ? { lists: outgoingLists } : {}),
+        ...(shouldSaveLists
+          ? { lists: outgoingLists, expectedListsRevision: savedListsRevision }
+          : {}),
       });
+      if (result?.listsRevision !== undefined) {
+        latestSavedRevisions.current.set(event._id, result.listsRevision);
+        setSavedListsRevision(result.listsRevision);
+      }
       form.reset(values);
       if (section === "details") {
         setSavedFlyerStorageId(flyerStorageId);
@@ -1020,7 +1067,9 @@ export default function EditEventDialog({
         setSavedSponsors(sponsors.map((sponsor) => ({ ...sponsor })));
       }
       if (section === "confirmations" || section === "lists") {
-        setSavedLists(lists.map((list) => ({ ...list })));
+        const saved = lists.map((list, index) => ({ ...list, ...(result?.lists?.[index] ?? {}) }));
+        setLists(saved);
+        setSavedLists(saved.map((list) => ({ ...list })));
       }
       if (section === "rsvp") {
         setSavedCustomFields(customFields.map((field) => ({ ...field })));
@@ -1032,8 +1081,17 @@ export default function EditEventDialog({
         setOpen(false);
       }
     } catch (error: unknown) {
-      const errorDetails = error as ApplicationError | Error;
-      toast.error(errorDetails?.message || "Failed to update event");
+      if (
+        error instanceof ConvexError &&
+        typeof error.data === "object" &&
+        error.data !== null &&
+        typeof error.data.code === "string" &&
+        typeof error.data.message === "string"
+      ) {
+        toast.error(error.data.message);
+      } else {
+        toast.error(error instanceof Error ? error.message : "Failed to update event");
+      }
     } finally {
       setSaving(false);
     }
@@ -1283,216 +1341,251 @@ export default function EditEventDialog({
                   submissions on that list; manual approvals do not count toward the limit.
                 </p>
               </div>
-              {lists.map((listPassword, index) => (
-                <SectionCard
-                  key={listPassword.id ?? index}
-                  title={listPassword.listKey.trim() || `List ${index + 1}`}
-                  action={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeList(index)}
-                      aria-label={`Remove ${listPassword.listKey.trim() || `list ${index + 1}`}`}
-                      className="relative h-8 w-8 text-[var(--text-secondary)] after:absolute after:-inset-1.5 after:content-[''] hover:text-destructive"
+              {lists.some((list) => list.archived) && (
+                <SectionCard title="Archived lists">
+                  <p className="text-sm text-muted-foreground">
+                    Guests and tickets are retained. Restore a list to accept new RSVPs.
+                  </p>
+                  {lists.map(
+                    (list, index) =>
+                      list.archived && (
+                        <div
+                          key={list.id ?? index}
+                          className="flex items-center justify-between py-2"
+                        >
+                          <span>{list.displayName ?? list.listKey}</span>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setList(index, "archived", false)}
+                          >
+                            Restore
+                          </Button>
+                        </div>
+                      ),
+                  )}
+                </SectionCard>
+              )}
+              {lists.map(
+                (listPassword, index) =>
+                  !listPassword.archived && (
+                    <SectionCard
+                      key={listPassword.id ?? index}
+                      title={
+                        (listPassword.displayName ?? listPassword.listKey).trim() ||
+                        `List ${index + 1}`
+                      }
+                      action={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeList(index)}
+                          aria-label={`Archive ${(listPassword.displayName ?? listPassword.listKey).trim() || `list ${index + 1}`}`}
+                          className="relative h-8 w-8 text-[var(--text-secondary)] after:absolute after:-inset-1.5 after:content-[''] hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      }
                     >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  }
-                >
-                  <div className="space-y-4">
-                    <Field className="max-w-sm">
-                      <FieldLabel htmlFor={`edit-list-name-${index}`}>List name</FieldLabel>
-                      <Input
-                        id={`edit-list-name-${index}`}
-                        placeholder="e.g. vip, general, backstage"
-                        value={listPassword.listKey}
-                        onChange={(event) => setList(index, "listKey", event.target.value)}
-                      />
-                    </Field>
-                    <div className="space-y-3">
-                      <FieldSwitchRow
-                        title="Require password"
-                        description="Guests must enter this list's password before they can RSVP."
-                        checked={listPassword.requirePassword}
-                        onCheckedChange={(checked) => setList(index, "requirePassword", checked)}
-                        switchId={`edit-require-password-${index}`}
-                      />
-                      {listPassword.requirePassword ? (
-                        <div className="ml-3 border-l-2 border-[var(--border-subtle)] pl-4">
-                          <Field className="max-w-sm">
-                            <FieldLabel htmlFor={`edit-list-password-${index}`}>
-                              Password
-                            </FieldLabel>
-                            {(() => {
-                              const storedPassword = listPassword.id
-                                ? storedPasswords.get(listPassword.id)
-                                : undefined;
-                              if (storedPassword && !listPassword.passwordEdited) {
-                                return (
-                                  <div className="flex items-center gap-2">
+                      <div className="space-y-4">
+                        <Field className="max-w-sm">
+                          <FieldLabel htmlFor={`edit-list-name-${index}`}>List name</FieldLabel>
+                          <Input
+                            id={`edit-list-name-${index}`}
+                            placeholder="e.g. vip, general, backstage"
+                            value={listPassword.displayName ?? listPassword.listKey}
+                            onChange={(event) => setList(index, "displayName", event.target.value)}
+                          />
+                        </Field>
+                        <div className="space-y-3">
+                          <FieldSwitchRow
+                            title="Require password"
+                            description="Guests must enter this list's password before they can RSVP."
+                            checked={listPassword.requirePassword}
+                            onCheckedChange={(checked) =>
+                              setList(index, "requirePassword", checked)
+                            }
+                            switchId={`edit-require-password-${index}`}
+                          />
+                          {listPassword.requirePassword ? (
+                            <div className="ml-3 border-l-2 border-[var(--border-subtle)] pl-4">
+                              <Field className="max-w-sm">
+                                <FieldLabel htmlFor={`edit-list-password-${index}`}>
+                                  Password
+                                </FieldLabel>
+                                {(() => {
+                                  const storedPassword = listPassword.id
+                                    ? storedPasswords.get(listPassword.id)
+                                    : undefined;
+                                  if (storedPassword && !listPassword.passwordEdited) {
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <Input
+                                          id={`edit-list-password-${index}`}
+                                          value={storedPassword}
+                                          readOnly
+                                          className="bg-muted/40 text-muted-foreground"
+                                        />
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="shrink-0 text-xs"
+                                          onClick={() => setListPassword(index, "")}
+                                        >
+                                          Change
+                                        </Button>
+                                      </div>
+                                    );
+                                  }
+                                  return (
                                     <Input
                                       id={`edit-list-password-${index}`}
-                                      value={storedPassword}
-                                      readOnly
-                                      className="bg-muted/40 text-muted-foreground"
+                                      placeholder="Enter password"
+                                      value={listPassword.password}
+                                      onChange={(event) =>
+                                        setListPassword(index, event.target.value)
+                                      }
                                     />
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className="shrink-0 text-xs"
-                                      onClick={() => setListPassword(index, "")}
-                                    >
-                                      Change
-                                    </Button>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <Input
-                                  id={`edit-list-password-${index}`}
-                                  placeholder="Enter password"
-                                  value={listPassword.password}
-                                  onChange={(event) => setListPassword(index, event.target.value)}
-                                />
-                              );
-                            })()}
-                          </Field>
-                        </div>
-                      ) : null}
-                      <Field
-                        orientation="horizontal"
-                        className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3.5"
-                      >
-                        <FieldContent>
-                          <FieldTitle>
-                            <label
-                              htmlFor={`edit-list-auto-approve-limit-${index}`}
-                              className="cursor-pointer"
-                            >
-                              Auto-approve first
-                            </label>
-                          </FieldTitle>
-                          <FieldDescription>
-                            Automatically approve this many submissions. Manual approvals do not
-                            count toward the limit.
-                          </FieldDescription>
-                        </FieldContent>
-                        <Input
-                          id={`edit-list-auto-approve-limit-${index}`}
-                          type="number"
-                          min={1}
-                          step={1}
-                          inputMode="numeric"
-                          placeholder="Off"
-                          value={listPassword.autoApproveLimit}
-                          onChange={(event) =>
-                            setList(index, "autoApproveLimit", event.target.value)
-                          }
-                          className="w-24 shrink-0 text-right tabular-nums"
-                        />
-                      </Field>
-                      {listPassword.autoApproveLimit.trim() ? (
-                        <Field
-                          orientation="horizontal"
-                          className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3.5"
-                        >
-                          <FieldContent>
-                            <FieldTitle>
-                              <label
-                                htmlFor={`edit-list-auto-approve-delay-${index}`}
-                                className="cursor-pointer"
-                              >
-                                Approval timing
-                              </label>
-                            </FieldTitle>
-                            <FieldDescription>
-                              Wait after the RSVP, or approve at event start if it comes sooner.
-                              Leave blank to approve immediately.
-                            </FieldDescription>
-                          </FieldContent>
-                          <div className="flex w-64 shrink-0 gap-2">
+                                  );
+                                })()}
+                              </Field>
+                            </div>
+                          ) : null}
+                          <Field
+                            orientation="horizontal"
+                            className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3.5"
+                          >
+                            <FieldContent>
+                              <FieldTitle>
+                                <label
+                                  htmlFor={`edit-list-auto-approve-limit-${index}`}
+                                  className="cursor-pointer"
+                                >
+                                  Auto-approve first
+                                </label>
+                              </FieldTitle>
+                              <FieldDescription>
+                                Automatically approve this many submissions. Manual approvals do not
+                                count toward the limit.
+                              </FieldDescription>
+                            </FieldContent>
                             <Input
-                              id={`edit-list-auto-approve-delay-${index}`}
+                              id={`edit-list-auto-approve-limit-${index}`}
                               type="number"
                               min={1}
                               step={1}
                               inputMode="numeric"
-                              placeholder="Immediately"
-                              value={listPassword.autoApproveDelay}
+                              placeholder="Off"
+                              value={listPassword.autoApproveLimit}
                               onChange={(event) =>
-                                setList(index, "autoApproveDelay", event.target.value)
+                                setList(index, "autoApproveLimit", event.target.value)
                               }
-                              className="min-w-0 flex-1 text-right tabular-nums"
+                              className="w-24 shrink-0 text-right tabular-nums"
                             />
-                            <Select
-                              aria-label={`Auto-approve delay unit for ${listPassword.listKey || `list ${index + 1}`}`}
-                              value={listPassword.autoApproveDelayUnit}
-                              onValueChange={(value) =>
-                                setList(
-                                  index,
-                                  "autoApproveDelayUnit",
-                                  value as AutoApproveDelayUnit,
-                                )
-                              }
-                              className="w-28 shrink-0"
-                            >
-                              <SelectOption value="minutes">Minutes</SelectOption>
-                              <SelectOption value="hours">Hours</SelectOption>
-                              <SelectOption value="days">Days</SelectOption>
-                            </Select>
-                          </div>
-                        </Field>
-                      ) : null}
-                      <FieldSwitchRow
-                        title="Generate QR codes"
-                        description="Approved guests on this list receive a scannable door QR code."
-                        checked={listPassword.generateQR ?? false}
-                        onCheckedChange={(checked) => setList(index, "generateQR", checked)}
-                        switchId={`edit-generate-qr-${index}`}
-                      />
-                      {listPassword.generateQR ? (
-                        <div className="ml-3 border-l-2 border-[var(--border-subtle)] pl-4">
-                          <Field className="max-w-sm">
-                            <FieldLabel htmlFor={`edit-send-qr-on-approval-${index}`}>
-                              Send QR on approval
-                            </FieldLabel>
-                            <select
-                              id={`edit-send-qr-on-approval-${index}`}
-                              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                              value={
-                                listPassword.sendQrOnApprovalOverride === true
-                                  ? "on"
-                                  : listPassword.sendQrOnApprovalOverride === false
-                                    ? "off"
-                                    : "inherit"
-                              }
-                              onChange={(eventChange) => {
-                                const next = eventChange.target.value;
-                                setList(
-                                  index,
-                                  "sendQrOnApprovalOverride",
-                                  next === "on" ? true : next === "off" ? false : undefined,
-                                );
-                              }}
-                            >
-                              <option value="inherit">
-                                Inherit from event ({currentSendQrOnApproval ? "on" : "off"})
-                              </option>
-                              <option value="on">On (always send)</option>
-                              <option value="off">Off (always defer)</option>
-                            </select>
-                            <FieldDescription>
-                              Overrides the event-level QR delivery setting for this list only.
-                            </FieldDescription>
                           </Field>
+                          {listPassword.autoApproveLimit.trim() ? (
+                            <Field
+                              orientation="horizontal"
+                              className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3.5"
+                            >
+                              <FieldContent>
+                                <FieldTitle>
+                                  <label
+                                    htmlFor={`edit-list-auto-approve-delay-${index}`}
+                                    className="cursor-pointer"
+                                  >
+                                    Approval timing
+                                  </label>
+                                </FieldTitle>
+                                <FieldDescription>
+                                  Wait after the RSVP, or approve at event start if it comes sooner.
+                                  Leave blank to approve immediately.
+                                </FieldDescription>
+                              </FieldContent>
+                              <div className="flex w-64 shrink-0 gap-2">
+                                <Input
+                                  id={`edit-list-auto-approve-delay-${index}`}
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  inputMode="numeric"
+                                  placeholder="Immediately"
+                                  value={listPassword.autoApproveDelay}
+                                  onChange={(event) =>
+                                    setList(index, "autoApproveDelay", event.target.value)
+                                  }
+                                  className="min-w-0 flex-1 text-right tabular-nums"
+                                />
+                                <Select
+                                  aria-label={`Auto-approve delay unit for ${listPassword.listKey || `list ${index + 1}`}`}
+                                  value={listPassword.autoApproveDelayUnit}
+                                  onValueChange={(value) =>
+                                    setList(
+                                      index,
+                                      "autoApproveDelayUnit",
+                                      value as AutoApproveDelayUnit,
+                                    )
+                                  }
+                                  className="w-28 shrink-0"
+                                >
+                                  <SelectOption value="minutes">Minutes</SelectOption>
+                                  <SelectOption value="hours">Hours</SelectOption>
+                                  <SelectOption value="days">Days</SelectOption>
+                                </Select>
+                              </div>
+                            </Field>
+                          ) : null}
+                          <FieldSwitchRow
+                            title="Generate QR codes"
+                            description="Approved guests on this list receive a scannable door QR code."
+                            checked={listPassword.generateQR ?? false}
+                            onCheckedChange={(checked) => setList(index, "generateQR", checked)}
+                            switchId={`edit-generate-qr-${index}`}
+                          />
+                          {listPassword.generateQR ? (
+                            <div className="ml-3 border-l-2 border-[var(--border-subtle)] pl-4">
+                              <Field className="max-w-sm">
+                                <FieldLabel htmlFor={`edit-send-qr-on-approval-${index}`}>
+                                  Send QR on approval
+                                </FieldLabel>
+                                <select
+                                  id={`edit-send-qr-on-approval-${index}`}
+                                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                  value={
+                                    listPassword.sendQrOnApprovalOverride === true
+                                      ? "on"
+                                      : listPassword.sendQrOnApprovalOverride === false
+                                        ? "off"
+                                        : "inherit"
+                                  }
+                                  onChange={(eventChange) => {
+                                    const next = eventChange.target.value;
+                                    setList(
+                                      index,
+                                      "sendQrOnApprovalOverride",
+                                      next === "on" ? true : next === "off" ? false : undefined,
+                                    );
+                                  }}
+                                >
+                                  <option value="inherit">
+                                    Inherit from event ({currentSendQrOnApproval ? "on" : "off"})
+                                  </option>
+                                  <option value="on">On (always send)</option>
+                                  <option value="off">Off (always defer)</option>
+                                </select>
+                                <FieldDescription>
+                                  Overrides the event-level QR delivery setting for this list only.
+                                </FieldDescription>
+                              </Field>
+                            </div>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </SectionCard>
-              ))}
+                      </div>
+                    </SectionCard>
+                  ),
+              )}
               <Button
                 type="button"
                 variant="outline"

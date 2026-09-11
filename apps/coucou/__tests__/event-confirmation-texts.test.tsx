@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { api } from "@convex/_generated/api";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ConvexError } from "convex/values";
 import type React from "react";
 import type { Event } from "../lib/types";
 
@@ -28,6 +29,7 @@ type CreateEventActionArgs = {
 };
 
 type NextNavigationTestGlobal = typeof globalThis & {
+  __getToastTestCalls?: () => Array<{ kind: string; message: string }>;
   __setNextNavigationTestState?: (nextState: {
     pathname?: string;
     searchParams?: string | URLSearchParams;
@@ -458,6 +460,7 @@ describe("event confirmation texts", () => {
       expect(updateArgs.lists).toContainEqual({
         id: "credential_press",
         listKey: "press",
+        displayName: "press",
         password: "blue-door",
         generateQR: true,
         sendQrOnApproval: true,
@@ -527,6 +530,7 @@ describe("event confirmation texts", () => {
       expect(publishArgs.lists).toContainEqual({
         id: "credential_press",
         listKey: "press",
+        displayName: "press",
         password: "blue-door",
         generateQR: true,
         sendQrOnApproval: true,
@@ -762,6 +766,170 @@ describe("event confirmation texts", () => {
       });
     });
   });
+
+  it("renames a protected list without resending passwords or inherited settings", async () => {
+    actionHookFallbackHandlers = [mockUpdateActionHandler, mockGetStoredPasswordsActionHandler];
+    credentialQueryResult = [
+      { _id: "credential_vip", listKey: "vip", hasPassword: true, generateQR: true },
+      { _id: "credential_ga", listKey: "ga", hasPassword: false },
+    ];
+    const event = {
+      _id: "event_1",
+      listsRevision: 4,
+      name: "Spring Gala",
+      hosts: ["Host One"],
+      location: "Main Room",
+      eventDate: Date.now() + 60_000,
+      approvalMessage: "Event-level approval copy.",
+      sendQrOnApproval: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    } as unknown as Event;
+    render(
+      <EditEventDialog
+        event={event}
+        open
+        initialTab="lists"
+        onOpenChange={() => {}}
+        showTrigger={false}
+      />,
+    );
+    await waitFor(() => expect(screen.getAllByLabelText("List name")).toHaveLength(2));
+    fireEvent.change(screen.getAllByLabelText("List name")[0], {
+      target: { value: "Friends" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Lists & Access" }));
+    await waitFor(() =>
+      expect(mockUpdateActionHandler).toHaveBeenCalledWith({
+        eventId: "event_1",
+        ...workspaceScope.queryArgs,
+        expectedListsRevision: 4,
+        lists: [
+          { id: "credential_vip", listKey: "vip", displayName: "Friends" },
+          { id: "credential_ga", listKey: "ga" },
+        ],
+      }),
+    );
+  });
+
+  it("uses a newly saved list's identity on the next save before queries refresh", async () => {
+    actionHookFallbackHandlers = [mockUpdateActionHandler, mockGetStoredPasswordsActionHandler];
+    credentialQueryResult = [{ _id: "credential_vip", listKey: "vip", hasPassword: false }];
+    mockUpdateActionHandler.mockImplementationOnce(async (args: unknown) => ({
+      ...recordActionCall("update", args),
+      listsRevision: 1,
+      lists: [
+        { id: "credential_vip", listKey: "vip" },
+        { id: "credential_new", listKey: "internal-new-key" },
+      ],
+    }));
+    const event = {
+      _id: "event_1",
+      name: "Spring Gala",
+      hosts: ["Host One"],
+      location: "Main Room",
+      eventDate: Date.now() + 60_000,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    } as unknown as Event;
+    render(<EditEventDialog event={event} inline initialTab="lists" showTrigger={false} />);
+    await waitFor(() => expect(screen.getByLabelText("List name")).toHaveValue("vip"));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add Another List" }));
+    fireEvent.change(screen.getAllByLabelText("List name")[1], { target: { value: "Friends" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save Lists & Access" }));
+    });
+    expect(mockUpdateActionHandler).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Save Lists & Access" })).toBeNull();
+    fireEvent.change(screen.getAllByLabelText("List name")[1], { target: { value: "Family" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Lists & Access" }));
+    await waitFor(() =>
+      expect(mockUpdateActionHandler).toHaveBeenLastCalledWith({
+        eventId: "event_1",
+        ...workspaceScope.queryArgs,
+        expectedListsRevision: 1,
+        lists: [
+          { id: "credential_vip", listKey: "vip" },
+          { id: "credential_new", listKey: "internal-new-key", displayName: "Family" },
+        ],
+      }),
+    );
+  });
+
+  for (const conflictCode of ["SMS_CODE_CONFLICT", "STALE_LISTS"]) {
+    it(`shows an actionable ${conflictCode} error and preserves unsaved edits`, async () => {
+      actionHookFallbackHandlers = [mockUpdateActionHandler, mockGetStoredPasswordsActionHandler];
+      credentialQueryResult = [{ _id: "credential_vip", listKey: "vip", hasPassword: false }];
+      const conflictMessage =
+        conflictCode === "STALE_LISTS"
+          ? "Another host changed the lists. Your draft has been kept."
+          : "A list password is unavailable as an SMS code. Choose another password and try again.";
+      mockUpdateActionHandler.mockRejectedValueOnce(
+        new ConvexError({
+          code: conflictCode,
+          message: conflictMessage,
+        }),
+      );
+      const onOpenChange = mock(() => {});
+      const event = {
+        _id: "event_1",
+        listsRevision: 3,
+        name: "Spring Gala",
+        hosts: ["Host One"],
+        location: "Main Room",
+        eventDate: Date.now() + 60_000,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      } as unknown as Event;
+      const { rerender } = render(
+        <EditEventDialog
+          event={event}
+          open
+          initialTab="lists"
+          onOpenChange={onOpenChange}
+          showTrigger={false}
+        />,
+      );
+      await waitFor(() => expect(screen.getByLabelText("List name")).toHaveValue("vip"));
+      fireEvent.change(screen.getByLabelText("List name"), { target: { value: "Guestlist" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save Lists & Access" }));
+      await waitFor(() => {
+        const toastCalls = (globalThis as NextNavigationTestGlobal).__getToastTestCalls?.() ?? [];
+        expect(toastCalls).toContainEqual(
+          expect.objectContaining({ kind: "error", message: conflictMessage }),
+        );
+      });
+      expect(mockUpdateActionHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expectedListsRevision: 3,
+          lists: [
+            expect.objectContaining({
+              id: "credential_vip",
+              listKey: "vip",
+              displayName: "Guestlist",
+            }),
+          ],
+        }),
+      );
+      expect(screen.getByLabelText("List name")).toHaveValue("Guestlist");
+      expect(screen.getByRole("button", { name: "Save Lists & Access" })).toBeEnabled();
+      expect(onOpenChange).not.toHaveBeenCalled();
+      // A reactive credential refresh must not replace the failed draft.
+      credentialQueryResult = [
+        { _id: "credential_vip", listKey: "vip", hasPassword: false, autoApproveLimit: 0 },
+      ];
+      rerender(
+        <EditEventDialog
+          event={event}
+          open
+          initialTab="lists"
+          onOpenChange={onOpenChange}
+          showTrigger={false}
+        />,
+      );
+      expect(screen.getByLabelText("List name")).toHaveValue("Guestlist");
+    });
+  }
 
   it("saves an updated per-list auto-approve limit and delay", async () => {
     actionHookFallbackHandlers = [mockUpdateActionHandler, mockGetStoredPasswordsActionHandler];

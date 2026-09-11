@@ -4,6 +4,7 @@ import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { action } from "./_generated/server";
+import type { ListAccessResult } from "./lib/listAccess";
 import { requireWorkspaceHost } from "./lib/workspaceAuth";
 
 export const resolveListByPassword = action({
@@ -12,18 +13,18 @@ export const resolveListByPassword = action({
     password: v.string(),
     siteKey: v.optional(v.string()),
     workspaceSlug: v.optional(v.string()),
+    accessToken: v.optional(v.string()),
   },
   handler: async (
     ctx,
-    { eventId, password, siteKey, workspaceSlug },
-  ): Promise<
-    { ok: true; listKey: string; matched: "password" | "no-password" } | { ok: false }
-  > => {
-    return await ctx.runQuery(api.credentials.resolveListByPassword, {
+    { eventId, password, siteKey, workspaceSlug, accessToken },
+  ): Promise<ListAccessResult> => {
+    return await ctx.runMutation(api.credentials.authorizeListAccess, {
       eventId,
       password,
       siteKey,
       workspaceSlug,
+      accessToken,
     });
   },
 });
@@ -37,7 +38,15 @@ export const resolveEventByPassword = action({
     ctx,
     { password, siteKey },
   ): Promise<
-    { ok: true; eventId: string; eventRouteId: string; listKey: string } | { ok: false }
+    | {
+        ok: true;
+        eventId: string;
+        eventRouteId: string;
+        listKey: string;
+        accessToken: string;
+        expiresAt: number;
+      }
+    | { ok: false }
   > => {
     const credentials = await ctx.runQuery(api.credentials.getByPassword, {
       password,
@@ -51,7 +60,14 @@ export const resolveEventByPassword = action({
         siteKey,
       });
       if (event && isEventOpenForRsvp(event) && event.isFeatured) {
+        const access = await ctx.runMutation(api.credentials.authorizeListAccess, {
+          eventId: credential.eventId,
+          password,
+          siteKey,
+        });
+        if (!access.ok) continue;
         return {
+          ...access,
           ok: true as const,
           eventId: credential.eventId,
           eventRouteId: getEventRouteId(event),
@@ -68,7 +84,14 @@ export const resolveEventByPassword = action({
         siteKey,
       });
       if (event && isEventOpenForRsvp(event)) {
+        const access = await ctx.runMutation(api.credentials.authorizeListAccess, {
+          eventId: credential.eventId,
+          password,
+          siteKey,
+        });
+        if (!access.ok) continue;
         return {
+          ...access,
           ok: true as const,
           eventId: credential.eventId,
           eventRouteId: getEventRouteId(event),
@@ -92,7 +115,15 @@ export const getPasswordsForEvent = action({
   handler: async (
     ctx,
     { eventId, siteKey, workspaceSlug },
-  ): Promise<{ listKey: string; password: string | null; credentialId: string }[]> => {
+  ): Promise<
+    {
+      listKey: string;
+      displayName: string;
+      archivedAt?: number;
+      password: string | null;
+      credentialId: string;
+    }[]
+  > => {
     await requireWorkspaceHost(ctx, { siteKey, workspaceSlug });
 
     const credentials = await ctx.runQuery(api.credentials.getHostCredsForEvent, {
@@ -101,10 +132,14 @@ export const getPasswordsForEvent = action({
       workspaceSlug,
     });
 
-    return credentials.map((credential) => ({
-      listKey: credential.listKey,
-      password: credential.password ?? null,
-      credentialId: credential._id,
-    }));
+    return credentials
+      .filter((credential) => credential.archivedAt === undefined)
+      .map((credential) => ({
+        listKey: credential.listKey,
+        displayName: credential.displayName,
+        archivedAt: credential.archivedAt,
+        password: credential.password ?? null,
+        credentialId: credential._id,
+      }));
   },
 });

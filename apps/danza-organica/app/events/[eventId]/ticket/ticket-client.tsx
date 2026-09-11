@@ -303,7 +303,9 @@ export default function TicketClientPage({
                     style={{ color: "var(--tt-fg)" }}
                   >
                     <Check className="h-3.5 w-3.5" aria-hidden />
-                    <span>{status?.listKey?.toUpperCase()} confirmed</span>
+                    <span>
+                      {status?.listDisplayName ?? status?.listKey?.toUpperCase()} confirmed
+                    </span>
                   </div>
                   <div
                     className="text-[12px] text-center max-w-[280px]"

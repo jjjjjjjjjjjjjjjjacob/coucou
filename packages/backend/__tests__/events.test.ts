@@ -9,6 +9,7 @@ const convexModules = {
   "../convex/_generated/api.js": () => import("../convex/_generated/api.js"),
   "../convex/credentials.ts": () => import("../convex/credentials"),
   "../convex/events.ts": () => import("../convex/events"),
+  "../convex/eventWrites.ts": () => import("../convex/eventWrites"),
   "../convex/eventsNode.ts": () => import("../convex/eventsNode"),
   "../convex/workspaces.ts": () => import("../convex/workspaces"),
 };
@@ -212,7 +213,7 @@ describe("Events Functions", () => {
         listKey: "vip",
         password: "  blue-door  ",
       }),
-    ).rejects.toThrow("unavailable");
+    ).rejects.toThrow("SMS_CODE_CONFLICT");
   });
 
   it("recomputes the normalized executable code when a password changes", async () => {

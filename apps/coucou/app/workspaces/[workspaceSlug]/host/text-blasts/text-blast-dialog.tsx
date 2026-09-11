@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ContactAudiencePicker } from "@/components/guests/contact-audience-picker";
 import { ContactAudiencePreview } from "@/components/guests/contact-audience-preview";
+import { ListName } from "@/components/list-name";
 import { MessageTemplateVariableButtons } from "@/components/message-template-variable-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -467,8 +468,11 @@ function ContactBlastComposer({
                           {(replyActionTargets ?? [])
                             .find((event) => event.eventId === row.targetEventId)
                             ?.lists.map((list) => (
-                              <SelectOption key={list.listKey} value={list.listKey}>
-                                {list.listKey}
+                              <SelectOption
+                                key={list.displayName ?? list.listKey}
+                                value={list.displayName ?? list.listKey}
+                              >
+                                {list.displayName ?? list.listKey}
                               </SelectOption>
                             ))}
                         </Select>
@@ -518,7 +522,7 @@ function ContactBlastComposer({
                           "Unavailable event";
                         return (
                           <li
-                            key={`${action.targetEventId}-${action.targetListKey}-${action.replyCode}`}
+                            key={`${action.targetEventId}-${<ListName eventId={action.targetEventId} listKey={action.targetListKey} />}-${action.replyCode}`}
                             className="flex flex-col gap-3 rounded-lg border border-[var(--border-subtle)] p-4 sm:flex-row sm:items-start"
                           >
                             <dl className="grid min-w-0 flex-1 gap-3 text-sm sm:grid-cols-3">
@@ -532,7 +536,14 @@ function ContactBlastComposer({
                               </div>
                               <div className="min-w-0 space-y-1">
                                 <dt className="text-[var(--text-secondary)]">Destination list</dt>
-                                <dd className="break-words">{action.targetListKey}</dd>
+                                <dd className="break-words">
+                                  {
+                                    <ListName
+                                      eventId={action.targetEventId}
+                                      listKey={action.targetListKey}
+                                    />
+                                  }
+                                </dd>
                               </div>
                             </dl>
                             <Badge

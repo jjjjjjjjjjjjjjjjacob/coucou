@@ -12,6 +12,7 @@ import {
   resolveCanonicalRsvpId,
 } from "./lib/canonicalUserIdentity";
 import { isGuestClerkUserId } from "./lib/guestIdentity";
+import { codeAssignment, effectiveCodeList } from "./lib/listIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { formatPhoneNumberForSms, obfuscatePhoneNumber } from "./lib/phoneUtils";
 import {
@@ -158,6 +159,11 @@ async function findEventCodeRoutes(
     .collect();
   const routes: EventCodeRoute[] = [];
   for (const listCredential of credentials) {
+    if (
+      listCredential.archivedAt !== undefined ||
+      (await effectiveCodeList(ctx, listCredential, normalizedCode))?._id !== listCredential._id
+    )
+      continue;
     const event = await ctx.db.get(listCredential.eventId);
     if (
       !event ||
@@ -197,12 +203,16 @@ async function findExecutableActionRoutes(
     if (!event || !isSmsExecutableEvent(event, now)) {
       continue;
     }
-    const listCredential = await ctx.db
+    const originalList = await ctx.db
       .query("listCredentials")
       .withIndex("by_event_key", (queryBuilder) =>
         queryBuilder.eq("eventId", event._id).eq("listKey", replyAction.targetListKey),
       )
       .unique();
+    const listCredential = originalList
+      ? await effectiveCodeList(ctx, originalList, normalizedCode)
+      : null;
+    if (listCredential?.archivedAt !== undefined) continue;
     const textBlast = await ctx.db.get(replyAction.textBlastId);
     if (!listCredential || !textBlast) continue;
     if (textBlast.eventId) {
@@ -229,7 +239,7 @@ async function findExecutableActionRoutes(
       kind: "blast_action",
       event,
       listCredential,
-      listKey: replyAction.targetListKey,
+      listKey: listCredential.listKey,
       normalizedCode,
       replyAction,
       textBlast,
@@ -237,7 +247,12 @@ async function findExecutableActionRoutes(
     });
   }
 
-  return { executableCount, eligibleRoutes };
+  return {
+    executableCount,
+    eligibleRoutes: Array.from(
+      new Map(eligibleRoutes.map((route) => [route.listCredential._id, route])).values(),
+    ),
+  };
 }
 
 async function ensureResolvedRouteClaim(
@@ -246,6 +261,8 @@ async function ensureResolvedRouteClaim(
   phoneHash: string,
   now: number,
 ): Promise<boolean> {
+  const assignment = await codeAssignment(ctx, route.event._id, route.normalizedCode);
+  if (assignment) return assignment.listCredentialId === route.listCredential._id;
   const claimPhoneHash = route.kind === "blast_action" ? phoneHash : undefined;
   const claims = await ctx.db
     .query("smsCodeClaims")
@@ -258,11 +275,20 @@ async function ensureResolvedRouteClaim(
       claim.status === "active" ||
       (claim.reservationExpiresAt !== undefined && claim.reservationExpiresAt > now),
   );
-  const ownsClaim = liveClaims.some((claim) =>
-    route.kind === "event_code"
-      ? claim.kind === "event_list" && claim.listCredentialId === route.listCredential._id
-      : claim.kind === "blast_action" && claim.replyActionId === route.replyAction._id,
-  );
+  let ownsClaim = false;
+  for (const claim of liveClaims) {
+    if (claim.listCredentialId === route.listCredential._id) ownsClaim = true;
+    else if (claim.replyActionId) {
+      const action = await ctx.db.get(claim.replyActionId);
+      if (
+        action &&
+        action.targetEventId === route.event._id &&
+        action.targetListKey === route.listKey
+      )
+        ownsClaim = true;
+      else return false;
+    } else return false;
+  }
   if (liveClaims.length > 0 && !ownsClaim) {
     return false;
   }
@@ -872,7 +898,12 @@ async function revalidateSessionRoute(
   const event = await ctx.db.get(session.eventId);
   const listCredential = session.listCredentialId
     ? await ctx.db.get(session.listCredentialId)
-    : null;
+    : await ctx.db
+        .query("listCredentials")
+        .withIndex("by_event_key", (builder) =>
+          builder.eq("eventId", session.eventId).eq("listKey", session.listKey),
+        )
+        .unique();
   if (
     !event ||
     !listCredential ||
@@ -883,7 +914,7 @@ async function revalidateSessionRoute(
     return null;
   }
   if (session.sourceKind === "event_code") {
-    if (listCredential.passwordNormalized !== session.normalizedCode) return null;
+    // Verification is valid until the original session expiry, even after rotation.
     return {
       kind: "event_code",
       event,
@@ -903,7 +934,6 @@ async function revalidateSessionRoute(
     !replyAction.isEnabled ||
     replyAction.replyCodeNormalized !== session.normalizedCode ||
     replyAction.targetEventId !== event._id ||
-    replyAction.targetListKey !== session.listKey ||
     !textBlast ||
     replyAction.textBlastId !== textBlast._id ||
     !delivery ||
@@ -1199,7 +1229,6 @@ async function continueRouteSession(
   await ctx.db.patch(args.session._id, {
     ...nextValues,
     missingFields: nextMissingFields,
-    expiresAt: args.receivedAt + SMS_RSVP_SESSION_DURATION_MS,
     updatedAt: args.receivedAt,
   });
   const updatedSession = await ctx.db.get(args.session._id);

@@ -231,6 +231,7 @@ export default function GuestsScreen(): React.JSX.Element {
         <GuestFilterBar
           filters={filters}
           listKeys={selectedEvent?.listKeys ?? []}
+          lists={selectedEvent?.lists}
           onChange={setFilters}
         />
         {!isConnected ? (
@@ -315,7 +316,8 @@ export default function GuestsScreen(): React.JSX.Element {
                   {item.name}
                 </Text>
                 <Text numberOfLines={1} style={styles.guestMeta}>
-                  {item.listKey} · {item.attendees} {item.attendees === 1 ? "guest" : "guests"}
+                  {item.listDisplayName ?? item.listKey} · {item.attendees}{" "}
+                  {item.attendees === 1 ? "guest" : "guests"}
                 </Text>
               </View>
               <View style={styles.guestStatuses}>

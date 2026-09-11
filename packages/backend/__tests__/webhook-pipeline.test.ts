@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
 import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import { issueListAccess } from "../convex/lib/listAccess";
 import { decryptWebhookEnvelope, verifyWebhookSignatureHeader } from "../convex/lib/webhookCrypto";
 import schema from "../convex/schema";
 
@@ -194,10 +195,24 @@ async function createEndpoint(
 }
 
 async function submitGuestRsvp(testBackend: TestBackend, eventId: Id<"events">, phone: string) {
+  const accessToken = await testBackend.run(async (databaseContext) => {
+    const listCredentialId = await databaseContext.db.insert("listCredentials", {
+      eventId,
+      listKey: "ga",
+      password: "",
+      createdAt: Date.now(),
+    });
+    const listCredential = await databaseContext.db.get(listCredentialId);
+    if (!listCredential) throw new Error("Expected list credential");
+    const access = await issueListAccess(databaseContext, listCredential, "no-password");
+    if (!access.ok) throw new Error("Expected list access grant");
+    return access.accessToken;
+  });
   return await testBackend.mutation(api.rsvps.submitGuestRequest, {
     eventId,
     siteKey: SITE_KEY,
     listKey: "ga",
+    accessToken,
     firstName: "Ava",
     lastName: "Green",
     phone,

@@ -197,14 +197,20 @@ export const getEventForApiClient = internalQuery({
       ...(await buildApiEventSummary(ctx, event)),
       lists: listCredentials.map((listCredential) => ({
         listKey: listCredential.listKey,
-        isPasswordProtected: Boolean(listCredential.passwordNormalized?.trim()),
+        displayName: listCredential.displayName ?? listCredential.listKey,
+        archivedAt: listCredential.archivedAt,
+        isPasswordProtected: Boolean(
+          (listCredential.passwordNormalized ?? listCredential.password)?.trim(),
+        ),
         generatesQrCode: listCredential.generateQR === true,
       })),
       rsvpForm: {
         attendanceQuestionEnabled: event.attendanceQuestionEnabled === true,
         maxAttendees: event.maxAttendees ?? 1,
-        acceptsListPassword: listCredentials.some((credential) =>
-          Boolean(credential.passwordNormalized?.trim()),
+        acceptsListPassword: listCredentials.some(
+          (credential) =>
+            credential.archivedAt === undefined &&
+            Boolean((credential.passwordNormalized ?? credential.password)?.trim()),
         ),
         customFields: (event.customFields ?? []).map((field) => ({
           key: field.key,
@@ -507,7 +513,8 @@ async function resolveListCredentialForApiWrite(
   const listCredentials = await ctx.db
     .query("listCredentials")
     .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", event._id))
-    .collect();
+    .collect()
+    .then((lists) => lists.filter((list) => list.archivedAt === undefined));
   const submittedPassword = input.listPassword?.trim();
   if (submittedPassword) {
     const normalizedPassword = normalizeCredentialPassword(submittedPassword);

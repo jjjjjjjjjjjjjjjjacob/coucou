@@ -126,7 +126,7 @@ export function RsvpExportDialog({
                     htmlFor={`list-${listCredential.listKey}`}
                     className="ml-2 cursor-pointer text-sm text-[var(--text-primary)]"
                   >
-                    {listCredential.listKey.toUpperCase()}
+                    {(listCredential.displayName ?? listCredential.listKey).toUpperCase()}
                   </label>
                 </div>
               ))}

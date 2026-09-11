@@ -16,12 +16,16 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 
 type StoredCredentialPassword = {
   listKey: string;
+  displayName?: string;
+  archivedAt?: number;
   password: string | null;
   credentialId: string;
 };
 
 type ListShareRouteState = {
   listKey: string;
+  displayName?: string;
+  archivedAt?: number;
   password?: string | null;
 };
 
@@ -499,7 +503,7 @@ export function ShareEventPopover({
                   >
                     <div className="flex min-w-0 items-center gap-1.5">
                       <Badge variant="outline" className="text-xs">
-                        {credential.listKey.toUpperCase()}
+                        {(credential.displayName ?? credential.listKey).toUpperCase()}
                       </Badge>
                       {credential.password ? (
                         <span className="text-xs text-muted-foreground truncate">

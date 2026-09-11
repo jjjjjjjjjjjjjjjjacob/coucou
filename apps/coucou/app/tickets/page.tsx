@@ -4,6 +4,7 @@ import { buildEventPath } from "@coucou/sdk/shared/event-routes";
 import { useQuery } from "convex/react";
 import { AlertCircle, Calendar, Clock, MapPin, QrCode } from "lucide-react";
 import Link from "next/link";
+import { ListName } from "@/components/list-name";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -151,7 +152,7 @@ function TicketCard({ ticket }: { ticket: UserTicket }) {
           </Badge>
           {rsvp.listKey && (
             <Badge variant="outline" className="text-xs">
-              {rsvp.listKey.toUpperCase()}
+              {<ListName eventId={rsvp.eventId} listKey={rsvp.listKey} />}
             </Badge>
           )}
         </div>

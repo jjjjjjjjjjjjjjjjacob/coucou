@@ -384,7 +384,7 @@ export default function TicketClientPage({ eventPreload, statusPreload }: Ticket
     <div className="rounded p-3 space-y-2">
       <div className="flex items-center gap-1.5 font-medium text-sm text-primary">
         <Check className="h-3.5 w-3.5" aria-hidden />
-        <span>{status?.listKey?.toUpperCase()} Confirmed</span>
+        <span>{status?.listDisplayName ?? status?.listKey?.toUpperCase()} Confirmed</span>
       </div>
       <div className="text-xs text-primary/70">
         {status?.listKey?.toLowerCase() === "ga" ? (

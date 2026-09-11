@@ -4,6 +4,7 @@ import type { Id } from "@convex/_generated/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { ListName } from "@/components/list-name";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceScope } from "@/lib/use-workspace-scope";
 import { ContactMessageHistory } from "./contact-message-history";
@@ -42,7 +43,14 @@ export function ContactHistory({ contactId }: { contactId: Id<"workspaceContacts
               <div>{entry.eventName}</div>
               <div className="text-xs text-[var(--text-secondary)]">
                 {new Date(entry.eventDate).toLocaleDateString()} · {entry.approvalStatus}
-                {entry.listKey ? ` · ${entry.listKey}` : ""}
+                {entry.listKey ? (
+                  <>
+                    {" "}
+                    · <ListName eventId={entry.eventId} listKey={entry.listKey} />
+                  </>
+                ) : (
+                  ""
+                )}
               </div>
             </li>
           ))}

@@ -6,6 +6,7 @@ import type { Id } from "@convex/_generated/dataModel";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { REFERRAL_QUERY_PARAM } from "@coucou/sdk/shared/event-routes";
+import { readStoredListAccess } from "@coucou/sdk/shared/list-access";
 import { RsvpPending } from "@coucou/ui/tenant-template";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -117,6 +118,7 @@ export function RsvpPageClient({ params }: RsvpPageClientProps) {
 
         if (shouldSubmitAuthenticatedRsvp) {
           await submitRsvp({
+            accessToken: readStoredListAccess(event._id)?.accessToken,
             eventId: canonicalEventId as Id<"events">,
             siteKey: siteConfiguration.siteKey,
             listKey: resolvedListKey,
@@ -132,6 +134,7 @@ export function RsvpPageClient({ params }: RsvpPageClientProps) {
             return;
           }
           const guestSubmissionResult = await submitGuestRsvp({
+            accessToken: readStoredListAccess(event._id)?.accessToken,
             eventId: canonicalEventId as Id<"events">,
             siteKey: siteConfiguration.siteKey,
             listKey: resolvedListKey,

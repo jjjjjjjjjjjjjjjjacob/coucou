@@ -74,7 +74,8 @@ export default function DeniedPage({ params }: { params: Promise<{ eventId: stri
             <div className="text-sm text-red-800">
               <p className="font-medium mb-2">Your request was denied</p>
               <p>
-                Unfortunately, your RSVP for <span className="font-medium">{status?.listKey}</span>{" "}
+                Unfortunately, your RSVP for{" "}
+                <span className="font-medium">{status?.listDisplayName ?? status?.listKey}</span>{" "}
                 was not approved.
               </p>
             </div>

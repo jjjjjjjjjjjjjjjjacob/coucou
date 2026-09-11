@@ -3,6 +3,7 @@
 import { useUser } from "@clerk/nextjs";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { readStoredListAccess, resolveRsvpAccess } from "@coucou/sdk/shared/list-access";
 import { CountrySelector, countries } from "@coucou/ui/auth";
 import { TenantButton } from "@coucou/ui/tenant-template";
 import { useAction, useMutation, useQuery } from "convex/react";
@@ -419,6 +420,7 @@ export function RsvpAcceptedForm({
   const [submitting, setSubmitting] = useState(false);
   const [accessPassword, setAccessPassword] = useState<string>(initialPassword);
   const debouncedAccessPassword = useDebounce(accessPassword, 300);
+  const [resolvedListName, setResolvedListName] = useState<string>();
   const [resolvedListKey, setResolvedListKey] = useState<string | null>(null);
   const [searchStatus, setSearchStatus] = useState<
     "idle" | "searching" | "matched" | "miss-with-fallback" | "miss-no-fallback"
@@ -449,14 +451,17 @@ export function RsvpAcceptedForm({
       // We deliberately do not surface a spinner here — there's no input to
       // validate, so a loading state would be visual noise.
       setSearchStatus("idle");
-      if (hasNoPasswordList) {
-        resolveListByPassword({
+      if (hasNoPasswordList || readStoredListAccess(eventId)) {
+        resolveRsvpAccess(resolveListByPassword, {
           eventId,
           password: "",
           siteKey: siteConfiguration.siteKey,
         })
           .then((result) => {
             if (requestId !== searchRequestIdRef.current) return;
+            setResolvedListName(
+              result.ok ? (result.displayName ?? result.listKey.toUpperCase()) : undefined,
+            );
             setResolvedListKey(result.ok ? result.listKey : null);
           })
           .catch(() => {
@@ -470,7 +475,7 @@ export function RsvpAcceptedForm({
     }
 
     setSearchStatus("searching");
-    resolveListByPassword({
+    resolveRsvpAccess(resolveListByPassword, {
       eventId,
       password: trimmed,
       siteKey: siteConfiguration.siteKey,
@@ -482,6 +487,7 @@ export function RsvpAcceptedForm({
           setSearchStatus("miss-no-fallback");
           return;
         }
+        setResolvedListName(result.displayName ?? result.listKey.toUpperCase());
         if (result.matched === "password") {
           setResolvedListKey(result.listKey);
           setSearchStatus("matched");
@@ -978,6 +984,7 @@ export function RsvpAcceptedForm({
       }
 
       await submitRsvp({
+        accessToken: readStoredListAccess(eventId)?.accessToken,
         eventId,
         siteKey: siteConfiguration.siteKey,
         listKey,
@@ -1166,19 +1173,18 @@ export function RsvpAcceptedForm({
                   ) : searchStatus === "matched" && resolvedListKey ? (
                     <Badge variant="success" className="gap-1" style={{ letterSpacing: "0.05em" }}>
                       <CheckCircle2 className="h-3 w-3" />
-                      {resolvedListKey.toUpperCase()}
+                      {resolvedListName}
                     </Badge>
                   ) : searchStatus === "miss-with-fallback" && resolvedListKey ? (
                     <Badge variant="outline" style={{ letterSpacing: "0.05em" }}>
-                      {resolvedListKey.toUpperCase()}
+                      {resolvedListName}
                     </Badge>
                   ) : null}
                 </div>
               </div>
               {searchStatus === "miss-with-fallback" && resolvedListKey ? (
                 <p className="text-[11px] text-amber-500">
-                  Password not recognized — RSVP will be submitted to{" "}
-                  {resolvedListKey.toUpperCase()}.
+                  Password not recognized — RSVP will be submitted to {resolvedListName}.
                 </p>
               ) : searchStatus === "miss-no-fallback" ? (
                 <p className="text-[11px] text-destructive">Password not recognized.</p>

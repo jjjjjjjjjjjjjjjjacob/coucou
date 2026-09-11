@@ -7,7 +7,7 @@ import {
   eventStatusValidator,
 } from "./lib/eventMetadata";
 import { eventPartnerValidator } from "./lib/eventPartners";
-import { guestRsvpSubmissionFields } from "./lib/rsvpSubmissionArgs";
+import { storedGuestRsvpSubmissionFields } from "./lib/rsvpSubmissionArgs";
 
 const socialPlatformConfigValidator = v.object({
   platformKey: v.string(),
@@ -383,6 +383,7 @@ export default defineSchema({
 
   // Events & guest list credentials
   events: defineTable({
+    listsRevision: v.optional(v.number()),
     workspaceSlug: v.optional(v.string()),
     siteKey: v.optional(v.string()),
     shortId: v.optional(v.string()),
@@ -470,6 +471,8 @@ export default defineSchema({
     .index("by_siteKey", ["siteKey"]),
 
   listCredentials: defineTable({
+    displayName: v.optional(v.string()),
+    archivedAt: v.optional(v.number()),
     eventId: v.id("events"),
     listKey: v.string(), // e.g., 'vip', 'ga'
     password: v.optional(v.string()), // host-visible event list password
@@ -623,10 +626,32 @@ export default defineSchema({
     .index("by_user_organizer", ["clerkUserId", "organizerKey"])
     .index("by_organizer", ["organizerKey"]),
 
+  listCodeAssignments: defineTable({
+    eventId: v.id("events"),
+    normalizedCode: v.string(),
+    listCredentialId: v.id("listCredentials"),
+    assignedAt: v.number(),
+  })
+    .index("by_event_code", ["eventId", "normalizedCode"])
+    .index("by_code", ["normalizedCode"]),
+
+  rsvpListAccessGrants: defineTable({
+    tokenHash: v.string(),
+    eventId: v.id("events"),
+    listCredentialId: v.id("listCredentials"),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    claimedPhoneHash: v.optional(v.string()),
+    claimedClerkUserId: v.optional(v.string()),
+  })
+    .index("by_token_hash", ["tokenHash"])
+    .index("by_expires_at", ["expiresAt"]),
+
   rsvpGuestHandoffs: defineTable({
+    listAccessGrantId: v.optional(v.id("rsvpListAccessGrants")),
     tokenHash: v.string(),
     rsvpId: v.optional(v.id("rsvps")),
-    submission: v.optional(v.object(guestRsvpSubmissionFields)),
+    submission: v.optional(v.object(storedGuestRsvpSubmissionFields)),
     submittedByClerkUserId: v.optional(v.string()),
     phoneNumber: v.string(),
     phoneHash: v.string(),

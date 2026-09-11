@@ -117,7 +117,10 @@ export default function GuestDetailScreen(): React.JSX.Element {
   }
 
   const listOptions: SelectionOption[] = (selectedEvent?.listKeys ?? [guest.listKey]).map(
-    (listKey) => ({ key: listKey, label: listKey }),
+    (listKey) => ({
+      key: listKey,
+      label: selectedEvent?.lists?.find((list) => list.listKey === listKey)?.displayName ?? listKey,
+    }),
   );
 
   return (
@@ -171,7 +174,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
             canEdit={canEdit}
             label="Guest list"
             onPress={() => setEditingField("list")}
-            value={guest.listKey}
+            value={guest.listDisplayName ?? guest.listKey}
           />
           <EditableField
             canEdit={canEdit && guest.ticketStatus !== "redeemed"}
@@ -249,7 +252,7 @@ export default function GuestDetailScreen(): React.JSX.Element {
       />
       <SelectionSheet
         accessibilityLabel="Guest list"
-        label={guest.listKey}
+        label={guest.listDisplayName ?? guest.listKey}
         onClose={() => setEditingField(null)}
         onOpen={() => setEditingField("list")}
         onSelect={(option) => {

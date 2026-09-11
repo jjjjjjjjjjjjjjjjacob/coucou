@@ -325,7 +325,7 @@ export default function ProfilePage() {
                               variant="outline"
                               className="text-[10px] uppercase tracking-[0.1em]"
                             >
-                              {sharedEvent.listKey}
+                              {sharedEvent.listDisplayName ?? sharedEvent.listKey}
                             </Badge>
                           )}
                         </div>

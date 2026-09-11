@@ -39,6 +39,7 @@ const submitRsvp = mock(async (_arguments: Record<string, unknown>) => undefined
 const prepareGuestRsvp = mock(async (_arguments: Record<string, unknown>) => ({
   rsvpHandoffToken: "handoff_123",
 }));
+const resolveEntryPassword = mock(async () => entryResolution);
 const resolvePassword = mock(async () => ({
   ok: true,
   listKey: "vip",
@@ -94,7 +95,11 @@ mock.module("convex/react", () => ({
         : mock(() => {
             throw new Error("Unexpected mutation");
           }),
-  useAction: () => resolvePassword,
+  useAction: (reference: unknown) =>
+    getFunctionName(reference as FunctionReference<"action">) ===
+    "credentialsNode:resolveListByPassword"
+      ? resolveEntryPassword
+      : resolvePassword,
 }));
 mock.module("@/components/event-theme-provider", () => ({
   EventThemeProvider: ({ children }: { children: ReactNode }) => (

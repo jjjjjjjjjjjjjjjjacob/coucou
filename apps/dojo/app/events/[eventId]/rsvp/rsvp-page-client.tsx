@@ -5,9 +5,10 @@ import { api } from "@convex/_generated/api";
 import { buildSatelliteReturnUrl, buildTenantPrimarySignInUrl } from "@coucou/sdk";
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { REFERRAL_QUERY_PARAM } from "@coucou/sdk/shared/event-routes";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { readStoredListAccess, resolveRsvpAccess } from "@coucou/sdk/shared/list-access";
+import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { use, useEffect } from "react";
+import { use, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { buildRsvpFlowPath, existingRsvpPath } from "@/lib/rsvp-routing";
@@ -50,12 +51,28 @@ export function RsvpPageClient({ params }: { params: Promise<{ eventId: string }
     eventIsOpen &&
     !isStatusLoading &&
     ((!status && hasNoPasswordList === false) || (status?.status === "denied" && !!password));
-  const entryResolution = useQuery(
-    api.credentials.resolveListByPassword,
-    event && shouldValidateEntry
-      ? { eventId: event._id, password, siteKey: siteConfiguration.siteKey }
-      : "skip",
-  );
+  const resolveEntry = useAction(api.credentialsNode.resolveListByPassword);
+  const [entryResolution, setEntryResolution] = useState<{ ok: boolean; listKey?: string }>();
+  useEffect(() => {
+    let cancelled = false;
+    if (event && shouldValidateEntry) {
+      setEntryResolution(undefined);
+      resolveRsvpAccess(resolveEntry, {
+        eventId: event._id,
+        password,
+        siteKey: siteConfiguration.siteKey,
+      })
+        .then((result) => {
+          if (!cancelled) setEntryResolution(result);
+        })
+        .catch(() => {
+          if (!cancelled) setEntryResolution({ ok: false });
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [event?._id, shouldValidateEntry, password, resolveEntry]);
   const isValidatingEntry = shouldValidateEntry && entryResolution === undefined;
   const isDifferentListRetry =
     status?.status === "denied" &&
@@ -81,6 +98,7 @@ export function RsvpPageClient({ params }: { params: Promise<{ eventId: string }
     const { resolvedListKey, requiresPhoneVerification, ...fields } = collected;
     const submission = {
       ...fields,
+      accessToken: readStoredListAccess(event._id)?.accessToken,
       eventId: event._id,
       siteKey: siteConfiguration.siteKey,
       listKey: resolvedListKey,

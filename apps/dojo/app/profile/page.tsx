@@ -360,7 +360,7 @@ export default function ProfilePage() {
                             </h3>
                             {sharedEvent.listKey && (
                               <Badge variant="outline" className="uppercase">
-                                {sharedEvent.listKey}
+                                {sharedEvent.listDisplayName ?? sharedEvent.listKey}
                               </Badge>
                             )}
                           </div>

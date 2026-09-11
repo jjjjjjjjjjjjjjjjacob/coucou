@@ -865,7 +865,7 @@ describe("text blast recipient selection", () => {
     expect(disjointResult.results).toMatchObject([{ status: "available", isAvailable: true }]);
   });
 
-  it("allows action-code reuse only for disjoint recipient phone sets", async () => {
+  it("allows repeated invitations to the same destination for overlapping recipients", async () => {
     const testBackend = setupTestBackend();
     const targetEventId = await seedEvent(testBackend, "Claim Target");
     await seedListCredential(testBackend, {
@@ -893,12 +893,10 @@ describe("text blast recipient selection", () => {
       blastId: firstBlastId,
       phoneHashes: [firstPhone.phoneHash],
     });
-    await expect(
-      testBackend.mutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
-        blastId: secondBlastId,
-        phoneHashes: [firstPhone.phoneHash],
-      }),
-    ).rejects.toThrow("unavailable");
+    await testBackend.mutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
+      blastId: secondBlastId,
+      phoneHashes: [firstPhone.phoneHash],
+    });
 
     await testBackend.mutation(internal.textBlasts.reserveQueuedReplyActionClaims, {
       blastId: secondBlastId,
@@ -910,7 +908,7 @@ describe("text blast recipient selection", () => {
         .withIndex("by_code", (queryBuilder) => queryBuilder.eq("normalizedCode", "return"))
         .collect();
     });
-    expect(claims).toHaveLength(2);
+    expect(claims).toHaveLength(3);
   });
 
   it("releases failed action reservations and reclaims expired reservations", async () => {

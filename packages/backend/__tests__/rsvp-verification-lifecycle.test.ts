@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
 import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import { issueListAccess } from "../convex/lib/listAccess";
 import { normalizeAndHashPhoneNumber } from "../convex/lib/phoneHash";
 import schema from "../convex/schema";
 
@@ -81,6 +82,16 @@ function submission() {
     socialProfiles: [],
   };
 }
+async function submissionWithAccess() {
+  const accessToken = await backend.run(async (context) => {
+    const listCredential = await context.db.query("listCredentials").unique();
+    if (!listCredential) throw new Error("Expected list credential");
+    const access = await issueListAccess(context, listCredential, "no-password");
+    if (!access.ok) throw new Error("Expected list access grant");
+    return access.accessToken;
+  });
+  return { ...submission(), accessToken };
+}
 const authenticated = () => backend.withIdentity({ subject: "verified_guest" });
 async function scheduledConfirmations() {
   return await backend.run(async (context) =>
@@ -99,7 +110,10 @@ async function accountState() {
 
 describe("verified RSVP completion", () => {
   it("saves only a draft before authentication, then finalizes once with a Clerk-verified phone", async () => {
-    const draft = await backend.mutation(api.rsvps.prepareGuestRequest, submission());
+    const draft = await backend.mutation(
+      api.rsvps.prepareGuestRequest,
+      await submissionWithAccess(),
+    );
     expect(await accountState()).toEqual({ users: [], rsvps: [], preferences: [] });
     expect(await scheduledConfirmations()).toHaveLength(0);
     const scheduledBeforeAuth = await backend.run(
@@ -138,7 +152,10 @@ describe("verified RSVP completion", () => {
     expect(handoff?.usedAt).toBeDefined();
   });
   it("does not finalize unauthenticated or unverified requests, including a matching editable profile phone", async () => {
-    const draft = await backend.mutation(api.rsvps.prepareGuestRequest, submission());
+    const draft = await backend.mutation(
+      api.rsvps.prepareGuestRequest,
+      await submissionWithAccess(),
+    );
     await expect(
       backend.action(api.rsvps.finalizeGuestRequest, { token: draft.rsvpHandoffToken }),
     ).rejects.toThrow("verify your phone");
@@ -160,7 +177,10 @@ describe("verified RSVP completion", () => {
     expect(await scheduledConfirmations()).toHaveLength(0);
   });
   it("rejects a verified different phone without consuming the draft", async () => {
-    const draft = await backend.mutation(api.rsvps.prepareGuestRequest, submission());
+    const draft = await backend.mutation(
+      api.rsvps.prepareGuestRequest,
+      await submissionWithAccess(),
+    );
     clerkUserLookup.mockResolvedValueOnce({
       phoneNumbers: [{ phoneNumber: "+12025550123", verification: { status: "verified" } }],
     });
@@ -176,7 +196,10 @@ describe("verified RSVP completion", () => {
     "closed",
     "missing-list",
   ])("rejects a %s draft without confirming", async (condition) => {
-    const draft = await backend.mutation(api.rsvps.prepareGuestRequest, submission());
+    const draft = await backend.mutation(
+      api.rsvps.prepareGuestRequest,
+      await submissionWithAccess(),
+    );
     await backend.run(async (context) => {
       if (condition === "expired") {
         const stored = await context.db.query("rsvpGuestHandoffs").unique();
@@ -196,7 +219,7 @@ describe("verified RSVP completion", () => {
   });
   it("does not send a confirmation without fresh SMS consent", async () => {
     const draft = await backend.mutation(api.rsvps.prepareGuestRequest, {
-      ...submission(),
+      ...(await submissionWithAccess()),
       smsConsent: false,
     });
     await authenticated().action(api.rsvps.finalizeGuestRequest, { token: draft.rsvpHandoffToken });
@@ -207,9 +230,12 @@ describe("verified RSVP completion", () => {
 
 describe("Clerk account deletion", () => {
   it("clears account and former guest consent, RSVPs and unfinished drafts and permits fresh signup", async () => {
-    const draft = await backend.mutation(api.rsvps.prepareGuestRequest, submission());
+    const draft = await backend.mutation(
+      api.rsvps.prepareGuestRequest,
+      await submissionWithAccess(),
+    );
     await authenticated().action(api.rsvps.finalizeGuestRequest, { token: draft.rsvpHandoffToken });
-    await backend.mutation(api.rsvps.prepareGuestRequest, submission());
+    await backend.mutation(api.rsvps.prepareGuestRequest, await submissionWithAccess());
     const { phoneHash } = await normalizeAndHashPhoneNumber(phone);
     await backend.run(async (context) => {
       const preference = await context.db.query("userSmsOrganizerPreferences").first();
@@ -232,7 +258,7 @@ describe("Clerk account deletion", () => {
       await backend.run(async (context) => await context.db.query("rsvpGuestHandoffs").collect()),
     ).toHaveLength(0);
     const nextDraft = await backend.mutation(api.rsvps.prepareGuestRequest, {
-      ...submission(),
+      ...(await submissionWithAccess()),
       smsConsent: false,
     });
     await backend
@@ -244,7 +270,10 @@ describe("Clerk account deletion", () => {
     });
   });
   it("handles the user.deleted webhook even if the users row was manually removed first", async () => {
-    const draft = await backend.mutation(api.rsvps.prepareGuestRequest, submission());
+    const draft = await backend.mutation(
+      api.rsvps.prepareGuestRequest,
+      await submissionWithAccess(),
+    );
     await authenticated().action(api.rsvps.finalizeGuestRequest, { token: draft.rsvpHandoffToken });
     await backend.run(async (context) => {
       const user = await context.db.query("users").unique();
@@ -259,7 +288,10 @@ describe("Clerk account deletion", () => {
     expect(await accountState()).toEqual({ users: [], rsvps: [], preferences: [] });
   });
   it("does not erase a different live canonical account when a retired Clerk identity is deleted", async () => {
-    const draft = await backend.mutation(api.rsvps.prepareGuestRequest, submission());
+    const draft = await backend.mutation(
+      api.rsvps.prepareGuestRequest,
+      await submissionWithAccess(),
+    );
     await authenticated().action(api.rsvps.finalizeGuestRequest, { token: draft.rsvpHandoffToken });
     await backend.run(async (context) => {
       const user = await context.db.query("users").unique();

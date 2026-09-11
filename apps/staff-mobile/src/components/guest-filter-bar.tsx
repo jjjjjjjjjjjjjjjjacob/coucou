@@ -7,6 +7,7 @@ import type { ApprovalFilter, AttendanceFilter, StaffGuestFilters, TicketFilter 
 interface GuestFilterBarProps {
   filters: StaffGuestFilters;
   listKeys: string[];
+  lists?: Array<{ listKey: string; displayName: string }>;
   onChange: (filters: StaffGuestFilters) => void;
 }
 
@@ -39,12 +40,16 @@ function selectedLabel(options: SelectionOption[], selectedKey: string): string 
 export function GuestFilterBar({
   filters,
   listKeys,
+  lists,
   onChange,
 }: GuestFilterBarProps): React.JSX.Element {
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
   const listOptions: SelectionOption[] = [
     { key: "all", label: "All lists" },
-    ...listKeys.map((listKey) => ({ key: listKey, label: listKey })),
+    ...listKeys.map((listKey) => ({
+      key: listKey,
+      label: lists?.find((list) => list.listKey === listKey)?.displayName ?? listKey,
+    })),
   ];
 
   return (

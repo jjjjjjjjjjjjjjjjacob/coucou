@@ -229,8 +229,8 @@ describe("GET /api/v1/events/{eventRouteId}", () => {
     expect(body.name).toBe("Partner API Event");
     expect(body.lists).toEqual(
       expect.arrayContaining([
-        { listKey: "vip", isPasswordProtected: true, generatesQrCode: false },
-        { listKey: "ga", isPasswordProtected: false, generatesQrCode: false },
+        { listKey: "vip", displayName: "vip", isPasswordProtected: true, generatesQrCode: false },
+        { listKey: "ga", displayName: "ga", isPasswordProtected: false, generatesQrCode: false },
       ]),
     );
     expect(body.attendanceCounts.approved).toBe(1);

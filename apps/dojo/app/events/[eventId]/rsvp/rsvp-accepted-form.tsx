@@ -143,6 +143,7 @@ export function RsvpAcceptedForm({
   const [accessPassword, setAccessPassword] = useState<string>(initialPassword);
   const {
     resolvedListKey,
+    resolvedListName,
     searchStatus,
     isResolving: isResolvingPassword,
   } = useRsvpListResolution(eventId, accessPassword);
@@ -821,19 +822,18 @@ export function RsvpAcceptedForm({
                   ) : searchStatus === "matched" && resolvedListKey ? (
                     <Badge variant="success" className="gap-1" style={{ letterSpacing: "0.05em" }}>
                       <CheckCircle2 className="h-3 w-3" />
-                      {resolvedListKey.toUpperCase()}
+                      {resolvedListName}
                     </Badge>
                   ) : searchStatus === "miss-with-fallback" && resolvedListKey ? (
                     <Badge variant="outline" style={{ letterSpacing: "0.05em" }}>
-                      {resolvedListKey.toUpperCase()}
+                      {resolvedListName}
                     </Badge>
                   ) : null}
                 </div>
               </div>
               {searchStatus === "miss-with-fallback" && resolvedListKey ? (
                 <p className="text-[11px] text-amber-500">
-                  Password not recognized — RSVP will be submitted to{" "}
-                  {resolvedListKey.toUpperCase()}.
+                  Password not recognized — RSVP will be submitted to {resolvedListName}.
                 </p>
               ) : searchStatus === "miss-no-fallback" ? (
                 <p className="text-[11px] text-destructive">Password not recognized.</p>

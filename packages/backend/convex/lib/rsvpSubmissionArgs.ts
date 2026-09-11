@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { submittedSocialProfileValidator } from "./primaryFields";
 
-export const guestRsvpSubmissionFields = {
+export const storedGuestRsvpSubmissionFields = {
   eventId: v.id("events"),
   siteKey: v.optional(v.string()),
   listKey: v.string(),
@@ -18,4 +18,9 @@ export const guestRsvpSubmissionFields = {
   socialProfiles: v.optional(v.array(submittedSocialProfileValidator)),
   invitedByName: v.optional(v.string()),
   referralCode: v.optional(v.string()),
+};
+
+export const guestRsvpSubmissionFields = {
+  ...storedGuestRsvpSubmissionFields,
+  accessToken: v.optional(v.string()),
 };

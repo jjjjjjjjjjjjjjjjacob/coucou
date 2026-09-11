@@ -27,6 +27,7 @@ import type { Event as ClubEvent, RSVP } from "@/lib/types";
 interface CurrentUserEventStatus {
   rsvpId?: Id<"rsvps">;
   listKey?: string;
+  listDisplayName?: string;
   status?: RSVP["status"];
   smsConsent?: boolean;
   smsConsentIpAddress?: string;
@@ -218,7 +219,7 @@ export default function StatusPage({ params }: { params: Promise<{ eventId: stri
             {status.listKey ? (
               <div className="mb-3">
                 <Badge variant="outline" style={{ letterSpacing: "0.05em" }}>
-                  {status.listKey.toUpperCase()}
+                  {status.listDisplayName ?? status.listKey.toUpperCase()}
                 </Badge>
               </div>
             ) : null}

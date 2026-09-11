@@ -400,7 +400,10 @@ export default function RsvpReviewFeedPage() {
               <h1 className="min-w-0 truncate text-3xl font-semibold tracking-tight">
                 {currentGuestName}
               </h1>
-              <Badge variant="secondary">{currentRsvp.listKey.toUpperCase()}</Badge>
+              <Badge variant="secondary">
+                {listCredentials?.find((list) => list.listKey === currentRsvp.listKey)
+                  ?.displayName ?? currentRsvp.listKey.toUpperCase()}
+              </Badge>
               <Badge
                 variant="secondary"
                 className={cn("text-xs", getApprovalStatusClassName(currentRsvp.approvalStatus))}

@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./functions";
+import { listDisplayName, resolveListDisplayName } from "./lib/listIdentity";
 import {
   getIdentityOrganizationId,
   getIdentityOrganizationRole,
@@ -52,6 +53,7 @@ export interface StaffEventSummary {
   status?: string;
   lifecycle?: string;
   listKeys: string[];
+  lists?: Array<{ listKey: string; displayName: string; archivedAt?: number }>;
 }
 
 export type StaffTicketStatus = "not-issued" | "issued" | "disabled" | "redeemed";
@@ -61,6 +63,7 @@ export interface StaffGuestSummary {
   name: string;
   contact?: string;
   listKey: string;
+  listDisplayName?: string;
   approvalStatus: ApprovalStatus;
   attendanceStatus: AttendanceStatus;
   attendees: number;
@@ -199,6 +202,7 @@ async function buildStaffGuestSummary(
   return {
     rsvpId: rsvp._id,
     name: resolveUserDisplayName(user, rsvp),
+    listDisplayName: await resolveListDisplayName(ctx, rsvp.eventId, rsvp.listKey),
     contact: rsvp.shareContact ? rsvp.guestPhoneObfuscated : undefined,
     listKey: rsvp.listKey,
     approvalStatus: resolveApprovalStatus(rsvp),
@@ -341,6 +345,11 @@ export const listEvents = query({
           eventTimezone: event.eventTimezone,
           status: event.status,
           lifecycle: event.lifecycle,
+          lists: credentials.map((credential) => ({
+            listKey: credential.listKey,
+            displayName: listDisplayName(credential),
+            archivedAt: credential.archivedAt,
+          })),
           listKeys: credentials
             .map((credential) => credential.listKey)
             .sort((firstListKey, secondListKey) => firstListKey.localeCompare(secondListKey)),
@@ -390,6 +399,13 @@ export const listGuests = query({
       .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
       .collect();
 
+    const credentials = await ctx.db
+      .query("listCredentials")
+      .withIndex("by_event", (builder) => builder.eq("eventId", eventId))
+      .collect();
+    const displayNames = new Map(
+      credentials.map((credential) => [credential.listKey, listDisplayName(credential)]),
+    );
     const roleSafeSummaries = rsvps
       .filter((rsvp) => {
         if (approvalFilter !== "all" && resolveApprovalStatus(rsvp) !== approvalFilter) {
@@ -406,7 +422,10 @@ export const listGuests = query({
         }
         return true;
       })
-      .map(buildStaffGuestSummaryFromRsvp);
+      .map((rsvp) => ({
+        ...buildStaffGuestSummaryFromRsvp(rsvp),
+        listDisplayName: displayNames.get(rsvp.listKey) ?? rsvp.listKey,
+      }));
     const normalizedSearch = search.trim().toLowerCase();
     const filteredGuests = roleSafeSummaries
       .filter((guest) => {

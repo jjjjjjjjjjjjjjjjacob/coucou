@@ -14,6 +14,7 @@ import type { Event as ClubEvent } from "@/lib/types";
 
 interface DeniedRsvpStatus {
   listKey?: string;
+  listDisplayName?: string;
 }
 
 export default function DeniedPage({ params }: { params: Promise<{ eventId: string }> }) {
@@ -65,8 +66,9 @@ export default function DeniedPage({ params }: { params: Promise<{ eventId: stri
         description={
           status?.listKey ? (
             <>
-              Unfortunately, your RSVP for <strong>{status.listKey}</strong> was not approved. If
-              you have access to another list, try that password below.
+              Unfortunately, your RSVP for{" "}
+              <strong>{status.listDisplayName ?? status.listKey}</strong> was not approved. If you
+              have access to another list, try that password below.
             </>
           ) : (
             <>

@@ -125,6 +125,8 @@ export interface Event {
 }
 
 export interface ListCredential {
+  archivedAt?: number;
+  displayName?: string;
   _id: Id<"listCredentials">;
   eventId: Id<"events">;
   listKey: string;
@@ -147,6 +149,7 @@ export interface RSVP {
   eventId: Id<"events">;
   clerkUserId: string;
   listKey: string;
+  listDisplayName?: string;
   ticketStatus?: "not-issued" | "issued" | "disabled" | "redeemed";
   shareContact: boolean;
   note?: string;
@@ -177,6 +180,7 @@ export interface Approval {
   rsvpId: Id<"rsvps">;
   clerkUserId: string;
   listKey: string;
+  listDisplayName?: string;
   decision: "pending" | "approved" | "denied";
   decidedBy: string;
   decidedAt: number;
@@ -188,6 +192,7 @@ export interface Redemption {
   eventId: Id<"events">;
   clerkUserId: string;
   listKey: string;
+  listDisplayName?: string;
   code: string;
   createdAt: number;
   disabledAt?: number;
@@ -240,6 +245,7 @@ export interface UserEventSharing {
   eventHostNames: string[];
   productionCompany?: string;
   listKey: string;
+  listDisplayName?: string;
   smsConsent: boolean;
   shareContact: boolean;
   updatedAt?: number;
@@ -269,6 +275,7 @@ export interface HostRsvp {
   firstName: string;
   lastName: string;
   listKey: string;
+  listDisplayName?: string;
   note?: string;
   status: RSVP["status"];
   approvalStatus: "pending" | "approved" | "denied";
@@ -306,6 +313,7 @@ export interface UserTicket {
   redemption: {
     code: string;
     listKey: string;
+    listDisplayName?: string;
     redeemedAt?: number;
   } | null;
 }
@@ -342,6 +350,8 @@ export interface EventCardClientProps {
 
 // List credential interface for edit dialog
 export interface ListCredentialEdit {
+  archived?: boolean;
+  displayName?: string;
   id?: string;
   listKey: string;
   password: string;
@@ -351,6 +361,8 @@ export interface ListCredentialEdit {
 
 // Credential from API response
 export interface CredentialResponse {
+  archivedAt?: number;
+  displayName?: string;
   _id: string;
   listKey: string;
   // password is never returned from API
@@ -419,6 +431,8 @@ export interface RSVPFormData extends Record<string, unknown> {
 }
 
 export interface ListCredentialInput {
+  archived?: boolean;
+  displayName?: string;
   id?: string;
   listKey: string;
   password: string;
@@ -504,6 +518,7 @@ export type RSVPStatus = RSVP["status"];
 export type ApprovalDecision = Approval["decision"];
 export interface RSVPDashboardRow {
   listKey: string;
+  listDisplayName?: string;
   name: string;
   attendees: number;
   note: string;

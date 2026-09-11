@@ -5,6 +5,7 @@ import { api } from "@convex/_generated/api";
 import type { Doc } from "@convex/_generated/dataModel";
 import { isEventOpenForRsvp } from "@coucou/sdk/shared/event-availability";
 import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
+import { resolveRsvpAccess } from "@coucou/sdk/shared/list-access";
 import { useAction, useConvexAuth, useQuery } from "convex/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -54,7 +55,7 @@ export function EventEntry({ event }: { event: Doc<"events"> }) {
     setIsCheckingPassword(true);
     setMessage("");
     try {
-      const resolution = await resolvePassword({
+      const resolution = await resolveRsvpAccess(resolvePassword, {
         eventId: event._id,
         password: password.trim(),
         siteKey: siteConfiguration.siteKey,

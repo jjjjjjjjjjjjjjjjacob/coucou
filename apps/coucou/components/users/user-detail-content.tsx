@@ -10,6 +10,7 @@ import React from "react";
 import { toast } from "sonner";
 import { DashboardTitleBar } from "@/components/dashboard-title-bar";
 import { GuestAnnotationsFields } from "@/components/guests/guest-annotations-fields";
+import { ListName } from "@/components/list-name";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { PageCard } from "@/components/ui/page-card";
@@ -289,7 +290,7 @@ function EventHistoryList({ rsvps }: { rsvps: UserRsvpHistoryEntry[] }) {
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-md bg-[var(--surface-3)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]">
-              {rsvp.listKey.toUpperCase()}
+              {<ListName eventId={rsvp.eventId} listKey={rsvp.listKey} />}
             </span>
             <span className="text-xs text-[var(--text-tertiary)]">RSVP {rsvp.approvalStatus}</span>
           </div>

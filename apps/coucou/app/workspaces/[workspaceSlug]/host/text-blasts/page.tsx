@@ -20,6 +20,7 @@ import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DashboardTitleBar } from "@/components/dashboard-title-bar";
+import { ListName } from "@/components/list-name";
 import { PageToolbar } from "@/components/page-toolbar";
 import {
   AlertDialog,
@@ -638,7 +639,7 @@ export default function TextBlastsPage() {
                         variant="secondary"
                         className="text-xs bg-[var(--surface-3)] text-[var(--text-primary)]"
                       >
-                        {listKey}
+                        {<ListName eventId={blast.eventId} listKey={listKey} />}
                       </Badge>
                     ))}
                   </div>

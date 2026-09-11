@@ -109,7 +109,9 @@ export const exportRsvpsCsv = action({
       });
 
     const listKeyToName: Record<string, string> = Object.fromEntries(
-      listCredentials.map((credential) => [credential.listKey, credential.listKey] as const),
+      listCredentials.map(
+        (credential) => [credential.listKey, credential.displayName ?? credential.listKey] as const,
+      ),
     );
 
     const phoneCache = new Map<string, string | null>();

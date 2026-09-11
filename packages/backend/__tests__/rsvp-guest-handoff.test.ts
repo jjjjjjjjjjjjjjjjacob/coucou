@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregate/dist/esm/component/schema.js";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import { issueListAccess } from "../convex/lib/listAccess";
 import { normalizeAndHashPhoneNumber } from "../convex/lib/phoneHash";
 import schema from "../convex/schema";
 
@@ -160,6 +161,32 @@ async function getRsvp(testBackend: TestBackend, rsvpId: Id<"rsvps">) {
   });
 }
 
+async function issueTestListAccess(
+  testBackend: TestBackend,
+  eventId: Id<"events">,
+  listKey = "ga",
+): Promise<string> {
+  return await testBackend.run(async (databaseContext) => {
+    const existingCredentials = await databaseContext.db.query("listCredentials").collect();
+    let listCredential = existingCredentials.find(
+      (credential) => credential.eventId === eventId && credential.listKey === listKey,
+    );
+    if (!listCredential) {
+      const listCredentialId = await databaseContext.db.insert("listCredentials", {
+        eventId,
+        listKey,
+        password: "",
+        createdAt: Date.now(),
+      });
+      listCredential = await databaseContext.db.get(listCredentialId);
+    }
+    if (!listCredential) throw new Error("Expected list credential");
+    const access = await issueListAccess(databaseContext, listCredential, "no-password");
+    if (!access.ok) throw new Error("Expected list access grant");
+    return access.accessToken;
+  });
+}
+
 describe("guest RSVP handoff", () => {
   it("creates a pending guest RSVP and resolves its handoff phone", async () => {
     const testBackend = setupTestBackend();
@@ -167,6 +194,7 @@ describe("guest RSVP handoff", () => {
 
     const result = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Ava",
@@ -249,16 +277,19 @@ describe("guest RSVP handoff", () => {
     await submissionBackend.mutation(submitRequest, {
       ...submissionArgs,
       eventId: firstEventId,
+      accessToken: await issueTestListAccess(testBackend, firstEventId),
       smsConsent: true,
     });
     await submissionBackend.mutation(submitRequest, {
       ...submissionArgs,
       eventId: firstEventId,
+      accessToken: await issueTestListAccess(testBackend, firstEventId),
       smsConsent: true,
     });
     await submissionBackend.mutation(submitRequest, {
       ...submissionArgs,
       eventId: secondEventId,
+      accessToken: await issueTestListAccess(testBackend, secondEventId),
     });
 
     const scheduledFunctions = await testBackend.run(async (databaseContext) => {
@@ -359,6 +390,7 @@ describe("guest RSVP handoff", () => {
       submissionType === "signed-in" ? api.rsvps.submitRequest : api.rsvps.submitGuestRequest;
     await submissionBackend.mutation(submitRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "dojo",
       listKey: "ga",
       firstName: "Ava",
@@ -421,6 +453,7 @@ describe("guest RSVP handoff", () => {
     });
     const result = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "dojo",
       listKey: "ga",
       firstName: "Ava",
@@ -469,6 +502,7 @@ describe("guest RSVP handoff", () => {
 
     const firstSubmission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "First",
@@ -484,6 +518,7 @@ describe("guest RSVP handoff", () => {
     );
     await signedInBackend.mutation(api.rsvps.submitRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Second",
@@ -496,6 +531,7 @@ describe("guest RSVP handoff", () => {
     });
     const thirdSubmission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Third",
@@ -547,6 +583,7 @@ describe("guest RSVP handoff", () => {
 
     const submission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Delayed",
@@ -594,6 +631,7 @@ describe("guest RSVP handoff", () => {
 
     const submission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Event",
@@ -630,6 +668,7 @@ describe("guest RSVP handoff", () => {
 
     const firstSubmission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "First",
@@ -645,6 +684,7 @@ describe("guest RSVP handoff", () => {
     });
     const secondSubmission = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Later",
@@ -677,9 +717,10 @@ describe("guest RSVP handoff", () => {
       { firstName: "Concurrent", lastName: "Two", phone: "+13104996277" },
     ] as const;
     const submissionResults = await Promise.all(
-      submissionArguments.map((submission) =>
+      submissionArguments.map(async (submission) =>
         testBackend.mutation(api.rsvps.submitGuestRequest, {
           eventId,
+          accessToken: await issueTestListAccess(testBackend, eventId),
           siteKey: "club-chlorine",
           listKey: "ga",
           ...submission,
@@ -717,6 +758,7 @@ describe("guest RSVP handoff", () => {
 
     const result = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Ava",
@@ -741,6 +783,7 @@ describe("guest RSVP handoff", () => {
 
     const result = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Ava",
@@ -780,6 +823,7 @@ describe("guest RSVP handoff", () => {
 
     const result = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId, "vip"),
       siteKey: "club-chlorine",
       listKey: "vip",
       firstName: "Ava",
@@ -856,6 +900,7 @@ describe("guest RSVP handoff", () => {
 
     await authedBackend.mutation(api.rsvps.submitRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Mina",
@@ -893,6 +938,7 @@ describe("guest RSVP handoff", () => {
 
     await authedBackend.mutation(api.rsvps.submitRequest, {
       eventId: firstEventId,
+      accessToken: await issueTestListAccess(testBackend, firstEventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Mina",
@@ -973,6 +1019,7 @@ describe("guest RSVP handoff", () => {
       await authedBackend.mutation(api.rsvps.submitRequest, {
         ...submissionArgs,
         eventId: submittedEventId,
+        accessToken: await issueTestListAccess(testBackend, submittedEventId),
       });
     }
     const rsvp = await testBackend.run(async (databaseContext) => {
@@ -1038,6 +1085,7 @@ describe("guest RSVP handoff", () => {
       await submissionBackend.mutation(submitRequest, {
         ...submissionArgs,
         eventId: firstEventId,
+        accessToken: await issueTestListAccess(testBackend, firstEventId),
         smsConsent,
       });
     }
@@ -1045,6 +1093,7 @@ describe("guest RSVP handoff", () => {
     await submissionBackend.mutation(submitRequest, {
       ...submissionArgs,
       eventId: secondEventId,
+      accessToken: await issueTestListAccess(testBackend, secondEventId),
     });
     const optedOutRsvp = await testBackend.run((databaseContext) =>
       databaseContext.db
@@ -1057,6 +1106,7 @@ describe("guest RSVP handoff", () => {
       await submissionBackend.mutation(submitRequest, {
         ...submissionArgs,
         eventId,
+        accessToken: await issueTestListAccess(testBackend, eventId),
         smsConsent: true,
       });
     }
@@ -1097,10 +1147,12 @@ describe("guest RSVP handoff", () => {
     await authedBackend.mutation(api.rsvps.submitRequest, {
       ...submissionArgs,
       eventId: firstEventId,
+      accessToken: await issueTestListAccess(testBackend, firstEventId),
     });
     await authedBackend.mutation(api.rsvps.submitRequest, {
       ...submissionArgs,
       eventId: secondEventId,
+      accessToken: await issueTestListAccess(testBackend, secondEventId),
     });
     const [firstRsvp, secondRsvp] = await testBackend.run(async (databaseContext) => {
       const rsvps = await databaseContext.db.query("rsvps").collect();
@@ -1163,11 +1215,13 @@ describe("guest RSVP handoff", () => {
     await authedBackend.mutation(api.rsvps.submitRequest, {
       ...submissionArgs,
       eventId: clubEventId,
+      accessToken: await issueTestListAccess(testBackend, clubEventId),
       siteKey: "club-chlorine",
     });
     await authedBackend.mutation(api.rsvps.submitRequest, {
       ...submissionArgs,
       eventId: danzaEventId,
+      accessToken: await issueTestListAccess(testBackend, danzaEventId),
       siteKey: "danza-organica",
     });
 
@@ -1209,6 +1263,7 @@ describe("guest RSVP handoff", () => {
     await authedBackend.mutation(api.rsvps.submitRequest, {
       ...submissionArgs,
       eventId: firstEventId,
+      accessToken: await issueTestListAccess(testBackend, firstEventId),
       smsConsent: true,
       smsConsentIpAddress: "203.0.113.10",
     });
@@ -1222,6 +1277,7 @@ describe("guest RSVP handoff", () => {
     await authedBackend.mutation(api.rsvps.submitRequest, {
       ...submissionArgs,
       eventId: futureEventId,
+      accessToken: await issueTestListAccess(testBackend, futureEventId),
     });
     const inheritedFutureRsvp = await testBackend.run(async (databaseContext) => {
       const rsvps = await databaseContext.db.query("rsvps").collect();
@@ -1233,6 +1289,7 @@ describe("guest RSVP handoff", () => {
     await authedBackend.mutation(api.rsvps.submitRequest, {
       ...submissionArgs,
       eventId: optedOutEventId,
+      accessToken: await issueTestListAccess(testBackend, optedOutEventId),
       smsConsent: false,
     });
     const explicitlyOptedOutRsvp = await testBackend.run(async (databaseContext) => {
@@ -1258,6 +1315,7 @@ describe("guest RSVP handoff", () => {
     await expect(
       authedBackend.mutation(api.rsvps.submitRequest, {
         eventId,
+        accessToken: await issueTestListAccess(testBackend, eventId),
         siteKey: "club-chlorine",
         listKey: "ga",
         firstName: "Mina",
@@ -1273,6 +1331,7 @@ describe("guest RSVP handoff", () => {
     await expect(
       testBackend.mutation(api.rsvps.submitGuestRequest, {
         eventId,
+        accessToken: await issueTestListAccess(testBackend, eventId),
         siteKey: "club-chlorine",
         listKey: "ga",
         firstName: "Ava",
@@ -1306,6 +1365,7 @@ describe("guest RSVP handoff", () => {
 
     await authedBackend.mutation(api.rsvps.submitRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Mina",
@@ -1351,6 +1411,7 @@ describe("guest RSVP handoff", () => {
 
     await authedBackend.mutation(api.rsvps.submitRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Mina",
@@ -1364,6 +1425,7 @@ describe("guest RSVP handoff", () => {
 
     await authedBackend.mutation(api.rsvps.submitRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Nova",
@@ -1396,6 +1458,7 @@ describe("guest RSVP handoff", () => {
 
     const result = await testBackend.mutation(api.rsvps.submitGuestRequest, {
       eventId,
+      accessToken: await issueTestListAccess(testBackend, eventId),
       siteKey: "club-chlorine",
       listKey: "ga",
       firstName: "Ava",

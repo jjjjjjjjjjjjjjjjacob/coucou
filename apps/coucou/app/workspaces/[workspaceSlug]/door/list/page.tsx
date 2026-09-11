@@ -5,6 +5,7 @@ import { useQuery } from "convex/react";
 import { Filter, Search, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
+import { ListName } from "@/components/list-name";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -210,7 +211,7 @@ export default function GuestListPage() {
           <SelectOption value="all">All Lists</SelectOption>
           {(listCredentials ?? []).map((credential) => (
             <SelectOption key={credential._id} value={credential.listKey}>
-              {credential.listKey.toUpperCase()}
+              {credential.displayName ?? credential.listKey.toUpperCase()}
             </SelectOption>
           ))}
         </Select>
@@ -249,7 +250,7 @@ export default function GuestListPage() {
           )}
           {listFilter !== "all" && (
             <Badge variant="secondary" className="gap-1">
-              List: {listFilter.toUpperCase()}
+              List: {<ListName eventId={eventId} listKey={listFilter} />}
               <button
                 onClick={() => setListFilter("all")}
                 className="ml-1 hover:bg-foreground/20 rounded-full p-0.5"
@@ -284,7 +285,9 @@ export default function GuestListPage() {
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-muted-foreground">{rsvp.listKey.toUpperCase()}</span>
+                  <span className="text-muted-foreground">
+                    {<ListName eventId={eventId} listKey={rsvp.listKey} />}
+                  </span>
                 </td>
                 <td className="px-4 py-3">{rsvp.attendees ?? 1}</td>
                 <td className="px-4 py-3 max-w-xs truncate">{rsvp.note || "—"}</td>

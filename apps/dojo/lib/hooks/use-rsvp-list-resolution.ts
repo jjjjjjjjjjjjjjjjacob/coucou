@@ -2,6 +2,7 @@
 
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
+import { resolveRsvpAccess } from "@coucou/sdk/shared/list-access";
 import { useAction } from "convex/react";
 import { useEffect, useState } from "react";
 import { siteConfiguration } from "@/lib/site";
@@ -10,6 +11,7 @@ interface ListResolution {
   eventId: Id<"events">;
   password: string;
   listKey: string | null;
+  displayName?: string;
   matchedPassword: boolean;
 }
 
@@ -23,7 +25,7 @@ export function useRsvpListResolution(eventId: Id<"events">, password: string) {
     const timeout = window.setTimeout(
       async () => {
         try {
-          const result = await resolveList({
+          const result = await resolveRsvpAccess(resolveList, {
             eventId,
             password: normalizedPassword,
             siteKey: siteConfiguration.siteKey,
@@ -33,6 +35,7 @@ export function useRsvpListResolution(eventId: Id<"events">, password: string) {
               eventId,
               password: normalizedPassword,
               listKey: result.ok ? result.listKey : null,
+              displayName: result.ok ? result.displayName : undefined,
               matchedPassword: result.ok && result.matched === "password",
             });
         } catch {
@@ -65,5 +68,10 @@ export function useRsvpListResolution(eventId: Id<"events">, password: string) {
         : resolution.matchedPassword
           ? "matched"
           : "miss-with-fallback";
-  return { resolvedListKey, searchStatus, isResolving };
+  return {
+    resolvedListKey,
+    resolvedListName: resolution?.displayName ?? resolvedListKey?.toUpperCase(),
+    searchStatus,
+    isResolving,
+  };
 }

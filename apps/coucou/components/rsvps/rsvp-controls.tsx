@@ -172,12 +172,14 @@ export function RsvpListKeyControl({
   className,
 }: RsvpListKeyControlProps) {
   const currentListKey = rsvp.listKey;
+  const displayName = (listKey: string) =>
+    listCredentials?.find((list) => list.listKey === listKey)?.displayName ?? listKey.toUpperCase();
   const availableListKeys = listCredentials?.map((credential) => credential.listKey) || [];
 
   if (isReadOnly || availableListKeys.length <= 1) {
     return (
       <span className={cn("block max-w-full truncate", className)}>
-        {currentListKey?.toUpperCase()}
+        {displayName(currentListKey)}
       </span>
     );
   }
@@ -194,7 +196,7 @@ export function RsvpListKeyControl({
           onPointerDown={stopRsvpControlInteractiveEventPropagation}
         >
           {isUpdating && <Spinner className="mr-1 h-3 w-3" />}
-          {!isUpdating && <span className="min-w-0 truncate">{currentListKey?.toUpperCase()}</span>}
+          {!isUpdating && <span className="min-w-0 truncate">{displayName(currentListKey)}</span>}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent onClick={stopRsvpControlInteractiveEventPropagation}>
@@ -204,7 +206,7 @@ export function RsvpListKeyControl({
         >
           {availableListKeys.map((listKey) => (
             <DropdownMenuRadioItem key={listKey} value={listKey}>
-              {listKey.toUpperCase()}
+              {displayName(listKey)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

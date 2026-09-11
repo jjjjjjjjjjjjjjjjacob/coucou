@@ -2,6 +2,7 @@
 
 import { api } from "@convex/_generated/api";
 import { getEventRouteId } from "@coucou/sdk/shared/event-routes";
+import { storeListAccess } from "@coucou/sdk/shared/list-access";
 import { useAction, useQuery } from "convex/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -75,6 +76,7 @@ function PasswordHome() {
         siteKey: siteConfiguration.siteKey,
       });
       if (resolutionResult?.ok && resolutionResult.eventRouteId) {
+        storeListAccess(resolutionResult.eventId, normalizedPassword, resolutionResult);
         // Pass the code along in search params to the event page
         const nextSearchParameters = new URLSearchParams(searchParameters.toString());
         nextSearchParameters.set("password", normalizedPassword);

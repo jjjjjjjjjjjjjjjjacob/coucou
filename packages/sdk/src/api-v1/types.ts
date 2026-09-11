@@ -64,7 +64,13 @@ export interface ApiEventList {
 }
 
 export interface ApiEventDetail extends ApiEvent {
-  lists: { listKey: string; isPasswordProtected: boolean; generatesQrCode: boolean }[];
+  lists: {
+    listKey: string;
+    displayName?: string;
+    archivedAt?: number;
+    isPasswordProtected: boolean;
+    generatesQrCode: boolean;
+  }[];
   rsvpForm: {
     attendanceQuestionEnabled: boolean;
     maxAttendees: number;

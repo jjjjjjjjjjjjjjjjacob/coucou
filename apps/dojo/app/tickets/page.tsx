@@ -191,7 +191,7 @@ function TicketCard({ ticket }: { ticket: UserTicket }) {
           </Badge>
           {rsvp.listKey && (
             <Badge variant="outline" className="text-xs">
-              {rsvp.listKey.toUpperCase()}
+              {rsvp.listDisplayName ?? rsvp.listKey.toUpperCase()}
             </Badge>
           )}
         </div>

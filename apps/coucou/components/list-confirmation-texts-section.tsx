@@ -11,6 +11,8 @@ import {
 
 export interface ListConfirmationTextRow {
   listKey: string;
+  displayName?: string;
+  archived?: boolean;
   approvalMessage: string;
 }
 
@@ -48,7 +50,7 @@ export function ListConfirmationTextsSection<ListRow extends ListConfirmationTex
 }: ListConfirmationTextsSectionProps<ListRow>) {
   const namedLists = lists
     .map((list, listIndex) => ({ list, listIndex }))
-    .filter(({ list }) => list.listKey.trim().length > 0);
+    .filter(({ list }) => !list.archived && (list.displayName ?? list.listKey).trim().length > 0);
 
   return (
     <SectionCard
@@ -59,7 +61,7 @@ export function ListConfirmationTextsSection<ListRow extends ListConfirmationTex
       {namedLists.length > 0 ? (
         <div className="space-y-3">
           {namedLists.map(({ list, listIndex }) => {
-            const trimmedListKey = list.listKey.trim();
+            const trimmedListKey = (list.displayName ?? list.listKey).trim();
             const qrAttachmentControlsEnabled = Boolean(
               resolveQrAttachmentEnabled && onQrAttachmentChange,
             );

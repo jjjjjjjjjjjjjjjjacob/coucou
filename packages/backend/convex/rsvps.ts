@@ -11,6 +11,8 @@ import { resolveCanonicalClerkUserId, resolveCanonicalRsvpId } from "./lib/canon
 import { generateRsvpHandoffToken } from "./lib/codeGenerators";
 import { buildGuestClerkUserId, isGuestClerkUserId } from "./lib/guestIdentity";
 import { appendInviterHistoryForContact } from "./lib/inviterHistory";
+import { requireListAccess } from "./lib/listAccess";
+import { resolveListDisplayName } from "./lib/listIdentity";
 import { hashOpaqueValue, normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import { obfuscatePhoneNumber } from "./lib/phoneUtils";
 import {
@@ -143,8 +145,6 @@ async function buildReferralPatch(
     referredByName: resolveReferralDisplayName(referrer),
   };
 }
-
-const RSVP_HANDOFF_TTL_MS = 15 * 60 * 1000;
 
 function normalizeOptionalText(value: string | null | undefined): string | undefined {
   const trimmedValue = value?.trim();
@@ -474,6 +474,7 @@ const authenticatedRsvpSubmissionValidator = v.object(authenticatedRsvpSubmissio
 async function submitAuthenticatedRequest(
   ctx: MutationCtx,
   args: Infer<typeof authenticatedRsvpSubmissionValidator>,
+  trustedHandoff?: Doc<"rsvpGuestHandoffs">,
 ) {
   // Require authenticated user
   const identity = await ctx.auth.getUserIdentity();
@@ -497,6 +498,24 @@ async function submitAuthenticatedRequest(
     submittedAttendanceStatus,
     sanitizedSmsConsentIpAddress,
   } = await prepareRsvpSubmission(ctx, args, clerkUserId);
+  const existingAccessRsvp = await ctx.db
+    .query("rsvps")
+    .withIndex("by_event_user", (builder) =>
+      builder.eq("eventId", args.eventId).eq("clerkUserId", clerkUserId),
+    )
+    .unique();
+  if (!trustedHandoff && (!existingAccessRsvp || existingAccessRsvp.listKey !== args.listKey)) {
+    await requireListAccess(ctx, args, {
+      clerkUserId,
+      phoneHash: args.phone
+        ? (await normalizeAndHashPhoneNumber(args.phone)).phoneHash
+        : user?.phoneHash,
+    });
+  } else if (trustedHandoff?.listAccessGrantId) {
+    const grant = await ctx.db.get(trustedHandoff.listAccessGrantId);
+    if (!grant) throw new Error("Your RSVP access expired.");
+    await requireListAccess(ctx, args, { clerkUserId, phoneHash: trustedHandoff.phoneHash }, grant);
+  }
   const submittedFirstName = args.firstName.trim();
   const submittedLastName = args.lastName.trim();
   if (!submittedFirstName) {
@@ -694,6 +713,7 @@ export const submitGuestRequest = mutation({
     }
 
     const { normalizedPhoneNumber, phoneHash } = await normalizeAndHashPhoneNumber(args.phone);
+    const grant = await requireListAccess(ctx, args, { phoneHash });
     const guestClerkUserId = buildGuestClerkUserId(phoneHash);
     const guestPhoneObfuscated = obfuscatePhoneNumber(normalizedPhoneNumber);
     const guestName = resolveSubmittedGuestName(submittedFirstName, submittedLastName);
@@ -840,9 +860,10 @@ export const submitGuestRequest = mutation({
 
     const rsvpHandoffToken = generateRsvpHandoffToken();
     const rsvpHandoffTokenHash = await hashOpaqueValue(rsvpHandoffToken);
-    const expiresAt = now + RSVP_HANDOFF_TTL_MS;
+    const expiresAt = grant.expiresAt;
     await ctx.db.insert("rsvpGuestHandoffs", {
       tokenHash: rsvpHandoffTokenHash,
+      listAccessGrantId: grant._id,
       rsvpId,
       phoneNumber: normalizedPhoneNumber,
       phoneHash,
@@ -931,6 +952,7 @@ export const prepareGuestRequest = mutation({
     const lastName = args.lastName.trim();
     if (!firstName || !lastName) throw new Error("First and last name are required");
     const { normalizedPhoneNumber, phoneHash } = await normalizeAndHashPhoneNumber(args.phone);
+    const grant = await requireListAccess(ctx, args, { phoneHash });
     const { now } = await prepareRsvpSubmission(ctx, args, buildGuestClerkUserId(phoneHash));
     const list = await ctx.db
       .query("listCredentials")
@@ -939,10 +961,12 @@ export const prepareGuestRequest = mutation({
       .first();
     if (!list) throw new Error("This RSVP list is no longer available.");
     const rsvpHandoffToken = generateRsvpHandoffToken();
-    const expiresAt = now + RSVP_HANDOFF_TTL_MS;
+    const expiresAt = grant.expiresAt;
+    const { accessToken: _accessToken, ...submission } = args;
     await ctx.db.insert("rsvpGuestHandoffs", {
+      listAccessGrantId: grant._id,
       tokenHash: await hashOpaqueValue(rsvpHandoffToken),
-      submission: { ...args, firstName, lastName, phone: normalizedPhoneNumber },
+      submission: { ...submission, firstName, lastName, phone: normalizedPhoneNumber },
       phoneNumber: normalizedPhoneNumber,
       phoneHash,
       createdAt: now,
@@ -984,7 +1008,7 @@ export const completeGuestRequest = internalMutation({
       .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("listKey"), submission.listKey))
       .first();
     if (!list) throw new Error("This RSVP list is no longer available.");
-    await submitAuthenticatedRequest(ctx, submission);
+    await submitAuthenticatedRequest(ctx, submission, handoff);
     const rsvp = await ctx.db
       .query("rsvps")
       .withIndex("by_event_user", (queryBuilder) =>
@@ -1739,6 +1763,7 @@ async function collectUserSharedEvents(
         eventHostNames: event?.hosts ?? [],
         productionCompany: event?.productionCompany,
         listKey: rsvp.listKey,
+        listDisplayName: await resolveListDisplayName(ctx, rsvp.eventId, rsvp.listKey),
         smsConsent: rsvp.smsConsent ?? false,
         shareContact: rsvp.shareContact,
         updatedAt: rsvp.updatedAt,
@@ -3031,6 +3056,7 @@ export const statusForUserEvent = query({
     return {
       rsvpId: chosen._id,
       listKey: chosen.listKey,
+      listDisplayName: await resolveListDisplayName(ctx, chosen.eventId, chosen.listKey),
       status: resolveApprovalStatus(chosen),
       approvalStatus: resolveApprovalStatus(chosen),
       attendanceStatus: sanitizeAttendanceStatus(chosen.attendanceStatus),
@@ -3077,6 +3103,7 @@ export const statusForUserEventServer = query({
     return {
       rsvpId: chosen._id,
       listKey: chosen.listKey,
+      listDisplayName: await resolveListDisplayName(ctx, chosen.eventId, chosen.listKey),
       status: resolveApprovalStatus(chosen),
       approvalStatus: resolveApprovalStatus(chosen),
       attendanceStatus: sanitizeAttendanceStatus(chosen.attendanceStatus),
@@ -3132,6 +3159,7 @@ export const statusForUserEventByRouteId = query({
     return {
       rsvpId: chosen._id,
       listKey: chosen.listKey,
+      listDisplayName: await resolveListDisplayName(ctx, chosen.eventId, chosen.listKey),
       status: resolveApprovalStatus(chosen),
       approvalStatus: resolveApprovalStatus(chosen),
       attendanceStatus: sanitizeAttendanceStatus(chosen.attendanceStatus),
@@ -3192,6 +3220,7 @@ export const statusForUserEventServerByRouteId = query({
     return {
       rsvpId: chosen._id,
       listKey: chosen.listKey,
+      listDisplayName: await resolveListDisplayName(ctx, chosen.eventId, chosen.listKey),
       status: resolveApprovalStatus(chosen),
       approvalStatus: resolveApprovalStatus(chosen),
       attendanceStatus: sanitizeAttendanceStatus(chosen.attendanceStatus),
@@ -3394,7 +3423,10 @@ async function collectUserTickets(
       }
 
       return {
-        rsvp,
+        rsvp: {
+          ...rsvp,
+          listDisplayName: await resolveListDisplayName(ctx, rsvp.eventId, rsvp.listKey),
+        },
         event,
         redemption: redemptionInfo,
       };

@@ -2,6 +2,7 @@
 
 import { Columns, X } from "lucide-react";
 import { useRsvpTableContext } from "@/app/workspaces/[workspaceSlug]/host/rsvps/page";
+import { ListName } from "@/components/list-name";
 import type { ApprovalStatusOption } from "@/components/rsvps/rsvp-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -146,7 +147,7 @@ export function RsvpToolbar({
           <SelectOption value="all">All Lists</SelectOption>
           {uniqueListKeys.map((listKey) => (
             <SelectOption key={listKey} value={listKey}>
-              {listKey.toUpperCase()}
+              {<ListName eventId={eventId} listKey={listKey} />}
             </SelectOption>
           ))}
         </Select>
@@ -339,7 +340,7 @@ export function RsvpToolbar({
               variant="secondary"
               className="gap-1 border-[var(--border-subtle)] bg-[var(--surface-3)] text-[var(--text-primary)]"
             >
-              List: {listFilter.toUpperCase()}
+              List: {<ListName eventId={eventId} listKey={listFilter} />}
               <button
                 onClick={() => setListFilter("all")}
                 className="ml-1 hover:bg-[var(--surface-4)] rounded-full p-0.5"

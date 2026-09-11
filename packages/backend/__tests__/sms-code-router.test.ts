@@ -4,6 +4,7 @@ import aggregateComponentSchema from "../../../node_modules/@convex-dev/aggregat
 import { internal } from "../convex/_generated/api";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { buildGuestClerkUserId } from "../convex/lib/guestIdentity";
+import { assignListCode, releaseRotatedPassword } from "../convex/lib/listIdentity";
 import { normalizeAndHashPhoneNumber } from "../convex/lib/phoneHash";
 import { obfuscatePhoneNumber } from "../convex/lib/phoneUtils";
 import schema from "../convex/schema";
@@ -1106,5 +1107,176 @@ describe("deterministic SMS code router", () => {
         .collect();
     });
     expect(targetRsvps).toHaveLength(0);
+  });
+  it.each([
+    false,
+    true,
+  ])("keeps verified SMS identity and original expiry through rotation (archive: %s)", async (archive) => {
+    const backend = setupTestBackend();
+    const destination = await seedEvent(backend, {
+      name: "Session night",
+      code: "BEFORE",
+      customFields: [{ key: "city", label: "city", required: true }],
+    });
+    const phoneNumber = "+15551238801";
+    await processInbound(backend, { messageSid: "SM_before", phoneNumber, body: "BEFORE" });
+    const originalSession = await backend.run((context) =>
+      context.db.query("smsRsvpSessions").unique(),
+    );
+    await backend.run(async (context) => {
+      if (!destination.listCredentialId) throw new Error("Expected credential");
+      await context.db.patch(destination.listCredentialId, {
+        password: "AFTER",
+        passwordNormalized: "after",
+        archivedAt: archive ? Date.now() : undefined,
+      });
+    });
+    expect(
+      await processInbound(backend, {
+        messageSid: "SM_partial_after",
+        phoneNumber,
+        body: "Taylor Morgan",
+      }),
+    ).toMatchObject({ outcome: "session_pending" });
+    expect(
+      (await backend.run((context) => context.db.query("smsRsvpSessions").unique()))?.expiresAt,
+    ).toBe(originalSession?.expiresAt);
+    expect(
+      await processInbound(backend, {
+        messageSid: "SM_complete_after",
+        phoneNumber,
+        body: "Brooklyn",
+      }),
+    ).toMatchObject({ outcome: "submitted" });
+    expect((await backend.run((context) => context.db.query("rsvps").unique()))?.listKey).toBe(
+      "ga",
+    );
+    const fresh = await processInbound(backend, {
+      messageSid: "SM_fresh_old",
+      phoneNumber: "+15551238802",
+      body: "BEFORE",
+    });
+    expect(fresh.outcome).not.toBe("session_pending");
+    expect(fresh.outcome).not.toBe("submitted");
+  });
+
+  it("routes repeated old blast invitations to the new owner while verified sessions keep their destination", async () => {
+    const backend = setupTestBackend();
+    const destination = await seedEvent(backend, { name: "Invitation night", code: "PRIVATE" });
+    const firstPhone = "+15551238811";
+    const secondPhone = "+15551238812";
+    const nextListId = await backend.run(async (context) => {
+      const now = Date.now();
+      const nextList = await context.db.insert("listCredentials", {
+        eventId: destination.eventId,
+        listKey: "new",
+        password: "OTHER",
+        passwordNormalized: "other",
+        createdAt: now,
+      });
+      for (const suffix of ["first", "second"]) {
+        const blastId = await context.db.insert("textBlasts", {
+          eventId: destination.eventId,
+          name: suffix,
+          message: "Reply JOIN",
+          targetLists: ["ga"],
+          recipientCount: 2,
+          sentCount: 2,
+          failedCount: 0,
+          sentBy: "host",
+          status: "sent",
+          createdAt: now,
+          updatedAt: now,
+        });
+        const actionId = await context.db.insert("textBlastReplyActions", {
+          textBlastId: blastId,
+          replyCode: "JOIN",
+          replyCodeNormalized: "join",
+          targetEventId: destination.eventId,
+          targetListKey: "ga",
+          isEnabled: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+        for (const phoneNumber of [firstPhone, secondPhone]) {
+          const { phoneHash } = await normalizeAndHashPhoneNumber(phoneNumber);
+          await context.db.insert("textBlastRecipients", {
+            textBlastId: blastId,
+            phoneHash,
+            status: "sent",
+            sourceEventIds: [destination.eventId],
+            sourceRsvpIds: [],
+            sourceListKeys: ["ga"],
+            recipientClerkUserIds: [],
+            sentAt: now,
+            createdAt: now,
+            updatedAt: now,
+          });
+          await context.db.insert("smsCodeClaims", {
+            normalizedCode: "join",
+            kind: "blast_action",
+            eventId: destination.eventId,
+            replyActionId: actionId,
+            textBlastId: blastId,
+            phoneHash,
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+      return nextList;
+    });
+    expect(
+      await processInbound(backend, {
+        messageSid: "SM_old_invite",
+        phoneNumber: firstPhone,
+        body: "JOIN",
+      }),
+    ).toMatchObject({ outcome: "session_pending" });
+    await backend.run(async (context) => {
+      if (!destination.listCredentialId) throw new Error("Expected original list");
+      await context.db.patch(destination.listCredentialId, { archivedAt: Date.now() });
+      const event = await context.db.get(destination.eventId);
+      const nextList = await context.db.get(nextListId);
+      if (!event || !nextList) throw new Error("Expected destination");
+      await assignListCode(context, event, nextList, "join", "blast");
+      // Rotating a taken-over password must retain the independently sent invitations,
+      // including invitations whose stored destination is the originally archived list.
+      const previous = { ...nextList, password: "JOIN", passwordNormalized: "join" };
+      await releaseRotatedPassword(context, previous, nextList);
+      await context.db.patch(destination.listCredentialId, { archivedAt: undefined });
+    });
+    expect(
+      await processInbound(backend, {
+        messageSid: "SM_fresh_invite",
+        phoneNumber: secondPhone,
+        body: "JOIN",
+      }),
+    ).toMatchObject({ outcome: "session_pending" });
+    const outsider = await processInbound(backend, {
+      messageSid: "SM_outsider",
+      phoneNumber: "+15551238813",
+      body: "JOIN",
+    });
+    expect(outsider.outcome).not.toBe("session_pending");
+    expect(outsider.outcome).not.toBe("submitted");
+    expect(
+      await processInbound(backend, {
+        messageSid: "SM_verified_finish",
+        phoneNumber: firstPhone,
+        body: "Original Guest",
+      }),
+    ).toMatchObject({ outcome: "submitted" });
+    expect(
+      await processInbound(backend, {
+        messageSid: "SM_new_finish",
+        phoneNumber: secondPhone,
+        body: "New Guest",
+      }),
+    ).toMatchObject({ outcome: "submitted" });
+    const rsvps = await backend.run((context) => context.db.query("rsvps").collect());
+    expect(rsvps.find((rsvp) => rsvp.userName === "Original Guest")?.listKey).toBe("ga");
+    expect(rsvps.find((rsvp) => rsvp.userName === "New Guest")?.listKey).toBe("new");
   });
 });

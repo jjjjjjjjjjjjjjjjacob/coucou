@@ -8,6 +8,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import React from "react";
+import { ListName } from "@/components/list-name";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -287,7 +288,17 @@ export function useGuestDirectoryTable({
                             {eventEntry.eventName}
                           </span>
                           <span className="shrink-0 text-xs text-[var(--text-secondary)]">
-                            {eventEntry.listKey ? `${eventEntry.listKey} · ` : ""}
+                            {eventEntry.listKey ? (
+                              <>
+                                <ListName
+                                  eventId={eventEntry.eventId}
+                                  listKey={eventEntry.listKey}
+                                />{" "}
+                                ·{" "}
+                              </>
+                            ) : (
+                              ""
+                            )}
                             {eventEntry.approvalStatus}
                           </span>
                         </div>

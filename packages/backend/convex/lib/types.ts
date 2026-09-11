@@ -115,6 +115,8 @@ export type ListCredentialPatch = Partial<
   Pick<
     Doc<"listCredentials">,
     | "listKey"
+    | "displayName"
+    | "archivedAt"
     | "password"
     | "passwordNormalized"
     | "generateQR"
@@ -131,6 +133,8 @@ export type ListCredentialPatch = Partial<
  * List update type for events
  */
 export type ListUpdate = {
+  displayName?: string;
+  archived?: boolean;
   id?: Id<"listCredentials">;
   listKey: string;
   password?: string;
@@ -145,6 +149,7 @@ export type ListUpdate = {
  * Credential data for event creation
  */
 export type CredentialData = {
+  displayName?: string;
   listKey: string;
   password?: string;
   passwordNormalized?: string;

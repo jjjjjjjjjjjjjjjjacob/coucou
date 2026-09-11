@@ -1,3 +1,4 @@
+import { assignListCode, effectiveCodeList } from "./lib/listIdentity";
 /**
  * Text blast management API
  * Handles bulk SMS campaigns for events
@@ -12,7 +13,7 @@ import {
   messageContainsQrCodeUrlVariable,
   resolveMessageTemplateFirstName,
 } from "@coucou/sdk/shared/message-template";
-import { v } from "convex/values";
+import { ConvexError as PublicConvexError, v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -267,7 +268,7 @@ async function ensureListExistsForEvent(
     .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("listKey"), targetListKey))
     .unique();
 
-  if (!listCredential) {
+  if (!listCredential || listCredential.archivedAt !== undefined) {
     throw new Error(`Destination list "${targetListKey}" was not found for the selected event`);
   }
 
@@ -275,10 +276,10 @@ async function ensureListExistsForEvent(
 }
 
 function throwSmsCodeConflict(): never {
-  throw new ConvexError(
-    "This SMS code is unavailable. Choose another code and try again.",
-    "SMS_CODE_CONFLICT",
-  );
+  throw new PublicConvexError({
+    code: "SMS_CODE_CONFLICT",
+    message: "This SMS code is unavailable. Choose another code and try again.",
+  });
 }
 
 async function hasExecutableEventCodeCollision(
@@ -294,11 +295,13 @@ async function hasExecutableEventCodeCollision(
     )
     .collect();
   for (const matchingCredential of matchingCredentials) {
-    const event = await ctx.db.get(matchingCredential.eventId);
+    const owner = await effectiveCodeList(ctx, matchingCredential, normalizedCode);
+    if (!owner || owner.archivedAt !== undefined) continue;
+    const event = await ctx.db.get(owner.eventId);
     if (
       event &&
       isSmsExecutableEvent(event, now) &&
-      (!destination || !isReplyActionForListCredential(destination, matchingCredential))
+      (!destination || !isReplyActionForListCredential(destination, owner))
     ) {
       return true;
     }
@@ -324,6 +327,7 @@ export async function hasActiveReplyActionCollision(
     normalizedCode: string;
     recipientPhoneHashes: ReadonlySet<string>;
     excludedTextBlastId?: Id<"textBlasts">;
+    destination?: { targetEventId: Id<"events">; targetListKey: string };
     now: number;
   },
 ): Promise<boolean> {
@@ -363,6 +367,13 @@ export async function hasActiveReplyActionCollision(
       continue;
     }
 
+    const owner = await effectiveCodeList(ctx, targetList, args.normalizedCode);
+    if (!owner || owner.archivedAt !== undefined) continue;
+    if (
+      owner?.eventId === args.destination?.targetEventId &&
+      owner?.listKey === args.destination?.targetListKey
+    )
+      continue;
     for (const phoneHash of args.recipientPhoneHashes) {
       const claim = await ctx.db
         .query("smsCodeClaims")
@@ -525,6 +536,24 @@ async function reserveReplyActionClaims(
           const claimedReplyAction = existingClaim.replyActionId
             ? await ctx.db.get(existingClaim.replyActionId)
             : null;
+          if (claimedReplyAction) {
+            const originalList = await ctx.db
+              .query("listCredentials")
+              .withIndex("by_event_key", (builder) =>
+                builder
+                  .eq("eventId", claimedReplyAction.targetEventId)
+                  .eq("listKey", claimedReplyAction.targetListKey),
+              )
+              .unique();
+            const owner = originalList
+              ? await effectiveCodeList(ctx, originalList, replyAction.replyCodeNormalized)
+              : null;
+            if (
+              owner?.eventId === replyAction.targetEventId &&
+              owner.listKey === replyAction.targetListKey
+            )
+              continue;
+          }
           const claimedTargetEvent = claimedReplyAction
             ? await ctx.db.get(claimedReplyAction.targetEventId)
             : null;
@@ -628,6 +657,15 @@ export async function replaceReplyActionsForBlast(
 
   const now = Date.now();
   for (const replyAction of storedReplyActions) {
+    if (replyAction.isEnabled) {
+      const event = await ctx.db.get(replyAction.targetEventId);
+      const list = await ensureListExistsForEvent(
+        ctx,
+        replyAction.targetEventId,
+        replyAction.targetListKey,
+      );
+      if (event) await assignListCode(ctx, event, list, replyAction.replyCodeNormalized, "blast");
+    }
     await ctx.db.insert("textBlastReplyActions", {
       textBlastId: args.textBlastId,
       ...replyAction,
@@ -2698,6 +2736,7 @@ export const validateReplyActionCodes = query({
           normalizedCode: sanitizedReplyCode.replyCodeNormalized,
           recipientPhoneHashes,
           excludedTextBlastId: scopedBlast?._id,
+          destination,
           now,
         })
       ) {
@@ -2742,7 +2781,7 @@ export const getReplyActionTargetOptions = query({
       eventSecondaryTitle?: string;
       eventDate: number;
       eventTimezone?: string;
-      lists: Array<{ listKey: string; password?: string }>;
+      lists: Array<{ listKey: string; displayName?: string; password?: string }>;
     }>
   > => {
     const identity = await ctx.auth.getUserIdentity();
@@ -2775,8 +2814,10 @@ export const getReplyActionTargetOptions = query({
         eventDate: event.eventDate,
         eventTimezone: event.eventTimezone,
         lists: credentials
+          .filter((credential) => credential.archivedAt === undefined)
           .map((credential) => ({
             listKey: credential.listKey,
+            displayName: credential.displayName ?? credential.listKey,
             password: credential.password?.trim() || undefined,
           }))
           .sort((firstList, secondList) => firstList.listKey.localeCompare(secondList.listKey)),

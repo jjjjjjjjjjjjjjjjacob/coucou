@@ -230,7 +230,7 @@ export default function ScanPage() {
         {status && (status.status === "valid" || status.status === "redeemed") && (
           <div>
             <div>Name: {status.name ?? "(unknown)"}</div>
-            <div>List: {status.listKey}</div>
+            <div>List: {status.listDisplayName}</div>
           </div>
         )}
         <div className="flex gap-2">

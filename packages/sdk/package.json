@@ -30,6 +30,7 @@
     "./theming/presets": "./src/theming/presets.ts",
     "./theming/build-event-theme": "./src/theming/build-event-theme.ts",
     "./theming/resolve-preset": "./src/theming/resolve-preset.ts",
+    "./shared/list-access": "./src/shared/list-access.ts",
     "./shared/rsvp-source": "./src/shared/rsvp-source.ts"
   }
 }

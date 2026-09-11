@@ -20,6 +20,7 @@ export function createGuestSnapshot(
       rsvpId: guest.rsvpId,
       name: guest.name,
       listKey: guest.listKey,
+      listDisplayName: guest.listDisplayName,
       approvalStatus: guest.approvalStatus,
       attendanceStatus: guest.attendanceStatus,
       attendees: guest.attendees,

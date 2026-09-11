@@ -86,6 +86,8 @@ import { cn } from "@/lib/utils";
 // `false` forces deferral. Wired into the per-list controls in
 // `StepLists`.
 type ListRow = {
+  id?: Id<"listCredentials">;
+  stableListKey?: string;
   listKey: string;
   password: string;
   shouldGenerateQrCode: boolean;
@@ -150,6 +152,7 @@ type DraftEventPatchPayload = {
 type DraftEventUnsetField = "rsvpConfirmationMessage";
 
 type DraftListPayload = {
+  displayName?: string;
   id?: Id<"listCredentials">;
   listKey: string;
   password?: string;
@@ -426,6 +429,7 @@ export default function EventCreateWizard() {
   const [draftEventId, setDraftEventId] = React.useState<Id<"events"> | null>(
     draftIdParam as Id<"events"> | null,
   );
+  const [savedListsRevision, setSavedListsRevision] = React.useState(0);
   const [hydratedDraftEventId, setHydratedDraftEventId] = React.useState<Id<"events"> | null>(null);
   const draftQueryArgs = React.useMemo(() => {
     if (!draftEventId || !workspaceScope) return null;
@@ -681,34 +685,41 @@ export default function EventCreateWizard() {
     }
     if (draftCredentials.length > 0) {
       setLists(
-        draftCredentials.map((credential) => {
-          const autoApproveDelay = splitAutoApproveDelayMinutes(credential.autoApproveDelayMinutes);
-          return {
-            listKey: credential.listKey,
-            password: credential.password ?? "",
-            shouldGenerateQrCode: credential.generateQR ?? false,
-            sendQrOnApprovalOverride:
-              typeof credential.sendQrOnApproval === "boolean"
-                ? credential.sendQrOnApproval
-                : typeof credential.defersQrDelivery === "boolean"
-                  ? !credential.defersQrDelivery
-                  : undefined,
-            includeTicketLinkOnApproval: credential.includeTicketLinkOnApproval,
-            approvalMessage: credential.approvalMessage ?? "",
-            autoApproveLimit:
-              typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
-                ? String(credential.autoApproveLimit)
-                : "",
-            autoApproveDelay: autoApproveDelay.value,
-            autoApproveDelayUnit: autoApproveDelay.unit,
-          };
-        }),
+        draftCredentials
+          .filter((credential) => credential.archivedAt === undefined)
+          .map((credential) => {
+            const autoApproveDelay = splitAutoApproveDelayMinutes(
+              credential.autoApproveDelayMinutes,
+            );
+            return {
+              id: credential._id as Id<"listCredentials">,
+              stableListKey: credential.listKey,
+              listKey: credential.displayName ?? credential.listKey,
+              password: credential.password ?? "",
+              shouldGenerateQrCode: credential.generateQR ?? false,
+              sendQrOnApprovalOverride:
+                typeof credential.sendQrOnApproval === "boolean"
+                  ? credential.sendQrOnApproval
+                  : typeof credential.defersQrDelivery === "boolean"
+                    ? !credential.defersQrDelivery
+                    : undefined,
+              includeTicketLinkOnApproval: credential.includeTicketLinkOnApproval,
+              approvalMessage: credential.approvalMessage ?? "",
+              autoApproveLimit:
+                typeof credential.autoApproveLimit === "number" && credential.autoApproveLimit > 0
+                  ? String(credential.autoApproveLimit)
+                  : "",
+              autoApproveDelay: autoApproveDelay.value,
+              autoApproveDelayUnit: autoApproveDelay.unit,
+            };
+          }),
       );
     } else {
       setLists(createListRows(eventWizardDefaults.listKeys));
     }
 
     hasAppliedNewEventDefaults.current = true;
+    setSavedListsRevision(draftCredentials[0]?.listsRevision ?? draftEvent.listsRevision ?? 0);
     setHydratedDraftEventId(draftEventId);
     setFurthest(STEPS.length - 1);
   }, [
@@ -880,8 +891,9 @@ export default function EventCreateWizard() {
           list.autoApproveDelayUnit,
         );
         return {
-          id: credentialIdByKey.get(listKey),
-          listKey,
+          id: list.id ?? credentialIdByKey.get(listKey),
+          listKey: list.stableListKey ?? listKey,
+          displayName: listKey,
           password: trimmedPassword,
           generateQR: list.shouldGenerateQrCode,
           sendQrOnApproval: list.sendQrOnApprovalOverride,
@@ -930,6 +942,7 @@ export default function EventCreateWizard() {
         patch,
         unsetFields: unsetFields.length > 0 ? unsetFields : undefined,
         lists: listsForPatch,
+        expectedListsRevision: savedListsRevision,
       });
       toast.success("Draft saved");
       router.replace(draftsPath);
@@ -991,6 +1004,7 @@ export default function EventCreateWizard() {
           patch,
           unsetFields: unsetFields.length > 0 ? unsetFields : undefined,
           lists: listsForPatch,
+          expectedListsRevision: savedListsRevision,
         });
         toast.success("Event published");
         router.replace(eventsPath);

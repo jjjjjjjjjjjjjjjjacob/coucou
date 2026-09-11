@@ -34,6 +34,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 import QRCode from "react-qr-code";
 import { toast } from "sonner";
+import { ListName } from "@/components/list-name";
 import {
   APPROVAL_STATUS_OPTIONS,
   type ApprovalStatusOption,
@@ -1228,9 +1229,14 @@ export function GuestManager({
   }, [deleteRsvps, getRsvpGuestName, rsvpsPendingDeletion, workspaceScope]);
 
   const listKeyColumnContentValues = React.useMemo(() => {
-    const visibleListKeys = rsvps.map((rsvp) => rsvp.listKey?.toUpperCase() ?? "");
+    const displayName = (listKey: string) =>
+      listCredentials?.find((credential) => credential.listKey === listKey)?.displayName ??
+      listKey.toUpperCase();
+    const visibleListKeys = rsvps.map((rsvp) => displayName(rsvp.listKey ?? ""));
     const availableListKeys =
-      listCredentials?.map((credential) => credential.listKey.toUpperCase()) ?? [];
+      listCredentials?.map(
+        (credential) => credential.displayName ?? credential.listKey.toUpperCase(),
+      ) ?? [];
 
     return Array.from(new Set([...visibleListKeys, ...availableListKeys])).filter(
       (listKey) => listKey.length > 0,
@@ -3156,7 +3162,7 @@ export function GuestManager({
                 onSelect={() => handleContextListChange(listKey)}
               >
                 {isUpdatingList && listKey === rsvp.listKey && <Spinner className="h-3 w-3" />}
-                {listKey.toUpperCase()}
+                {<ListName eventId={eventId} listKey={listKey} />}
               </ContextMenuItem>
             ))}
           </ContextMenuSubContent>
@@ -3676,7 +3682,7 @@ export function GuestManager({
                             key={listKey}
                             onSelect={() => handleBulkListChange(listKey)}
                           >
-                            {listKey.toUpperCase()}
+                            {<ListName eventId={eventId} listKey={listKey} />}
                           </ContextMenuItem>
                         ))}
                       </ContextMenuSubContent>
@@ -3865,7 +3871,9 @@ export function GuestManager({
                   {qr.listKey && (
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">List:</span>
-                      <span className="text-sm">{qr.listKey.toUpperCase()}</span>
+                      <span className="text-sm">
+                        {<ListName eventId={eventId} listKey={qr.listKey} />}
+                      </span>
                     </div>
                   )}
                 </div>
