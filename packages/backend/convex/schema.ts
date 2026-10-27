@@ -1264,7 +1264,8 @@ export default defineSchema({
     occurredAt: v.number(),
   })
     .index("by_endpoint", ["endpointId", "occurredAt"])
-    .index("by_workspace", ["workspaceId", "occurredAt"]),
+    .index("by_workspace", ["workspaceId", "occurredAt"])
+    .index("by_rsvp", ["rsvpId"]),
 
   // Durable phoneHash → plaintext E.164 map for guest identity in partner webhooks.
   // Guest RSVPs only persist a phone hash; partner integrations need the real number
