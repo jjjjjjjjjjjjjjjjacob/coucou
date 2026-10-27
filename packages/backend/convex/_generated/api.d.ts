@@ -101,6 +101,7 @@ import type * as migrations from "../migrations.js";
 import type * as mobileStaff from "../mobileStaff.js";
 import type * as notifications from "../notifications.js";
 import type * as orgMemberships from "../orgMemberships.js";
+import type * as partnerErasure from "../partnerErasure.js";
 import type * as plaintextBackfill from "../plaintextBackfill.js";
 import type * as plaintextBackfillNode from "../plaintextBackfillNode.js";
 import type * as profileValues from "../profileValues.js";
@@ -231,6 +232,7 @@ declare const fullApi: ApiFromModules<{
   mobileStaff: typeof mobileStaff;
   notifications: typeof notifications;
   orgMemberships: typeof orgMemberships;
+  partnerErasure: typeof partnerErasure;
   plaintextBackfill: typeof plaintextBackfill;
   plaintextBackfillNode: typeof plaintextBackfillNode;
   profileValues: typeof profileValues;

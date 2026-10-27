@@ -184,6 +184,22 @@ Content-Type: application/json
   "smsConsentIpAddress": "203.0.113.42"
 }`;
 
+const EXAMPLE_ERASURE_REQUEST = `POST /api/v1/erasures
+Authorization: Bearer coucou_sk_…
+Content-Type: application/json
+
+{ "phone": "+15551234567", "rsvpIds": ["jh7…"] }
+
+200 OK
+{
+  "erasure": {
+    "status": "completed",
+    "erasedRsvpIds": ["jh7…"],
+    "retainedRsvpIds": [],
+    "completedAt": 1753000000000
+  }
+}`;
+
 const EXAMPLE_UPDATE_EVENT_REQUEST = `PATCH /api/v1/events/abc123
 Authorization: Bearer coucou_sk_…
 Content-Type: application/json
@@ -602,9 +618,45 @@ function PartnerApiDocumentation({
             <EndpointHeading method="DELETE" path="/rsvps/{rsvpId}" scope="rsvps:write" />
             <DocParagraph>
               Soft cancel — sets <InlineCode>attendanceStatus: "no"</InlineCode>. The RSVP row is
-              kept so hosts retain visibility and counts stay consistent; there is no hard delete
-              via the API.
+              kept so hosts retain visibility and counts stay consistent. To delete a person&apos;s
+              data, use <InlineCode>POST /erasures</InlineCode>.
             </DocParagraph>
+          </div>
+
+          <div className="space-y-2">
+            <EndpointHeading method="POST" path="/erasures" scope="rsvps:write" />
+            <DocParagraph>
+              Hard-deletes the RSVPs this key sent for one person, and the records Coucou kept only
+              because of them. Call it when a person deletes their account with you.
+            </DocParagraph>
+            <CodeBlock code={EXAMPLE_ERASURE_REQUEST} />
+            <DocList
+              items={[
+                <>
+                  Send <InlineCode>phone</InlineCode>, <InlineCode>rsvpIds</InlineCode> (at most
+                  100, from your POST responses), or both.
+                </>,
+                <>
+                  Only RSVPs this key wrote are erased. RSVPs from other keys, and text or form
+                  RSVPs the person gave Coucou directly, stay; the latter are listed in{" "}
+                  <InlineCode>retainedRsvpIds</InlineCode>. Ids that are not yours are ignored.
+                </>,
+                <>
+                  Deleted: the RSVP and its ticket, approvals, social handles, SMS consent, stored
+                  webhook payloads and queued SMS. Once no other RSVP needs them, also the workspace
+                  SMS preference, organizer notes, contact entry and guest phone record.
+                </>,
+                <>
+                  Kept: a Coucou account matched by phone, the SMS opt-out list, sent-SMS logs, and
+                  an audit entry with no name or phone.
+                </>,
+                <>
+                  <strong>Idempotent and synchronous:</strong> a repeat or an unknown phone returns
+                  200 with empty lists. Each erased RSVP emits <InlineCode>rsvp.deleted</InlineCode>{" "}
+                  with null identity fields and <InlineCode>changes.reason: "erasure"</InlineCode>.
+                </>,
+              ]}
+            />
           </div>
         </div>
       </PageCard>

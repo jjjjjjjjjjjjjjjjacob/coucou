@@ -7,6 +7,7 @@ import {
   buildApiJsonResponse,
 } from "./lib/apiRequestAuth";
 import { formatPhoneNumberForSms } from "./lib/phoneUtils";
+import { MAX_ERASURE_RSVP_IDS } from "./partnerErasure";
 
 const EVENTS_PATH_PREFIX = "/api/v1/events/";
 const RSVPS_PATH_PREFIX = "/api/v1/rsvps/";
@@ -499,6 +500,60 @@ export const handleRsvpDelete = httpAction(async (ctx, request) => {
     return buildApiErrorResponse(writeResult.errorCode, writeResult.message);
   }
   return buildApiJsonResponse({ cancelled: true, rsvp: writeResult.rsvp });
+});
+
+// POST /api/v1/erasures — hard-deletes the RSVPs this API client sent for one
+// person, plus the person records Coucou kept only because of them.
+export const handleErasureCreate = httpAction(async (ctx, request) => {
+  const authResult = await authenticateApiRequest(ctx, request, "rsvps:write");
+  if (!authResult.ok) {
+    return authResult.response;
+  }
+
+  const parsedBody = await parseJsonRequestBody(request);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
+  }
+  const { phone, rsvpIds } = parsedBody.body;
+
+  if (phone !== undefined && (typeof phone !== "string" || phone.trim().length === 0)) {
+    return buildApiErrorResponse("invalid_request", "phone must be a non-empty string", "phone");
+  }
+  if (typeof phone === "string") {
+    try {
+      formatPhoneNumberForSms(phone);
+    } catch (error) {
+      return buildApiErrorResponse(
+        "invalid_request",
+        error instanceof Error ? error.message : "Invalid phone number",
+        "phone",
+      );
+    }
+  }
+  if (
+    rsvpIds !== undefined &&
+    (!Array.isArray(rsvpIds) ||
+      rsvpIds.length > MAX_ERASURE_RSVP_IDS ||
+      !rsvpIds.every((rsvpId) => typeof rsvpId === "string" && rsvpId.length > 0))
+  ) {
+    return buildApiErrorResponse(
+      "invalid_request",
+      `rsvpIds must be an array of at most ${MAX_ERASURE_RSVP_IDS} RSVP id strings`,
+      "rsvpIds",
+    );
+  }
+  const requestedRsvpIds = (rsvpIds as string[] | undefined) ?? [];
+  if (phone === undefined && requestedRsvpIds.length === 0) {
+    return buildApiErrorResponse("invalid_request", "phone or rsvpIds is required");
+  }
+
+  const erasure = await ctx.runMutation(internal.partnerErasure.eraseSubjectForApiClient, {
+    apiClientId: authResult.apiClient._id,
+    workspaceId: authResult.workspaceId,
+    phone: phone as string | undefined,
+    rsvpIds: requestedRsvpIds,
+  });
+  return buildApiJsonResponse({ erasure });
 });
 
 export { EVENTS_PATH_PREFIX, parsePathSegmentsAfterPrefix, RSVPS_PATH_PREFIX };

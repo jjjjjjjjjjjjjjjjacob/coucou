@@ -27,6 +27,24 @@ partner-API, webhook, trigger, or convex-test tasks.
   helpers byte-compatible with `convex/lib/webhookCrypto.ts` (roundtrip-tested in
   `packages/sdk/__tests__/webhook-consumer.test.ts`).
 
+## Partner erasure (added 2026-10-27)
+
+Use when deleting a person's data, or when a cleanup must not let triggers rebuild rows.
+
+- `POST /api/v1/erasures` runs `convex/partnerErasure.ts`, an untriggered internal
+  mutation. A deliberate exception to the trigger choke-point: the contact-sync triggers
+  (`workspaceGuestProfiles` → `syncProfile` → `ensureContact`) would recreate the contact
+  rows the erasure deletes. It calls `removeContactEvent` and
+  `enqueueRsvpErasureWebhookDeliveries` itself instead.
+- Attribution is `rsvps.apiClientId` (last API writer) plus `source`: text and form RSVPs
+  are kept, `api` and missing source (rows before 2026-09-10) are erased.
+- `webhookDeliveries.payloadJson` keeps plaintext phone and name forever and hosts can
+  re-send it, so any deletion path must also delete deliveries (`by_rsvp` index).
+- A new top-level Convex module needs its two lines in the checked-in
+  `convex/_generated/api.d.ts` (`convex codegen` needs a deployment).
+- `bun run build` fails locally on Clerk prerender without env. Export the placeholder
+  `NEXT_PUBLIC_*` values from `.github/workflows/ci.yml` to reproduce CI.
+
 ## convex-test gotchas (bun test)
 
 - **Scheduled function leaks**: mutations that `ctx.scheduler.runAfter(0, ...)` leave real
