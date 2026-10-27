@@ -39,6 +39,7 @@ describe("partner API documentation parity", () => {
       "/api/v1/events/{eventRouteId}/rsvps/lookup",
       "/api/v1/events/{eventRouteId}/rsvps/sms-consent",
       "/api/v1/rsvps/{rsvpId}",
+      "/api/v1/erasures",
     ]) {
       expect(repositoryDocumentation).toContain(route);
     }
@@ -48,5 +49,7 @@ describe("partner API documentation parity", () => {
       'source` as `"text"`, `"form"`, `"api"`, or `"unknown"`',
     );
     expect(sdkTypes).toContain('{ type: "api"; apiClientId: string }');
+    expect(sdkTypes).toContain("interface ApiErasureResponse");
+    expect(dashboardDocumentation).toContain('path="/erasures"');
   });
 });

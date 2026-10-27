@@ -250,7 +250,78 @@ Body `{ "attendanceStatus": "yes" | "no" | "maybe" }`.
 ### `DELETE /api/v1/rsvps/{rsvpId}` — scope `rsvps:write`
 
 Soft cancel: sets `attendanceStatus: "no"`. The RSVP row is kept (host visibility and
-attendance counts stay consistent); there is no hard delete via the API.
+attendance counts stay consistent). To delete a person's data, use `POST /api/v1/erasures`.
+
+### `POST /api/v1/erasures` — scope `rsvps:write`
+
+Hard-deletes the RSVPs this API key sent for one person, and the records Coucou kept only
+because of those RSVPs. Call it when a person deletes their account with you or asks you to
+delete their data.
+
+```json
+{ "phone": "+15551234567", "rsvpIds": ["jh7…", "jh8…"] }
+```
+
+- Send `phone`, `rsvpIds`, or both. `phone` (E.164) selects every RSVP this key sent for that
+  number. `rsvpIds` (at most 100) selects RSVPs by the ids your POST responses returned, so it
+  still works if the person's phone changed. Send both when you hold both.
+- Only RSVPs that this API key wrote are erased. RSVPs sent by other keys, and RSVPs the
+  person gave Coucou by text or form, stay. Ids that are not yours are ignored without an
+  error, so the response never reveals whether someone else's RSVP exists.
+- Erasure ignores the key's current event grants: a key can erase what it sent to an event it
+  can no longer read.
+- The request is synchronous and runs in one transaction. It returns 200:
+
+```json
+{ "erasure": { "status": "completed", "erasedRsvpIds": ["jh7…"], "retainedRsvpIds": [],
+  "completedAt": 1753000000000 } }
+```
+
+- `retainedRsvpIds` lists text or form RSVPs that this key only updated. Coucou keeps them
+  because the person gave them to Coucou directly.
+- **Idempotent**: a repeat request, or a phone Coucou has never seen, returns 200 with empty
+  lists and changes nothing. Retry until you get a 2xx.
+- Each erased RSVP emits `rsvp.deleted` to subscribed endpoints, with every `identity` field
+  `null` (`isGuest` stays), `origin.apiClientId` set to your client, and
+  `data.changes.reason: "erasure"`. Other partners mirroring the event should purge that RSVP.
+- A revoked key's RSVPs cannot be erased by its replacement key. Erase before you revoke a
+  key, or ask Coucou to erase them.
+
+What an erasure deletes:
+
+| Record | Deleted when |
+| --- | --- |
+| The RSVP: name, note, custom fields, invited-by, SMS consent and its IP address | Always |
+| Approval decisions, ticket and redemption code, guest hand-off links (they hold the phone), SMS RSVP sessions, social-handle snapshots, profile values and workspace grants sourced from the RSVP, the attendance counts | Always |
+| Stored webhook delivery payloads for the RSVP (they hold the phone and name and can be re-sent) | Always |
+| Queued SMS that carries the phone number | Always |
+| Workspace SMS preference, organizer tags and notes, contact-directory entry | The person has no other RSVP in the workspace |
+| Guest phone record (plaintext number), guest social handles, guest profile values | No RSVP in any workspace still uses that phone |
+
+What Coucou keeps, and why:
+
+| Record | Why |
+| --- | --- |
+| RSVPs given to Coucou by text or form, and RSVPs other keys sent | They are not this partner's data |
+| A Coucou account (`users` row) matched by phone | The person holds it with Coucou directly |
+| SMS opt-out (`STOP`) list entry, keyed by phone hash | Coucou must keep honoring the opt-out |
+| Sent-SMS logs: obfuscated phone, phone hash, message body | Coucou is the sender of record and keeps them for carrier and consent disputes, as on account deletion |
+| A contact-directory row with past text-blast deliveries, renamed "Erased contact" with no number | Blast delivery history points at it |
+| An audit entry with the API client and the erased RSVP ids, no name or phone | Proof that the erasure ran |
+| The `rsvp.deleted` notice, without identity fields | It tells mirrors to delete |
+
+Inside the monorepo, `@coucou/sdk/api-v1` exports `requestCoucouErasure`:
+
+```ts
+import { requestCoucouErasure } from "@coucou/sdk/api-v1";
+
+const result = await requestCoucouErasure({
+  apiBaseUrl: "https://<deployment>.convex.site/api/v1",
+  apiKey: process.env.COUCOU_API_KEY!,
+  input: { phone: "+15551234567", rsvpIds: storedCoucouRsvpIds },
+});
+if (!result.ok) throw new Error(result.error.message);
+```
 
 ## Webhooks
 
