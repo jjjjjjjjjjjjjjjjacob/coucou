@@ -160,6 +160,30 @@ export interface ApiRsvpWriteInput {
   smsConsentIpAddress?: string;
 }
 
+/**
+ * Body of POST /api/v1/erasures. Send at least one selector. Coucou erases only
+ * the RSVPs the calling API client sent, so a broad selector is safe.
+ */
+export interface ApiErasureInput {
+  /** E.164 phone the partner sent; selects every RSVP it sent for that person. */
+  phone?: string;
+  /** Coucou RSVP ids the partner stored from its POST responses (at most 100). */
+  rsvpIds?: string[];
+}
+
+export interface ApiErasure {
+  status: "completed";
+  /** RSVPs hard-deleted by this request. Empty on a repeat or for an unknown person. */
+  erasedRsvpIds: string[];
+  /** Text or form RSVPs this client only updated; the person gave them to Coucou directly. */
+  retainedRsvpIds: string[];
+  completedAt: number;
+}
+
+export interface ApiErasureResponse {
+  erasure: ApiErasure;
+}
+
 /** The plaintext HTTP body of every webhook delivery (payload is inside, encrypted). */
 export interface CoucouWebhookEnvelope {
   apiVersion: string;
