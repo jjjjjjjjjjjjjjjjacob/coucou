@@ -482,7 +482,8 @@ export async function syncContactRsvp(ctx: MutationCtx, rsvpId: Id<"rsvps">) {
     .first();
   const rsvp = await ctx.db.get(rsvpId);
   const event = rsvp ? await ctx.db.get(rsvp.eventId) : null;
-  if (!rsvp || !event) {
+  // An anonymized RSVP names nobody, so it has no place in the contact directory.
+  if (!rsvp || !event || rsvp.anonymizedAt !== undefined) {
     if (previous) await removeContactEvent(ctx, previous);
     return;
   }

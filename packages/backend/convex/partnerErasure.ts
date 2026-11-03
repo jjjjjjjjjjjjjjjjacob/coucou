@@ -2,19 +2,19 @@ import { v } from "convex/values";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 // Untriggered on purpose: the contact-sync triggers would rebuild the directory
-// rows this erasure removes. The rsvp.deleted notices are enqueued explicitly.
+// rows this erasure removes. The rsvp.updated erasure notices are enqueued explicitly.
 import { internalMutation } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
-import { refreshContactProfile, removeContactEvent } from "./lib/contactRecords";
+import { refreshContactProfile } from "./lib/contactRecords";
 import {
   buildGuestClerkUserId,
   GUEST_CLERK_USER_ID_PREFIX,
   isGuestClerkUserId,
 } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
-import { deleteRsvpFromAggregate } from "./lib/rsvpAggregate";
-import { enqueueRsvpErasureWebhookDeliveries } from "./lib/webhookEmission";
+import { anonymizeRsvp } from "./lib/rsvpAnonymization";
+import { enqueueRsvpWebhookDeliveries } from "./lib/webhookEmission";
 
 export const MAX_ERASURE_RSVP_IDS = 100;
 
@@ -130,7 +130,7 @@ async function rsvpBelongsToWorkspace(
   return event?.workspaceSlug === workspace.slug;
 }
 
-type RsvpErasureDecision = "erase" | "retain" | "unrelated";
+type RsvpErasureDecision = "anonymize" | "retain" | "unrelated";
 
 // Rows inserted before createdByApiClientId existed name their inserting key
 // only in the rsvp.created notice, and only when an endpoint was subscribed.
@@ -152,7 +152,7 @@ async function webhookLogShowsInsertBy(
   });
 }
 
-// A key erases only RSVPs it inserted. Every write overwrites apiClientId, so
+// A key anonymizes only RSVPs it inserted. Every write overwrites apiClientId, so
 // it shows who touched a row last, not who sent it. A row this key wrote, or
 // that absorbed a row this key wrote, but that the key cannot be shown to have
 // inserted is retained and reported.
@@ -161,6 +161,8 @@ async function decideRsvpErasure(
   rsvp: Doc<"rsvps">,
   apiClientId: Id<"apiClients">,
 ): Promise<RsvpErasureDecision> {
+  // Already anonymized: it names nobody, so a repeat erasure leaves it alone.
+  if (rsvp.anonymizedAt !== undefined) return "unrelated";
   const absorbedRsvpAliases = await ctx.db
     .query("rsvpIdentityAliases")
     .withIndex("by_canonical", (queryBuilder) => queryBuilder.eq("canonicalRsvpId", rsvp._id))
@@ -183,15 +185,15 @@ async function decideRsvpErasure(
   if (!insertedByCaller || givenToCoucouDirectly || mergedWithoutRecordedCreator) {
     return "retain";
   }
-  return "erase";
+  return "anonymize";
 }
 
 async function buildErasureSubject(
   ctx: MutationCtx,
-  erasedRsvps: Doc<"rsvps">[],
+  anonymizedRsvps: Doc<"rsvps">[],
 ): Promise<ErasureSubject> {
   const subject: ErasureSubject = { clerkUserIds: new Set(), phoneHashes: new Set() };
-  for (const rsvp of erasedRsvps) {
+  for (const rsvp of anonymizedRsvps) {
     subject.clerkUserIds.add(rsvp.clerkUserId);
     if (rsvp.guestPhoneHash) subject.phoneHashes.add(rsvp.guestPhoneHash);
     if (isGuestClerkUserId(rsvp.clerkUserId)) {
@@ -252,105 +254,17 @@ async function cancelPendingPersonNotifications(ctx: MutationCtx, subject: Erasu
   }
 }
 
-async function deleteProfileValuesSourcedFromRsvp(ctx: MutationCtx, rsvp: Doc<"rsvps">) {
-  const grants = await ctx.db
-    .query("workspaceProfileValueGrants")
-    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", rsvp.clerkUserId))
-    .collect();
-  await deleteDocuments(
-    ctx,
-    grants.filter((grant) => grant.sourceRsvpId === rsvp._id),
-  );
-
-  const values = await ctx.db
-    .query("profileFieldValues")
-    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", rsvp.clerkUserId))
-    .collect();
-  for (const value of values) {
-    if (value.sourceRsvpId !== rsvp._id) continue;
-    const remainingGrant = await ctx.db
-      .query("workspaceProfileValueGrants")
-      .withIndex("by_profile_value", (queryBuilder) =>
-        queryBuilder.eq("profileFieldValueId", value._id),
-      )
-      .first();
-    if (!remainingGrant) await ctx.db.delete(value._id);
-  }
-}
-
-async function eraseRsvp(
+async function anonymizePartnerRsvp(
   ctx: MutationCtx,
   rsvp: Doc<"rsvps">,
   apiClientId: Id<"apiClients">,
 ): Promise<void> {
-  const identityAliases = await ctx.db
-    .query("rsvpIdentityAliases")
-    .withIndex("by_canonical", (queryBuilder) => queryBuilder.eq("canonicalRsvpId", rsvp._id))
-    .collect();
-  // Deliveries keep the id the RSVP had when they were sent, so a merged row's
-  // retired ids hold copies of its phone and name too.
-  const webhookDeliveries = (
-    await Promise.all(
-      [rsvp._id, ...identityAliases.map((alias) => alias.retiredRsvpId)].map((rsvpId) =>
-        ctx.db
-          .query("webhookDeliveries")
-          .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvpId))
-          .collect(),
-      ),
-    )
-  ).flat();
-  const [
-    approvals,
-    redemptions,
-    guestHandoffs,
-    socialProfileSnapshots,
-    smsRsvpSessions,
-    contactEvents,
-  ] = await Promise.all([
-    ctx.db
-      .query("approvals")
-      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
-      .collect(),
-    ctx.db
-      .query("redemptions")
-      .withIndex("by_event_user", (queryBuilder) =>
-        queryBuilder.eq("eventId", rsvp.eventId).eq("clerkUserId", rsvp.clerkUserId),
-      )
-      .collect(),
-    ctx.db
-      .query("rsvpGuestHandoffs")
-      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
-      .collect(),
-    ctx.db
-      .query("rsvpSocialProfiles")
-      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
-      .collect(),
-    ctx.db
-      .query("smsRsvpSessions")
-      .withIndex("by_destination_rsvp", (queryBuilder) =>
-        queryBuilder.eq("destinationRsvpId", rsvp._id),
-      )
-      .collect(),
-    ctx.db
-      .query("contactEvents")
-      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
-      .collect(),
-  ]);
-
-  for (const contactEvent of contactEvents) await removeContactEvent(ctx, contactEvent);
-  await deleteDocuments(ctx, [
-    ...approvals,
-    ...redemptions,
-    ...guestHandoffs,
-    ...identityAliases,
-    ...socialProfileSnapshots,
-    ...smsRsvpSessions,
-    ...webhookDeliveries,
-  ]);
-  await deleteProfileValuesSourcedFromRsvp(ctx, rsvp);
-  await deleteRsvpFromAggregate(ctx, rsvp);
-  await enqueueRsvpErasureWebhookDeliveries(ctx, rsvp, apiClientId);
-  await ctx.db.delete(rsvp._id);
+  const anonymizedRsvp = await anonymizeRsvp(ctx, rsvp, { erasingApiClientId: apiClientId });
+  await enqueueRsvpWebhookDeliveries(ctx, {
+    operation: "update",
+    oldDoc: rsvp,
+    newDoc: anonymizedRsvp,
+  });
 }
 
 async function subjectHasRsvpInWorkspace(
@@ -594,42 +508,42 @@ export const eraseSubjectForApiClient = internalMutation({
       throw new Error("API client does not belong to the workspace");
     }
 
-    const erasedRsvps: Doc<"rsvps">[] = [];
+    const anonymizedRsvps: Doc<"rsvps">[] = [];
     const retainedRsvps: Doc<"rsvps">[] = [];
     for (const rsvp of await findCandidateRsvps(ctx, args)) {
       if (!(await rsvpBelongsToWorkspace(ctx, rsvp, scope.workspace))) continue;
       const decision = await decideRsvpErasure(ctx, rsvp, apiClient._id);
-      if (decision === "erase") erasedRsvps.push(rsvp);
+      if (decision === "anonymize") anonymizedRsvps.push(rsvp);
       if (decision === "retain") retainedRsvps.push(rsvp);
     }
 
-    if (erasedRsvps.length > 0) {
-      const subject = await buildErasureSubject(ctx, erasedRsvps);
+    if (anonymizedRsvps.length > 0) {
+      const subject = await buildErasureSubject(ctx, anonymizedRsvps);
       await cancelPendingPersonNotifications(ctx, subject);
-      for (const rsvp of erasedRsvps) await eraseRsvp(ctx, rsvp, apiClient._id);
+      for (const rsvp of anonymizedRsvps) await anonymizePartnerRsvp(ctx, rsvp, apiClient._id);
       if (!(await subjectHasRsvpInWorkspace(ctx, subject, scope.workspace))) {
         await eraseWorkspacePersonRecords(ctx, scope, subject);
       }
       await eraseUnusedGuestRecords(ctx, subject);
     }
 
-    const erasedRsvpIds = erasedRsvps.map((rsvp) => rsvp._id).sort();
+    const anonymizedRsvpIds = anonymizedRsvps.map((rsvp) => rsvp._id).sort();
     const retainedRsvpIds = retainedRsvps.map((rsvp) => rsvp._id).sort();
     await writeAuditEntry(ctx, {
       action: "partnerApi.erasure",
       targetKind: "apiClient",
       targetId: apiClient._id,
       workspaceId: scope.workspace._id,
-      summary: `Partner erasure removed ${erasedRsvpIds.length} RSVP(s)`,
+      summary: `Partner erasure anonymized ${anonymizedRsvpIds.length} RSVP(s)`,
       metadata: {
-        erasedRsvpIds: erasedRsvpIds.join(","),
+        anonymizedRsvpIds: anonymizedRsvpIds.join(","),
         retainedRsvpIds: retainedRsvpIds.join(","),
       },
     });
 
     return {
       status: "completed" as const,
-      erasedRsvpIds,
+      anonymizedRsvpIds,
       retainedRsvpIds,
       completedAt: Date.now(),
     };

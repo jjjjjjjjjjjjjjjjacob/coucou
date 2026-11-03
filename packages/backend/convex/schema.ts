@@ -574,6 +574,9 @@ export default defineSchema({
     // Set when the person submits to or edits an existing row through Coucou (form,
     // signed-in app or text). Partner erasure keeps a row the person gave Coucou directly.
     personSubmittedAt: v.optional(v.number()),
+    // Set when an erasure stripped the person from the row (lib/rsvpAnonymization.ts).
+    // The row stays for the host's counts; nothing may attach a person to it again.
+    anonymizedAt: v.optional(v.number()),
     webhookOriginApiClientId: v.optional(v.id("apiClients")),
     webhookOriginMutationId: v.optional(v.string()),
     createdAt: v.number(),

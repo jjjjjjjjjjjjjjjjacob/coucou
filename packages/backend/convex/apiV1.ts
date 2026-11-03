@@ -502,8 +502,8 @@ export const handleRsvpDelete = httpAction(async (ctx, request) => {
   return buildApiJsonResponse({ cancelled: true, rsvp: writeResult.rsvp });
 });
 
-// POST /api/v1/erasures — hard-deletes the RSVPs this API client sent for one
-// person, plus the person records Coucou kept only because of them.
+// POST /api/v1/erasures — anonymizes the RSVPs this API client sent for one
+// person and deletes the person records Coucou kept only because of them.
 export const handleErasureCreate = httpAction(async (ctx, request) => {
   const authResult = await authenticateApiRequest(ctx, request, "rsvps:write");
   if (!authResult.ok) {

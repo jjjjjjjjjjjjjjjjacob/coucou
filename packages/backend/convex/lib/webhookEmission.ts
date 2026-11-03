@@ -5,6 +5,7 @@ import type { MutationCtx } from "../_generated/server";
 import { isGuestClerkUserId } from "./guestIdentity";
 import { partnerResourceCanAccessEvent } from "./partnerEventAccess";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
+import { isRsvpAnonymization } from "./rsvpAnonymization";
 import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./rsvpStatus";
 import { buildRsvpTicketSnapshot } from "./rsvpTicketSnapshot";
 
@@ -51,6 +52,9 @@ export function determineRsvpWebhookEventType(change: {
   }
   if (change.operation === "delete") {
     return "rsvp.deleted";
+  }
+  if (isRsvpAnonymization(change)) {
+    return "rsvp.updated";
   }
 
   const oldRsvp = change.oldDoc;
@@ -306,8 +310,11 @@ export async function enqueueRsvpWebhookDeliveries(
     return;
   }
 
+  // An erasure notice tells mirrors to drop the person: the anonymized row
+  // resolves to null identity fields, and the ticket is left out.
+  const isErasure = isRsvpAnonymization(change);
   const identity = await resolveRsvpIdentity(ctx, rsvp);
-  const ticket = await buildRsvpTicketSnapshot(ctx, event, rsvp);
+  const ticket = isErasure ? null : await buildRsvpTicketSnapshot(ctx, event, rsvp);
   const previousRsvp = change.operation === "update" ? change.oldDoc : null;
 
   const payloadWithoutDeliveryId = {
@@ -335,6 +342,7 @@ export async function enqueueRsvpWebhookDeliveries(
             changes: {
               previousApprovalStatus: resolveApprovalStatus(previousRsvp),
               previousAttendanceStatus: previousRsvp.attendanceStatus ?? null,
+              ...(isErasure ? { reason: "erasure" } : {}),
             },
           }
         : {}),
@@ -345,66 +353,6 @@ export async function enqueueRsvpWebhookDeliveries(
     workspace: endpointMatch.workspace,
     endpoints: endpointMatch.endpoints,
     eventType,
-    payloadWithoutDeliveryId,
-    eventId: event._id,
-    rsvpId: rsvp._id,
-  });
-}
-
-// The deletion notice for an erased RSVP carries no name, phone, phone hash or
-// ticket, because the delivery log would otherwise keep a fresh copy of them.
-export async function enqueueRsvpErasureWebhookDeliveries(
-  ctx: MutationCtx,
-  rsvp: Doc<"rsvps">,
-  apiClientId: Doc<"apiClients">["_id"],
-): Promise<void> {
-  const event = await ctx.db.get(rsvp.eventId);
-  if (!event?.workspaceSlug) {
-    return;
-  }
-
-  const endpointMatch = await findActiveEndpointsForEventType(
-    ctx,
-    event.workspaceSlug,
-    event._id,
-    "rsvp.deleted",
-  );
-  if (!endpointMatch || endpointMatch.endpoints.length === 0) {
-    return;
-  }
-
-  const payloadWithoutDeliveryId = {
-    apiVersion: API_VERSION,
-    eventType: "rsvp.deleted",
-    occurredAt: Date.now(),
-    workspaceSlug: event.workspaceSlug,
-    data: {
-      event: buildEventSnapshot(event),
-      rsvp: {
-        id: rsvp._id,
-        source: rsvp.source ?? "unknown",
-        listKey: rsvp.listKey,
-        approvalStatus: resolveApprovalStatus(rsvp),
-        attendanceStatus: sanitizeAttendanceStatus(rsvp.attendanceStatus),
-        attendees: rsvp.attendees ?? 1,
-        createdAt: rsvp.createdAt,
-        updatedAt: rsvp.updatedAt,
-      },
-      identity: {
-        phone: null,
-        phoneHash: null,
-        name: null,
-        isGuest: isGuestClerkUserId(rsvp.clerkUserId),
-      },
-      origin: { type: "api", apiClientId },
-      changes: { reason: "erasure" },
-    },
-  };
-
-  await enqueueDeliveries(ctx, {
-    workspace: endpointMatch.workspace,
-    endpoints: endpointMatch.endpoints,
-    eventType: "rsvp.deleted",
     payloadWithoutDeliveryId,
     eventId: event._id,
     rsvpId: rsvp._id,

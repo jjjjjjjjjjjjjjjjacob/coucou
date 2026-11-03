@@ -1,43 +1,21 @@
-import type { Doc, Id, TableNames } from "../_generated/dataModel";
+import type { Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { refreshContactProfile, removeContactEvent } from "./contactRecords";
 import { buildGuestClerkUserId } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
-import { deleteRsvpFromAggregate } from "./rsvpAggregate";
+import { anonymizeRsvp } from "./rsvpAnonymization";
 
 async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<TableNames> }>) {
   for (const documentId of new Set(documents.map((document) => document._id)))
     await context.db.delete(documentId);
 }
 
-async function deleteUserRsvp(context: MutationCtx, rsvp: Doc<"rsvps">) {
-  const [approvals, redemptions, handoffs, aliases] = await Promise.all([
-    context.db
-      .query("approvals")
-      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", rsvp.eventId))
-      .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("rsvpId"), rsvp._id))
-      .collect(),
-    context.db
-      .query("redemptions")
-      .withIndex("by_event_user", (queryBuilder) =>
-        queryBuilder.eq("eventId", rsvp.eventId).eq("clerkUserId", rsvp.clerkUserId),
-      )
-      .collect(),
-    context.db
-      .query("rsvpGuestHandoffs")
-      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
-      .collect(),
-    context.db
-      .query("rsvpIdentityAliases")
-      .withIndex("by_canonical", (queryBuilder) => queryBuilder.eq("canonicalRsvpId", rsvp._id))
-      .collect(),
-  ]);
-  await deleteDocuments(context, [...approvals, ...redemptions, ...handoffs, ...aliases]);
-  await deleteRsvpFromAggregate(context, rsvp);
-  await context.db.delete(rsvp._id);
-}
-
-/** Remove the account's RSVP and preference state, including its former guest identity. */
+/**
+ * Remove the account's preference and profile state, including its former guest
+ * identity, and anonymize every RSVP it holds: Coucou-direct and partner-created
+ * alike. Each anonymized RSVP emits an rsvp.updated erasure notice through the
+ * rsvps trigger, so partners mirroring it purge their copy.
+ */
 export async function deleteUserData(context: MutationCtx, clerkUserId: string) {
   const user = await context.db
     .query("users")
@@ -132,9 +110,18 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
       await context.scheduler.cancel(scheduledFunction._id);
   }
 
+  // identityIds holds the account, its aliases and the guest identity of each of
+  // its phones, so this reaches partner-created and Coucou-direct RSVPs alike.
+  for (const identityId of identityIds) {
+    const rsvps = await context.db
+      .query("rsvps")
+      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+      .collect();
+    for (const rsvp of rsvps) await anonymizeRsvp(context, rsvp);
+  }
+
   for (const identityId of identityIds) {
     const [
-      rsvps,
       consent,
       profiles,
       socialProfiles,
@@ -145,10 +132,6 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
       contactEvents,
       contactIdentities,
     ] = await Promise.all([
-      context.db
-        .query("rsvps")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
       context.db
         .query("userSmsOrganizerPreferences")
         .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
@@ -186,7 +169,6 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
         .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
         .collect(),
     ]);
-    for (const rsvp of rsvps) await deleteUserRsvp(context, rsvp);
     for (const contactEvent of contactEvents) await removeContactEvent(context, contactEvent);
     await deleteDocuments(context, [
       ...consent,

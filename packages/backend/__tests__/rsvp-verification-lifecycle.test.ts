@@ -228,8 +228,37 @@ describe("verified RSVP completion", () => {
   });
 });
 
+// Account deletion keeps the RSVP for the host's counts with nothing that names the person.
+async function expectAccountGoneAndRsvpAnonymized() {
+  const state = await accountState();
+  const anonymizedRsvpId = state.rsvps[0]?._id;
+  expect(state).toEqual({
+    users: [],
+    preferences: [],
+    rsvps: [
+      {
+        _id: anonymizedRsvpId,
+        _creationTime: expect.any(Number),
+        eventId,
+        clerkUserId: `anonymized-${anonymizedRsvpId}`,
+        source: "form",
+        listKey: "ga",
+        status: "pending",
+        approvalStatus: "pending",
+        attendanceStatus: "yes",
+        attendees: 2,
+        shareContact: false,
+        ticketStatus: "not-issued",
+        anonymizedAt: expect.any(Number),
+        createdAt: expect.any(Number),
+        updatedAt: expect.any(Number),
+      },
+    ],
+  });
+}
+
 describe("Clerk account deletion", () => {
-  it("clears account and former guest consent, RSVPs and unfinished drafts and permits fresh signup", async () => {
+  it("clears account and former guest consent and unfinished drafts, anonymizes RSVPs and permits fresh signup", async () => {
     const draft = await backend.mutation(
       api.rsvps.prepareGuestRequest,
       await submissionWithAccess(),
@@ -248,7 +277,7 @@ describe("Clerk account deletion", () => {
     });
     await backend.mutation(internal.users.deleteFromClerk, { clerkUserId: "verified_guest" });
     await backend.mutation(internal.users.deleteFromClerk, { clerkUserId: "verified_guest" });
-    expect(await accountState()).toEqual({ users: [], rsvps: [], preferences: [] });
+    await expectAccountGoneAndRsvpAnonymized();
     expect(
       (await scheduledConfirmations()).every(
         (notification) => notification.state.kind === "canceled",
@@ -264,10 +293,9 @@ describe("Clerk account deletion", () => {
     await backend
       .withIdentity({ subject: "new_clerk_account" })
       .action(api.rsvps.finalizeGuestRequest, { token: nextDraft.rsvpHandoffToken });
-    expect((await accountState()).rsvps[0]).toMatchObject({
-      clerkUserId: "new_clerk_account",
-      smsConsent: false,
-    });
+    expect(
+      (await accountState()).rsvps.filter((rsvp) => rsvp.anonymizedAt === undefined),
+    ).toMatchObject([{ clerkUserId: "new_clerk_account", smsConsent: false }]);
   });
   it("handles the user.deleted webhook even if the users row was manually removed first", async () => {
     const draft = await backend.mutation(
@@ -285,7 +313,7 @@ describe("Clerk account deletion", () => {
       body: JSON.stringify({ type: "user.deleted", data: { id: "verified_guest", deleted: true } }),
     });
     expect(response.status).toBe(200);
-    expect(await accountState()).toEqual({ users: [], rsvps: [], preferences: [] });
+    await expectAccountGoneAndRsvpAnonymized();
   });
   it("does not erase a different live canonical account when a retired Clerk identity is deleted", async () => {
     const draft = await backend.mutation(

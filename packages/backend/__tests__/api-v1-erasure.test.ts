@@ -162,7 +162,7 @@ async function subscribeWebhookEndpoint(testBackend: TestBackend) {
   await hostBackend.mutation(api.webhookEndpoints.create, {
     workspaceSlug: WORKSPACE_SLUG,
     url: ENDPOINT_URL,
-    subscribedEventTypes: ["rsvp.created", "rsvp.deleted"],
+    subscribedEventTypes: ["rsvp.created", "rsvp.updated", "rsvp.attendance_updated"],
     eventAccessMode: "all",
   });
 }
@@ -333,9 +333,8 @@ async function mergeGuestRsvpIntoMemberRsvp(
 
 const PERSON_NOTE = "Typed on the Coucou form";
 
-// The person fills in Coucou's public guest form for an event, with a note and SMS consent.
-async function submitCoucouGuestForm(testBackend: TestBackend, eventId: Id<"events">) {
-  const accessToken = await testBackend.run(async (databaseContext) => {
+async function issueGaListAccessToken(testBackend: TestBackend, eventId: Id<"events">) {
+  return await testBackend.run(async (databaseContext) => {
     const listCredential = await databaseContext.db
       .query("listCredentials")
       .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
@@ -345,6 +344,11 @@ async function submitCoucouGuestForm(testBackend: TestBackend, eventId: Id<"even
     if (!access.ok) throw new Error("Expected a list access grant");
     return access.accessToken;
   });
+}
+
+// The person fills in Coucou's public guest form for an event, with a note and SMS consent.
+async function submitCoucouGuestForm(testBackend: TestBackend, eventId: Id<"events">) {
+  const accessToken = await issueGaListAccessToken(testBackend, eventId);
   await testBackend.mutation(api.rsvps.submitGuestRequest, {
     eventId,
     siteKey: "dojo",
@@ -381,6 +385,24 @@ async function readRsvpRecord(testBackend: TestBackend, rsvpId: string) {
   });
 }
 
+// The whole stored row, so a field that should be gone cannot hide.
+async function readStoredRsvpDocument(testBackend: TestBackend, rsvpId: string) {
+  return await testBackend.run(async (databaseContext) => {
+    const rsvp = await databaseContext.db.get(rsvpId as Id<"rsvps">);
+    if (!rsvp) return null;
+    const { _creationTime, ...storedFields } = rsvp;
+    return storedFields;
+  });
+}
+
+async function readAttendanceCounts(testBackend: TestBackend, plaintextKey: string) {
+  const eventResponse = await testBackend.fetch(
+    "/api/v1/events/evt-erase",
+    buildJsonRequest(plaintextKey, "GET"),
+  );
+  return (await eventResponse.json()).attendanceCounts;
+}
+
 async function readAuditEntries(testBackend: TestBackend) {
   return await testBackend.run(async (databaseContext) =>
     (await databaseContext.db.query("auditLog").collect()).map((entry) => ({
@@ -393,7 +415,7 @@ async function readAuditEntries(testBackend: TestBackend) {
 }
 
 describe("POST /api/v1/erasures", () => {
-  it("removes a guest's partner-sent RSVP and every copy Coucou kept because of it", async () => {
+  it("anonymizes a guest's partner-sent RSVP and removes every copy Coucou kept of the person", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     await seedEvent(testBackend, "evt-erase");
@@ -418,6 +440,9 @@ describe("POST /api/v1/erasures", () => {
     });
 
     const storedBefore = await readStoredPersonState(testBackend);
+    const rsvpBefore = await readStoredRsvpDocument(testBackend, rsvpId);
+    const countsBefore = await readAttendanceCounts(testBackend, partner.plaintextKey);
+    expect(countsBefore).toEqual({ approved: 0, pending: 1, denied: 0, total: 1 });
     expect(storedBefore).toMatchObject({
       rsvps: [
         {
@@ -464,16 +489,56 @@ describe("POST /api/v1/erasures", () => {
       body: {
         erasure: {
           status: "completed",
-          erasedRsvpIds: [rsvpId],
+          anonymizedRsvpIds: [rsvpId],
           retainedRsvpIds: [],
           completedAt: FIXED_NOW,
         },
       },
     });
 
+    const anonymizedClerkUserId = `guest:anonymized-${rsvpId}`;
+    expect(await readStoredRsvpDocument(testBackend, rsvpId)).toEqual({
+      _id: rsvpId,
+      eventId: rsvpBefore?.eventId,
+      clerkUserId: anonymizedClerkUserId,
+      source: "api",
+      listKey: "ga",
+      ticketStatus: "not-issued",
+      shareContact: false,
+      attendees: 1,
+      status: "pending",
+      approvalStatus: "pending",
+      attendanceStatus: "yes",
+      apiClientId: partner.apiClientId,
+      createdByApiClientId: partner.apiClientId,
+      webhookOriginApiClientId: partner.apiClientId,
+      webhookOriginMutationId: expect.any(String),
+      anonymizedAt: FIXED_NOW,
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    });
+    expect(rsvpBefore).toMatchObject({
+      clerkUserId: guestClerkUserId,
+      userName: ERASED_NAME,
+      guestPhoneHash: phoneHash,
+      guestPhoneObfuscated: expect.any(String),
+      shareContact: true,
+      smsConsent: true,
+      smsConsentTimestamp: FIXED_NOW,
+      smsConsentIpAddress: CONSENT_IP_ADDRESS,
+    });
     const storedAfter = await readStoredPersonState(testBackend);
     expect(storedAfter).toEqual({
-      rsvps: [],
+      rsvps: [
+        {
+          rsvpId,
+          clerkUserId: anonymizedClerkUserId,
+          source: "api",
+          userName: null,
+          apiClientId: partner.apiClientId,
+          smsConsentIpAddress: null,
+        },
+      ],
       guestContacts: [],
       smsOrganizerPreferences: [],
       userSocialProfiles: [],
@@ -485,11 +550,15 @@ describe("POST /api/v1/erasures", () => {
       contactIdentities: [],
       webhookDeliveries: [
         {
-          eventType: "rsvp.deleted",
+          eventType: "rsvp.updated",
           rsvpId,
           identity: { phone: null, phoneHash: null, name: null, isGuest: true },
           origin: { type: "api", apiClientId: partner.apiClientId },
-          changes: { reason: "erasure" },
+          changes: {
+            previousApprovalStatus: "pending",
+            previousAttendanceStatus: "yes",
+            reason: "erasure",
+          },
         },
       ],
       webhookPayloadText: expect.any(String),
@@ -501,16 +570,7 @@ describe("POST /api/v1/erasures", () => {
     expect(storedAfter.webhookPayloadText).not.toContain(ERASED_NAME);
     expect(storedBefore.webhookPayloadText).toContain(ERASED_PHONE);
 
-    const eventResponse = await testBackend.fetch(
-      "/api/v1/events/evt-erase",
-      buildJsonRequest(partner.plaintextKey, "GET"),
-    );
-    expect((await eventResponse.json()).attendanceCounts).toEqual({
-      approved: 0,
-      pending: 0,
-      denied: 0,
-      total: 0,
-    });
+    expect(await readAttendanceCounts(testBackend, partner.plaintextKey)).toEqual(countsBefore);
     const lookupResponse = await testBackend.fetch(
       `/api/v1/events/evt-erase/rsvps/lookup?phone=${encodeURIComponent(ERASED_PHONE)}`,
       buildJsonRequest(partner.plaintextKey, "GET"),
@@ -522,7 +582,7 @@ describe("POST /api/v1/erasures", () => {
         action: "partnerApi.erasure",
         targetKind: "apiClient",
         targetId: partner.apiClientId,
-        metadata: { erasedRsvpIds: rsvpId, retainedRsvpIds: "" },
+        metadata: { anonymizedRsvpIds: rsvpId, retainedRsvpIds: "" },
       },
     ]);
   });
@@ -542,7 +602,7 @@ describe("POST /api/v1/erasures", () => {
       phone: ERASED_PHONE,
       rsvpIds: [rsvpId],
     });
-    expect(firstErasure.body.erasure.erasedRsvpIds).toEqual([rsvpId]);
+    expect(firstErasure.body.erasure.anonymizedRsvpIds).toEqual([rsvpId]);
     const storedAfterFirstErasure = await readStoredPersonState(testBackend);
 
     const repeatErasure = await requestErasure(testBackend, partner.plaintextKey, {
@@ -554,19 +614,29 @@ describe("POST /api/v1/erasures", () => {
       body: {
         erasure: {
           status: "completed",
-          erasedRsvpIds: [],
+          anonymizedRsvpIds: [],
           retainedRsvpIds: [],
           completedAt: FIXED_NOW,
         },
       },
     });
     expect(await readStoredPersonState(testBackend)).toEqual(storedAfterFirstErasure);
-    expect(storedAfterFirstErasure.webhookDeliveries.map((delivery) => delivery.eventType)).toEqual(
-      ["rsvp.deleted"],
-    );
+    expect(storedAfterFirstErasure.webhookDeliveries).toEqual([
+      {
+        eventType: "rsvp.updated",
+        rsvpId,
+        identity: { phone: null, phoneHash: null, name: null, isGuest: true },
+        origin: { type: "api", apiClientId: partner.apiClientId },
+        changes: {
+          previousApprovalStatus: "pending",
+          previousAttendanceStatus: "yes",
+          reason: "erasure",
+        },
+      },
+    ]);
   });
 
-  it("erases only the calling partner's RSVPs and keeps RSVPs given to Coucou directly", async () => {
+  it("anonymizes only the calling partner's RSVPs and keeps RSVPs given to Coucou directly", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     await seedWorkspace(testBackend, OTHER_WORKSPACE_SLUG, OTHER_CLERK_ORGANIZATION_ID);
@@ -623,7 +693,7 @@ describe("POST /api/v1/erasures", () => {
       { phone: ERASED_PHONE, rsvpIds: [alphaRsvpId, bravoRsvpId] },
     );
     expect(otherWorkspaceErasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [],
+      anonymizedRsvpIds: [],
       retainedRsvpIds: [],
     });
 
@@ -632,12 +702,20 @@ describe("POST /api/v1/erasures", () => {
       rsvpIds: [bravoRsvpId],
     });
     expect(alphaErasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [alphaRsvpId],
+      anonymizedRsvpIds: [alphaRsvpId],
       retainedRsvpIds: [nativeRsvpId],
     });
     const storedAfterAlpha = await readStoredPersonState(testBackend);
     expect(storedAfterAlpha.rsvps).toEqual(
       [
+        {
+          rsvpId: alphaRsvpId,
+          clerkUserId: `guest:anonymized-${alphaRsvpId}`,
+          source: "api",
+          userName: null,
+          apiClientId: alphaPartner.apiClientId,
+          smsConsentIpAddress: null,
+        },
         {
           rsvpId: bravoRsvpId,
           clerkUserId: guestClerkUserId,
@@ -667,11 +745,17 @@ describe("POST /api/v1/erasures", () => {
       phone: ERASED_PHONE,
     });
     expect(bravoErasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [bravoRsvpId],
+      anonymizedRsvpIds: [bravoRsvpId],
       retainedRsvpIds: [],
     });
     const storedAfterBravo = await readStoredPersonState(testBackend);
-    expect(storedAfterBravo.rsvps.map((rsvp) => rsvp.rsvpId)).toEqual([nativeRsvpId]);
+    expect(storedAfterBravo.rsvps.map((rsvp) => [rsvp.rsvpId, rsvp.clerkUserId])).toEqual(
+      [
+        [alphaRsvpId, `guest:anonymized-${alphaRsvpId}`],
+        [bravoRsvpId, `guest:anonymized-${bravoRsvpId}`],
+        [nativeRsvpId, guestClerkUserId],
+      ].sort((first, second) => first[0].localeCompare(second[0])),
+    );
     expect(storedAfterBravo.guestContacts).toEqual([{ phoneHash, phoneNumber: ERASED_PHONE }]);
   });
 
@@ -696,7 +780,7 @@ describe("POST /api/v1/erasures", () => {
       body: {
         erasure: {
           status: "completed",
-          erasedRsvpIds: [],
+          anonymizedRsvpIds: [],
           retainedRsvpIds: [],
           completedAt: FIXED_NOW,
         },
@@ -706,7 +790,7 @@ describe("POST /api/v1/erasures", () => {
     expect(storedBefore.rsvps.map((rsvp) => rsvp.userName)).toEqual(["Someone Else"]);
   });
 
-  it("erases an RSVP attached to a Coucou account and keeps the account", async () => {
+  it("anonymizes an RSVP attached to a Coucou account and keeps the account", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     await seedEvent(testBackend, "evt-erase");
@@ -732,9 +816,18 @@ describe("POST /api/v1/erasures", () => {
       phone: ERASED_PHONE,
     });
 
-    expect(erasure.body.erasure.erasedRsvpIds).toEqual([rsvpId]);
+    expect(erasure.body.erasure.anonymizedRsvpIds).toEqual([rsvpId]);
     const storedAfter = await readStoredPersonState(testBackend);
-    expect(storedAfter.rsvps).toEqual([]);
+    expect(storedAfter.rsvps).toEqual([
+      {
+        rsvpId,
+        clerkUserId: `anonymized-${rsvpId}`,
+        source: "api",
+        userName: null,
+        apiClientId: partner.apiClientId,
+        smsConsentIpAddress: null,
+      },
+    ]);
     expect(storedAfter.contactEvents).toEqual([]);
     expect(storedAfter.workspaceContacts).toEqual([]);
     expect(storedAfter.users).toEqual([
@@ -742,7 +835,7 @@ describe("POST /api/v1/erasures", () => {
     ]);
   });
 
-  it("lets only the inserting key erase an RSVP another key updated", async () => {
+  it("lets only the inserting key anonymize an RSVP another key updated", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     await seedEvent(testBackend, "evt-erase");
@@ -767,7 +860,7 @@ describe("POST /api/v1/erasures", () => {
       rsvpIds: [rsvpId],
     });
     expect(updatingErasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [],
+      anonymizedRsvpIds: [],
       retainedRsvpIds: [rsvpId],
     });
 
@@ -775,13 +868,22 @@ describe("POST /api/v1/erasures", () => {
       phone: ERASED_PHONE,
     });
     expect(insertingErasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [rsvpId],
+      anonymizedRsvpIds: [rsvpId],
       retainedRsvpIds: [],
     });
-    expect((await readStoredPersonState(testBackend)).rsvps).toEqual([]);
+    expect((await readStoredPersonState(testBackend)).rsvps).toEqual([
+      {
+        rsvpId,
+        clerkUserId: `guest:anonymized-${rsvpId}`,
+        source: "api",
+        userName: null,
+        apiClientId: updatingPartner.apiClientId,
+        smsConsentIpAddress: null,
+      },
+    ]);
   });
 
-  it("erases a pre-attribution RSVP whose rsvp.created notice names the calling key", async () => {
+  it("anonymizes a pre-attribution RSVP whose rsvp.created notice names the calling key", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     await seedEvent(testBackend, "evt-erase");
@@ -802,7 +904,10 @@ describe("POST /api/v1/erasures", () => {
       rsvpIds: [rsvpId],
     });
 
-    expect(erasure.body.erasure).toMatchObject({ erasedRsvpIds: [rsvpId], retainedRsvpIds: [] });
+    expect(erasure.body.erasure).toMatchObject({
+      anonymizedRsvpIds: [rsvpId],
+      retainedRsvpIds: [],
+    });
     expect((await readStoredPersonState(testBackend)).guestContacts).toEqual([]);
   });
 
@@ -826,7 +931,10 @@ describe("POST /api/v1/erasures", () => {
       rsvpIds: [rsvpId],
     });
 
-    expect(erasure.body.erasure).toMatchObject({ erasedRsvpIds: [], retainedRsvpIds: [rsvpId] });
+    expect(erasure.body.erasure).toMatchObject({
+      anonymizedRsvpIds: [],
+      retainedRsvpIds: [rsvpId],
+    });
     expect((await readStoredPersonState(testBackend)).rsvps).toMatchObject([
       { rsvpId, userName: ERASED_NAME },
     ]);
@@ -871,13 +979,13 @@ describe("POST /api/v1/erasures", () => {
     });
 
     expect(erasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [],
+      anonymizedRsvpIds: [],
       retainedRsvpIds: [legacyFormRsvpId],
     });
     expect(await readStoredPersonState(testBackend)).toEqual(storedBefore);
   });
 
-  it("erases the merged RSVP when a request names an id an identity merge retired", async () => {
+  it("anonymizes the merged RSVP when a request names an id an identity merge retired", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     await seedEvent(testBackend, "evt-erase");
@@ -893,15 +1001,21 @@ describe("POST /api/v1/erasures", () => {
     });
 
     expect(erasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [merged.canonicalRsvpId],
+      anonymizedRsvpIds: [merged.canonicalRsvpId],
       retainedRsvpIds: [],
     });
     const storedAfter = await readStoredPersonState(testBackend);
-    expect(storedAfter.rsvps).toEqual([]);
-    // The retired row's own rsvp.created notice held the guest phone and name.
-    expect(storedAfter.webhookDeliveries.map((delivery) => delivery.rsvpId)).toEqual([
-      merged.canonicalRsvpId,
+    expect(storedAfter.rsvps).toMatchObject([
+      {
+        rsvpId: merged.canonicalRsvpId,
+        clerkUserId: `anonymized-${merged.canonicalRsvpId}`,
+        userName: null,
+      },
     ]);
+    // The retired row's own rsvp.created notice held the guest phone and name.
+    expect(
+      storedAfter.webhookDeliveries.map((delivery) => [delivery.rsvpId, delivery.eventType]),
+    ).toEqual([[merged.canonicalRsvpId, "rsvp.updated"]]);
     expect(storedAfter.webhookPayloadText).not.toContain(ERASED_PHONE);
     expect(storedAfter.webhookPayloadText).not.toContain(ERASED_NAME);
   });
@@ -928,7 +1042,7 @@ describe("POST /api/v1/erasures", () => {
     });
 
     expect(erasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [],
+      anonymizedRsvpIds: [],
       retainedRsvpIds: [merged.canonicalRsvpId],
     });
   });
@@ -952,11 +1066,11 @@ describe("POST /api/v1/erasures", () => {
     });
 
     expect(memberErasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [],
+      anonymizedRsvpIds: [],
       retainedRsvpIds: [merged.canonicalRsvpId],
     });
     expect(guestErasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [],
+      anonymizedRsvpIds: [],
       retainedRsvpIds: [merged.canonicalRsvpId],
     });
     expect((await readStoredPersonState(testBackend)).rsvps).toMatchObject([
@@ -989,7 +1103,10 @@ describe("POST /api/v1/erasures", () => {
       phone: ERASED_PHONE,
     });
 
-    expect(erasure.body.erasure).toMatchObject({ erasedRsvpIds: [], retainedRsvpIds: [rsvpId] });
+    expect(erasure.body.erasure).toMatchObject({
+      anonymizedRsvpIds: [],
+      retainedRsvpIds: [rsvpId],
+    });
     expect(await readStoredPersonState(testBackend)).toEqual(storedBefore);
     expect(await readRsvpRecord(testBackend, rsvpId)).toMatchObject({ note: PERSON_NOTE });
   });
@@ -1051,7 +1168,10 @@ describe("POST /api/v1/erasures", () => {
       phone: ERASED_PHONE,
     });
 
-    expect(erasure.body.erasure).toMatchObject({ erasedRsvpIds: [], retainedRsvpIds: [rsvpId] });
+    expect(erasure.body.erasure).toMatchObject({
+      anonymizedRsvpIds: [],
+      retainedRsvpIds: [rsvpId],
+    });
     expect(await readStoredPersonState(testBackend)).toEqual(storedBefore);
   });
 
@@ -1102,7 +1222,10 @@ describe("POST /api/v1/erasures", () => {
       phone: MEMBER_PHONE,
     });
 
-    expect(erasure.body.erasure).toMatchObject({ erasedRsvpIds: [], retainedRsvpIds: [rsvpId] });
+    expect(erasure.body.erasure).toMatchObject({
+      anonymizedRsvpIds: [],
+      retainedRsvpIds: [rsvpId],
+    });
     expect(await readStoredPersonState(testBackend)).toEqual(storedBefore);
   });
 
@@ -1127,11 +1250,210 @@ describe("POST /api/v1/erasures", () => {
     });
 
     expect(erasure.body.erasure).toMatchObject({
-      erasedRsvpIds: [],
+      anonymizedRsvpIds: [],
       retainedRsvpIds: [merged.canonicalRsvpId],
     });
     expect((await readStoredPersonState(testBackend)).rsvps).toMatchObject([
       { rsvpId: merged.canonicalRsvpId, clerkUserId: MEMBER_CLERK_USER_ID },
+    ]);
+  });
+
+  it("keeps an anonymized RSVP's approval, party size and check-in, and disables an unused ticket", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    const checkedInEventId = await seedEvent(testBackend, "evt-erase");
+    const ticketedEventId = await seedEvent(testBackend, "evt-ticketed");
+    await subscribeWebhookEndpoint(testBackend);
+    const partner = await issueApiKey(testBackend);
+    const host = testBackend.withIdentity(createHostIdentity(CLERK_ORGANIZATION_ID));
+    const checkedInRsvpId = await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-erase", {
+      phone: ERASED_PHONE,
+      name: ERASED_NAME,
+      attendees: 2,
+    });
+    const ticketedRsvpId = await postPartnerRsvp(
+      testBackend,
+      partner.plaintextKey,
+      "evt-ticketed",
+      { phone: ERASED_PHONE, name: ERASED_NAME },
+    );
+    const checkedInApproval = await host.mutation(api.approvals.applyApproval, {
+      rsvpId: checkedInRsvpId as Id<"rsvps">,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    const ticketedApproval = await host.mutation(api.approvals.applyApproval, {
+      rsvpId: ticketedRsvpId as Id<"rsvps">,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    await host.mutation(api.redemptions.redeem, {
+      code: checkedInApproval.code,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    await drainScheduledFunctions(testBackend);
+    const countsBefore = await readAttendanceCounts(testBackend, partner.plaintextKey);
+    expect(countsBefore).toEqual({ approved: 1, pending: 0, denied: 0, total: 1 });
+
+    const erasure = await requestErasure(testBackend, partner.plaintextKey, {
+      phone: ERASED_PHONE,
+    });
+
+    expect(erasure.body.erasure).toMatchObject({
+      anonymizedRsvpIds: [checkedInRsvpId, ticketedRsvpId].sort(),
+      retainedRsvpIds: [],
+    });
+    const checkedInClerkUserId = `guest:anonymized-${checkedInRsvpId}`;
+    const ticketedClerkUserId = `guest:anonymized-${ticketedRsvpId}`;
+    expect(await readStoredRsvpDocument(testBackend, checkedInRsvpId)).toMatchObject({
+      clerkUserId: checkedInClerkUserId,
+      listKey: "ga",
+      attendees: 2,
+      status: "approved",
+      approvalStatus: "approved",
+      ticketStatus: "redeemed",
+      anonymizedAt: FIXED_NOW,
+    });
+    expect(await readStoredRsvpDocument(testBackend, ticketedRsvpId)).toMatchObject({
+      clerkUserId: ticketedClerkUserId,
+      status: "approved",
+      approvalStatus: "approved",
+      ticketStatus: "disabled",
+    });
+    const ticketsAfter = await testBackend.run(async (databaseContext) =>
+      (await databaseContext.db.query("redemptions").collect()).map((redemption) => ({
+        eventId: redemption.eventId,
+        clerkUserId: redemption.clerkUserId,
+        codeChanged:
+          redemption.code !== checkedInApproval.code && redemption.code !== ticketedApproval.code,
+        redeemedAt: redemption.redeemedAt ?? null,
+        redeemedByClerkUserId: redemption.redeemedByClerkUserId ?? null,
+        disabledAt: redemption.disabledAt ?? null,
+      })),
+    );
+    expect(ticketsAfter).toEqual([
+      {
+        eventId: checkedInEventId,
+        clerkUserId: checkedInClerkUserId,
+        codeChanged: true,
+        redeemedAt: FIXED_NOW,
+        redeemedByClerkUserId: `host_${CLERK_ORGANIZATION_ID}`,
+        disabledAt: null,
+      },
+      {
+        eventId: ticketedEventId,
+        clerkUserId: ticketedClerkUserId,
+        codeChanged: true,
+        redeemedAt: null,
+        redeemedByClerkUserId: null,
+        disabledAt: FIXED_NOW,
+      },
+    ]);
+    for (const deliveredCode of [checkedInApproval.code, ticketedApproval.code]) {
+      expect(
+        await testBackend.query(api.redemptions.byCode, {
+          code: deliveredCode,
+          workspaceSlug: WORKSPACE_SLUG,
+        }),
+      ).toEqual({ status: "invalid" });
+    }
+    const approvalsAfter = await testBackend.run(async (databaseContext) =>
+      (await databaseContext.db.query("approvals").collect()).map((approval) => ({
+        rsvpId: approval.rsvpId,
+        clerkUserId: approval.clerkUserId,
+        decision: approval.decision,
+      })),
+    );
+    expect(approvalsAfter).toEqual([
+      { rsvpId: checkedInRsvpId, clerkUserId: checkedInClerkUserId, decision: "approved" },
+      { rsvpId: ticketedRsvpId, clerkUserId: ticketedClerkUserId, decision: "approved" },
+    ]);
+    const erasureNotices = await testBackend.run(async (databaseContext) =>
+      (await databaseContext.db.query("webhookDeliveries").collect()).map((delivery) => {
+        const payload = JSON.parse(delivery.payloadJson) as {
+          data: { ticket?: unknown; changes?: { reason?: string } };
+        };
+        return {
+          eventType: delivery.eventType,
+          rsvpId: delivery.rsvpId,
+          ticket: payload.data.ticket ?? null,
+          reason: payload.data.changes?.reason ?? null,
+        };
+      }),
+    );
+    expect(erasureNotices).toEqual(
+      [checkedInRsvpId, ticketedRsvpId].sort().map((rsvpId) => ({
+        eventType: "rsvp.updated",
+        rsvpId,
+        ticket: null,
+        reason: "erasure",
+      })),
+    );
+    expect(await readAttendanceCounts(testBackend, partner.plaintextKey)).toEqual(countsBefore);
+  });
+
+  it("never attaches the person to an anonymized RSVP again", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    const eventId = await seedEvent(testBackend, "evt-erase");
+    await subscribeWebhookEndpoint(testBackend);
+    const partner = await issueApiKey(testBackend);
+    const rsvpId = await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-erase", {
+      phone: ERASED_PHONE,
+      name: ERASED_NAME,
+    });
+    await requestErasure(testBackend, partner.plaintextKey, { phone: ERASED_PHONE });
+    const anonymizedRsvp = await readStoredRsvpDocument(testBackend, rsvpId);
+
+    const resentRsvpId = await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-erase", {
+      phone: ERASED_PHONE,
+      name: ERASED_NAME,
+    });
+    await submitCoucouGuestForm(testBackend, eventId);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: MEMBER_CLERK_USER_ID,
+        phone: ERASED_PHONE,
+        firstName: "Erin",
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+    });
+    await testBackend.mutation(internal.rsvps.claimGuestRsvpsForClerkPhoneInternal, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+      phone: ERASED_PHONE,
+    });
+    await drainScheduledFunctions(testBackend);
+
+    expect(resentRsvpId).not.toBe(rsvpId);
+    expect(await readStoredRsvpDocument(testBackend, rsvpId)).toEqual(anonymizedRsvp);
+    expect(await readStoredRsvpDocument(testBackend, resentRsvpId)).toMatchObject({
+      clerkUserId: MEMBER_CLERK_USER_ID,
+      note: PERSON_NOTE,
+    });
+
+    const attendanceResponse = await testBackend.fetch(
+      `/api/v1/rsvps/${rsvpId}`,
+      buildJsonRequest(partner.plaintextKey, "PATCH", { attendanceStatus: "no" }),
+    );
+    await drainScheduledFunctions(testBackend);
+    expect(attendanceResponse.status).toBe(200);
+    expect((await attendanceResponse.json()).rsvp).toMatchObject({
+      rsvpId,
+      name: null,
+      isGuest: true,
+      attendanceStatus: "no",
+    });
+    expect(await readStoredRsvpDocument(testBackend, rsvpId)).toEqual({
+      ...anonymizedRsvp,
+      attendanceStatus: "no",
+      webhookOriginMutationId: expect.any(String),
+    });
+    const anonymizedRowNotices = (await readStoredPersonState(testBackend)).webhookDeliveries
+      .filter((delivery) => delivery.rsvpId === rsvpId)
+      .map((delivery) => [delivery.eventType, delivery.identity]);
+    const nullIdentity = { phone: null, phoneHash: null, name: null, isGuest: true };
+    expect(anonymizedRowNotices).toEqual([
+      ["rsvp.updated", nullIdentity],
+      ["rsvp.attendance_updated", nullIdentity],
     ]);
   });
 
@@ -1212,5 +1534,190 @@ describe("POST /api/v1/erasures", () => {
       expect((await response.json()).error).toMatchObject(expectedError as object);
     }
     expect(await readAuditEntries(testBackend)).toEqual([]);
+  });
+});
+
+describe("Coucou account deletion", () => {
+  it("anonymizes every RSVP the person holds and sends granted partners an erasure notice", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    const partnerEventId = await seedEvent(testBackend, "evt-erase");
+    const directEventId = await seedEvent(testBackend, "evt-direct");
+    const ungrantedEventId = await seedEvent(testBackend, "evt-ungranted");
+    const hostBackend = testBackend.withIdentity(createHostIdentity(CLERK_ORGANIZATION_ID));
+    await hostBackend.mutation(api.webhookEndpoints.create, {
+      workspaceSlug: WORKSPACE_SLUG,
+      url: ENDPOINT_URL,
+      subscribedEventTypes: ["rsvp.created", "rsvp.updated"],
+      eventAccessMode: "selected",
+      allowedEventIds: [partnerEventId, directEventId],
+    });
+    const partner = await issueApiKey(testBackend);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(ERASED_PHONE);
+    const partnerRsvpId = await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-erase", {
+      phone: ERASED_PHONE,
+      name: ERASED_NAME,
+      smsConsent: true,
+      smsConsentIpAddress: CONSENT_IP_ADDRESS,
+    });
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: MEMBER_CLERK_USER_ID,
+        phone: ERASED_PHONE,
+        phoneHash,
+        firstName: "Erin",
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+      await databaseContext.db.insert("smsOptOuts", {
+        phoneNumber: phoneHash,
+        optedOutAt: FIXED_NOW,
+        reason: "user_request",
+      });
+      await databaseContext.db.insert("smsNotifications", {
+        eventId: partnerEventId,
+        recipientClerkUserId: `guest:${phoneHash}`,
+        recipientPhoneObfuscated: "***-***-0100",
+        recipientPhoneHash: phoneHash,
+        type: "approval",
+        message: "You're on the list",
+        status: "sent",
+        createdAt: FIXED_NOW,
+      });
+    });
+    const memberBackend = testBackend.withIdentity({ subject: MEMBER_CLERK_USER_ID });
+    for (const eventId of [directEventId, ungrantedEventId]) {
+      await memberBackend.mutation(api.rsvps.submitRequest, {
+        eventId,
+        siteKey: "dojo",
+        listKey: "ga",
+        accessToken: await issueGaListAccessToken(testBackend, eventId),
+        firstName: "Erin",
+        lastName: "Member",
+        shareContact: true,
+        attendees: 2,
+        note: PERSON_NOTE,
+        smsConsent: true,
+        smsConsentIpAddress: CONSENT_IP_ADDRESS,
+        customFields: {},
+        socialProfiles: [],
+      });
+    }
+    await drainScheduledFunctions(testBackend);
+    const rsvpsBefore = await testBackend.run(async (databaseContext) =>
+      (await databaseContext.db.query("rsvps").collect()).map((rsvp) => ({
+        rsvpId: rsvp._id,
+        eventId: rsvp.eventId,
+        clerkUserId: rsvp.clerkUserId,
+      })),
+    );
+    const directRsvpId = rsvpsBefore.find((rsvp) => rsvp.eventId === directEventId)?.rsvpId;
+    const ungrantedRsvpId = rsvpsBefore.find((rsvp) => rsvp.eventId === ungrantedEventId)?.rsvpId;
+    expect(rsvpsBefore).toEqual([
+      { rsvpId: partnerRsvpId, eventId: partnerEventId, clerkUserId: `guest:${phoneHash}` },
+      { rsvpId: directRsvpId, eventId: directEventId, clerkUserId: MEMBER_CLERK_USER_ID },
+      { rsvpId: ungrantedRsvpId, eventId: ungrantedEventId, clerkUserId: MEMBER_CLERK_USER_ID },
+    ]);
+    const countsBefore = await readAttendanceCounts(testBackend, partner.plaintextKey);
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    await drainScheduledFunctions(testBackend);
+
+    const keptRsvpFields = [
+      "_id",
+      "anonymizedAt",
+      "approvalStatus",
+      "attendanceStatus",
+      "attendees",
+      "clerkUserId",
+      "createdAt",
+      "eventId",
+      "listKey",
+      "shareContact",
+      "source",
+      "status",
+      "ticketStatus",
+      "updatedAt",
+    ];
+    const expectedRsvps = [
+      {
+        rsvpId: partnerRsvpId,
+        clerkUserId: `guest:anonymized-${partnerRsvpId}`,
+        source: "api",
+        attendees: 1,
+        partnerFields: ["apiClientId", "createdByApiClientId", "webhookOriginApiClientId"],
+      },
+      {
+        rsvpId: directRsvpId,
+        clerkUserId: `anonymized-${directRsvpId}`,
+        source: "form",
+        attendees: 2,
+        partnerFields: [],
+      },
+      {
+        rsvpId: ungrantedRsvpId,
+        clerkUserId: `anonymized-${ungrantedRsvpId}`,
+        source: "form",
+        attendees: 2,
+        partnerFields: [],
+      },
+    ];
+    for (const expected of expectedRsvps) {
+      const storedRsvp = await readStoredRsvpDocument(testBackend, expected.rsvpId as string);
+      expect(storedRsvp).toMatchObject({
+        clerkUserId: expected.clerkUserId,
+        source: expected.source,
+        attendees: expected.attendees,
+        listKey: "ga",
+        anonymizedAt: FIXED_NOW,
+        shareContact: false,
+      });
+      expect(
+        Object.keys(storedRsvp ?? {})
+          .filter((fieldName) => fieldName !== "webhookOriginMutationId")
+          .sort(),
+      ).toEqual([...keptRsvpFields, ...expected.partnerFields].sort());
+    }
+
+    const storedAfter = await readStoredPersonState(testBackend);
+    expect(storedAfter.webhookDeliveries).toEqual(
+      [
+        { rsvpId: directRsvpId, isGuest: false },
+        { rsvpId: partnerRsvpId, isGuest: true },
+      ].map(({ rsvpId, isGuest }) => ({
+        eventType: "rsvp.updated",
+        rsvpId,
+        identity: { phone: null, phoneHash: null, name: null, isGuest },
+        origin: { type: "app" },
+        changes: {
+          previousApprovalStatus: "pending",
+          previousAttendanceStatus: "yes",
+          reason: "erasure",
+        },
+      })),
+    );
+    expect(storedAfter.webhookPayloadText).not.toContain(ERASED_PHONE);
+    expect(storedAfter.webhookPayloadText).not.toContain(phoneHash);
+    expect(storedAfter.webhookPayloadText).not.toContain("Erin");
+    expect(storedAfter).toMatchObject({
+      users: [],
+      guestContacts: [],
+      smsOrganizerPreferences: [],
+      contactEvents: [],
+      smsOptOuts: [{ phoneNumber: phoneHash, reason: "user_request" }],
+    });
+    const sentSmsLogs = await testBackend.run(async (databaseContext) =>
+      (await databaseContext.db.query("smsNotifications").collect()).map((notification) => ({
+        recipientPhoneHash: notification.recipientPhoneHash ?? null,
+        message: notification.message,
+      })),
+    );
+    expect(sentSmsLogs).toContainEqual({
+      recipientPhoneHash: phoneHash,
+      message: "You're on the list",
+    });
+    expect(await readAttendanceCounts(testBackend, partner.plaintextKey)).toEqual(countsBefore);
   });
 });
