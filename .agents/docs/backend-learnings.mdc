@@ -27,7 +27,7 @@ partner-API, webhook, trigger, or convex-test tasks.
   helpers byte-compatible with `convex/lib/webhookCrypto.ts` (roundtrip-tested in
   `packages/sdk/__tests__/webhook-consumer.test.ts`).
 
-## Partner erasure and account deletion (added 2026-10-27, anonymize since 2026-11-02, review fixes 2026-11-03)
+## Partner erasure and account deletion (added 2026-10-27, anonymize since 2026-11-02, review fixes 2026-11-03, bounded batches 2026-11-04)
 
 Use when deleting a person's data, or when a cleanup must not let triggers rebuild rows.
 
@@ -43,10 +43,17 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
 - Copies of the person live off the row under the RSVP id and every id a merge retired
   (`rsvpIdentityAliases.by_canonical`): webhook deliveries (deleted), audit entries with a JSON
   copy of the row (`auditLog.by_target`, metadata replaced by `redacted: "rsvp_anonymized"`, a
-  person actor cleared), and SMS logs (`textBlastRecipients.sourceRsvpIds` found by phone hash,
-  reply attempts and inbound receipts by their rsvp-id indexes; the id is removed, the log stays).
-  A new table or audit writer that stores an RSVP id next to identity must be added to
+  person actor cleared; the person is every identity in `RsvpAnonymizationPerson.clerkUserIds`,
+  merged accounts included), and SMS logs (`textBlastRecipients.sourceRsvpIds` found by phone
+  hash, reply attempts and inbound receipts by their rsvp-id indexes; the id is removed, the log
+  stays). A new table or audit writer that stores an RSVP id next to identity must be added to
   `anonymizeRsvp`.
+- Cost: every read in `anonymizeRsvp` is keyed by the RSVP (profile values use
+  `by_source_rsvp`), never by the person, so it does not grow with the person's history. Rows
+  keyed by the person's phone (`textBlastRecipients`) are scanned once per transaction by
+  `anonymizeRsvps` against all the ids it anonymized, 500 rows at most from a cursor. Keep any new
+  person-keyed scan out of the per-RSVP routine and page it the same way. To prove a bound, wrap
+  `ctx.db` and count documents read (`countDocumentsRead` in `api-v1-erasure.test.ts`).
 - `buildRsvpTicketSnapshot` returns null for an anonymized RSVP, so partner GETs and webhooks
   never carry the new code. Host readers (`rsvps.listForEvent`, `redemptions.listForEvent`,
   exports) still show it: the code was never sent to anyone, and the host owns the ticket.
@@ -54,10 +61,19 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
   rows (`repairTextRsvpAssociations`, `backfillSmsConsentForEvent`).
 - Size: `MAX_RSVPS_ANONYMIZED_PER_TRANSACTION` (50). Partner erasure anonymizes at most that
   many per request and answers `status: "partial"` so the partner repeats it. Account deletion
-  anonymizes that many inline and writes the rest to `rsvpAnonymizationBatches` rows (RSVP ids
-  plus phone hashes, deleted when done) run by `rsvpAnonymizationBatches.run`; the user row can
-  go first because a batch reads nothing the deletion removes. A leftover batch row is work that
-  failed; run `rsvpAnonymizationBatches.run` with its id to finish it.
+  anonymizes that many inline. The rest, and SMS recipient rows past one page, go to
+  `rsvpAnonymizationBatches` rows (an `RsvpAnonymizationWork`: RSVP ids, identities, phone
+  hashes, SMS-log ids and cursor; deleted when done) run by `rsvpAnonymizationBatches.run`,
+  which reschedules itself until the work is done. The user row can go first because a batch
+  reads nothing the deletion removes. The `crons.ts` sweep (`rerunStalled`, every 10 minutes)
+  reruns a batch whose run was scheduled over 10 minutes ago and counts `attempts`; a high count
+  in the logs is a batch that keeps failing.
+- Pending rows: until its batch runs, a deleted account's RSVP still carries its phone.
+  `pendingRsvpAnonymizations` marks it. A write that finds an existing RSVP by phone and would
+  reuse it calls `finishPendingAnonymization` first (guest form, shared submission service,
+  partner upsert, text-blast reply), which anonymizes the row so the write creates a new one. A
+  guest claim skips pending rows (`isPendingAnonymization`). A new write path that finds an RSVP
+  by phone or guest id must do the same.
 - Callers: `POST /api/v1/erasures` (`convex/partnerErasure.ts`, the calling key's RSVPs only)
   and Coucou account deletion (`lib/deleteUserData.ts`, every RSVP matched by the account, its
   aliases and its phone).

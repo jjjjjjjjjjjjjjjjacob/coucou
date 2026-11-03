@@ -349,7 +349,7 @@ What an erasure removes or deletes:
 | On the RSVP: name, phone hash and masked phone, the link to the person's account, note, custom field answers, invited-by and referral fields, SMS consent with its time and IP address. Contact sharing is turned off | Always |
 | The ticket's redemption code, which went to the person's phone. The ticket keeps its status and check-in under a new code nobody holds | Always |
 | In audit entries about the RSVP (or an id a merge retired): the JSON copy of the row, the evidence record that tied it to a phone, and the person as actor. Each entry says `redacted: "rsvp_anonymized"` | Always |
-| In SMS logs (text-blast recipients, text-blast replies, inbound-SMS receipts): the anonymized RSVP's id, so no log ties the phone hash to it | Always |
+| In SMS logs (text-blast recipients, text-blast replies, inbound-SMS receipts): the anonymized RSVP's id, so no log ties the phone hash to it. A phone with more than 500 text-blast recipient rows is cleared in background batches after the response | Always |
 | Guest hand-off links (they hold the phone), SMS RSVP sessions, social-handle snapshots, profile values and workspace grants sourced from the RSVP. Approval decisions stay, without the denial reason | Always |
 | Stored webhook delivery payloads for the RSVP, including those sent under an id a merge retired (they hold the phone and name and can be re-sent) | Always |
 | Queued SMS that carries the phone number | Always |
@@ -396,7 +396,13 @@ list and sent-SMS logs stay, as for a partner erasure.
 The deletion anonymizes up to 50 RSVPs in its own transaction. A person with more RSVPs has
 the rest anonymized in background batches of 50 that start as soon as the deletion commits,
 so their notices can arrive a little later. Each batch names its RSVPs by id, so it finishes
-even though the account is already gone, and running a batch twice changes nothing.
+even though the account is already gone, and running a batch twice changes nothing. A batch
+that fails runs again within about 20 minutes, until it finishes.
+
+If the person RSVPs again before a batch reaches one of their old RSVPs, through the guest
+form, a text or a partner, Coucou anonymizes the old RSVP first and records the new answer
+as a new RSVP. A new account on the same phone does not take over an old RSVP that is
+waiting to be anonymized.
 
 ## Webhooks
 
