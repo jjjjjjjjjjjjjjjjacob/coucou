@@ -103,7 +103,8 @@ function DocList({ items }: { items: ReactNode[] }) {
 
 const WEBHOOK_EVENT_TYPE_DESCRIPTIONS: Record<CoucouWebhookEventType, string> = {
   "rsvp.created": "An RSVP is submitted — via a coucou client, the guest flow, a host, or this API",
-  "rsvp.updated": "List, party size, name, or guest-to-account claim changes",
+  "rsvp.updated":
+    "List, party size, name, or guest-to-account claim changes, or an erasure anonymizes the RSVP",
   "rsvp.approved": "A host approves an RSVP",
   "rsvp.denied": "A host denies an RSVP",
   "rsvp.attendance_updated": "The guest's yes / no / maybe answer changes",
@@ -194,7 +195,7 @@ Content-Type: application/json
 {
   "erasure": {
     "status": "completed",
-    "erasedRsvpIds": ["jh7…"],
+    "anonymizedRsvpIds": ["jh7…"],
     "retainedRsvpIds": [],
     "completedAt": 1753000000000
   }
@@ -626,8 +627,9 @@ function PartnerApiDocumentation({
           <div className="space-y-2">
             <EndpointHeading method="POST" path="/erasures" scope="rsvps:write" />
             <DocParagraph>
-              Hard-deletes the RSVPs this key sent for one person, and the records Coucou kept only
-              because of them. Call it when a person deletes their account with you.
+              Anonymizes the RSVPs this key sent for one person, and deletes the records Coucou kept
+              only because of them. Call it when a person deletes their account with you. The RSVP
+              stays for the host&apos;s counts, with nothing on it that names the person.
             </DocParagraph>
             <CodeBlock code={EXAMPLE_ERASURE_REQUEST} />
             <DocList
@@ -637,7 +639,7 @@ function PartnerApiDocumentation({
                   100, from your POST responses), or both.
                 </>,
                 <>
-                  Only RSVPs this key created are erased. RSVPs other keys created, text or form
+                  Only RSVPs this key created are anonymized. RSVPs other keys created, text or form
                   RSVPs the person gave Coucou directly, RSVPs the person later submitted or edited
                   through Coucou, and RSVPs from before creators were recorded with no{" "}
                   <InlineCode>rsvp.created</InlineCode> notice from this key stay. The ones this key
@@ -645,9 +647,14 @@ function PartnerApiDocumentation({
                   that are not yours are ignored.
                 </>,
                 <>
-                  Deleted: the RSVP and its ticket, approvals, social handles, SMS consent, stored
-                  webhook payloads and queued SMS. Once no other RSVP needs them, also the workspace
-                  SMS preference, organizer notes, contact entry and guest phone record.
+                  Stays on the RSVP: its event, list, approval status, attendance answer, party
+                  size, check-in, source and API keys. An unused ticket is disabled.
+                </>,
+                <>
+                  Removed: the name, phone, account link, note, custom fields, invited-by, SMS
+                  consent, the ticket code, hand-off links, social handles, stored webhook payloads
+                  and queued SMS. Once no other RSVP needs them, also the workspace SMS preference,
+                  organizer notes, contact entry and guest phone record.
                 </>,
                 <>
                   Kept: a Coucou account matched by phone, the SMS opt-out list, sent-SMS logs, and
@@ -655,8 +662,15 @@ function PartnerApiDocumentation({
                 </>,
                 <>
                   <strong>Idempotent and synchronous:</strong> a repeat or an unknown phone returns
-                  200 with empty lists. Each erased RSVP emits <InlineCode>rsvp.deleted</InlineCode>{" "}
-                  with null identity fields and <InlineCode>changes.reason: "erasure"</InlineCode>.
+                  200 with empty lists. Each anonymized RSVP emits{" "}
+                  <InlineCode>rsvp.updated</InlineCode> with null identity fields and{" "}
+                  <InlineCode>changes.reason: "erasure"</InlineCode>.
+                </>,
+                <>
+                  When a person deletes their Coucou account, Coucou anonymizes all of their RSVPs,
+                  including those partners sent, and sends the same{" "}
+                  <InlineCode>rsvp.updated</InlineCode> erasure notice for each. Drop the person
+                  from your copy when you receive it.
                 </>,
               ]}
             />

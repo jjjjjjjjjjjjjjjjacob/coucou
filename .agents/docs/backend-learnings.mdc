@@ -27,15 +27,33 @@ partner-API, webhook, trigger, or convex-test tasks.
   helpers byte-compatible with `convex/lib/webhookCrypto.ts` (roundtrip-tested in
   `packages/sdk/__tests__/webhook-consumer.test.ts`).
 
-## Partner erasure (added 2026-10-27)
+## Partner erasure and account deletion (added 2026-10-27, anonymize since 2026-11-02)
 
 Use when deleting a person's data, or when a cleanup must not let triggers rebuild rows.
 
-- `POST /api/v1/erasures` runs `convex/partnerErasure.ts`, an untriggered internal
-  mutation. A deliberate exception to the trigger choke-point: the contact-sync triggers
-  (`workspaceGuestProfiles` → `syncProfile` → `ensureContact`) would recreate the contact
-  rows the erasure deletes. It calls `removeContactEvent` and
-  `enqueueRsvpErasureWebhookDeliveries` itself instead.
+- Erasure anonymizes, it never deletes the RSVP. `anonymizeRsvp` in
+  `convex/lib/rsvpAnonymization.ts` is the one routine: it strips every identity field
+  (`REMOVED_IDENTITY_FIELDS`), gives the row a per-row `clerkUserId` (`anonymized-<id>`, or
+  `guest:anonymized-<id>` so `isGuest` survives), sets `anonymizedAt`, disables an unused
+  ticket and re-keys the redemption and approvals with a fresh code, and deletes the side
+  records and webhook deliveries. The event, list, statuses, party size and check-in stay, so
+  `rsvpAggregate` (keyed on event, status, list) needs no update. A new identity field on
+  `rsvps` must go into `REMOVED_IDENTITY_FIELDS`.
+- Callers: `POST /api/v1/erasures` (`convex/partnerErasure.ts`, the calling key's RSVPs only)
+  and Coucou account deletion (`lib/deleteUserData.ts`, every RSVP matched by the account, its
+  aliases and its phone).
+- The erasure notice is `rsvp.updated` with null identity and `changes.reason: "erasure"`.
+  `enqueueRsvpWebhookDeliveries` emits it for any update that sets `anonymizedAt`
+  (`isRsvpAnonymization`). Account deletion is triggered, so the rsvps trigger sends it.
+  `partnerErasure.ts` is an untriggered internal mutation, a deliberate exception to the
+  trigger choke-point: the contact-sync triggers (`workspaceGuestProfiles` → `syncProfile` →
+  `ensureContact`) would recreate the contact rows it deletes. It passes the change to
+  `enqueueRsvpWebhookDeliveries` itself. `anonymizeRsvp` deletes stored deliveries before the
+  patch, so the notice is the only delivery left.
+- Anonymized rows match no account, phone or merge lookup, so later writes never re-attach a
+  person: the partner upsert and the guest form create a new row. Readers that build people
+  from RSVPs skip `anonymizedAt` rows (`syncContactRsvp`, the guest directory); a new one must
+  too.
 - Attribution is `rsvps.createdByApiClientId`, set only on the partner insert.
   `rsvps.apiClientId` is the last API writer and every partner write overwrites it, so never
   key ownership on it. Rows without a creator (inserted before this field) need the `rsvp.created`
@@ -43,10 +61,11 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
   Identity merges keep the creator only when both rows share it
   (`mergedRsvpCreatorApiClientId`). Apply the same rule to any new merge path.
 - A row the person submitted or edited through Coucou (form, signed-in app, text) is never
-  erased: every such patch of an existing row sets `rsvps.personSubmittedAt`, and merges keep
-  it when either row has it (`mergedRsvpPersonSubmittedAt`). A new person-facing write path
-  that patches an RSVP must set it too. `rsvpIdentityAliases.retiredApiClientIds` lets the
-  erasure report a merged row to the keys that wrote the absorbed one.
+  anonymized by a partner: every such patch of an existing row sets `rsvps.personSubmittedAt`,
+  and merges keep it when either row has it (`mergedRsvpPersonSubmittedAt`). A new
+  person-facing write path that patches an RSVP must set it too.
+  `rsvpIdentityAliases.retiredApiClientIds` lets the erasure report a merged row to the keys
+  that wrote the absorbed one.
 - Resolve caller-supplied RSVP ids with `resolveCanonicalRsvpId`: merges retire ids.
 - `webhookDeliveries.payloadJson` keeps plaintext phone and name forever and hosts can
   re-send it, so any deletion path must also delete deliveries (`by_rsvp` index).
