@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 // rows this erasure removes. The rsvp.deleted notices are enqueued explicitly.
 import { internalMutation } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
+import { resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
 import { refreshContactProfile, removeContactEvent } from "./lib/contactRecords";
 import {
   buildGuestClerkUserId,
@@ -110,7 +111,10 @@ async function findCandidateRsvps(
 
   for (const rsvpId of selectors.rsvpIds) {
     const normalizedRsvpId = ctx.db.normalizeId("rsvps", rsvpId);
-    const rsvp = normalizedRsvpId ? await ctx.db.get(normalizedRsvpId) : null;
+    // An identity merge retires RSVP ids; the person's data lives on the canonical row.
+    const rsvp = normalizedRsvpId
+      ? await ctx.db.get(await resolveCanonicalRsvpId(ctx, normalizedRsvpId))
+      : null;
     if (rsvp) addCandidates([rsvp]);
   }
 

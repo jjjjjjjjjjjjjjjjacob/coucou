@@ -270,7 +270,9 @@ delete their data.
   RSVPs sent by other keys, and RSVPs the person gave Coucou by text or form, stay. Ids that
   are neither created nor updated by your key are ignored without an error, so the response
   never reveals whether someone else's RSVP exists.
-- A merged RSVP is erased only when this key created both RSVPs that were merged.
+- An id that an identity merge retired (a guest who later signed in) selects the RSVP it was
+  merged into. The response lists that RSVP's id. A merged RSVP is erased only when this key
+  created both RSVPs that were merged.
 - RSVPs created before Coucou recorded the creating key (November 2026) have no recorded
   creator. Such an RSVP is erased only when all three of these are true:
   1. Its `rsvp.created` notice in Coucou's webhook log has `origin.apiClientId` set to this

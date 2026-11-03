@@ -824,6 +824,27 @@ describe("POST /api/v1/erasures", () => {
     expect(await readStoredPersonState(testBackend)).toEqual(storedBefore);
   });
 
+  it("erases the merged RSVP when a request names an id an identity merge retired", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    await seedEvent(testBackend, "evt-erase");
+    const partner = await issueApiKey(testBackend);
+    const merged = await mergeGuestRsvpIntoMemberRsvp(testBackend, {
+      memberPartnerKey: partner.plaintextKey,
+      guestPartnerKey: partner.plaintextKey,
+    });
+
+    const erasure = await requestErasure(testBackend, partner.plaintextKey, {
+      rsvpIds: [merged.retiredRsvpId],
+    });
+
+    expect(erasure.body.erasure).toMatchObject({
+      erasedRsvpIds: [merged.canonicalRsvpId],
+      retainedRsvpIds: [],
+    });
+    expect((await readStoredPersonState(testBackend)).rsvps).toEqual([]);
+  });
+
   it("keeps a pre-attribution RSVP that absorbed another RSVP in a merge", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
