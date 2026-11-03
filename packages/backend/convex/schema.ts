@@ -569,6 +569,8 @@ export default defineSchema({
     attendanceStatus: v.optional(v.string()), // 'yes' | 'no' | 'maybe'
     ticketViewedAt: v.optional(v.number()),
     apiClientId: v.optional(v.id("apiClients")), // set when created/updated via the partner API
+    // The API client that inserted the row. Partner erasure is keyed on it.
+    createdByApiClientId: v.optional(v.id("apiClients")),
     webhookOriginApiClientId: v.optional(v.id("apiClients")),
     webhookOriginMutationId: v.optional(v.string()),
     createdAt: v.number(),

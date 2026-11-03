@@ -265,9 +265,24 @@ delete their data.
 - Send `phone`, `rsvpIds`, or both. `phone` (E.164) selects every RSVP this key sent for that
   number. `rsvpIds` (at most 100) selects RSVPs by the ids your POST responses returned, so it
   still works if the person's phone changed. Send both when you hold both.
-- Only RSVPs that this API key wrote are erased. RSVPs sent by other keys, and RSVPs the
-  person gave Coucou by text or form, stay. Ids that are not yours are ignored without an
-  error, so the response never reveals whether someone else's RSVP exists.
+- Only RSVPs that this API key created are erased. An update from another key, through the
+  RSVP upsert or `PATCH /api/v1/rsvps/{rsvpId}`, does not move erasure rights to that key.
+  RSVPs sent by other keys, and RSVPs the person gave Coucou by text or form, stay. Ids that
+  are neither created nor updated by your key are ignored without an error, so the response
+  never reveals whether someone else's RSVP exists.
+- A merged RSVP is erased only when this key created both RSVPs that were merged.
+- RSVPs created before Coucou recorded the creating key (November 2026) have no recorded
+  creator. Such an RSVP is erased only when all three of these are true:
+  1. Its `rsvp.created` notice in Coucou's webhook log has `origin.apiClientId` set to this
+     key. The notice exists only if the workspace had an endpoint subscribed to
+     `rsvp.created` when the RSVP was created.
+  2. Its `source` is not `text` or `form`.
+  3. No other RSVP was merged into it.
+
+  Otherwise Coucou keeps it and lists it in `retainedRsvpIds`. RSVPs from before
+  2026-09-10 have no `source`, so without the notice Coucou cannot tell a partner-created
+  RSVP from a form RSVP that the partner later updated. Ask Coucou to erase a retained
+  legacy RSVP.
 - Erasure ignores the key's current event grants: a key can erase what it sent to an event it
   can no longer read.
 - The request is synchronous and runs in one transaction. It returns 200:
@@ -277,8 +292,9 @@ delete their data.
   "completedAt": 1753000000000 } }
 ```
 
-- `retainedRsvpIds` lists text or form RSVPs that this key only updated. Coucou keeps them
-  because the person gave them to Coucou directly.
+- `retainedRsvpIds` lists RSVPs that this key updated but cannot be shown to have created:
+  text or form RSVPs, RSVPs another key created, and the legacy RSVPs above. Coucou keeps
+  them because they are not only this partner's data.
 - **Idempotent**: a repeat request, or a phone Coucou has never seen, returns 200 with empty
   lists and changes nothing. Retry until you get a 2xx.
 - Each erased RSVP emits `rsvp.deleted` to subscribed endpoints, with every `identity` field

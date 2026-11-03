@@ -36,8 +36,12 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
   (`workspaceGuestProfiles` → `syncProfile` → `ensureContact`) would recreate the contact
   rows the erasure deletes. It calls `removeContactEvent` and
   `enqueueRsvpErasureWebhookDeliveries` itself instead.
-- Attribution is `rsvps.apiClientId` (last API writer) plus `source`: text and form RSVPs
-  are kept, `api` and missing source (rows before 2026-09-10) are erased.
+- Attribution is `rsvps.createdByApiClientId`, set only on the partner insert.
+  `rsvps.apiClientId` is the last API writer and every partner write overwrites it, so never
+  key ownership on it. Rows without a creator (inserted before this field) need the `rsvp.created`
+  webhook delivery's `origin.apiClientId`, a non-text/form source and no absorbed merge.
+  Identity merges keep the creator only when both rows share it
+  (`mergedRsvpCreatorApiClientId`). Apply the same rule to any new merge path.
 - `webhookDeliveries.payloadJson` keeps plaintext phone and name forever and hosts can
   re-send it, so any deletion path must also delete deliveries (`by_rsvp` index).
 - A new top-level Convex module needs its two lines in the checked-in

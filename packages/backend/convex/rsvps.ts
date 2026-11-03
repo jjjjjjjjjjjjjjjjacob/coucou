@@ -71,6 +71,7 @@ import {
 } from "./lib/socialProfileRecords";
 import { NotFoundError } from "./lib/types";
 import {
+  mergedRsvpCreatorApiClientId,
   mergeRedemptions,
   replaceRsvpAggregateSafely,
   ticketStatusFromRedemption,
@@ -1292,6 +1293,7 @@ async function claimGuestRsvpsForPhone(
       await ctx.db.patch(existingUserRsvp._id, {
         listKey: statusSource.listKey,
         source: statusSource.source,
+        createdByApiClientId: mergedRsvpCreatorApiClientId(existingUserRsvp, guestRsvp),
         smsPhoneHash: guestRsvp.smsPhoneHash ?? existingUserRsvp.smsPhoneHash,
         userName: resolveUserDisplayName(
           mergedUser,

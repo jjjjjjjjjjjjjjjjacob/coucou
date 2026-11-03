@@ -175,7 +175,7 @@ export interface ApiErasure {
   status: "completed";
   /** RSVPs hard-deleted by this request. Empty on a repeat or for an unknown person. */
   erasedRsvpIds: string[];
-  /** Text or form RSVPs this client only updated; the person gave them to Coucou directly. */
+  /** RSVPs this client updated but cannot be shown to have created; Coucou keeps them. */
   retainedRsvpIds: string[];
   completedAt: number;
 }

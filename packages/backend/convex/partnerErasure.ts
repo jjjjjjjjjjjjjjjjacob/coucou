@@ -126,11 +126,58 @@ async function rsvpBelongsToWorkspace(
   return event?.workspaceSlug === workspace.slug;
 }
 
-// Text and form RSVPs were given to Coucou directly; the partner only updated
-// them. RSVPs from before source tracking have no source, and the partner is
-// their recorded writer, so they count as partner-sourced.
-function isPartnerSourcedRsvp(rsvp: Doc<"rsvps">): boolean {
-  return rsvp.source !== "form" && rsvp.source !== "text";
+type RsvpErasureDecision = "erase" | "retain" | "unrelated";
+
+// Rows inserted before createdByApiClientId existed name their inserting key
+// only in the rsvp.created notice, and only when an endpoint was subscribed.
+async function webhookLogShowsInsertBy(
+  ctx: MutationCtx,
+  rsvpId: Id<"rsvps">,
+  apiClientId: Id<"apiClients">,
+): Promise<boolean> {
+  const deliveries = await ctx.db
+    .query("webhookDeliveries")
+    .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvpId))
+    .collect();
+  return deliveries.some((delivery) => {
+    if (delivery.eventType !== "rsvp.created") return false;
+    const payload = JSON.parse(delivery.payloadJson) as {
+      data?: { origin?: { type?: string; apiClientId?: string } };
+    };
+    return payload.data?.origin?.type === "api" && payload.data.origin.apiClientId === apiClientId;
+  });
+}
+
+async function absorbedAnotherRsvp(ctx: MutationCtx, rsvpId: Id<"rsvps">): Promise<boolean> {
+  const alias = await ctx.db
+    .query("rsvpIdentityAliases")
+    .withIndex("by_canonical", (queryBuilder) => queryBuilder.eq("canonicalRsvpId", rsvpId))
+    .first();
+  return alias !== null;
+}
+
+// A key erases only RSVPs it inserted. Every write overwrites apiClientId, so
+// it shows who touched a row last, not who sent it. A row this key wrote but
+// cannot be shown to have inserted is retained and reported.
+async function decideRsvpErasure(
+  ctx: MutationCtx,
+  rsvp: Doc<"rsvps">,
+  apiClientId: Id<"apiClients">,
+): Promise<RsvpErasureDecision> {
+  const hasRecordedCreator = rsvp.createdByApiClientId !== undefined;
+  const insertedByCaller = hasRecordedCreator
+    ? rsvp.createdByApiClientId === apiClientId
+    : await webhookLogShowsInsertBy(ctx, rsvp._id, apiClientId);
+  if (!insertedByCaller && rsvp.apiClientId !== apiClientId) return "unrelated";
+
+  const givenToCoucouDirectly = rsvp.source === "form" || rsvp.source === "text";
+  // Without a recorded creator, a merged row may hold an RSVP of unknown origin.
+  const mergedWithoutRecordedCreator =
+    !hasRecordedCreator && (await absorbedAnotherRsvp(ctx, rsvp._id));
+  if (!insertedByCaller || givenToCoucouDirectly || mergedWithoutRecordedCreator) {
+    return "retain";
+  }
+  return "erase";
 }
 
 async function buildErasureSubject(
@@ -535,17 +582,14 @@ export const eraseSubjectForApiClient = internalMutation({
       throw new Error("API client does not belong to the workspace");
     }
 
-    const attributedRsvps: Doc<"rsvps">[] = [];
+    const erasedRsvps: Doc<"rsvps">[] = [];
+    const retainedRsvps: Doc<"rsvps">[] = [];
     for (const rsvp of await findCandidateRsvps(ctx, args)) {
-      if (
-        rsvp.apiClientId === apiClient._id &&
-        (await rsvpBelongsToWorkspace(ctx, rsvp, scope.workspace))
-      ) {
-        attributedRsvps.push(rsvp);
-      }
+      if (!(await rsvpBelongsToWorkspace(ctx, rsvp, scope.workspace))) continue;
+      const decision = await decideRsvpErasure(ctx, rsvp, apiClient._id);
+      if (decision === "erase") erasedRsvps.push(rsvp);
+      if (decision === "retain") retainedRsvps.push(rsvp);
     }
-    const erasedRsvps = attributedRsvps.filter(isPartnerSourcedRsvp);
-    const retainedRsvps = attributedRsvps.filter((rsvp) => !isPartnerSourcedRsvp(rsvp));
 
     if (erasedRsvps.length > 0) {
       const subject = await buildErasureSubject(ctx, erasedRsvps);

@@ -273,6 +273,17 @@ export async function mergeRedemptions(
   return { ...canonicalRedemption, unredeemHistory };
 }
 
+// A merged RSVP holds both rows' data, so it keeps an inserting API client
+// only when that client inserted both rows.
+export function mergedRsvpCreatorApiClientId(
+  firstRsvp: Doc<"rsvps">,
+  secondRsvp: Doc<"rsvps">,
+): Id<"apiClients"> | undefined {
+  return firstRsvp.createdByApiClientId === secondRsvp.createdByApiClientId
+    ? firstRsvp.createdByApiClientId
+    : undefined;
+}
+
 export async function upsertRsvpAlias(
   ctx: MutationCtx,
   input: {
@@ -458,6 +469,7 @@ async function mergeRsvpCollision(
   await ctx.db.patch(targetRsvp._id, {
     listKey: statusSource.listKey,
     source: statusSource.source,
+    createdByApiClientId: mergedRsvpCreatorApiClientId(targetRsvp, sourceRsvp),
     smsPhoneHash: sourceRsvp.smsPhoneHash ?? targetRsvp.smsPhoneHash,
     userName: newestRsvp.userName ?? targetRsvp.userName ?? sourceRsvp.userName,
     ticketStatus:
