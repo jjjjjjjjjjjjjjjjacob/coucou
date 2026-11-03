@@ -152,32 +152,34 @@ async function webhookLogShowsInsertBy(
   });
 }
 
-async function absorbedAnotherRsvp(ctx: MutationCtx, rsvpId: Id<"rsvps">): Promise<boolean> {
-  const alias = await ctx.db
-    .query("rsvpIdentityAliases")
-    .withIndex("by_canonical", (queryBuilder) => queryBuilder.eq("canonicalRsvpId", rsvpId))
-    .first();
-  return alias !== null;
-}
-
 // A key erases only RSVPs it inserted. Every write overwrites apiClientId, so
-// it shows who touched a row last, not who sent it. A row this key wrote but
-// cannot be shown to have inserted is retained and reported.
+// it shows who touched a row last, not who sent it. A row this key wrote, or
+// that absorbed a row this key wrote, but that the key cannot be shown to have
+// inserted is retained and reported.
 async function decideRsvpErasure(
   ctx: MutationCtx,
   rsvp: Doc<"rsvps">,
   apiClientId: Id<"apiClients">,
 ): Promise<RsvpErasureDecision> {
+  const absorbedRsvpAliases = await ctx.db
+    .query("rsvpIdentityAliases")
+    .withIndex("by_canonical", (queryBuilder) => queryBuilder.eq("canonicalRsvpId", rsvp._id))
+    .collect();
   const hasRecordedCreator = rsvp.createdByApiClientId !== undefined;
   const insertedByCaller = hasRecordedCreator
     ? rsvp.createdByApiClientId === apiClientId
     : await webhookLogShowsInsertBy(ctx, rsvp._id, apiClientId);
-  if (!insertedByCaller && rsvp.apiClientId !== apiClientId) return "unrelated";
+  const absorbedCallerRsvp = absorbedRsvpAliases.some((alias) =>
+    alias.retiredApiClientIds?.includes(apiClientId),
+  );
+  if (!insertedByCaller && rsvp.apiClientId !== apiClientId && !absorbedCallerRsvp) {
+    return "unrelated";
+  }
 
-  const givenToCoucouDirectly = rsvp.source === "form" || rsvp.source === "text";
+  const givenToCoucouDirectly =
+    rsvp.source === "form" || rsvp.source === "text" || rsvp.personSubmittedAt !== undefined;
   // Without a recorded creator, a merged row may hold an RSVP of unknown origin.
-  const mergedWithoutRecordedCreator =
-    !hasRecordedCreator && (await absorbedAnotherRsvp(ctx, rsvp._id));
+  const mergedWithoutRecordedCreator = !hasRecordedCreator && absorbedRsvpAliases.length > 0;
   if (!insertedByCaller || givenToCoucouDirectly || mergedWithoutRecordedCreator) {
     return "retain";
   }
@@ -281,14 +283,28 @@ async function eraseRsvp(
   rsvp: Doc<"rsvps">,
   apiClientId: Id<"apiClients">,
 ): Promise<void> {
+  const identityAliases = await ctx.db
+    .query("rsvpIdentityAliases")
+    .withIndex("by_canonical", (queryBuilder) => queryBuilder.eq("canonicalRsvpId", rsvp._id))
+    .collect();
+  // Deliveries keep the id the RSVP had when they were sent, so a merged row's
+  // retired ids hold copies of its phone and name too.
+  const webhookDeliveries = (
+    await Promise.all(
+      [rsvp._id, ...identityAliases.map((alias) => alias.retiredRsvpId)].map((rsvpId) =>
+        ctx.db
+          .query("webhookDeliveries")
+          .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvpId))
+          .collect(),
+      ),
+    )
+  ).flat();
   const [
     approvals,
     redemptions,
     guestHandoffs,
-    identityAliases,
     socialProfileSnapshots,
     smsRsvpSessions,
-    webhookDeliveries,
     contactEvents,
   ] = await Promise.all([
     ctx.db
@@ -306,10 +322,6 @@ async function eraseRsvp(
       .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
       .collect(),
     ctx.db
-      .query("rsvpIdentityAliases")
-      .withIndex("by_canonical", (queryBuilder) => queryBuilder.eq("canonicalRsvpId", rsvp._id))
-      .collect(),
-    ctx.db
       .query("rsvpSocialProfiles")
       .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
       .collect(),
@@ -318,10 +330,6 @@ async function eraseRsvp(
       .withIndex("by_destination_rsvp", (queryBuilder) =>
         queryBuilder.eq("destinationRsvpId", rsvp._id),
       )
-      .collect(),
-    ctx.db
-      .query("webhookDeliveries")
-      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
       .collect(),
     ctx.db
       .query("contactEvents")

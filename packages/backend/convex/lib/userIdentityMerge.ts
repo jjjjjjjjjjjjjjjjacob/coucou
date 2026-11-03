@@ -284,6 +284,21 @@ export function mergedRsvpCreatorApiClientId(
     : undefined;
 }
 
+// A merged RSVP holds both rows' data, so it stays marked as given to Coucou
+// directly when either row was.
+export function mergedRsvpPersonSubmittedAt(
+  firstRsvp: Doc<"rsvps">,
+  secondRsvp: Doc<"rsvps">,
+): number | undefined {
+  return Math.max(firstRsvp.personSubmittedAt ?? 0, secondRsvp.personSubmittedAt ?? 0) || undefined;
+}
+
+export function rsvpApiClientIds(rsvp: Doc<"rsvps">): Id<"apiClients">[] {
+  return [
+    ...new Set([rsvp.createdByApiClientId, rsvp.apiClientId].filter((id) => id !== undefined)),
+  ];
+}
+
 export async function upsertRsvpAlias(
   ctx: MutationCtx,
   input: {
@@ -291,6 +306,7 @@ export async function upsertRsvpAlias(
     canonicalRsvpId: Id<"rsvps">;
     retiredClerkUserId: string;
     canonicalClerkUserId: string;
+    retiredApiClientIds: Id<"apiClients">[];
     now: number;
   },
 ): Promise<void> {
@@ -317,6 +333,7 @@ export async function upsertRsvpAlias(
     await ctx.db.patch(existingAlias._id, {
       canonicalRsvpId: input.canonicalRsvpId,
       canonicalClerkUserId: input.canonicalClerkUserId,
+      retiredApiClientIds: input.retiredApiClientIds,
       updatedAt: input.now,
     });
     return;
@@ -326,6 +343,7 @@ export async function upsertRsvpAlias(
     canonicalRsvpId: input.canonicalRsvpId,
     retiredClerkUserId: input.retiredClerkUserId,
     canonicalClerkUserId: input.canonicalClerkUserId,
+    retiredApiClientIds: input.retiredApiClientIds,
     createdAt: input.now,
     updatedAt: input.now,
   });
@@ -470,6 +488,7 @@ async function mergeRsvpCollision(
     listKey: statusSource.listKey,
     source: statusSource.source,
     createdByApiClientId: mergedRsvpCreatorApiClientId(targetRsvp, sourceRsvp),
+    personSubmittedAt: mergedRsvpPersonSubmittedAt(targetRsvp, sourceRsvp),
     smsPhoneHash: sourceRsvp.smsPhoneHash ?? targetRsvp.smsPhoneHash,
     userName: newestRsvp.userName ?? targetRsvp.userName ?? sourceRsvp.userName,
     ticketStatus:
@@ -549,6 +568,7 @@ async function mergeRsvpCollision(
     canonicalRsvpId: targetRsvp._id,
     retiredClerkUserId: sourceRsvp.clerkUserId,
     canonicalClerkUserId: input.canonicalClerkUserId,
+    retiredApiClientIds: rsvpApiClientIds(sourceRsvp),
     now: input.now,
   });
   await ctx.db.delete(sourceRsvp._id);

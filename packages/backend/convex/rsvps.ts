@@ -72,8 +72,10 @@ import {
 import { NotFoundError } from "./lib/types";
 import {
   mergedRsvpCreatorApiClientId,
+  mergedRsvpPersonSubmittedAt,
   mergeRedemptions,
   replaceRsvpAggregateSafely,
+  rsvpApiClientIds,
   ticketStatusFromRedemption,
   upsertRsvpAlias,
 } from "./lib/userIdentityMerge";
@@ -615,6 +617,7 @@ async function submitAuthenticatedRequest(
       listKey: args.listKey,
       userName, // Keep userName in sync
       note: args.note,
+      personSubmittedAt: now,
       shareContact: args.shareContact,
       attendees: requestedAttendees,
       smsConsent: resolvedSmsConsent.smsConsent,
@@ -819,6 +822,7 @@ export const submitGuestRequest = mutation({
         guestPhoneHash: phoneHash,
         guestPhoneObfuscated,
         note: args.note,
+        personSubmittedAt: now,
         shareContact: args.shareContact,
         attendees: requestedAttendees,
         smsConsent: resolvedSmsConsent.smsConsent,
@@ -1294,6 +1298,7 @@ async function claimGuestRsvpsForPhone(
         listKey: statusSource.listKey,
         source: statusSource.source,
         createdByApiClientId: mergedRsvpCreatorApiClientId(existingUserRsvp, guestRsvp),
+        personSubmittedAt: mergedRsvpPersonSubmittedAt(existingUserRsvp, guestRsvp),
         smsPhoneHash: guestRsvp.smsPhoneHash ?? existingUserRsvp.smsPhoneHash,
         userName: resolveUserDisplayName(
           mergedUser,
@@ -1356,6 +1361,7 @@ async function claimGuestRsvpsForPhone(
         canonicalRsvpId: existingUserRsvp._id,
         retiredClerkUserId: guestRsvp.clerkUserId,
         canonicalClerkUserId: clerkUserId,
+        retiredApiClientIds: rsvpApiClientIds(guestRsvp),
         now,
       });
       await ctx.db.delete(guestRsvp._id);
@@ -1856,6 +1862,7 @@ export const updateSmsPreference = mutation({
           smsConsent,
           smsConsentTimestamp: now,
           smsConsentIpAddress: rsvpSmsConsentIpAddress,
+          personSubmittedAt: now,
           updatedAt: now,
         });
       }
@@ -1876,6 +1883,7 @@ export const updateSmsPreference = mutation({
           smsConsent,
           smsConsentTimestamp: now,
           smsConsentIpAddress: rsvpSmsConsentIpAddress,
+          personSubmittedAt: now,
           updatedAt: now,
         });
         updatedCount = 1;
@@ -1937,9 +1945,11 @@ export const updateSharedFields = mutation({
       }
     }
 
+    const now = Date.now();
     await ctx.db.patch(rsvpId, {
       customFieldValues: Object.keys(nextValues).length > 0 ? nextValues : undefined,
-      updatedAt: Date.now(),
+      personSubmittedAt: now,
+      updatedAt: now,
     });
 
     return {
@@ -1996,8 +2006,10 @@ export const updateSharedPrimaryFields = mutation({
       .query("users")
       .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
       .unique();
+    const now = Date.now();
 
     if (socialProfiles !== undefined && configuredSocialPlatformKeys.size > 0) {
+      await ctx.db.patch(rsvpId, { personSubmittedAt: now });
       await createProfileValuesAndWorkspaceGrantsForSocialProfiles(ctx, {
         event,
         rsvpId,
@@ -2016,9 +2028,9 @@ export const updateSharedPrimaryFields = mutation({
     }
 
     if (primaryFieldConfig?.invitedBy?.enabled === true && invitedByName !== undefined) {
-      const now = Date.now();
       await ctx.db.patch(rsvpId, {
         ...buildInvitedByPatch(invitedByName),
+        personSubmittedAt: now,
         updatedAt: now,
       });
       await appendInviterHistoryForContact(ctx, {

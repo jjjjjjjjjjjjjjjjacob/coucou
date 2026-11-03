@@ -571,6 +571,9 @@ export default defineSchema({
     apiClientId: v.optional(v.id("apiClients")), // set when created/updated via the partner API
     // The API client that inserted the row. Partner erasure is keyed on it.
     createdByApiClientId: v.optional(v.id("apiClients")),
+    // Set when the person submits to or edits an existing row through Coucou (form,
+    // signed-in app or text). Partner erasure keeps a row the person gave Coucou directly.
+    personSubmittedAt: v.optional(v.number()),
     webhookOriginApiClientId: v.optional(v.id("apiClients")),
     webhookOriginMutationId: v.optional(v.string()),
     createdAt: v.number(),
@@ -603,6 +606,9 @@ export default defineSchema({
     canonicalRsvpId: v.id("rsvps"),
     retiredClerkUserId: v.string(),
     canonicalClerkUserId: v.string(),
+    // The retired row's creating and last-writing API clients, so partner
+    // erasure can report a merged row to the keys that wrote the retired one.
+    retiredApiClientIds: v.optional(v.array(v.id("apiClients"))),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
