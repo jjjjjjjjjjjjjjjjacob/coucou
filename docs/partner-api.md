@@ -364,7 +364,7 @@ What Coucou keeps, and why:
 | A Coucou account (`users` row) matched by phone | The person holds it with Coucou directly |
 | SMS opt-out (`STOP`) list entry, keyed by phone hash | Coucou must keep honoring the opt-out |
 | Sent-SMS logs: obfuscated phone, phone hash, message body, without the anonymized RSVP's id | Coucou is the sender of record and keeps them for carrier and consent disputes, as on account deletion |
-| A contact-directory row with past text-blast deliveries, renamed "Erased contact" with no number | Blast delivery history points at it |
+| A contact-directory row with past text-blast deliveries, renamed "Erased contact" with no number, phone hash, name, notes, tags or account link | Blast delivery history points at it |
 | An audit entry with the API client and the anonymized RSVP ids, no name or phone, and the earlier audit entries about the RSVP, redacted | Proof that the erasure ran and what was done to the RSVP |
 | The anonymized RSVP and its `rsvp.updated` notice, without identity fields | The host's counts stay right, and the notice tells mirrors to drop the person |
 
@@ -391,7 +391,9 @@ and each emits the same `rsvp.updated` notice with null identity and
 `data.changes.reason: "erasure"`, with `origin.type: "app"`, to every endpoint subscribed to
 `rsvp.updated` and granted that RSVP's event. Partners mirroring those RSVPs must drop the
 person from their copies, and must subscribe to `rsvp.updated` to be told. The SMS opt-out
-list and sent-SMS logs stay, as for a partner erasure.
+list and sent-SMS logs stay, as for a partner erasure. In every workspace, the person's
+contact-directory row is deleted, or, where text-blast delivery history points at it, renamed
+"Deleted account" with nothing else left that names or reaches the person.
 
 The deletion anonymizes up to 100 RSVPs in its own transaction: the fields listed above are
 gone from each RSVP row, its ticket has a new code, and its notice is queued, so nothing can

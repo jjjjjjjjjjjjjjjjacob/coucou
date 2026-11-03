@@ -6,7 +6,7 @@ import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
-import { refreshContactProfile } from "./lib/contactRecords";
+import { eraseContact } from "./lib/contactRecords";
 import {
   buildGuestClerkUserId,
   GUEST_CLERK_USER_ID_PREFIX,
@@ -296,69 +296,13 @@ async function subjectHasRsvpInWorkspace(
   return false;
 }
 
-async function eraseWorkspaceContact(
-  ctx: MutationCtx,
-  contact: Doc<"workspaceContacts">,
-  subject: ErasureSubject,
-) {
-  const remainingContactEvent = await ctx.db
-    .query("contactEvents")
-    .withIndex("by_contact_event", (queryBuilder) => queryBuilder.eq("contactId", contact._id))
-    .first();
-  if (remainingContactEvent) return;
-
-  // Recomputes tags and default-list facets now that the guest profiles are gone.
-  await refreshContactProfile(ctx, contact._id);
-  const [contactIdentities, textDelivery] = await Promise.all([
-    ctx.db
-      .query("workspaceContactIdentities")
-      .withIndex("by_contact", (queryBuilder) => queryBuilder.eq("contactId", contact._id))
-      .collect(),
-    ctx.db
-      .query("contactDeliveries")
-      .withIndex("by_contact", (queryBuilder) => queryBuilder.eq("contactId", contact._id))
-      .first(),
-  ]);
-
-  if (!textDelivery) {
-    await deleteDocuments(ctx, [...contactIdentities, contact]);
-    return;
-  }
-
-  // Text-blast delivery history points at this row, so it stays without a name or number.
-  await deleteDocuments(
-    ctx,
-    contactIdentities.filter((identity) => subject.clerkUserIds.has(identity.clerkUserId)),
-  );
-  await ctx.db.patch(contact._id, {
-    clerkUserIds: contact.clerkUserIds.filter(
-      (clerkUserId) => !subject.clerkUserIds.has(clerkUserId),
-    ),
-    primaryClerkUserId: undefined,
-    detailReference: undefined,
-    phoneNumber: undefined,
-    name: ERASED_CONTACT_NAME,
-    normalizedName: ERASED_CONTACT_NAME.toLocaleLowerCase(),
-    firstName: undefined,
-    lastName: undefined,
-    imageUrl: undefined,
-    notes: undefined,
-    searchText: ERASED_CONTACT_NAME.toLocaleLowerCase(),
-    searchAliases: [],
-    invitedByNames: [],
-    smsConsent: false,
-    consentUpdatedAt: Date.now(),
-    updatedAt: Date.now(),
-  });
-}
-
 async function eraseWorkspacePersonRecords(
   ctx: MutationCtx,
   scope: WorkspaceScope,
   subject: ErasureSubject,
 ) {
   const { workspace, organizerKeys } = scope;
-  const contacts = new Map<Id<"workspaceContacts">, Doc<"workspaceContacts">>();
+  const contactIds = new Set<Id<"workspaceContacts">>();
 
   for (const clerkUserId of subject.clerkUserIds) {
     const [preferences, profileValueGrants, guestProfiles, contactIdentities] = await Promise.all([
@@ -398,10 +342,7 @@ async function eraseWorkspacePersonRecords(
       ),
       ...guestProfiles,
     ]);
-    for (const contactIdentity of contactIdentities) {
-      const contact = await ctx.db.get(contactIdentity.contactId);
-      if (contact) contacts.set(contact._id, contact);
-    }
+    for (const contactIdentity of contactIdentities) contactIds.add(contactIdentity.contactId);
   }
 
   for (const phoneHash of subject.phoneHashes) {
@@ -420,11 +361,11 @@ async function eraseWorkspacePersonRecords(
         .collect(),
     ]);
     await deleteDocuments(ctx, guestProfiles);
-    for (const contact of phoneContacts) contacts.set(contact._id, contact);
+    for (const contact of phoneContacts) contactIds.add(contact._id);
   }
 
-  for (const contact of contacts.values()) {
-    await eraseWorkspaceContact(ctx, contact, subject);
+  for (const contactId of contactIds) {
+    await eraseContact(ctx, contactId, subject.clerkUserIds, ERASED_CONTACT_NAME);
   }
 }
 

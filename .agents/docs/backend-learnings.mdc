@@ -72,7 +72,7 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
   `rsvpSocialProfiles` deletes) go through `ctx.untriggeredDb`, the database under the triggers
   that `functions.ts` adds to every triggered mutation (`AnonymizationCtx`; an untriggered
   mutation passes `{ ...ctx, untriggeredDb: ctx.db }`). Measured with 150 RSVPs, tickets,
-  snapshots, 600 recipient rows and 10 endpoints: the deletion schedules 103 functions, a batch
+  snapshots, 600 recipient rows and 10 endpoints: the deletion schedules 102 functions, a batch
   run 52, a dispatcher run 501.
 - `buildRsvpTicketSnapshot` returns null for an anonymized RSVP, so partner GETs and webhooks
   never carry the new code. Host readers (`rsvps.listForEvent`, `redemptions.listForEvent`,
@@ -101,7 +101,14 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
   sets `anonymizedAt` must go through `blankRsvps`. `partnerErasure.ts` is an untriggered
   internal mutation, a deliberate exception to the trigger choke-point: the contact-sync
   triggers (`workspaceGuestProfiles` → `syncProfile` → `ensureContact`) would recreate the
-  contact rows it deletes. The notice is queued when the row is blanked, the moment the
+  contact rows it deletes. Account deletion stays triggered and deletes the person's
+  `workspaceGuestProfiles`, `users` row and `userIdentityAliases` through `untriggeredDb` for
+  the same reason: `syncProfile` and `syncUser` call `ensureContact`, an upsert that gives a
+  contact back the identity being erased (and `syncUser` rebuilds contacts from the RSVPs
+  beyond the first 100 before the batch blanks them). Both callers erase the person's contact
+  rows through `eraseContact` (`lib/contactRecords.ts`): a row with text-blast deliveries stays
+  renamed with no phone, phone hash, name, notes, tags or identity; any other row is deleted.
+  The notice is queued when the row is blanked, the moment the
   identity is gone, not when cleanup finishes. `blankRsvp` deletes stored deliveries
   before the patch, so the notice is the only delivery left.
 - Anonymized rows match no account, phone or merge lookup, so later writes never re-attach a

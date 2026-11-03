@@ -2887,7 +2887,6 @@ describe("Coucou account deletion", () => {
     // dispatcher run drains 500 at a time.
     expect(deletion).toEqual({
       "contactSync:syncRsvp": 100,
-      "contactSync:syncUser": 1,
       "rsvpAnonymizationBatches:run": 1,
       "webhookDeliveries:dispatchQueuedDeliveries": 1,
     });

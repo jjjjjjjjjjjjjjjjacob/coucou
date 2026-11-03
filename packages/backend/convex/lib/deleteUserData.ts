@@ -1,9 +1,11 @@
 import type { Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { refreshContactProfile, removeContactEvent } from "./contactRecords";
+import { eraseContact, removeContactEvent } from "./contactRecords";
 import { buildGuestClerkUserId } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
 import { type AnonymizationCtx, anonymizeHeldRsvps } from "./rsvpAnonymization";
+
+const DELETED_ACCOUNT_CONTACT_NAME = "Deleted account";
 
 async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<TableNames> }>) {
   for (const documentId of new Set(documents.map((document) => document._id)))
@@ -122,6 +124,7 @@ export async function deleteUserData(context: AnonymizationCtx, clerkUserId: str
     phoneHashes: [...phoneHashes],
   });
 
+  const contactIds = new Set<Id<"workspaceContacts">>();
   for (const identityId of identityIds) {
     const [
       consent,
@@ -172,6 +175,7 @@ export async function deleteUserData(context: AnonymizationCtx, clerkUserId: str
         .collect(),
     ]);
     for (const contactEvent of contactEvents) await removeContactEvent(context, contactEvent);
+    for (const contactIdentity of contactIdentities) contactIds.add(contactIdentity.contactId);
     await deleteDocuments(context, [
       ...consent,
       ...profiles,
@@ -184,11 +188,13 @@ export async function deleteUserData(context: AnonymizationCtx, clerkUserId: str
     // One snapshot per RSVP and platform. Its trigger's contact sync would only
     // rebuild a contact event for an RSVP this deletion anonymizes.
     for (const snapshot of snapshots) await context.untriggeredDb.delete(snapshot._id);
+    // A guest profile's trigger syncs its contact through ensureContact, which
+    // would give the contact back the identity this deletion erases.
     const guestProfiles = await context.db
       .query("workspaceGuestProfiles")
       .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("clerkUserId"), identityId))
       .collect();
-    await deleteDocuments(context, guestProfiles);
+    for (const guestProfile of guestProfiles) await context.untriggeredDb.delete(guestProfile._id);
   }
   for (const phoneHash of removablePhoneHashes) {
     const [handoffs, guestContacts, sessions, guestProfiles, contacts] = await Promise.all([
@@ -213,28 +219,20 @@ export async function deleteUserData(context: AnonymizationCtx, clerkUserId: str
         .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
         .collect(),
     ]);
-    await deleteDocuments(context, [...handoffs, ...guestContacts, ...sessions, ...guestProfiles]);
-    // Historical delivery records remain, but must not act as a subscription or profile prefill.
-    for (const contact of contacts) {
-      await context.db.patch(contact._id, {
-        clerkUserIds: contact.clerkUserIds.filter((identityId) => !identityIds.has(identityId)),
-        primaryClerkUserId: undefined,
-        smsConsent: false,
-        consentUpdatedAt: Date.now(),
-        name: "Deleted account",
-        normalizedName: "deleted account",
-        detailReference: undefined,
-        searchAliases: [],
-        firstName: undefined,
-        lastName: undefined,
-        imageUrl: undefined,
-        notes: undefined,
-        invitedByNames: [],
-      });
-      await refreshContactProfile(context, contact._id);
-    }
+    await deleteDocuments(context, [...handoffs, ...guestContacts, ...sessions]);
+    for (const guestProfile of guestProfiles) await context.untriggeredDb.delete(guestProfile._id);
+    for (const contact of contacts) contactIds.add(contact._id);
   }
-  await deleteDocuments(context, [...aliases, ...(ownAlias ? [ownAlias] : [])]);
-  if (user) await context.db.delete(user._id);
+  for (const contactId of contactIds) {
+    const contact = await context.db.get(contactId);
+    // Another account holds this phone now, so the row is that person's.
+    if (contact?.phoneHash && !removablePhoneHashes.has(contact.phoneHash)) continue;
+    await eraseContact(context, contactId, identityIds, DELETED_ACCOUNT_CONTACT_NAME);
+  }
+  // Their triggers' contact sync rebuilds contacts from the RSVPs still under
+  // these ids: the ones beyond the first 100, which the batch is about to blank.
+  for (const alias of new Set([...aliases, ...(ownAlias ? [ownAlias] : [])].map(({ _id }) => _id)))
+    await context.untriggeredDb.delete(alias);
+  if (user) await context.untriggeredDb.delete(user._id);
   return { deleted: Boolean(user) };
 }
