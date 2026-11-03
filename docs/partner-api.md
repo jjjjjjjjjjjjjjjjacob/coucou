@@ -393,16 +393,21 @@ and each emits the same `rsvp.updated` notice with null identity and
 person from their copies, and must subscribe to `rsvp.updated` to be told. The SMS opt-out
 list and sent-SMS logs stay, as for a partner erasure.
 
-The deletion anonymizes up to 50 RSVPs in its own transaction. A person with more RSVPs has
-the rest anonymized in background batches of 50 that start as soon as the deletion commits,
-so their notices can arrive a little later. Each batch names its RSVPs by id, so it finishes
-even though the account is already gone, and running a batch twice changes nothing. A batch
+The deletion anonymizes up to 100 RSVPs in its own transaction: the fields listed above are
+gone from each RSVP row, its ticket has a new code, and its notice is queued, so nothing can
+find or copy the person through those RSVPs once the deletion commits. The other records
+listed above (hand-off links, SMS sessions, audit entries, SMS-log ids and the rest) are
+cleaned up by background batches that start as soon as the deletion commits.
+
+A person with more than 100 RSVPs has the rest anonymized by those batches, 100 per
+transaction, within seconds, so their notices can arrive a little later. A batch finds the
+remaining RSVPs by the deleted account's identities and phones, so an RSVP made with them
+before the batches finish is anonymized too. Running a batch twice changes nothing. A batch
 that fails runs again within about 20 minutes, until it finishes.
 
-If the person RSVPs again before a batch reaches one of their old RSVPs, through the guest
-form, a text or a partner, Coucou anonymizes the old RSVP first and records the new answer
-as a new RSVP. A new account on the same phone does not take over an old RSVP that is
-waiting to be anonymized.
+If the person RSVPs again after the deletion, through the guest form, a text or a partner,
+the new answer becomes a new RSVP that holds only what they sent. Nothing is copied from an
+anonymized RSVP, and a new account on the same phone does not take one over.
 
 ## Webhooks
 
