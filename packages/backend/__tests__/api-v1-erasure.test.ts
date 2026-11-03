@@ -880,6 +880,119 @@ async function readPartnerTickets(testBackend: TestBackend, plaintextKey: string
   return tickets;
 }
 
+// A member whose phone the guest form also used, with a directory entry the
+// host tagged and annotated. With text history, a text blast reached the phone.
+async function seedMemberInContactDirectory(
+  testBackend: TestBackend,
+  options: { withTextHistory: boolean },
+) {
+  const workspaceId = await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+  const guestFormEventId = await seedEvent(testBackend, "evt-erase");
+  const memberEventId = await seedEvent(testBackend, "evt-direct");
+  const { phoneHash } = await normalizeAndHashPhoneNumber(ERASED_PHONE);
+  await testBackend.run(async (databaseContext) => {
+    await databaseContext.db.insert("users", {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+      phone: ERASED_PHONE,
+      phoneHash,
+      firstName: "Erin",
+      lastName: "Member",
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    });
+    await databaseContext.db.insert("smsOptOuts", {
+      phoneNumber: phoneHash,
+      optedOutAt: FIXED_NOW,
+      reason: "user_request",
+    });
+  });
+  await submitCoucouGuestForm(testBackend, guestFormEventId);
+  await testBackend
+    .withIdentity({ subject: MEMBER_CLERK_USER_ID })
+    .mutation(api.rsvps.submitRequest, {
+      eventId: memberEventId,
+      siteKey: "dojo",
+      listKey: "ga",
+      accessToken: await issueGaListAccessToken(testBackend, memberEventId),
+      firstName: "Erin",
+      lastName: "Member",
+      shareContact: true,
+      attendees: 1,
+      smsConsent: true,
+      customFields: {},
+      socialProfiles: [],
+    });
+  await drainScheduledFunctions(testBackend);
+  await testBackend
+    .withIdentity(createHostIdentity(CLERK_ORGANIZATION_ID))
+    .mutation(api.guestDirectory.upsertGuestProfile, {
+      workspaceSlug: WORKSPACE_SLUG,
+      personKey: { guestPhoneHash: phoneHash, clerkUserId: MEMBER_CLERK_USER_ID },
+      tags: ["vip"],
+      notes: "Knows the DJ",
+      defaultListKey: "vip",
+    });
+  if (options.withTextHistory) {
+    const deliveryId = await testBackend.run(async (databaseContext) => {
+      const textBlastId = await databaseContext.db.insert("textBlasts", {
+        workspaceId,
+        name: "Reminder",
+        message: "See you there",
+        targetLists: ["ga"],
+        recipientCount: 1,
+        sentCount: 1,
+        failedCount: 0,
+        sentBy: `host_${CLERK_ORGANIZATION_ID}`,
+        status: "sent",
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+      return await databaseContext.db.insert("textBlastRecipients", {
+        textBlastId,
+        workspaceId,
+        phoneHash,
+        status: "sent",
+        sourceEventIds: [],
+        sourceRsvpIds: [],
+        sourceListKeys: ["ga"],
+        recipientClerkUserIds: [],
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+    });
+    await testBackend.mutation(internal.contactSync.syncDelivery, { deliveryId });
+  }
+  await drainScheduledFunctions(testBackend);
+  return { workspaceId, phoneHash };
+}
+
+// Every directory table that can hold a person, whole rows, so a stray field shows up.
+async function readContactDirectory(testBackend: TestBackend) {
+  return await testBackend.run(async (databaseContext) => {
+    const withoutCreationTime = <Row extends { _creationTime: number }>({
+      _creationTime,
+      ...row
+    }: Row) => row;
+    return {
+      contacts: (await databaseContext.db.query("workspaceContacts").collect()).map(
+        withoutCreationTime,
+      ),
+      contactIdentities: (
+        await databaseContext.db.query("workspaceContactIdentities").collect()
+      ).map(withoutCreationTime),
+      guestProfiles: (await databaseContext.db.query("workspaceGuestProfiles").collect()).map(
+        withoutCreationTime,
+      ),
+      guestContacts: (await databaseContext.db.query("guestContacts").collect()).map(
+        withoutCreationTime,
+      ),
+      contactFacets: (await databaseContext.db.query("contactFacets").collect()).map(
+        ({ kind, value, count }) => ({ kind, value, count }),
+      ),
+    };
+  });
+}
+
 describe("POST /api/v1/erasures", () => {
   it("anonymizes a guest's partner-sent RSVP and removes every copy Coucou kept of the person", async () => {
     const testBackend = setupTestBackend();
@@ -3277,5 +3390,143 @@ describe("Coucou account deletion", () => {
         metadata: { redacted: "rsvp_anonymized" },
       },
     ]);
+  });
+
+  it('keeps a contact with text history as "Deleted account" with no phone, name or identity', async () => {
+    const testBackend = setupTestBackend();
+    const { workspaceId, phoneHash } = await seedMemberInContactDirectory(testBackend, {
+      withTextHistory: true,
+    });
+    const directoryBefore = await readContactDirectory(testBackend);
+    const contactId = directoryBefore.contacts[0]._id;
+    expect(directoryBefore.contacts).toMatchObject([
+      {
+        name: "Erin Member",
+        phoneHash,
+        phoneNumber: ERASED_PHONE,
+        clerkUserIds: [`guest:${phoneHash}`, MEMBER_CLERK_USER_ID],
+        notes: "Knows the DJ",
+        tags: ["vip"],
+        receivedTextCount: 1,
+      },
+    ]);
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    const directoryAfterDeletion = await readContactDirectory(testBackend);
+    await drainScheduledFunctions(testBackend);
+
+    const directoryAfterDrain = await readContactDirectory(testBackend);
+    expect(directoryAfterDrain).toEqual({
+      contacts: [
+        {
+          _id: contactId,
+          workspaceId,
+          personKey: `erased:${contactId}`,
+          clerkUserIds: [],
+          name: "Deleted account",
+          normalizedName: "deleted account",
+          searchText: "deleted account",
+          searchAliases: [],
+          tags: [],
+          invitedByNames: [],
+          smsConsent: false,
+          consentUpdatedAt: FIXED_NOW + 1_000,
+          hasOptedOut: true,
+          eventCount: 0,
+          eventsAttendedCount: 0,
+          receivedTextCount: 1,
+          firstRsvpAt: 0,
+          latestRsvpAt: 0,
+          createdAt: FIXED_NOW + 1_000,
+          updatedAt: FIXED_NOW + 1_000,
+        },
+      ],
+      contactIdentities: [],
+      guestProfiles: [],
+      guestContacts: [],
+      contactFacets: [],
+    });
+    expect(directoryAfterDrain).toEqual(directoryAfterDeletion);
+    const directoryText = JSON.stringify(directoryAfterDrain);
+    for (const personValue of [ERASED_PHONE, "15551230100", phoneHash, "Erin", "erin", "dj"]) {
+      expect(directoryText).not.toContain(personValue);
+    }
+    expect(directoryText).not.toContain(MEMBER_CLERK_USER_ID);
+    const keptLogs = await testBackend.run(async (databaseContext) => ({
+      optOuts: (await databaseContext.db.query("smsOptOuts").collect()).map(
+        (optOut) => optOut.phoneNumber,
+      ),
+      sentTexts: (await databaseContext.db.query("textBlastRecipients").collect()).map(
+        (recipient) => ({ phoneHash: recipient.phoneHash, contactId: recipient.contactId }),
+      ),
+    }));
+    expect(keptLogs).toEqual({ optOuts: [phoneHash], sentTexts: [{ phoneHash, contactId }] });
+  });
+
+  it("deletes a contact with no text history, and no contact sync brings it back", async () => {
+    const testBackend = setupTestBackend();
+    await seedMemberInContactDirectory(testBackend, { withTextHistory: false });
+    const emptyDirectory = {
+      contacts: [],
+      contactIdentities: [],
+      guestProfiles: [],
+      guestContacts: [],
+      contactFacets: [],
+    };
+
+    const scheduled = await countFunctionsScheduledBy(testBackend, () =>
+      testBackend.mutation(internal.users.deleteFromClerk, { clerkUserId: MEMBER_CLERK_USER_ID }),
+    );
+    expect(await readContactDirectory(testBackend)).toEqual(emptyDirectory);
+    expect(scheduled).toEqual({
+      "contactSync:syncPhone": 1,
+      "contactSync:syncRsvp": 2,
+      "contactSync:syncUser": 1,
+      "webhookDeliveries:dispatchQueuedDeliveries": 1,
+    });
+    await drainScheduledFunctions(testBackend);
+
+    expect(await readContactDirectory(testBackend)).toEqual(emptyDirectory);
+  });
+
+  it("leaves no contact when a contact sync runs before the batch blanks RSVPs beyond the first 100", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    await seedMember(testBackend);
+    const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 101, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    await testBackend.mutation(internal.contactSync.syncUser, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    await drainScheduledFunctions(testBackend);
+    expect((await readContactDirectory(testBackend)).contacts).toMatchObject([
+      { name: "Mia", phoneNumber: MEMBER_PHONE, eventCount: 101 },
+    ]);
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    const [batch] = await readAnonymizationBatches(testBackend);
+    await cancelScheduledBatchRuns(testBackend);
+    await drainScheduledFunctions(testBackend);
+    const directoryBeforeBatch = await readContactDirectory(testBackend);
+    await testBackend.mutation(internal.rsvpAnonymizationBatches.run, {
+      batchId: batch.batchId as Id<"rsvpAnonymizationBatches">,
+    });
+    await drainScheduledFunctions(testBackend);
+
+    const emptyDirectory = {
+      contacts: [],
+      contactIdentities: [],
+      guestProfiles: [],
+      guestContacts: [],
+      contactFacets: [],
+    };
+    expect(directoryBeforeBatch).toEqual(emptyDirectory);
+    expect(await readContactDirectory(testBackend)).toEqual(emptyDirectory);
+    expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([]);
   });
 });
