@@ -14,7 +14,7 @@ describe("requestCoucouErasure", () => {
   it("posts the selectors with the partner key and returns the erasure", async () => {
     const erasure = {
       status: "completed",
-      erasedRsvpIds: ["rsvp_1"],
+      anonymizedRsvpIds: ["rsvp_1"],
       retainedRsvpIds: [],
       completedAt: 1761566400000,
     };
