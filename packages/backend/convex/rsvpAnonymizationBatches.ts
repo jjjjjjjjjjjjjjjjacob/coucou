@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./functions";
+import { eraseContactsRebuiltBeforeBlanking } from "./lib/deleteUserData";
 import { blankNextHeldRsvps, cleanUpAnonymizedRsvps } from "./lib/rsvpAnonymization";
 
 // A run is scheduled with no delay, so a batch still here this long after its
@@ -20,10 +21,11 @@ export const run = internalMutation({
     const batch = await ctx.db.get(batchId);
     if (!batch) return;
     const { _id, _creationTime, attempts, scheduledAt, createdAt, ...work } = batch;
-    const remainingWork = await cleanUpAnonymizedRsvps(
-      ctx,
-      work.blankHeldRsvps ? await blankNextHeldRsvps(ctx, work) : work,
-    );
+    const blankedWork = work.blankHeldRsvps ? await blankNextHeldRsvps(ctx, work) : work;
+    if (work.blankHeldRsvps && !blankedWork.blankHeldRsvps) {
+      await eraseContactsRebuiltBeforeBlanking(ctx, blankedWork.person);
+    }
+    const remainingWork = await cleanUpAnonymizedRsvps(ctx, blankedWork);
     if (!remainingWork) {
       await ctx.db.delete(batchId);
       return;

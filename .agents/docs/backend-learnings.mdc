@@ -108,6 +108,9 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
   beyond the first 100 before the batch blanks them). Both callers erase the person's contact
   rows through `eraseContact` (`lib/contactRecords.ts`): a row with text-blast deliveries stays
   renamed with no phone, phone hash, name, notes, tags or identity; any other row is deleted.
+  Any write that syncs a not-yet-blanked RSVP (a host edit) rebuilds a contact, so the
+  account-deletion batch erases the contacts again after its last blanking page
+  (`eraseContactsRebuiltBeforeBlanking`); a sync of a blanked row builds nothing.
   The notice is queued when the row is blanked, the moment the
   identity is gone, not when cleanup finishes. `blankRsvp` deletes stored deliveries
   before the patch, so the notice is the only delivery left.

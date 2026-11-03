@@ -3528,4 +3528,58 @@ describe("Coucou account deletion", () => {
     expect(await readContactDirectory(testBackend)).toEqual(emptyDirectory);
     expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([]);
   });
+
+  it("erases a contact a host edit rebuilt from an RSVP the batch had not blanked yet", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    await seedMember(testBackend);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
+    const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 101, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+      guestPhoneHash: phoneHash,
+    });
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    const [batch] = await readAnonymizationBatches(testBackend);
+    await cancelScheduledBatchRuns(testBackend);
+    await drainScheduledFunctions(testBackend);
+    const hostEdit = await countFunctionsScheduledBy(testBackend, () =>
+      testBackend
+        .withIdentity(createHostIdentity(CLERK_ORGANIZATION_ID))
+        .mutation(api.rsvps.updateAttendanceStatus, {
+          rsvpId: rsvpIds[100],
+          attendanceStatus: "yes",
+          workspaceSlug: WORKSPACE_SLUG,
+        }),
+    );
+    await drainScheduledFunctions(testBackend);
+    const directoryBeforeBatch = await readContactDirectory(testBackend);
+    const batchRun = await countFunctionsScheduledBy(testBackend, () =>
+      testBackend.mutation(internal.rsvpAnonymizationBatches.run, {
+        batchId: batch.batchId as Id<"rsvpAnonymizationBatches">,
+      }),
+    );
+    await drainScheduledFunctions(testBackend);
+
+    expect(hostEdit).toEqual({ "contactSync:syncRsvp": 1 });
+    expect(directoryBeforeBatch.contacts).toMatchObject([
+      { name: ERASED_NAME, phoneHash, clerkUserIds: [MEMBER_CLERK_USER_ID] },
+    ]);
+    expect(batchRun).toEqual({
+      "contactSync:syncRsvp": 1,
+      "rsvpAnonymizationBatches:run": 1,
+      "webhookDeliveries:dispatchQueuedDeliveries": 1,
+    });
+    expect(await readContactDirectory(testBackend)).toEqual({
+      contacts: [],
+      contactIdentities: [],
+      guestProfiles: [],
+      guestContacts: [],
+      contactFacets: [],
+    });
+    expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([]);
+    expect(await readAnonymizationBatches(testBackend)).toEqual([]);
+  });
 });
