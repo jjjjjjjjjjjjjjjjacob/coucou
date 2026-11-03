@@ -300,12 +300,17 @@ RSVPs the person gave Coucou directly, and RSVPs other partners sent, stay as th
   notice that names your key, so Coucou always keeps it.
 - Erasure ignores the key's current event grants: a key can erase what it sent to an event it
   can no longer read.
-- The request is synchronous and runs in one transaction. It returns 200:
+- The request is synchronous. One request anonymizes at most 50 RSVPs in one transaction and
+  returns 200:
 
 ```json
 { "erasure": { "status": "completed", "anonymizedRsvpIds": ["jh7…"], "retainedRsvpIds": [],
   "completedAt": 1753000000000 } }
 ```
+
+- `status` is `"partial"` when more than 50 of your RSVPs match. `anonymizedRsvpIds` then lists
+  the 50 this request anonymized. Send the same request again until `status` is `"completed"`.
+  Each repeat skips the RSVPs that are already anonymized.
 
 - `retainedRsvpIds` lists RSVPs that this key created or updated but cannot erase: text or
   form RSVPs, RSVPs the person also submitted through Coucou, RSVPs another key created,
@@ -318,7 +323,11 @@ RSVPs the person gave Coucou directly, and RSVPs other partners sent, stay as th
 - Each anonymized RSVP emits `rsvp.updated` to endpoints subscribed to it and granted its
   event, with every `identity` field `null` (`isGuest` stays), no `ticket`,
   `origin.apiClientId` set to your client, and `data.changes.reason: "erasure"`. Other
-  partners mirroring the event should drop the person from that RSVP.
+  partners mirroring the event should drop the person from that RSVP. An endpoint that mirrors
+  RSVPs must subscribe to `rsvp.updated` to receive this notice. Erasure does not emit
+  `rsvp.deleted`, so an endpoint subscribed only to `rsvp.deleted` is not told.
+- `GET /api/v1/events/{eventRouteId}/rsvps` and every later notice show an anonymized RSVP with
+  `ticket: null`. The host still sees the ticket and its new code in Coucou.
 - Nothing attaches the person to an anonymized RSVP again. If your key sends the same phone
   to the same event later, Coucou creates a new RSVP.
 - A revoked key's RSVPs cannot be erased by its replacement key. Erase before you revoke a
@@ -329,7 +338,7 @@ What stays on an anonymized RSVP:
 | Field | Note |
 | --- | --- |
 | Event, list, approval status, attendance answer, party size | Unchanged, so attendance counts stay |
-| Ticket status | A checked-in (`redeemed`) ticket stays checked in. An `issued` ticket becomes `disabled` |
+| Ticket status, check-in and disabled time | Unchanged, so the host's ticket counts stay. Only the code changes |
 | `source`, the creating and last-writing API key, `createdAt` | Unchanged. `updatedAt` is the erasure time |
 | `isGuest` | Whether a guest or a Coucou account made the RSVP |
 
@@ -338,7 +347,9 @@ What an erasure removes or deletes:
 | Record | Removed when |
 | --- | --- |
 | On the RSVP: name, phone hash and masked phone, the link to the person's account, note, custom field answers, invited-by and referral fields, SMS consent with its time and IP address. Contact sharing is turned off | Always |
-| The ticket's redemption code, which went to the person's phone. The ticket keeps its check-in under a new code nobody holds | Always |
+| The ticket's redemption code, which went to the person's phone. The ticket keeps its status and check-in under a new code nobody holds | Always |
+| In audit entries about the RSVP (or an id a merge retired): the JSON copy of the row, the evidence record that tied it to a phone, and the person as actor. Each entry says `redacted: "rsvp_anonymized"` | Always |
+| In SMS logs (text-blast recipients, text-blast replies, inbound-SMS receipts): the anonymized RSVP's id, so no log ties the phone hash to it | Always |
 | Guest hand-off links (they hold the phone), SMS RSVP sessions, social-handle snapshots, profile values and workspace grants sourced from the RSVP. Approval decisions stay, without the denial reason | Always |
 | Stored webhook delivery payloads for the RSVP, including those sent under an id a merge retired (they hold the phone and name and can be re-sent) | Always |
 | Queued SMS that carries the phone number | Always |
@@ -352,9 +363,9 @@ What Coucou keeps, and why:
 | RSVPs given to Coucou by text or form, RSVPs the person also submitted through Coucou, and RSVPs other keys sent | They are not only this partner's data |
 | A Coucou account (`users` row) matched by phone | The person holds it with Coucou directly |
 | SMS opt-out (`STOP`) list entry, keyed by phone hash | Coucou must keep honoring the opt-out |
-| Sent-SMS logs: obfuscated phone, phone hash, message body | Coucou is the sender of record and keeps them for carrier and consent disputes, as on account deletion |
+| Sent-SMS logs: obfuscated phone, phone hash, message body, without the anonymized RSVP's id | Coucou is the sender of record and keeps them for carrier and consent disputes, as on account deletion |
 | A contact-directory row with past text-blast deliveries, renamed "Erased contact" with no number | Blast delivery history points at it |
-| An audit entry with the API client and the anonymized RSVP ids, no name or phone | Proof that the erasure ran |
+| An audit entry with the API client and the anonymized RSVP ids, no name or phone, and the earlier audit entries about the RSVP, redacted | Proof that the erasure ran and what was done to the RSVP |
 | The anonymized RSVP and its `rsvp.updated` notice, without identity fields | The host's counts stay right, and the notice tells mirrors to drop the person |
 
 Inside the monorepo, `@coucou/sdk/api-v1` exports `requestCoucouErasure`:
@@ -379,8 +390,13 @@ identities, and by RSVPs that carry the account's phone. Each RSVP is anonymized
 and each emits the same `rsvp.updated` notice with null identity and
 `data.changes.reason: "erasure"`, with `origin.type: "app"`, to every endpoint subscribed to
 `rsvp.updated` and granted that RSVP's event. Partners mirroring those RSVPs must drop the
-person from their copies. The SMS opt-out list and sent-SMS logs stay, as for a partner
-erasure.
+person from their copies, and must subscribe to `rsvp.updated` to be told. The SMS opt-out
+list and sent-SMS logs stay, as for a partner erasure.
+
+The deletion anonymizes up to 50 RSVPs in its own transaction. A person with more RSVPs has
+the rest anonymized in background batches of 50 that start as soon as the deletion commits,
+so their notices can arrive a little later. Each batch names its RSVPs by id, so it finishes
+even though the account is already gone, and running a batch twice changes nothing.
 
 ## Webhooks
 
@@ -397,7 +413,7 @@ Integrations that mirror RSVP state must subscribe to both `rsvp.approved` and
 | `rsvp.created` | An RSVP is submitted (app, guest flow, host, or API) |
 | `rsvp.approved` / `rsvp.denied` | A host decides an RSVP |
 | `rsvp.attendance_updated` | The yes/no/maybe answer changes |
-| `rsvp.updated` | List, party size, name, or guest→account claim changes, or an erasure anonymizes the RSVP (`changes.reason: "erasure"`) |
+| `rsvp.updated` | List, party size, name, or guest→account claim changes, or an erasure anonymizes the RSVP (`changes.reason: "erasure"`). Mirrors must subscribe to it to receive erasure notices |
 | `rsvp.deleted` | An RSVP is deleted |
 | `event.published` / `event.unpublished` | Event lifecycle transitions |
 | `event.updated` | A public-facing event field changes (name, date, location, flyer, …) |

@@ -648,13 +648,15 @@ function PartnerApiDocumentation({
                 </>,
                 <>
                   Stays on the RSVP: its event, list, approval status, attendance answer, party
-                  size, check-in, source and API keys. An unused ticket is disabled.
+                  size, ticket status and check-in, source and API keys. The ticket gets a new code,
+                  and API responses and notices show no ticket.
                 </>,
                 <>
                   Removed: the name, phone, account link, note, custom fields, invited-by, SMS
-                  consent, the ticket code, hand-off links, social handles, stored webhook payloads
-                  and queued SMS. Once no other RSVP needs them, also the workspace SMS preference,
-                  organizer notes, contact entry and guest phone record.
+                  consent, the ticket code, hand-off links, social handles, stored webhook payloads,
+                  queued SMS, the RSVP copies in its audit entries and its id in SMS logs. Once no
+                  other RSVP needs them, also the workspace SMS preference, organizer notes, contact
+                  entry and guest phone record.
                 </>,
                 <>
                   Kept: a Coucou account matched by phone, the SMS opt-out list, sent-SMS logs, and
@@ -662,9 +664,15 @@ function PartnerApiDocumentation({
                 </>,
                 <>
                   <strong>Idempotent and synchronous:</strong> a repeat or an unknown phone returns
-                  200 with empty lists. Each anonymized RSVP emits{" "}
-                  <InlineCode>rsvp.updated</InlineCode> with null identity fields and{" "}
-                  <InlineCode>changes.reason: "erasure"</InlineCode>.
+                  200 with empty lists. One request anonymizes at most 50 RSVPs; when more match,{" "}
+                  <InlineCode>status</InlineCode> is <InlineCode>"partial"</InlineCode> and you
+                  repeat the request until it is <InlineCode>"completed"</InlineCode>.
+                </>,
+                <>
+                  Each anonymized RSVP emits <InlineCode>rsvp.updated</InlineCode> with null
+                  identity fields and <InlineCode>changes.reason: "erasure"</InlineCode>. Subscribe
+                  to <InlineCode>rsvp.updated</InlineCode> to receive it; erasure never emits{" "}
+                  <InlineCode>rsvp.deleted</InlineCode>.
                 </>,
                 <>
                   When a person deletes their Coucou account, Coucou anonymizes all of their RSVPs,
