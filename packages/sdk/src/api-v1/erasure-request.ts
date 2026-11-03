@@ -6,7 +6,8 @@ export type CoucouErasureResult =
 
 /**
  * Calls POST /api/v1/erasures with a partner API key. Server-side only: the key
- * must never reach a browser. The call is idempotent, so retry it until `ok`.
+ * must never reach a browser. The call is idempotent, so retry it until `ok`, and
+ * repeat it while `erasure.status` is "partial".
  */
 export async function requestCoucouErasure({
   apiBaseUrl,

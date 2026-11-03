@@ -1,9 +1,10 @@
-import type { Id, TableNames } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
+import type { Doc, Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { refreshContactProfile, removeContactEvent } from "./contactRecords";
 import { buildGuestClerkUserId } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
-import { anonymizeRsvp } from "./rsvpAnonymization";
+import { anonymizeRsvp, MAX_RSVPS_ANONYMIZED_PER_TRANSACTION } from "./rsvpAnonymization";
 
 async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<TableNames> }>) {
   for (const documentId of new Set(documents.map((document) => document._id)))
@@ -15,6 +16,10 @@ async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<
  * identity, and anonymize every RSVP it holds: Coucou-direct and partner-created
  * alike. Each anonymized RSVP emits an rsvp.updated erasure notice through the
  * rsvps trigger, so partners mirroring it purge their copy.
+ *
+ * The first MAX_RSVPS_ANONYMIZED_PER_TRANSACTION RSVPs are anonymized here; the
+ * rest go to rsvpAnonymizationBatches, which name each RSVP by id and carry the
+ * phone hashes, so the batches need nothing this deletion removes.
  */
 export async function deleteUserData(context: MutationCtx, clerkUserId: string) {
   const user = await context.db
@@ -112,12 +117,32 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
 
   // identityIds holds the account, its aliases and the guest identity of each of
   // its phones, so this reaches partner-created and Coucou-direct RSVPs alike.
+  const heldRsvps: Doc<"rsvps">[] = [];
   for (const identityId of identityIds) {
-    const rsvps = await context.db
-      .query("rsvps")
-      .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-      .collect();
-    for (const rsvp of rsvps) await anonymizeRsvp(context, rsvp);
+    heldRsvps.push(
+      ...(await context.db
+        .query("rsvps")
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+        .collect()),
+    );
+  }
+  const personPhoneHashes = [...phoneHashes];
+  for (const rsvp of heldRsvps.slice(0, MAX_RSVPS_ANONYMIZED_PER_TRANSACTION)) {
+    await anonymizeRsvp(context, rsvp, { personPhoneHashes });
+  }
+  for (
+    let batchStart = MAX_RSVPS_ANONYMIZED_PER_TRANSACTION;
+    batchStart < heldRsvps.length;
+    batchStart += MAX_RSVPS_ANONYMIZED_PER_TRANSACTION
+  ) {
+    const batchId = await context.db.insert("rsvpAnonymizationBatches", {
+      rsvpIds: heldRsvps
+        .slice(batchStart, batchStart + MAX_RSVPS_ANONYMIZED_PER_TRANSACTION)
+        .map((rsvp) => rsvp._id),
+      personPhoneHashes,
+      createdAt: Date.now(),
+    });
+    await context.scheduler.runAfter(0, internal.rsvpAnonymizationBatches.run, { batchId });
   }
 
   for (const identityId of identityIds) {

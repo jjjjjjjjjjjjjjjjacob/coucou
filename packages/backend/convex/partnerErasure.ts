@@ -13,7 +13,7 @@ import {
   isGuestClerkUserId,
 } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
-import { anonymizeRsvp } from "./lib/rsvpAnonymization";
+import { anonymizeRsvp, MAX_RSVPS_ANONYMIZED_PER_TRANSACTION } from "./lib/rsvpAnonymization";
 import { enqueueRsvpWebhookDeliveries } from "./lib/webhookEmission";
 
 export const MAX_ERASURE_RSVP_IDS = 100;
@@ -258,8 +258,12 @@ async function anonymizePartnerRsvp(
   ctx: MutationCtx,
   rsvp: Doc<"rsvps">,
   apiClientId: Id<"apiClients">,
+  subject: ErasureSubject,
 ): Promise<void> {
-  const anonymizedRsvp = await anonymizeRsvp(ctx, rsvp, { erasingApiClientId: apiClientId });
+  const anonymizedRsvp = await anonymizeRsvp(ctx, rsvp, {
+    erasingApiClientId: apiClientId,
+    personPhoneHashes: subject.phoneHashes,
+  });
   await enqueueRsvpWebhookDeliveries(ctx, {
     operation: "update",
     oldDoc: rsvp,
@@ -508,19 +512,26 @@ export const eraseSubjectForApiClient = internalMutation({
       throw new Error("API client does not belong to the workspace");
     }
 
-    const anonymizedRsvps: Doc<"rsvps">[] = [];
+    const rsvpsToAnonymize: Doc<"rsvps">[] = [];
     const retainedRsvps: Doc<"rsvps">[] = [];
     for (const rsvp of await findCandidateRsvps(ctx, args)) {
       if (!(await rsvpBelongsToWorkspace(ctx, rsvp, scope.workspace))) continue;
       const decision = await decideRsvpErasure(ctx, rsvp, apiClient._id);
-      if (decision === "anonymize") anonymizedRsvps.push(rsvp);
+      if (decision === "anonymize") rsvpsToAnonymize.push(rsvp);
       if (decision === "retain") retainedRsvps.push(rsvp);
     }
+    // A repeat of the same request skips the rows anonymized already, so a
+    // partial erasure finishes over successive calls.
+    const anonymizedRsvps = rsvpsToAnonymize
+      .sort((firstRsvp, secondRsvp) => (firstRsvp._id < secondRsvp._id ? -1 : 1))
+      .slice(0, MAX_RSVPS_ANONYMIZED_PER_TRANSACTION);
 
     if (anonymizedRsvps.length > 0) {
-      const subject = await buildErasureSubject(ctx, anonymizedRsvps);
+      const subject = await buildErasureSubject(ctx, rsvpsToAnonymize);
       await cancelPendingPersonNotifications(ctx, subject);
-      for (const rsvp of anonymizedRsvps) await anonymizePartnerRsvp(ctx, rsvp, apiClient._id);
+      for (const rsvp of anonymizedRsvps) {
+        await anonymizePartnerRsvp(ctx, rsvp, apiClient._id, subject);
+      }
       if (!(await subjectHasRsvpInWorkspace(ctx, subject, scope.workspace))) {
         await eraseWorkspacePersonRecords(ctx, scope, subject);
       }
@@ -542,7 +553,10 @@ export const eraseSubjectForApiClient = internalMutation({
     });
 
     return {
-      status: "completed" as const,
+      status:
+        rsvpsToAnonymize.length > anonymizedRsvps.length
+          ? ("partial" as const)
+          : ("completed" as const),
       anonymizedRsvpIds,
       retainedRsvpIds,
       completedAt: Date.now(),

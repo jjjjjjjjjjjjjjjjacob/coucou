@@ -58,6 +58,8 @@ export const repairTextRsvpAssociations = mutation({
           .collect();
         if (candidates.length === 1) rsvp = candidates[0];
       }
+      // An anonymized RSVP names nobody, and no evidence may name it again.
+      if (rsvp?.anonymizedAt !== undefined) continue;
       const eventId = isSession ? record.eventId : record.targetEventId;
       if (
         !rsvp ||

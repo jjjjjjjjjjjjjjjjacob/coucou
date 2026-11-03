@@ -172,7 +172,11 @@ export interface ApiErasureInput {
 }
 
 export interface ApiErasure {
-  status: "completed";
+  /**
+   * "partial" when more of this client's RSVPs matched than one request anonymizes
+   * (50). Repeat the same request until the status is "completed".
+   */
+  status: "completed" | "partial";
   /**
    * RSVPs this request anonymized: they stay with their event, list, statuses and
    * party size, with no name, phone or other trace of the person. Empty on a

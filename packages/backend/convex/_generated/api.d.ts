@@ -108,6 +108,7 @@ import type * as profileValues from "../profileValues.js";
 import type * as profiles from "../profiles.js";
 import type * as qrDelivery from "../qrDelivery.js";
 import type * as redemptions from "../redemptions.js";
+import type * as rsvpAnonymizationBatches from "../rsvpAnonymizationBatches.js";
 import type * as rsvps from "../rsvps.js";
 import type * as seed from "../seed.js";
 import type * as sms from "../sms.js";
@@ -239,6 +240,7 @@ declare const fullApi: ApiFromModules<{
   profiles: typeof profiles;
   qrDelivery: typeof qrDelivery;
   redemptions: typeof redemptions;
+  rsvpAnonymizationBatches: typeof rsvpAnonymizationBatches;
   rsvps: typeof rsvps;
   seed: typeof seed;
   sms: typeof sms;

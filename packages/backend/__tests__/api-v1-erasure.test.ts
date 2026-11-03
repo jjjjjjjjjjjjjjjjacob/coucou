@@ -414,6 +414,136 @@ async function readAuditEntries(testBackend: TestBackend) {
   );
 }
 
+const PLATFORM_ORGANIZATION_ID = "org_coucou";
+
+function createPlatformStaffIdentity(): Partial<UserIdentity> {
+  return {
+    subject: "platform_staff",
+    org_id: PLATFORM_ORGANIZATION_ID,
+    org_slug: "coucou",
+    role: "org:admin",
+  } as unknown as Partial<UserIdentity>;
+}
+
+// Ticket counts as the host reads them: the dashboard, the CSV export filters and
+// the door's ticket list.
+async function readHostTicketCounts(testBackend: TestBackend, eventIds: Id<"events">[]) {
+  const hostBackend = testBackend.withIdentity(createHostIdentity(CLERK_ORGANIZATION_ID));
+  const dashboard = await hostBackend.query(api.dashboard.getDashboardStats, {
+    workspaceSlug: WORKSPACE_SLUG,
+  });
+  const exportCounts = { issued: 0, disabled: 0, redeemed: 0 };
+  const doorCounts = { issued: 0, disabled: 0, redeemed: 0 };
+  for (const eventId of eventIds) {
+    for (const ticketStatus of ["issued", "disabled", "redeemed"] as const) {
+      const exported = await testBackend.query(internal.exportsQueries.getRsvpsForExportInternal, {
+        eventId,
+        workspaceSlug: WORKSPACE_SLUG,
+        ticketStatusFilters: [ticketStatus],
+      });
+      exportCounts[ticketStatus] += exported.rsvps.length;
+    }
+    const doorTickets = await hostBackend.query(api.redemptions.listForEvent, {
+      eventId,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    for (const ticket of doorTickets) {
+      doorCounts[ticket.disabledAt ? "disabled" : ticket.redeemedAt ? "redeemed" : "issued"] += 1;
+    }
+  }
+  return {
+    dashboard: {
+      totalRsvps: dashboard.totalRsvps,
+      approvedRsvps: dashboard.approvedRsvps,
+      issuedTickets: dashboard.issuedTickets,
+      redeemedTickets: dashboard.redeemedTickets,
+    },
+    exportCounts,
+    doorCounts,
+  };
+}
+
+// RSVPs inserted straight into the table, one per new event, for the tests
+// that need more RSVPs than one transaction anonymizes.
+async function insertRsvpsOnNewEvents(
+  testBackend: TestBackend,
+  count: number,
+  fields: { clerkUserId: string; guestPhoneHash?: string; apiClientId?: Id<"apiClients"> },
+): Promise<Id<"rsvps">[]> {
+  return await testBackend.run(async (databaseContext) => {
+    const rsvpIds: Id<"rsvps">[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const eventId = await databaseContext.db.insert("events", {
+        workspaceSlug: WORKSPACE_SLUG,
+        siteKey: "dojo",
+        shortId: `evt-bulk-${index}`,
+        name: `Bulk ${index}`,
+        location: "Main Room",
+        eventDate: FIXED_NOW + 86_400_000,
+        status: "active",
+        lifecycle: "published",
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+      rsvpIds.push(
+        await databaseContext.db.insert("rsvps", {
+          eventId,
+          clerkUserId: fields.clerkUserId,
+          guestPhoneHash: fields.guestPhoneHash,
+          userName: ERASED_NAME,
+          listKey: "ga",
+          shareContact: true,
+          status: "pending",
+          approvalStatus: "pending",
+          ...(fields.apiClientId
+            ? {
+                source: "api" as const,
+                apiClientId: fields.apiClientId,
+                createdByApiClientId: fields.apiClientId,
+              }
+            : { source: "form" as const }),
+          createdAt: FIXED_NOW,
+          updatedAt: FIXED_NOW,
+        }),
+      );
+    }
+    return rsvpIds;
+  });
+}
+
+async function countAnonymizedRsvps(testBackend: TestBackend, rsvpIds: Id<"rsvps">[]) {
+  return await testBackend.run(async (databaseContext) => {
+    let anonymizedCount = 0;
+    for (const rsvpId of rsvpIds) {
+      const rsvp = await databaseContext.db.get(rsvpId);
+      if (rsvp?.anonymizedAt !== undefined && rsvp.userName === undefined) anonymizedCount += 1;
+    }
+    return anonymizedCount;
+  });
+}
+
+// The tickets the partner's GET /events/{id}/rsvps shows, for both ticket test events.
+async function readPartnerTickets(testBackend: TestBackend, plaintextKey: string) {
+  const tickets: Array<{ rsvpId: string; ticketStatus: string | null; hasCode: boolean }> = [];
+  for (const eventShortId of ["evt-erase", "evt-ticketed"]) {
+    const response = await testBackend.fetch(
+      `/api/v1/events/${eventShortId}/rsvps`,
+      buildJsonRequest(plaintextKey, "GET"),
+    );
+    const body = (await response.json()) as {
+      data: Array<{ rsvpId: string; ticket: { status: string; redemptionCode: string } | null }>;
+    };
+    for (const rsvp of body.data) {
+      tickets.push({
+        rsvpId: rsvp.rsvpId,
+        ticketStatus: rsvp.ticket?.status ?? null,
+        hasCode: typeof rsvp.ticket?.redemptionCode === "string",
+      });
+    }
+  }
+  return tickets;
+}
+
 describe("POST /api/v1/erasures", () => {
   it("anonymizes a guest's partner-sent RSVP and removes every copy Coucou kept of the person", async () => {
     const testBackend = setupTestBackend();
@@ -1258,7 +1388,7 @@ describe("POST /api/v1/erasures", () => {
     ]);
   });
 
-  it("keeps an anonymized RSVP's approval, party size and check-in, and disables an unused ticket", async () => {
+  it("keeps an anonymized RSVP's approval, party size, check-in and ticket status, and shows partners no ticket", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     const checkedInEventId = await seedEvent(testBackend, "evt-erase");
@@ -1292,6 +1422,10 @@ describe("POST /api/v1/erasures", () => {
     await drainScheduledFunctions(testBackend);
     const countsBefore = await readAttendanceCounts(testBackend, partner.plaintextKey);
     expect(countsBefore).toEqual({ approved: 1, pending: 0, denied: 0, total: 1 });
+    expect(await readPartnerTickets(testBackend, partner.plaintextKey)).toEqual([
+      { rsvpId: checkedInRsvpId, ticketStatus: "redeemed", hasCode: true },
+      { rsvpId: ticketedRsvpId, ticketStatus: "issued", hasCode: true },
+    ]);
 
     const erasure = await requestErasure(testBackend, partner.plaintextKey, {
       phone: ERASED_PHONE,
@@ -1316,7 +1450,7 @@ describe("POST /api/v1/erasures", () => {
       clerkUserId: ticketedClerkUserId,
       status: "approved",
       approvalStatus: "approved",
-      ticketStatus: "disabled",
+      ticketStatus: "issued",
     });
     const ticketsAfter = await testBackend.run(async (databaseContext) =>
       (await databaseContext.db.query("redemptions").collect()).map((redemption) => ({
@@ -1344,8 +1478,12 @@ describe("POST /api/v1/erasures", () => {
         codeChanged: true,
         redeemedAt: null,
         redeemedByClerkUserId: null,
-        disabledAt: FIXED_NOW,
+        disabledAt: null,
       },
+    ]);
+    expect(await readPartnerTickets(testBackend, partner.plaintextKey)).toEqual([
+      { rsvpId: checkedInRsvpId, ticketStatus: null, hasCode: false },
+      { rsvpId: ticketedRsvpId, ticketStatus: null, hasCode: false },
     ]);
     for (const deliveredCode of [checkedInApproval.code, ticketedApproval.code]) {
       expect(
@@ -1484,6 +1622,200 @@ describe("POST /api/v1/erasures", () => {
         .map((scheduledFunction) => scheduledFunction.state.kind),
     );
     expect(consentMessageStates).toEqual(["canceled"]);
+  });
+
+  it("takes the anonymized RSVP's id out of the SMS logs and redacts its audit entries", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    await seedWorkspace(testBackend, "coucou", PLATFORM_ORGANIZATION_ID);
+    const eventId = await seedEvent(testBackend, "evt-erase");
+    const formEventId = await seedEvent(testBackend, "evt-form");
+    const partner = await issueApiKey(testBackend);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(ERASED_PHONE);
+    const rsvpId = (await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-erase", {
+      phone: ERASED_PHONE,
+      name: ERASED_NAME,
+    })) as Id<"rsvps">;
+    await submitCoucouGuestForm(testBackend, formEventId);
+    const logIds = await testBackend.run(async (databaseContext) => {
+      const formRsvp = await databaseContext.db
+        .query("rsvps")
+        .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", formEventId))
+        .unique();
+      if (!formRsvp) throw new Error("Expected the form RSVP");
+      const textBlastId = await databaseContext.db.insert("textBlasts", {
+        name: "Reminder",
+        message: "Reply YES",
+        targetLists: ["ga"],
+        recipientCount: 1,
+        sentCount: 1,
+        failedCount: 0,
+        sentBy: `host_${CLERK_ORGANIZATION_ID}`,
+        status: "sent",
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+      const recipientId = await databaseContext.db.insert("textBlastRecipients", {
+        textBlastId,
+        phoneHash,
+        status: "sent",
+        sourceEventIds: [eventId, formEventId],
+        sourceRsvpIds: [rsvpId, formRsvp._id],
+        sourceListKeys: ["ga"],
+        recipientClerkUserIds: [`guest:${phoneHash}`],
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+      const replyAttemptId = await databaseContext.db.insert("textBlastReplyAttempts", {
+        textBlastId,
+        textBlastRecipientId: recipientId,
+        phoneHash,
+        fromPhoneObfuscated: "***-***-0100",
+        inboundMessage: "YES",
+        normalizedReplyCode: "yes",
+        targetEventId: eventId,
+        sourceRsvpId: rsvpId,
+        destinationRsvpId: rsvpId,
+        status: "submitted",
+        receivedAt: FIXED_NOW,
+        createdAt: FIXED_NOW,
+      });
+      const receiptId = await databaseContext.db.insert("smsInboundReceipts", {
+        providerMessageId: "SM-erase",
+        destinationRsvpId: rsvpId,
+        phoneHash,
+        toPhoneNumber: "+15550000000",
+        body: "YES",
+        status: "processed",
+        outcome: "submitted",
+        targetEventId: eventId,
+        receivedAt: FIXED_NOW,
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+      return { formRsvpId: formRsvp._id, recipientId, replyAttemptId, receiptId };
+    });
+    const platformStaff = testBackend.withIdentity(createPlatformStaffIdentity());
+    const repairBefore = await platformStaff.mutation(
+      api.identityConsolidation.repairTextRsvpAssociations,
+      { evidence: "reply_attempts", dryRun: false },
+    );
+    expect(repairBefore.updates).toEqual([
+      expect.objectContaining({ rsvpId, associatePhone: true }),
+    ]);
+
+    await requestErasure(testBackend, partner.plaintextKey, { phone: ERASED_PHONE });
+
+    const logsAfter = await testBackend.run(async (databaseContext) => {
+      const recipient = await databaseContext.db.get(logIds.recipientId);
+      const replyAttempt = await databaseContext.db.get(logIds.replyAttemptId);
+      const receipt = await databaseContext.db.get(logIds.receiptId);
+      return {
+        recipient: { phoneHash: recipient?.phoneHash, sourceRsvpIds: recipient?.sourceRsvpIds },
+        replyAttempt: {
+          phoneHash: replyAttempt?.phoneHash,
+          sourceRsvpId: replyAttempt?.sourceRsvpId ?? null,
+          destinationRsvpId: replyAttempt?.destinationRsvpId ?? null,
+        },
+        receipt: {
+          phoneHash: receipt?.phoneHash,
+          destinationRsvpId: receipt?.destinationRsvpId ?? null,
+        },
+      };
+    });
+    expect(logsAfter).toEqual({
+      recipient: { phoneHash, sourceRsvpIds: [logIds.formRsvpId] },
+      replyAttempt: { phoneHash, sourceRsvpId: null, destinationRsvpId: null },
+      receipt: { phoneHash, destinationRsvpId: null },
+    });
+    const repairAudit = await testBackend.run(async (databaseContext) =>
+      (await databaseContext.db.query("auditLog").collect())
+        .filter((entry) => entry.targetId === rsvpId)
+        .map((entry) => ({
+          action: entry.action,
+          actorClerkUserId: entry.actorClerkUserId ?? null,
+          metadata: entry.metadata ?? null,
+        })),
+    );
+    expect(repairAudit).toEqual([
+      {
+        action: "rsvp.text_association_repaired",
+        actorClerkUserId: "platform_staff",
+        metadata: { redacted: "rsvp_anonymized" },
+      },
+    ]);
+  });
+
+  it("does not let a text-association repair attach a phone to an anonymized RSVP", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    await seedWorkspace(testBackend, "coucou", PLATFORM_ORGANIZATION_ID);
+    const eventId = await seedEvent(testBackend, "evt-erase");
+    const partner = await issueApiKey(testBackend);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(ERASED_PHONE);
+    const rsvpId = (await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-erase", {
+      phone: ERASED_PHONE,
+      name: ERASED_NAME,
+    })) as Id<"rsvps">;
+    await requestErasure(testBackend, partner.plaintextKey, { phone: ERASED_PHONE });
+    const anonymizedRsvp = await readStoredRsvpDocument(testBackend, rsvpId);
+    // A log row that still points at the RSVP, as one written by an older release could.
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("textBlastReplyAttempts", {
+        phoneHash,
+        fromPhoneObfuscated: "***-***-0100",
+        inboundMessage: "YES",
+        normalizedReplyCode: "yes",
+        targetEventId: eventId,
+        destinationRsvpId: rsvpId,
+        status: "submitted",
+        receivedAt: FIXED_NOW,
+        createdAt: FIXED_NOW,
+      });
+    });
+
+    const repair = await testBackend
+      .withIdentity(createPlatformStaffIdentity())
+      .mutation(api.identityConsolidation.repairTextRsvpAssociations, {
+        evidence: "reply_attempts",
+        dryRun: false,
+      });
+
+    expect(repair).toMatchObject({ updates: [], unresolved: 0 });
+    expect(await readStoredRsvpDocument(testBackend, rsvpId)).toEqual(anonymizedRsvp);
+  });
+
+  it("anonymizes at most 50 RSVPs per request and reports the rest as partial", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    const partner = await issueApiKey(testBackend);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(ERASED_PHONE);
+    const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 51, {
+      clerkUserId: `guest:${phoneHash}`,
+      guestPhoneHash: phoneHash,
+      apiClientId: partner.apiClientId,
+    });
+    const sortedRsvpIds = [...rsvpIds].sort();
+
+    const firstErasure = await requestErasure(testBackend, partner.plaintextKey, {
+      phone: ERASED_PHONE,
+    });
+    expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(50);
+    const secondErasure = await requestErasure(testBackend, partner.plaintextKey, {
+      phone: ERASED_PHONE,
+    });
+
+    expect(firstErasure.body.erasure).toMatchObject({
+      status: "partial",
+      anonymizedRsvpIds: sortedRsvpIds.slice(0, 50),
+      retainedRsvpIds: [],
+    });
+    expect(secondErasure.body.erasure).toMatchObject({
+      status: "completed",
+      anonymizedRsvpIds: sortedRsvpIds.slice(50),
+      retainedRsvpIds: [],
+    });
+    expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(51);
   });
 
   it("validates the body and requires an rsvps:write key", async () => {
@@ -1719,5 +2051,271 @@ describe("Coucou account deletion", () => {
       message: "You're on the list",
     });
     expect(await readAttendanceCounts(testBackend, partner.plaintextKey)).toEqual(countsBefore);
+  });
+
+  it("leaves the host's ticket counts unchanged after a partner erasure and an account deletion", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    const eventIds = [
+      await seedEvent(testBackend, "evt-erase"),
+      await seedEvent(testBackend, "evt-disabled"),
+      await seedEvent(testBackend, "evt-direct"),
+      await seedEvent(testBackend, "evt-redeemed"),
+    ];
+    const [, , directEventId, redeemedEventId] = eventIds;
+    const partner = await issueApiKey(testBackend);
+    const hostBackend = testBackend.withIdentity(createHostIdentity(CLERK_ORGANIZATION_ID));
+    const issuedRsvpId = await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-erase", {
+      phone: ERASED_PHONE,
+      name: ERASED_NAME,
+    });
+    const disabledRsvpId = await postPartnerRsvp(
+      testBackend,
+      partner.plaintextKey,
+      "evt-disabled",
+      { phone: ERASED_PHONE, name: ERASED_NAME },
+    );
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: MEMBER_CLERK_USER_ID,
+        phone: MEMBER_PHONE,
+        firstName: "Mia",
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+    });
+    const memberBackend = testBackend.withIdentity({ subject: MEMBER_CLERK_USER_ID });
+    for (const eventId of [directEventId, redeemedEventId]) {
+      await memberBackend.mutation(api.rsvps.submitRequest, {
+        eventId,
+        siteKey: "dojo",
+        listKey: "ga",
+        accessToken: await issueGaListAccessToken(testBackend, eventId),
+        firstName: "Mia",
+        lastName: "Member",
+        shareContact: true,
+        attendees: 1,
+        customFields: {},
+        socialProfiles: [],
+      });
+    }
+    await drainScheduledFunctions(testBackend);
+    const memberRsvpIds = await testBackend.run(async (databaseContext) =>
+      (
+        await databaseContext.db
+          .query("rsvps")
+          .withIndex("by_user", (queryBuilder) =>
+            queryBuilder.eq("clerkUserId", MEMBER_CLERK_USER_ID),
+          )
+          .collect()
+      ).map((rsvp) => rsvp._id),
+    );
+    const approvalCodes: string[] = [];
+    for (const rsvpId of [issuedRsvpId, disabledRsvpId, ...memberRsvpIds]) {
+      const approval = await hostBackend.mutation(api.approvals.applyApproval, {
+        rsvpId: rsvpId as Id<"rsvps">,
+        workspaceSlug: WORKSPACE_SLUG,
+      });
+      approvalCodes.push(approval.code);
+    }
+    await hostBackend.mutation(api.redemptions.toggleRedemptionStatus, {
+      rsvpId: disabledRsvpId as Id<"rsvps">,
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    await hostBackend.mutation(api.redemptions.redeem, {
+      code: approvalCodes[3],
+      workspaceSlug: WORKSPACE_SLUG,
+    });
+    await drainScheduledFunctions(testBackend);
+    const ticketCountsBefore = await readHostTicketCounts(testBackend, eventIds);
+    expect(ticketCountsBefore).toEqual({
+      dashboard: { totalRsvps: 4, approvedRsvps: 4, issuedTickets: 2, redeemedTickets: 1 },
+      exportCounts: { issued: 2, disabled: 1, redeemed: 1 },
+      doorCounts: { issued: 2, disabled: 1, redeemed: 1 },
+    });
+
+    const erasure = await requestErasure(testBackend, partner.plaintextKey, {
+      phone: ERASED_PHONE,
+    });
+    expect(erasure.body.erasure.anonymizedRsvpIds).toEqual([issuedRsvpId, disabledRsvpId].sort());
+    expect(await readHostTicketCounts(testBackend, eventIds)).toEqual(ticketCountsBefore);
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    await drainScheduledFunctions(testBackend);
+    expect(await countAnonymizedRsvps(testBackend, memberRsvpIds)).toBe(2);
+    expect(await readHostTicketCounts(testBackend, eventIds)).toEqual(ticketCountsBefore);
+  });
+
+  it("removes the person from audit entries about the RSVPs it anonymizes", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    await seedEvent(testBackend, "evt-erase");
+    await seedEvent(testBackend, "evt-other");
+    const { phoneHash } = await normalizeAndHashPhoneNumber(ERASED_PHONE);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: MEMBER_CLERK_USER_ID,
+        phone: MEMBER_PHONE,
+        firstName: "Mia",
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+    });
+    const partner = await issueApiKey(testBackend);
+    const memberRsvpId = await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-erase", {
+      phone: MEMBER_PHONE,
+      name: "Mia Member",
+    });
+    const retiredRsvpId = await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-erase", {
+      phone: ERASED_PHONE,
+      name: ERASED_NAME,
+    });
+    const claimedRsvpId = await postPartnerRsvp(testBackend, partner.plaintextKey, "evt-other", {
+      phone: ERASED_PHONE,
+      name: ERASED_NAME,
+    });
+    // Staff repaired the guest row before the merge retired its id.
+    await testBackend.run(async (databaseContext) => {
+      const guestRsvp = await databaseContext.db.get(retiredRsvpId as Id<"rsvps">);
+      await databaseContext.db.insert("auditLog", {
+        at: FIXED_NOW,
+        actorClerkUserId: "platform_staff",
+        action: "rsvp.text_association_repaired",
+        targetKind: "rsvp",
+        targetId: retiredRsvpId,
+        metadata: { evidenceId: "evidence", previousRsvp: JSON.stringify(guestRsvp) },
+      });
+    });
+    await testBackend
+      .withIdentity({ subject: MEMBER_CLERK_USER_ID })
+      .mutation(internal.rsvps.claimGuestRsvpsForClerkPhoneInternal, {
+        clerkUserId: MEMBER_CLERK_USER_ID,
+        phone: ERASED_PHONE,
+      });
+    await drainScheduledFunctions(testBackend);
+    const readRsvpAuditEntries = async () =>
+      await testBackend.run(async (databaseContext) =>
+        (await databaseContext.db.query("auditLog").collect())
+          .filter((entry) => entry.targetKind === "rsvp")
+          .map((entry) => ({
+            action: entry.action,
+            targetId: entry.targetId,
+            actorClerkUserId: entry.actorClerkUserId ?? null,
+            metadata: entry.metadata ?? null,
+          }))
+          .sort((firstEntry, secondEntry) =>
+            `${firstEntry.action}${firstEntry.targetId}`.localeCompare(
+              `${secondEntry.action}${secondEntry.targetId}`,
+            ),
+          ),
+      );
+    const auditBefore = await readRsvpAuditEntries();
+    expect(
+      auditBefore.map((entry) => [
+        entry.action,
+        entry.targetId,
+        entry.actorClerkUserId,
+        Object.keys(entry.metadata ?? {}).sort(),
+      ]),
+    ).toEqual(
+      [
+        ["rsvp.reconciled", memberRsvpId, ["previousRsvp", "previousTargetRsvp"]],
+        ["rsvp.reconciled", claimedRsvpId, ["canonicalClerkUserId", "previousRsvp"]],
+      ]
+        .sort((first, second) => String(first[1]).localeCompare(String(second[1])))
+        .map(([action, targetId, metadataKeys]) => [
+          action,
+          targetId,
+          MEMBER_CLERK_USER_ID,
+          metadataKeys,
+        ])
+        .concat([
+          [
+            "rsvp.text_association_repaired",
+            retiredRsvpId,
+            "platform_staff",
+            ["evidenceId", "previousRsvp"],
+          ],
+        ]),
+    );
+    expect(JSON.stringify(auditBefore)).toContain(ERASED_NAME);
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    await drainScheduledFunctions(testBackend);
+
+    const redacted = { redacted: "rsvp_anonymized" };
+    expect(await readRsvpAuditEntries()).toEqual(
+      auditBefore.map((entry) => ({
+        ...entry,
+        actorClerkUserId: entry.actorClerkUserId === "platform_staff" ? "platform_staff" : null,
+        metadata: redacted,
+      })),
+    );
+    const auditText = await testBackend.run(async (databaseContext) =>
+      JSON.stringify(await databaseContext.db.query("auditLog").collect()),
+    );
+    expect(auditText).not.toContain(ERASED_NAME);
+    expect(auditText).not.toContain("Mia");
+    expect(auditText).not.toContain(phoneHash);
+    expect(auditText).not.toContain(MEMBER_CLERK_USER_ID);
+  });
+
+  it("anonymizes RSVPs beyond the first 50 in scheduled batches after the account is gone", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.insert("users", {
+        clerkUserId: MEMBER_CLERK_USER_ID,
+        phone: MEMBER_PHONE,
+        firstName: "Mia",
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+    });
+    const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 51, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+
+    const readState = async () =>
+      await testBackend.run(async (databaseContext) => ({
+        users: (await databaseContext.db.query("users").collect()).length,
+        batches: (await databaseContext.db.query("rsvpAnonymizationBatches").collect()).map(
+          (batch) => ({
+            batchId: batch._id,
+            rsvpIds: batch.rsvpIds,
+            personPhoneHashes: batch.personPhoneHashes,
+          }),
+        ),
+      }));
+    const stateAfterDeletion = await readState();
+    expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(50);
+    expect(stateAfterDeletion).toEqual({
+      users: 0,
+      batches: [
+        {
+          batchId: expect.any(String),
+          rsvpIds: [rsvpIds[50]],
+          personPhoneHashes: [phoneHash],
+        },
+      ],
+    });
+
+    // The batch runs once here and again from the scheduler; the second run finds nothing to do.
+    await testBackend.mutation(internal.rsvpAnonymizationBatches.run, {
+      batchId: stateAfterDeletion.batches[0].batchId,
+    });
+    await drainScheduledFunctions(testBackend);
+
+    expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(51);
+    expect(await readState()).toEqual({ users: 0, batches: [] });
   });
 });

@@ -311,10 +311,10 @@ export async function enqueueRsvpWebhookDeliveries(
   }
 
   // An erasure notice tells mirrors to drop the person: the anonymized row
-  // resolves to null identity fields, and the ticket is left out.
+  // resolves to null identity fields and no ticket.
   const isErasure = isRsvpAnonymization(change);
   const identity = await resolveRsvpIdentity(ctx, rsvp);
-  const ticket = isErasure ? null : await buildRsvpTicketSnapshot(ctx, event, rsvp);
+  const ticket = await buildRsvpTicketSnapshot(ctx, event, rsvp);
   const previousRsvp = change.operation === "update" ? change.oldDoc : null;
 
   const payloadWithoutDeliveryId = {

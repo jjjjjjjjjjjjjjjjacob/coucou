@@ -573,8 +573,8 @@ export const backfillSmsConsentForEvent = internalMutation({
     for (const rsvp of rsvps) {
       results.processed++;
 
-      // Skip if already has smsConsent
-      if (rsvp.smsConsent === true) {
+      // Skip if already has smsConsent, or if anonymization removed the person's consent
+      if (rsvp.smsConsent === true || rsvp.anonymizedAt !== undefined) {
         results.skipped++;
         continue;
       }

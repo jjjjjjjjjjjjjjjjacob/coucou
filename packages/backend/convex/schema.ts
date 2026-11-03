@@ -602,8 +602,8 @@ export default defineSchema({
     }),
 
   // A retired RSVP ID can still be found after a same-event identity collision.
-  // This is intentionally separate from immutable audit/webhook payloads, whose
-  // original IDs and JSON snapshots are never rewritten.
+  // Audit entries and webhook payloads keep the IDs they were written with;
+  // anonymization finds them through this table and redacts or deletes them.
   rsvpIdentityAliases: defineTable({
     retiredRsvpId: v.id("rsvps"),
     canonicalRsvpId: v.id("rsvps"),
@@ -925,7 +925,9 @@ export default defineSchema({
     .index("by_text_blast", ["textBlastId"])
     .index("by_phone", ["phoneHash"])
     .index("by_reply_action", ["replyActionId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_source_rsvp", ["sourceRsvpId"])
+    .index("by_destination_rsvp", ["destinationRsvpId"]),
 
   smsCodeClaims: defineTable({
     normalizedCode: v.string(),
@@ -1022,7 +1024,8 @@ export default defineSchema({
   })
     .index("by_provider_message", ["providerMessageId"])
     .index("by_phone", ["phoneHash"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_destination_rsvp", ["destinationRsvpId"]),
 
   smsConversationThreads: defineTable({
     workspaceId: v.optional(v.id("workspaces")),
@@ -1303,5 +1306,15 @@ export default defineSchema({
     .index("by_at", ["at"])
     .index("by_actor", ["actorClerkUserId"])
     .index("by_action", ["action"])
-    .index("by_workspace", ["workspaceId"]),
+    .index("by_workspace", ["workspaceId"])
+    .index("by_target", ["targetId"]),
+
+  // Account deletion anonymizes RSVPs beyond its first transaction in these
+  // batches. The phone hashes find the SMS logs that name the RSVPs; each row is
+  // deleted once its batch is done, so no copy outlives the work.
+  rsvpAnonymizationBatches: defineTable({
+    rsvpIds: v.array(v.id("rsvps")),
+    personPhoneHashes: v.array(v.string()),
+    createdAt: v.number(),
+  }),
 });
