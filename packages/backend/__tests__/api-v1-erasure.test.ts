@@ -629,6 +629,95 @@ async function readAnonymizationBatches(testBackend: TestBackend) {
   );
 }
 
+async function subscribeWebhookEndpoints(testBackend: TestBackend, endpointCount: number) {
+  const hostBackend = testBackend.withIdentity(createHostIdentity(CLERK_ORGANIZATION_ID));
+  for (let index = 0; index < endpointCount; index += 1) {
+    await hostBackend.mutation(api.webhookEndpoints.create, {
+      workspaceSlug: WORKSPACE_SLUG,
+      url: `${ENDPOINT_URL}/${index}`,
+      subscribedEventTypes: ["rsvp.updated"],
+      eventAccessMode: "all",
+    });
+  }
+}
+
+// A ticket and an Instagram snapshot for each RSVP, the history whose cleanup
+// writes have triggers.
+async function attachTicketsAndSocialSnapshots(testBackend: TestBackend, rsvpIds: Id<"rsvps">[]) {
+  await testBackend.run(async (databaseContext) => {
+    for (const rsvpId of rsvpIds) {
+      const rsvp = await databaseContext.db.get(rsvpId);
+      if (!rsvp) throw new Error("Expected the RSVP");
+      await databaseContext.db.insert("redemptions", {
+        eventId: rsvp.eventId,
+        clerkUserId: rsvp.clerkUserId,
+        listKey: rsvp.listKey,
+        code: `CODE${rsvpId}`,
+        createdAt: FIXED_NOW,
+        unredeemHistory: [],
+      });
+      await databaseContext.db.insert("rsvpSocialProfiles", {
+        eventId: rsvp.eventId,
+        rsvpId,
+        clerkUserId: rsvp.clerkUserId,
+        platformKey: "instagram",
+        handle: ERASED_HANDLE,
+        normalizedHandle: ERASED_HANDLE,
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+    }
+  });
+}
+
+// Convex rejects a mutation that schedules more than 1,000 functions; convex-test
+// does not, so a test counts what one call scheduled, by function name.
+async function countFunctionsScheduledBy(testBackend: TestBackend, call: () => Promise<unknown>) {
+  const readScheduledFunctions = async () =>
+    await testBackend.run(
+      async (databaseContext) =>
+        await databaseContext.db.system.query("_scheduled_functions").collect(),
+    );
+  const scheduledBefore = new Set((await readScheduledFunctions()).map(({ _id }) => _id));
+  await call();
+  const countsByName: Record<string, number> = {};
+  for (const scheduledFunction of await readScheduledFunctions()) {
+    if (scheduledBefore.has(scheduledFunction._id)) continue;
+    countsByName[scheduledFunction.name] = (countsByName[scheduledFunction.name] ?? 0) + 1;
+  }
+  return countsByName;
+}
+
+function totalCount(countsByName: Record<string, number>) {
+  return Object.values(countsByName).reduce((total, count) => total + count, 0);
+}
+
+// The erasure notices each endpoint was sent, as sorted RSVP ids.
+async function readDeliveredErasureNotices(testBackend: TestBackend) {
+  return await testBackend.run(async (databaseContext) => {
+    const rsvpIdsByEndpointUrl: Record<string, string[]> = {};
+    for (const delivery of await databaseContext.db.query("webhookDeliveries").collect()) {
+      const endpoint = await databaseContext.db.get(delivery.endpointId);
+      if (!endpoint || delivery.eventType !== "rsvp.updated" || delivery.status !== "success") {
+        continue;
+      }
+      rsvpIdsByEndpointUrl[endpoint.url] = [
+        ...(rsvpIdsByEndpointUrl[endpoint.url] ?? []),
+        delivery.rsvpId as string,
+      ].sort();
+    }
+    return rsvpIdsByEndpointUrl;
+  });
+}
+
+async function readOpenAttentionFlags(testBackend: TestBackend) {
+  return await testBackend.run(async (databaseContext) =>
+    (await databaseContext.db.query("attentionFlags").collect())
+      .filter((flag) => flag.status === "open")
+      .map((flag) => ({ kind: flag.kind, label: flag.label, sourceModule: flag.sourceModule })),
+  );
+}
+
 // Stands in for a batch run that failed or has not started yet.
 async function cancelScheduledBatchRuns(testBackend: TestBackend) {
   await testBackend.run(async (databaseContext) => {
@@ -2086,6 +2175,35 @@ describe("POST /api/v1/erasures", () => {
     expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(51);
   });
 
+  it("schedules one notice dispatcher for 50 RSVPs and 10 endpoints, and sends each endpoint one notice per RSVP", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    await subscribeWebhookEndpoints(testBackend, 10);
+    const partner = await issueApiKey(testBackend);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(ERASED_PHONE);
+    const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 50, {
+      clerkUserId: `guest:${phoneHash}`,
+      guestPhoneHash: phoneHash,
+      apiClientId: partner.apiClientId,
+    });
+    await attachTicketsAndSocialSnapshots(testBackend, rsvpIds);
+
+    const erasure = await countFunctionsScheduledBy(testBackend, () =>
+      testBackend.fetch(
+        "/api/v1/erasures",
+        buildJsonRequest(partner.plaintextKey, "POST", { phone: ERASED_PHONE }),
+      ),
+    );
+    await drainScheduledFunctions(testBackend);
+
+    expect(erasure).toEqual({ "webhookDeliveries:dispatchQueuedDeliveries": 1 });
+    expect(await readDeliveredErasureNotices(testBackend)).toEqual(
+      Object.fromEntries(
+        Array.from({ length: 10 }, (_, index) => [`${ENDPOINT_URL}/${index}`, [...rsvpIds].sort()]),
+      ),
+    );
+  });
+
   it("validates the body and requires an rsvps:write key", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
@@ -2617,37 +2735,75 @@ describe("Coucou account deletion", () => {
     expect(await readAnonymizationBatches(testBackend)).toEqual([]);
   });
 
-  it("schedules one contact sync and one notice per endpoint for each RSVP it blanks, 100 at most", async () => {
+  it("keeps every transaction of a deletion under 800 scheduled functions with 10 endpoints, and sends each endpoint one notice per RSVP", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
-    await subscribeWebhookEndpoint(testBackend);
+    await subscribeWebhookEndpoints(testBackend, 10);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
     await seedMember(testBackend);
-    await insertRsvpsOnNewEvents(testBackend, 150, { clerkUserId: MEMBER_CLERK_USER_ID });
-    const countScheduledFunctionsByName = async () =>
-      await testBackend.run(async (databaseContext) => {
-        const countsByName: Record<string, number> = {};
-        for (const scheduledFunction of await databaseContext.db.system
-          .query("_scheduled_functions")
-          .collect()) {
-          countsByName[scheduledFunction.name] = (countsByName[scheduledFunction.name] ?? 0) + 1;
-        }
-        return countsByName;
-      });
-    expect(await countScheduledFunctionsByName()).toEqual({});
-
-    await testBackend.mutation(internal.users.deleteFromClerk, {
+    const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 150, {
       clerkUserId: MEMBER_CLERK_USER_ID,
     });
+    const [otherRsvpId] = await insertRsvpsOnNewEvents(testBackend, 1, {
+      clerkUserId: "user_other",
+    });
+    await attachTicketsAndSocialSnapshots(testBackend, rsvpIds);
+    await insertSmsRecipientRows(testBackend, phoneHash, rsvpIds, otherRsvpId, 600);
+    const requestCountsByUrl: Record<string, number> = {};
+    const answerEndpoint = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      requestCountsByUrl[url] = (requestCountsByUrl[url] ?? 0) + 1;
+      return answerEndpoint(input, init);
+    }) as typeof fetch;
 
-    // 100 blanked RSVPs: one contact sync and one erasure notice to the endpoint
-    // each. The other 50 wait for the batch.
-    expect(await countScheduledFunctionsByName()).toEqual({
+    const deletion = await countFunctionsScheduledBy(testBackend, () =>
+      testBackend.mutation(internal.users.deleteFromClerk, { clerkUserId: MEMBER_CLERK_USER_ID }),
+    );
+    await cancelScheduledBatchRuns(testBackend);
+    const [batch] = await readAnonymizationBatches(testBackend);
+    const batchRun = await countFunctionsScheduledBy(testBackend, () =>
+      testBackend.mutation(internal.rsvpAnonymizationBatches.run, { batchId: batch.batchId }),
+    );
+    const dispatcherRun = await countFunctionsScheduledBy(testBackend, () =>
+      testBackend.mutation(internal.webhookDeliveries.dispatchQueuedDeliveries, {}),
+    );
+
+    // The deletion blanks 100 RSVPs, the batch run the other 50: one contact
+    // sync each. Their 1,500 erasure notices wait in a queue that one
+    // dispatcher run drains 500 at a time.
+    expect(deletion).toEqual({
       "contactSync:syncRsvp": 100,
       "contactSync:syncUser": 1,
-      "webhookDispatch:attemptDelivery": 100,
       "rsvpAnonymizationBatches:run": 1,
+      "webhookDeliveries:dispatchQueuedDeliveries": 1,
     });
+    expect(batchRun).toEqual({
+      "contactSync:syncRsvp": 50,
+      "rsvpAnonymizationBatches:run": 1,
+      "webhookDeliveries:dispatchQueuedDeliveries": 1,
+    });
+    expect(dispatcherRun).toEqual({
+      "webhookDispatch:attemptDelivery": 500,
+      "webhookDeliveries:dispatchQueuedDeliveries": 1,
+    });
+    for (const transaction of [deletion, batchRun, dispatcherRun]) {
+      expect(totalCount(transaction)).toBeLessThanOrEqual(800);
+    }
+
     await drainScheduledFunctions(testBackend);
+
+    const endpointUrls = Array.from({ length: 10 }, (_, index) => `${ENDPOINT_URL}/${index}`);
+    expect(await readDeliveredErasureNotices(testBackend)).toEqual(
+      Object.fromEntries(endpointUrls.map((url) => [url, [...rsvpIds].sort()])),
+    );
+    expect(requestCountsByUrl).toEqual(Object.fromEntries(endpointUrls.map((url) => [url, 150])));
+    expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([]);
+    expect(await readSmsRecipientState(testBackend, otherRsvpId)).toEqual({
+      rowsListingThePerson: 0,
+      rowsListingTheOtherRsvp: 600,
+    });
+    expect(await readAnonymizationBatches(testBackend)).toEqual([]);
   });
 
   it("checks each SMS recipient row once per transaction, at most 500, and finishes the rest in batches", async () => {
@@ -2666,7 +2822,10 @@ describe("Coucou account deletion", () => {
     const documentsReadByTable = new Map<string, number>();
     await testBackend.run(async (databaseContext) => {
       await deleteUserData(
-        countDocumentsRead(databaseContext, documentsReadByTable),
+        {
+          ...countDocumentsRead(databaseContext, documentsReadByTable),
+          untriggeredDb: databaseContext.db,
+        },
         MEMBER_CLERK_USER_ID,
       );
     });
@@ -2710,7 +2869,7 @@ describe("Coucou account deletion", () => {
     await drainScheduledFunctions(testBackend);
   });
 
-  it("reruns a batch whose scheduled run never finished", async () => {
+  it("reruns a batch whose scheduled run never finished, and flags it on the third run", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
@@ -2750,6 +2909,25 @@ describe("Coucou account deletion", () => {
       clerkUserId: MEMBER_CLERK_USER_ID,
       denialReason: "Mia was rude at the door",
     });
+    expect(await readOpenAttentionFlags(testBackend)).toEqual([]);
+
+    // The third run is flagged once; later reruns keep going without a second flag.
+    for (const minutesLater of [22, 33]) {
+      await cancelScheduledBatchRuns(testBackend);
+      vi.setSystemTime(FIXED_NOW + minutesLater * 60 * 1000);
+      await testBackend.mutation(internal.rsvpAnonymizationBatches.rerunStalled, {});
+    }
+    const [{ batchId }] = await readAnonymizationBatches(testBackend);
+    expect(await readAnonymizationBatches(testBackend)).toEqual([
+      { ...stalledBatch, attempts: 4, scheduledAt: FIXED_NOW + 33 * 60 * 1000 },
+    ]);
+    expect(await readOpenAttentionFlags(testBackend)).toEqual([
+      {
+        kind: "flag",
+        label: `RSVP anonymization batch ${batchId} keeps failing`,
+        sourceModule: "rsvpAnonymizationBatches",
+      },
+    ]);
 
     await drainScheduledFunctions(testBackend);
 

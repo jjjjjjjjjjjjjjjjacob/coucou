@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 // Untriggered on purpose: the contact-sync triggers would rebuild the directory
-// rows this erasure removes. The rsvp.updated erasure notices are enqueued explicitly.
+// rows this erasure removes. anonymizeSelectedRsvps enqueues the erasure notices.
 import { internalMutation } from "./_generated/server";
 import { writeAuditEntry } from "./audit";
 import { resolveCanonicalRsvpId } from "./lib/canonicalUserIdentity";
@@ -17,7 +17,6 @@ import {
   anonymizeSelectedRsvps,
   MAX_RSVPS_ANONYMIZED_PER_TRANSACTION,
 } from "./lib/rsvpAnonymization";
-import { enqueueRsvpWebhookDeliveries } from "./lib/webhookEmission";
 
 export const MAX_ERASURE_RSVP_IDS = 100;
 
@@ -525,15 +524,12 @@ export const eraseSubjectForApiClient = internalMutation({
     if (anonymizedRsvps.length > 0) {
       const subject = await buildErasureSubject(ctx, rsvpsToAnonymize);
       await cancelPendingPersonNotifications(ctx, subject);
-      const anonymizations = await anonymizeSelectedRsvps(
-        ctx,
+      await anonymizeSelectedRsvps(
+        { ...ctx, untriggeredDb: ctx.db },
         anonymizedRsvps,
         { clerkUserIds: [...subject.clerkUserIds], phoneHashes: [...subject.phoneHashes] },
         { erasingApiClientId: apiClient._id },
       );
-      for (const anonymization of anonymizations) {
-        await enqueueRsvpWebhookDeliveries(ctx, { operation: "update", ...anonymization });
-      }
       if (!(await subjectHasRsvpInWorkspace(ctx, subject, scope.workspace))) {
         await eraseWorkspacePersonRecords(ctx, scope, subject);
       }

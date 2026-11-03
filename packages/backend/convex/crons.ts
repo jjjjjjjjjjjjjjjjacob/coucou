@@ -9,4 +9,12 @@ crons.interval(
   internal.rsvpAnonymizationBatches.rerunStalled,
 );
 
+// A queued delivery waits for the next dispatcher run; this one picks up any
+// that a failed run left behind.
+crons.interval(
+  "dispatch queued webhook deliveries",
+  { minutes: 10 },
+  internal.webhookDeliveries.dispatchQueuedDeliveries,
+);
+
 export default crons;

@@ -1,6 +1,6 @@
 import { internal } from "../_generated/api";
 import type { Doc, Id, TableNames } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { DatabaseWriter, MutationCtx } from "../_generated/server";
 import { generateApprovalCode } from "./codeGenerators";
 import { removeContactEvent } from "./contactRecords";
 import {
@@ -8,14 +8,18 @@ import {
   GUEST_CLERK_USER_ID_PREFIX,
   isGuestClerkUserId,
 } from "./guestIdentity";
+import { enqueueErasureNotices } from "./webhookEmission";
 
 // Partner erasure anonymizes at most this many RSVPs per request and answers
 // status "partial" for the rest; the partner repeats the request.
 export const MAX_RSVPS_ANONYMIZED_PER_TRANSACTION = 50;
 
-// Blanking an RSVP is one triggered write that schedules a contact sync and one
-// webhook attempt per subscribed endpoint, and Convex allows 1,000 scheduled
-// functions per mutation. 100 rows leave room for eight endpoints.
+// Convex allows 1,000 scheduled functions per mutation. Blanking an RSVP
+// schedules one, the rsvps trigger's contact sync, so a page schedules 100
+// whatever the endpoints or the person's history: the erasure notices wait in
+// webhookDispatchQueue for the one dispatcher a transaction schedules, and the
+// cleanup writes go through untriggeredDb. The page size bounds the reads and
+// writes; the scheduled functions stay far under the limit.
 const RSVPS_BLANKED_PER_TRANSACTION = 100;
 
 // Cleaning up one RSVP's attached records reads about twenty index ranges.
@@ -24,6 +28,15 @@ const RSVP_CLEANUPS_PER_TRANSACTION = 50;
 // A phone has one SMS recipient row per text blast it received, so the rows
 // are checked this many per transaction and the rest continue in a batch.
 const SMS_RECIPIENT_ROWS_PER_TRANSACTION = 500;
+
+// A mutation context that also writes around the triggers. The triggered
+// mutations in functions.ts carry untriggeredDb; an untriggered mutation passes
+// its own db. Writes whose triggers would only re-sync the anonymized rows'
+// contact records go through it: syncUser for a re-keyed ticket finds only the
+// anonymized row, syncDelivery reads none of the fields the cleanup removes,
+// and syncRsvp for an anonymized row removes the contact event the cleanup
+// removes itself.
+export type AnonymizationCtx = MutationCtx & { untriggeredDb: DatabaseWriter };
 
 export interface RsvpAnonymizationPerson {
   // The account, its aliases, its guest identities and the identity each
@@ -84,18 +97,6 @@ const REMOVED_IDENTITY_FIELDS = {
 function buildAnonymizedClerkUserId(rsvp: Doc<"rsvps">): string {
   const anonymousKey = `anonymized-${rsvp._id}`;
   return isGuestClerkUserId(rsvp.clerkUserId) ? buildGuestClerkUserId(anonymousKey) : anonymousKey;
-}
-
-export function isRsvpAnonymization(change: {
-  operation: "insert" | "update" | "delete";
-  oldDoc: Doc<"rsvps"> | null;
-  newDoc: Doc<"rsvps"> | null;
-}): boolean {
-  return (
-    change.operation === "update" &&
-    change.oldDoc?.anonymizedAt === undefined &&
-    change.newDoc?.anonymizedAt !== undefined
-  );
 }
 
 async function deleteDocuments(ctx: MutationCtx, documents: Array<{ _id: Id<TableNames> }>) {
@@ -191,7 +192,7 @@ async function removeRsvpIdsFromSmsReplies(ctx: MutationCtx, rsvpIds: Id<"rsvps"
 // every anonymized id, at most SMS_RECIPIENT_ROWS_PER_TRANSACTION rows from the
 // cursor on. Returns where the next pass starts, or null when every row is checked.
 async function removeRsvpIdsFromSmsRecipients(
-  ctx: MutationCtx,
+  ctx: AnonymizationCtx,
   rsvpIds: Set<Id<"rsvps">>,
   phoneHashes: Set<string>,
   cursor: SmsRecipientCursor | undefined,
@@ -213,7 +214,7 @@ async function removeRsvpIdsFromSmsRecipients(
       .take(remainingRows);
     for (const recipient of recipients) {
       if (!recipient.sourceRsvpIds.some((rsvpId) => rsvpIds.has(rsvpId))) continue;
-      await ctx.db.patch(recipient._id, {
+      await ctx.untriggeredDb.patch(recipient._id, {
         sourceRsvpIds: recipient.sourceRsvpIds.filter((rsvpId) => !rsvpIds.has(rsvpId)),
       });
     }
@@ -257,7 +258,7 @@ async function findRetiredRsvpIds(ctx: MutationCtx, rsvpId: Id<"rsvps">) {
 // new RSVP under the person's old identity reaches it; its status, check-in and
 // disabled time stay, so the host's counts do not change.
 async function blankRsvp(
-  ctx: MutationCtx,
+  ctx: AnonymizationCtx,
   rsvp: Doc<"rsvps">,
   erasingApiClientId: Id<"apiClients"> | undefined,
 ): Promise<Doc<"rsvps">> {
@@ -282,7 +283,7 @@ async function blankRsvp(
   ]);
   await deleteDocuments(ctx, webhookDeliveries.flat());
   for (const redemption of redemptions) {
-    await ctx.db.patch(redemption._id, {
+    await ctx.untriggeredDb.patch(redemption._id, {
       clerkUserId: anonymizedClerkUserId,
       code: generateApprovalCode().toUpperCase(),
     });
@@ -304,21 +305,17 @@ async function blankRsvp(
 }
 
 /**
- * Blanks each RSVP and adds it to the work as an RSVP whose attached records
- * still need cleanup. The identity and
- * phones it had join the person, so the cleanup finds its audit actors and SMS
- * logs after the row no longer names them. Returns each RSVP it blanked, before
- * and after, for a caller that sends the erasure notices itself.
+ * Blanks each RSVP, enqueues its erasure notice, and adds it to the work as an
+ * RSVP whose attached records still need cleanup. The identity and phones it
+ * had join the person, so the cleanup finds its audit actors and SMS logs after
+ * the row no longer names them.
  */
 async function blankRsvps(
-  ctx: MutationCtx,
+  ctx: AnonymizationCtx,
   rsvps: Doc<"rsvps">[],
   work: RsvpAnonymizationWork,
   options: { erasingApiClientId?: Id<"apiClients"> } = {},
-): Promise<{
-  anonymizations: Array<{ oldDoc: Doc<"rsvps">; newDoc: Doc<"rsvps"> }>;
-  work: RsvpAnonymizationWork;
-}> {
+): Promise<RsvpAnonymizationWork> {
   const clerkUserIds = new Set(work.person.clerkUserIds);
   const phoneHashes = new Set(work.person.phoneHashes);
   const cleanupRsvpIds = [...work.cleanupRsvpIds];
@@ -330,13 +327,11 @@ async function blankRsvps(
     cleanupRsvpIds.push(rsvp._id);
     anonymizations.push({ oldDoc: rsvp, newDoc });
   }
+  await enqueueErasureNotices(ctx, anonymizations);
   return {
-    anonymizations,
-    work: {
-      ...work,
-      cleanupRsvpIds,
-      person: { clerkUserIds: [...clerkUserIds], phoneHashes: [...phoneHashes] },
-    },
+    ...work,
+    cleanupRsvpIds,
+    person: { clerkUserIds: [...clerkUserIds], phoneHashes: [...phoneHashes] },
   };
 }
 
@@ -346,7 +341,7 @@ async function blankRsvps(
  * clerkUserId is its anonymized key, so the lookup never returns it again.
  */
 export async function blankNextHeldRsvps(
-  ctx: MutationCtx,
+  ctx: AnonymizationCtx,
   work: RsvpAnonymizationWork,
 ): Promise<RsvpAnonymizationWork> {
   const heldRsvps: Doc<"rsvps">[] = [];
@@ -360,7 +355,7 @@ export async function blankNextHeldRsvps(
         .take(remainingRows)),
     );
   }
-  const { work: blankedWork } = await blankRsvps(
+  const blankedWork = await blankRsvps(
     ctx,
     heldRsvps.slice(0, RSVPS_BLANKED_PER_TRANSACTION),
     work,
@@ -372,7 +367,7 @@ export async function blankNextHeldRsvps(
 // keyed by the RSVP, so its cost does not grow with the person's other RSVPs.
 // Returns the RSVP's id and its retired ids, which SMS recipient rows may list.
 async function cleanUpRsvp(
-  ctx: MutationCtx,
+  ctx: AnonymizationCtx,
   rsvpId: Id<"rsvps">,
   personClerkUserIds: Set<string>,
 ): Promise<Id<"rsvps">[]> {
@@ -407,12 +402,8 @@ async function cleanUpRsvp(
         .collect(),
     ]);
 
-  await deleteDocuments(ctx, [
-    ...guestHandoffs,
-    ...identityAliases,
-    ...socialProfileSnapshots,
-    ...smsRsvpSessions,
-  ]);
+  await deleteDocuments(ctx, [...guestHandoffs, ...identityAliases, ...smsRsvpSessions]);
+  for (const snapshot of socialProfileSnapshots) await ctx.untriggeredDb.delete(snapshot._id);
   for (const contactEvent of contactEvents) await removeContactEvent(ctx, contactEvent);
   await deleteProfileValuesSourcedFromRsvp(ctx, rsvpId);
   await redactAuditEntries(ctx, rsvpIds, personClerkUserIds);
@@ -432,7 +423,7 @@ async function cleanUpRsvp(
  * for a batch, or null when none is left.
  */
 export async function cleanUpAnonymizedRsvps(
-  ctx: MutationCtx,
+  ctx: AnonymizationCtx,
   work: RsvpAnonymizationWork,
 ): Promise<RsvpAnonymizationWork | null> {
   const personClerkUserIds = new Set(work.person.clerkUserIds);
@@ -470,18 +461,17 @@ export async function cleanUpAnonymizedRsvps(
 /**
  * Anonymizes RSVPs a partner erasure selected: blanks every row now and cleans
  * up the records hung off them, leaving what one transaction cannot finish to
- * a batch. Returns each blanked RSVP, before and after, for the erasure notice.
+ * a batch.
  */
 export async function anonymizeSelectedRsvps(
-  ctx: MutationCtx,
+  ctx: AnonymizationCtx,
   rsvps: Doc<"rsvps">[],
   person: RsvpAnonymizationPerson,
   options: { erasingApiClientId?: Id<"apiClients"> } = {},
 ) {
-  const { anonymizations, work } = await blankRsvps(ctx, rsvps, emptyWork(person), options);
+  const work = await blankRsvps(ctx, rsvps, emptyWork(person), options);
   const remainingWork = await cleanUpAnonymizedRsvps(ctx, work);
   if (remainingWork) await scheduleRsvpAnonymization(ctx, remainingWork);
-  return anonymizations;
 }
 
 /**
@@ -489,7 +479,7 @@ export async function anonymizeSelectedRsvps(
  * RSVPS_BLANKED_PER_TRANSACTION rows and cleans up the first ones now; a batch
  * blanks and cleans up the rest.
  */
-export async function anonymizeHeldRsvps(ctx: MutationCtx, person: RsvpAnonymizationPerson) {
+export async function anonymizeHeldRsvps(ctx: AnonymizationCtx, person: RsvpAnonymizationPerson) {
   const work = await blankNextHeldRsvps(ctx, { ...emptyWork(person), blankHeldRsvps: true });
   const remainingWork = await cleanUpAnonymizedRsvps(ctx, work);
   if (remainingWork) await scheduleRsvpAnonymization(ctx, remainingWork);

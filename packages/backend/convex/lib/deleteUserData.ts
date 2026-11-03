@@ -3,7 +3,7 @@ import type { MutationCtx } from "../_generated/server";
 import { refreshContactProfile, removeContactEvent } from "./contactRecords";
 import { buildGuestClerkUserId } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
-import { anonymizeHeldRsvps } from "./rsvpAnonymization";
+import { type AnonymizationCtx, anonymizeHeldRsvps } from "./rsvpAnonymization";
 
 async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<TableNames> }>) {
   for (const documentId of new Set(documents.map((document) => document._id)))
@@ -13,15 +13,15 @@ async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<
 /**
  * Remove the account's preference and profile state, including its former guest
  * identity, and anonymize every RSVP it holds: Coucou-direct and partner-created
- * alike. Each anonymized RSVP emits an rsvp.updated erasure notice through the
- * rsvps trigger, so partners mirroring it purge their copy.
+ * alike. Each anonymized RSVP sends granted endpoints an rsvp.updated erasure
+ * notice, so partners mirroring it purge their copy.
  *
  * Up to 100 RSVP rows are blanked in this transaction, so nothing can find the
  * person through them once it commits. The records hung off the RSVPs, and SMS
  * recipient rows beyond one page, are cleaned up by rsvpAnonymizationBatches; a
  * person with more RSVPs has the rest blanked by that batch, seconds later.
  */
-export async function deleteUserData(context: MutationCtx, clerkUserId: string) {
+export async function deleteUserData(context: AnonymizationCtx, clerkUserId: string) {
   const user = await context.db
     .query("users")
     .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
@@ -179,9 +179,11 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
       ...values,
       ...grants,
       ...memberships,
-      ...snapshots,
       ...contactIdentities,
     ]);
+    // One snapshot per RSVP and platform. Its trigger's contact sync would only
+    // rebuild a contact event for an RSVP this deletion anonymizes.
+    for (const snapshot of snapshots) await context.untriggeredDb.delete(snapshot._id);
     const guestProfiles = await context.db
       .query("workspaceGuestProfiles")
       .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("clerkUserId"), identityId))

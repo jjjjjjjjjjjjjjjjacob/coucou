@@ -1283,6 +1283,13 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId", "occurredAt"])
     .index("by_rsvp", ["rsvpId"]),
 
+  // Pending deliveries whose first attempt webhookDeliveries.dispatchQueuedDeliveries
+  // has not scheduled yet. Erasure notices wait here, so a transaction that
+  // anonymizes many RSVPs does not schedule one attempt per RSVP per endpoint.
+  webhookDispatchQueue: defineTable({
+    deliveryId: v.id("webhookDeliveries"),
+  }),
+
   // Durable phoneHash → plaintext E.164 map for guest identity in partner webhooks.
   // Guest RSVPs only persist a phone hash; partner integrations need the real number
   // to match users across systems, so guest submissions record it here.
