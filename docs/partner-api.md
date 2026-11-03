@@ -270,9 +270,15 @@ delete their data.
   RSVPs sent by other keys, and RSVPs the person gave Coucou by text or form, stay. Ids that
   are neither created nor updated by your key are ignored without an error, so the response
   never reveals whether someone else's RSVP exists.
+- An RSVP your key created stays if the person later submitted or edited it through Coucou:
+  its RSVP form, the signed-in app, or a text to the event's code. That RSVP now also holds
+  what the person gave Coucou directly. Coucou keeps it and lists it in `retainedRsvpIds`.
 - An id that an identity merge retired (a guest who later signed in) selects the RSVP it was
   merged into. The response lists that RSVP's id. A merged RSVP is erased only when this key
-  created both RSVPs that were merged.
+  created both RSVPs that were merged and the person submitted neither through Coucou. When an
+  RSVP your key created or updated was merged into an RSVP your key cannot erase, the response
+  lists the merged RSVP in `retainedRsvpIds`. Merges from before November 2026 did not record
+  the keys of the absorbed RSVP, so such a merged RSVP is listed only if your key also wrote it.
 - RSVPs created before Coucou recorded the creating key (November 2026) have no recorded
   creator. Such an RSVP is erased only when all three of these are true:
   1. Its `rsvp.created` notice in Coucou's webhook log has `origin.apiClientId` set to this
@@ -285,6 +291,10 @@ delete their data.
   2026-09-10 have no `source`, so without the notice Coucou cannot tell a partner-created
   RSVP from a form RSVP that the partner later updated. Ask Coucou to erase a retained
   legacy RSVP.
+
+  `rsvp.created` notices carry `origin.apiClientId` only since the 2026-07-30 release. An
+  RSVP your key created between the partner API launch (2026-07-18) and that release has no
+  notice that names your key, so Coucou always keeps it.
 - Erasure ignores the key's current event grants: a key can erase what it sent to an event it
   can no longer read.
 - The request is synchronous and runs in one transaction. It returns 200:
@@ -294,9 +304,11 @@ delete their data.
   "completedAt": 1753000000000 } }
 ```
 
-- `retainedRsvpIds` lists RSVPs that this key updated but cannot be shown to have created:
-  text or form RSVPs, RSVPs another key created, and the legacy RSVPs above. Coucou keeps
-  them because they are not only this partner's data.
+- `retainedRsvpIds` lists RSVPs that this key created or updated but cannot erase: text or
+  form RSVPs, RSVPs the person also submitted through Coucou, RSVPs another key created,
+  merged RSVPs, and the legacy RSVPs above. Coucou keeps them because they are not only this
+  partner's data. A legacy RSVP that another key updated after yours is not listed, because
+  Coucou cannot show your key wrote it.
 - **Idempotent**: a repeat request, or a phone Coucou has never seen, returns 200 with empty
   lists and changes nothing. Retry until you get a 2xx.
 - Each erased RSVP emits `rsvp.deleted` to subscribed endpoints, with every `identity` field
@@ -311,7 +323,7 @@ What an erasure deletes:
 | --- | --- |
 | The RSVP: name, note, custom fields, invited-by, SMS consent and its IP address | Always |
 | Approval decisions, ticket and redemption code, guest hand-off links (they hold the phone), SMS RSVP sessions, social-handle snapshots, profile values and workspace grants sourced from the RSVP, the attendance counts | Always |
-| Stored webhook delivery payloads for the RSVP (they hold the phone and name and can be re-sent) | Always |
+| Stored webhook delivery payloads for the RSVP, including those sent under an id a merge retired (they hold the phone and name and can be re-sent) | Always |
 | Queued SMS that carries the phone number | Always |
 | Workspace SMS preference, organizer tags and notes, contact-directory entry | The person has no other RSVP in the workspace |
 | Guest phone record (plaintext number), guest social handles, guest profile values | No RSVP in any workspace still uses that phone |
@@ -320,7 +332,7 @@ What Coucou keeps, and why:
 
 | Record | Why |
 | --- | --- |
-| RSVPs given to Coucou by text or form, and RSVPs other keys sent | They are not this partner's data |
+| RSVPs given to Coucou by text or form, RSVPs the person also submitted through Coucou, and RSVPs other keys sent | They are not only this partner's data |
 | A Coucou account (`users` row) matched by phone | The person holds it with Coucou directly |
 | SMS opt-out (`STOP`) list entry, keyed by phone hash | Coucou must keep honoring the opt-out |
 | Sent-SMS logs: obfuscated phone, phone hash, message body | Coucou is the sender of record and keeps them for carrier and consent disputes, as on account deletion |

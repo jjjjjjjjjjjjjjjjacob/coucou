@@ -42,6 +42,11 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
   webhook delivery's `origin.apiClientId`, a non-text/form source and no absorbed merge.
   Identity merges keep the creator only when both rows share it
   (`mergedRsvpCreatorApiClientId`). Apply the same rule to any new merge path.
+- A row the person submitted or edited through Coucou (form, signed-in app, text) is never
+  erased: every such patch of an existing row sets `rsvps.personSubmittedAt`, and merges keep
+  it when either row has it (`mergedRsvpPersonSubmittedAt`). A new person-facing write path
+  that patches an RSVP must set it too. `rsvpIdentityAliases.retiredApiClientIds` lets the
+  erasure report a merged row to the keys that wrote the absorbed one.
 - Resolve caller-supplied RSVP ids with `resolveCanonicalRsvpId`: merges retire ids.
 - `webhookDeliveries.payloadJson` keeps plaintext phone and name forever and hosts can
   re-send it, so any deletion path must also delete deliveries (`by_rsvp` index).

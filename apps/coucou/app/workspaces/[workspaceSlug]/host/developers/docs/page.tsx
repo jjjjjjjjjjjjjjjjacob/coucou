@@ -638,10 +638,11 @@ function PartnerApiDocumentation({
                 </>,
                 <>
                   Only RSVPs this key created are erased. RSVPs other keys created, text or form
-                  RSVPs the person gave Coucou directly, and RSVPs from before creators were
-                  recorded with no <InlineCode>rsvp.created</InlineCode> notice from this key stay.
-                  The ones this key updated are listed in <InlineCode>retainedRsvpIds</InlineCode>.
-                  Ids that are not yours are ignored.
+                  RSVPs the person gave Coucou directly, RSVPs the person later submitted or edited
+                  through Coucou, and RSVPs from before creators were recorded with no{" "}
+                  <InlineCode>rsvp.created</InlineCode> notice from this key stay. The ones this key
+                  created or updated are listed in <InlineCode>retainedRsvpIds</InlineCode>. Ids
+                  that are not yours are ignored.
                 </>,
                 <>
                   Deleted: the RSVP and its ticket, approvals, social handles, SMS consent, stored
