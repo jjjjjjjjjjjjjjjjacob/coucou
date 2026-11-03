@@ -1,3 +1,4 @@
+import { internal } from "../_generated/api";
 import type { Doc, Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { generateApprovalCode } from "./codeGenerators";
@@ -13,6 +14,34 @@ import {
 // limits. Larger sets are split: account deletion schedules batches, and a
 // partner erasure returns status "partial" for the partner to repeat.
 export const MAX_RSVPS_ANONYMIZED_PER_TRANSACTION = 50;
+
+// A phone has one SMS recipient row per text blast it received, so the rows
+// are checked this many per transaction and the rest continue in a batch.
+const SMS_RECIPIENT_ROWS_PER_TRANSACTION = 500;
+
+export interface RsvpAnonymizationPerson {
+  // The account, its aliases and its guest identities: an audit actor that is
+  // any of them is the person.
+  clerkUserIds: string[];
+  // The phones whose SMS recipient rows may list the person's RSVPs.
+  phoneHashes: string[];
+}
+
+export interface SmsRecipientCursor {
+  phoneHash: string;
+  afterCreationTime: number;
+}
+
+// What is left of one person's anonymization. A rsvpAnonymizationBatches row
+// stores it between transactions.
+export interface RsvpAnonymizationWork {
+  rsvpIds: Id<"rsvps">[];
+  person: RsvpAnonymizationPerson;
+  // Anonymized RSVP ids, retired ids included, that recipient rows may still list.
+  smsLogRsvpIds: Id<"rsvps">[];
+  // The last recipient row checked against every id in smsLogRsvpIds.
+  smsLogCursor?: SmsRecipientCursor;
+}
 
 // Every RSVP field that names, reaches or describes the person. Anonymization
 // removes all of them; the event, list, statuses, party size, ticket state,
@@ -67,19 +96,15 @@ async function deleteDocuments(ctx: MutationCtx, documents: Array<{ _id: Id<Tabl
 async function deleteProfileValuesSourcedFromRsvp(ctx: MutationCtx, rsvp: Doc<"rsvps">) {
   const grants = await ctx.db
     .query("workspaceProfileValueGrants")
-    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", rsvp.clerkUserId))
+    .withIndex("by_source_rsvp", (queryBuilder) => queryBuilder.eq("sourceRsvpId", rsvp._id))
     .collect();
-  await deleteDocuments(
-    ctx,
-    grants.filter((grant) => grant.sourceRsvpId === rsvp._id),
-  );
+  await deleteDocuments(ctx, grants);
 
   const values = await ctx.db
     .query("profileFieldValues")
-    .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", rsvp.clerkUserId))
+    .withIndex("by_source_rsvp", (queryBuilder) => queryBuilder.eq("sourceRsvpId", rsvp._id))
     .collect();
   for (const value of values) {
-    if (value.sourceRsvpId !== rsvp._id) continue;
     const remainingGrant = await ctx.db
       .query("workspaceProfileValueGrants")
       .withIndex("by_profile_value", (queryBuilder) =>
@@ -93,7 +118,11 @@ async function deleteProfileValuesSourcedFromRsvp(ctx: MutationCtx, rsvp: Doc<"r
 // Audit entries about an RSVP can hold a JSON copy of the row, the evidence
 // record that ties it to a phone, and the person as actor. The entry stays as a
 // record that the action happened; everything that names the person goes.
-async function redactAuditEntries(ctx: MutationCtx, rsvp: Doc<"rsvps">, rsvpIds: Id<"rsvps">[]) {
+async function redactAuditEntries(
+  ctx: MutationCtx,
+  rsvpIds: Id<"rsvps">[],
+  personClerkUserIds: Set<string>,
+) {
   for (const rsvpId of rsvpIds) {
     const auditEntries = await ctx.db
       .query("auditLog")
@@ -102,9 +131,7 @@ async function redactAuditEntries(ctx: MutationCtx, rsvp: Doc<"rsvps">, rsvpIds:
     for (const auditEntry of auditEntries) {
       if (auditEntry.targetKind !== "rsvp") continue;
       const actor = auditEntry.actorClerkUserId;
-      const actorIsPerson =
-        actor !== undefined &&
-        (actor === rsvp.clerkUserId || actor === auditEntry.metadata?.canonicalClerkUserId);
+      const actorIsPerson = actor !== undefined && personClerkUserIds.has(actor);
       await ctx.db.patch(auditEntry._id, {
         metadata: { redacted: "rsvp_anonymized" },
         ...(actorIsPerson ? { actorClerkUserId: undefined, actorEmail: undefined } : {}),
@@ -114,26 +141,9 @@ async function redactAuditEntries(ctx: MutationCtx, rsvp: Doc<"rsvps">, rsvpIds:
 }
 
 // SMS logs stay, keyed by phone hash, but must not say which RSVP that phone
-// belonged to. Recipient rows hold an array, which no index reaches, so they are
-// found through the person's phone hashes.
-async function removeRsvpIdsFromSmsLogs(
-  ctx: MutationCtx,
-  rsvpIds: Id<"rsvps">[],
-  phoneHashes: Set<string>,
-) {
-  const anonymizedRsvpIds = new Set<Id<"rsvps">>(rsvpIds);
-  for (const phoneHash of phoneHashes) {
-    const recipients = await ctx.db
-      .query("textBlastRecipients")
-      .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
-      .collect();
-    for (const recipient of recipients) {
-      if (!recipient.sourceRsvpIds.some((rsvpId) => anonymizedRsvpIds.has(rsvpId))) continue;
-      await ctx.db.patch(recipient._id, {
-        sourceRsvpIds: recipient.sourceRsvpIds.filter((rsvpId) => !anonymizedRsvpIds.has(rsvpId)),
-      });
-    }
-  }
+// belonged to. Reply attempts and inbound receipts name one RSVP each, through
+// an index.
+async function removeRsvpIdsFromSmsReplies(ctx: MutationCtx, rsvpIds: Id<"rsvps">[]) {
   for (const rsvpId of rsvpIds) {
     const [sourceReplyAttempts, destinationReplyAttempts, inboundReceipts] = await Promise.all([
       ctx.db
@@ -165,8 +175,48 @@ async function removeRsvpIdsFromSmsLogs(
   }
 }
 
-function collectRsvpPhoneHashes(rsvp: Doc<"rsvps">, personPhoneHashes: Iterable<string>) {
-  const phoneHashes = new Set(personPhoneHashes);
+// Recipient rows hold an array of RSVP ids, which no index reaches, so they are
+// found through the person's phones. One pass checks each row once against
+// every anonymized id, at most SMS_RECIPIENT_ROWS_PER_TRANSACTION rows from the
+// cursor on. Returns where the next pass starts, or null when every row is checked.
+async function removeRsvpIdsFromSmsRecipients(
+  ctx: MutationCtx,
+  rsvpIds: Set<Id<"rsvps">>,
+  phoneHashes: Set<string>,
+  cursor: SmsRecipientCursor | undefined,
+): Promise<SmsRecipientCursor | null> {
+  const sortedPhoneHashes = [...phoneHashes].sort();
+  let remainingRows = SMS_RECIPIENT_ROWS_PER_TRANSACTION;
+  const startIndex = cursor ? Math.max(sortedPhoneHashes.indexOf(cursor.phoneHash), 0) : 0;
+  for (const phoneHash of sortedPhoneHashes.slice(startIndex)) {
+    const afterCreationTime =
+      cursor?.phoneHash === phoneHash ? cursor.afterCreationTime : undefined;
+    const recipients = await ctx.db
+      .query("textBlastRecipients")
+      .withIndex("by_phone", (queryBuilder) => {
+        const samePhone = queryBuilder.eq("phoneHash", phoneHash);
+        return afterCreationTime === undefined
+          ? samePhone
+          : samePhone.gt("_creationTime", afterCreationTime);
+      })
+      .take(remainingRows);
+    for (const recipient of recipients) {
+      if (!recipient.sourceRsvpIds.some((rsvpId) => rsvpIds.has(rsvpId))) continue;
+      await ctx.db.patch(recipient._id, {
+        sourceRsvpIds: recipient.sourceRsvpIds.filter((rsvpId) => !rsvpIds.has(rsvpId)),
+      });
+    }
+    remainingRows -= recipients.length;
+    const lastRecipient = recipients.at(-1);
+    if (remainingRows === 0 && lastRecipient) {
+      return { phoneHash, afterCreationTime: lastRecipient._creationTime };
+    }
+  }
+  return null;
+}
+
+function collectRsvpPhoneHashes(rsvp: Doc<"rsvps">) {
+  const phoneHashes = new Set<string>();
   if (rsvp.guestPhoneHash) phoneHashes.add(rsvp.guestPhoneHash);
   if (rsvp.smsPhoneHash) phoneHashes.add(rsvp.smsPhoneHash);
   if (isGuestClerkUserId(rsvp.clerkUserId)) {
@@ -175,25 +225,19 @@ function collectRsvpPhoneHashes(rsvp: Doc<"rsvps">, personPhoneHashes: Iterable<
   return phoneHashes;
 }
 
-/**
- * Strips the person from one RSVP and the records hung off it, and keeps the
- * RSVP for the host. Returns the anonymized row; an RSVP that is already
- * anonymized comes back unchanged. Webhook deliveries stored for the RSVP are
- * deleted first, so the caller's erasure notice is the only one left: a
- * triggered caller gets it from the rsvps trigger, an untriggered caller passes
- * the change to enqueueRsvpWebhookDeliveries itself. personPhoneHashes are the
- * person's phones the row itself may not name (a member's account phone), used
- * to find the SMS logs that list the RSVP.
- */
-export async function anonymizeRsvp(
+// Strips the person from one RSVP and the records hung off it, and keeps the
+// RSVP for the host. Webhook deliveries stored for the RSVP are deleted first,
+// so the caller's erasure notice is the only one left: a triggered caller gets
+// it from the rsvps trigger, an untriggered caller passes the change to
+// enqueueRsvpWebhookDeliveries itself. Every read here is keyed by this RSVP,
+// so its cost does not grow with the person's other RSVPs. SMS recipient rows
+// are keyed by phone and are left to the caller (anonymizeRsvps).
+async function anonymizeRsvp(
   ctx: MutationCtx,
   rsvp: Doc<"rsvps">,
-  options: {
-    erasingApiClientId?: Id<"apiClients">;
-    personPhoneHashes?: Iterable<string>;
-  } = {},
-): Promise<Doc<"rsvps">> {
-  if (rsvp.anonymizedAt !== undefined) return rsvp;
+  personClerkUserIds: Set<string>,
+  erasingApiClientId: Id<"apiClients"> | undefined,
+): Promise<{ anonymizedRsvp: Doc<"rsvps">; rsvpIds: Id<"rsvps">[]; phoneHashes: Set<string> }> {
   const now = Date.now();
   const anonymizedClerkUserId = buildAnonymizedClerkUserId(rsvp);
   const identityAliases = await ctx.db
@@ -260,12 +304,8 @@ export async function anonymizeRsvp(
   ]);
   for (const contactEvent of contactEvents) await removeContactEvent(ctx, contactEvent);
   await deleteProfileValuesSourcedFromRsvp(ctx, rsvp);
-  await redactAuditEntries(ctx, rsvp, rsvpIds);
-  await removeRsvpIdsFromSmsLogs(
-    ctx,
-    rsvpIds,
-    collectRsvpPhoneHashes(rsvp, options.personPhoneHashes ?? []),
-  );
+  await redactAuditEntries(ctx, rsvpIds, new Set([...personClerkUserIds, rsvp.clerkUserId]));
+  await removeRsvpIdsFromSmsReplies(ctx, rsvpIds);
   for (const approval of approvals) {
     await ctx.db.patch(approval._id, {
       clerkUserId: anonymizedClerkUserId,
@@ -288,12 +328,139 @@ export async function anonymizeRsvp(
     shareContact: false,
     anonymizedAt: now,
     updatedAt: now,
-    ...(options.erasingApiClientId
+    ...(erasingApiClientId
       ? {
-          webhookOriginApiClientId: options.erasingApiClientId,
+          webhookOriginApiClientId: erasingApiClientId,
           webhookOriginMutationId: crypto.randomUUID(),
         }
       : {}),
   });
-  return (await ctx.db.get(rsvp._id)) as Doc<"rsvps">;
+  return {
+    anonymizedRsvp: (await ctx.db.get(rsvp._id)) as Doc<"rsvps">,
+    rsvpIds,
+    phoneHashes: collectRsvpPhoneHashes(rsvp),
+  };
+}
+
+/**
+ * One transaction of a person's anonymization: anonymizes work.rsvpIds (at most
+ * MAX_RSVPS_ANONYMIZED_PER_TRANSACTION) and removes every anonymized id from
+ * one page of the person's SMS recipient rows. An id that is gone (an identity
+ * merge retired it after the work was planned) or already anonymized is
+ * skipped. Returns each RSVP it anonymized, before and after, and the work
+ * left for a batch, or null when none is left.
+ */
+export async function anonymizeRsvps(
+  ctx: MutationCtx,
+  work: RsvpAnonymizationWork,
+  options: { erasingApiClientId?: Id<"apiClients"> } = {},
+): Promise<{
+  anonymizations: Array<{ oldDoc: Doc<"rsvps">; newDoc: Doc<"rsvps"> }>;
+  remainingWork: RsvpAnonymizationWork | null;
+}> {
+  const personClerkUserIds = new Set(work.person.clerkUserIds);
+  const phoneHashes = new Set(work.person.phoneHashes);
+  const smsLogRsvpIds = new Set(work.smsLogRsvpIds);
+  let smsLogCursor = work.smsLogCursor;
+  const anonymizations: Array<{ oldDoc: Doc<"rsvps">; newDoc: Doc<"rsvps"> }> = [];
+  for (const rsvpId of work.rsvpIds) {
+    const rsvp = await ctx.db.get(rsvpId);
+    if (!rsvp || rsvp.anonymizedAt !== undefined) continue;
+    const anonymization = await anonymizeRsvp(
+      ctx,
+      rsvp,
+      personClerkUserIds,
+      options.erasingApiClientId,
+    );
+    for (const anonymizedId of anonymization.rsvpIds) smsLogRsvpIds.add(anonymizedId);
+    for (const phoneHash of anonymization.phoneHashes) phoneHashes.add(phoneHash);
+    // Rows already checked were not checked against the new ids.
+    smsLogCursor = undefined;
+    anonymizations.push({ oldDoc: rsvp, newDoc: anonymization.anonymizedRsvp });
+  }
+  const nextSmsLogCursor =
+    smsLogRsvpIds.size === 0
+      ? null
+      : await removeRsvpIdsFromSmsRecipients(ctx, smsLogRsvpIds, phoneHashes, smsLogCursor);
+  return {
+    anonymizations,
+    remainingWork:
+      nextSmsLogCursor === null
+        ? null
+        : {
+            rsvpIds: [],
+            person: { clerkUserIds: work.person.clerkUserIds, phoneHashes: [...phoneHashes] },
+            smsLogRsvpIds: [...smsLogRsvpIds],
+            smsLogCursor: nextSmsLogCursor,
+          },
+  };
+}
+
+/**
+ * Stores work for later transactions and schedules its first run. Each RSVP the
+ * work names is marked pending, so a write that would reuse the row before the
+ * batch runs finishes its anonymization first (finishPendingAnonymization) and
+ * a guest claim leaves it alone (isPendingAnonymization).
+ */
+export async function scheduleRsvpAnonymization(ctx: MutationCtx, work: RsvpAnonymizationWork) {
+  const now = Date.now();
+  const batchId = await ctx.db.insert("rsvpAnonymizationBatches", {
+    ...work,
+    attempts: 1,
+    scheduledAt: now,
+    createdAt: now,
+  });
+  for (const rsvpId of work.rsvpIds) {
+    await ctx.db.insert("pendingRsvpAnonymizations", { rsvpId, batchId });
+  }
+  await ctx.scheduler.runAfter(0, internal.rsvpAnonymizationBatches.run, { batchId });
+}
+
+export async function isPendingAnonymization(
+  ctx: MutationCtx,
+  rsvpId: Id<"rsvps">,
+): Promise<boolean> {
+  const pending = await ctx.db
+    .query("pendingRsvpAnonymizations")
+    .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvpId))
+    .first();
+  return pending !== null;
+}
+
+/**
+ * A deleted account's RSVP that waits in a batch still carries its phone, so
+ * the guest form, a text or a partner write can find it. Before such a write
+ * reuses the row, this anonymizes it and hands the rest of the work (its SMS
+ * logs) to the batch. Returns the row unchanged when it is not pending, and
+ * null when it was, so the write creates a new RSVP.
+ */
+export async function finishPendingAnonymization(
+  ctx: MutationCtx,
+  rsvp: Doc<"rsvps"> | null,
+): Promise<Doc<"rsvps"> | null> {
+  if (!rsvp) return null;
+  const pending = await ctx.db
+    .query("pendingRsvpAnonymizations")
+    .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
+    .first();
+  if (!pending) return rsvp;
+  const batch = await ctx.db.get(pending.batchId);
+  await ctx.db.delete(pending._id);
+  if (!batch) return rsvp;
+  const anonymization = await anonymizeRsvp(
+    ctx,
+    rsvp,
+    new Set(batch.person.clerkUserIds),
+    undefined,
+  );
+  await ctx.db.patch(batch._id, {
+    rsvpIds: batch.rsvpIds.filter((rsvpId) => rsvpId !== rsvp._id),
+    person: {
+      clerkUserIds: batch.person.clerkUserIds,
+      phoneHashes: [...new Set([...batch.person.phoneHashes, ...anonymization.phoneHashes])],
+    },
+    smsLogRsvpIds: [...new Set([...batch.smsLogRsvpIds, ...anonymization.rsvpIds])],
+    smsLogCursor: undefined,
+  });
+  return null;
 }

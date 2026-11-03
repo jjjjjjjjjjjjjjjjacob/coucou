@@ -13,7 +13,11 @@ import {
   isGuestClerkUserId,
 } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
-import { anonymizeRsvp, MAX_RSVPS_ANONYMIZED_PER_TRANSACTION } from "./lib/rsvpAnonymization";
+import {
+  anonymizeRsvps,
+  MAX_RSVPS_ANONYMIZED_PER_TRANSACTION,
+  scheduleRsvpAnonymization,
+} from "./lib/rsvpAnonymization";
 import { enqueueRsvpWebhookDeliveries } from "./lib/webhookEmission";
 
 export const MAX_ERASURE_RSVP_IDS = 100;
@@ -200,12 +204,22 @@ async function buildErasureSubject(
       subject.phoneHashes.add(rsvp.clerkUserId.slice(GUEST_CLERK_USER_ID_PREFIX.length));
       continue;
     }
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (queryBuilder) =>
-        queryBuilder.eq("clerkUserId", rsvp.clerkUserId),
-      )
-      .first();
+    const [user, aliases] = await Promise.all([
+      ctx.db
+        .query("users")
+        .withIndex("by_clerkUserId", (queryBuilder) =>
+          queryBuilder.eq("clerkUserId", rsvp.clerkUserId),
+        )
+        .first(),
+      ctx.db
+        .query("userIdentityAliases")
+        .withIndex("by_canonical", (queryBuilder) =>
+          queryBuilder.eq("canonicalClerkUserId", rsvp.clerkUserId),
+        )
+        .collect(),
+    ]);
+    // Accounts merged into this one: audit entries may name the person by them.
+    for (const alias of aliases) subject.clerkUserIds.add(alias.aliasClerkUserId);
     if (user?.phoneHash) subject.phoneHashes.add(user.phoneHash);
     if (user?.phone) {
       try {
@@ -252,23 +266,6 @@ async function cancelPendingPersonNotifications(ctx: MutationCtx, subject: Erasu
       await ctx.scheduler.cancel(scheduledFunction._id);
     }
   }
-}
-
-async function anonymizePartnerRsvp(
-  ctx: MutationCtx,
-  rsvp: Doc<"rsvps">,
-  apiClientId: Id<"apiClients">,
-  subject: ErasureSubject,
-): Promise<void> {
-  const anonymizedRsvp = await anonymizeRsvp(ctx, rsvp, {
-    erasingApiClientId: apiClientId,
-    personPhoneHashes: subject.phoneHashes,
-  });
-  await enqueueRsvpWebhookDeliveries(ctx, {
-    operation: "update",
-    oldDoc: rsvp,
-    newDoc: anonymizedRsvp,
-  });
 }
 
 async function subjectHasRsvpInWorkspace(
@@ -529,9 +526,22 @@ export const eraseSubjectForApiClient = internalMutation({
     if (anonymizedRsvps.length > 0) {
       const subject = await buildErasureSubject(ctx, rsvpsToAnonymize);
       await cancelPendingPersonNotifications(ctx, subject);
-      for (const rsvp of anonymizedRsvps) {
-        await anonymizePartnerRsvp(ctx, rsvp, apiClient._id, subject);
+      const { anonymizations, remainingWork } = await anonymizeRsvps(
+        ctx,
+        {
+          rsvpIds: anonymizedRsvps.map((rsvp) => rsvp._id),
+          person: {
+            clerkUserIds: [...subject.clerkUserIds],
+            phoneHashes: [...subject.phoneHashes],
+          },
+          smsLogRsvpIds: [],
+        },
+        { erasingApiClientId: apiClient._id },
+      );
+      for (const anonymization of anonymizations) {
+        await enqueueRsvpWebhookDeliveries(ctx, { operation: "update", ...anonymization });
       }
+      if (remainingWork) await scheduleRsvpAnonymization(ctx, remainingWork);
       if (!(await subjectHasRsvpInWorkspace(ctx, subject, scope.workspace))) {
         await eraseWorkspacePersonRecords(ctx, scope, subject);
       }

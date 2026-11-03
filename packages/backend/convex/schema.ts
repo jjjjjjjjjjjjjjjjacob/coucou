@@ -703,7 +703,8 @@ export default defineSchema({
   })
     .index("by_user", ["clerkUserId"])
     .index("by_user_field", ["clerkUserId", "fieldKey"])
-    .index("by_user_field_value", ["clerkUserId", "fieldKey", "normalizedValue"]),
+    .index("by_user_field_value", ["clerkUserId", "fieldKey", "normalizedValue"])
+    .index("by_source_rsvp", ["sourceRsvpId"]),
 
   workspaceProfileValueGrants: defineTable({
     workspaceId: v.optional(v.id("workspaces")),
@@ -740,7 +741,8 @@ export default defineSchema({
       "fieldKey",
       "profileFieldValueId",
     ])
-    .index("by_profile_value", ["profileFieldValueId"]),
+    .index("by_profile_value", ["profileFieldValueId"])
+    .index("by_source_rsvp", ["sourceRsvpId"]),
 
   rsvpSocialProfiles: defineTable({
     eventId: v.id("events"),
@@ -1309,12 +1311,28 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_target", ["targetId"]),
 
-  // Account deletion anonymizes RSVPs beyond its first transaction in these
-  // batches. The phone hashes find the SMS logs that name the RSVPs; each row is
-  // deleted once its batch is done, so no copy outlives the work.
+  // Anonymization work left for later transactions: RSVPs beyond the first
+  // transaction of an account deletion, and SMS recipient rows beyond one page.
+  // Fields match RsvpAnonymizationWork. The identities and phone hashes find
+  // the audit actors and SMS logs; each row is deleted once its work is done,
+  // so no copy outlives it. attempts counts the runs scheduled since the last
+  // progress; the crons.ts sweep reruns a row whose run has not finished.
   rsvpAnonymizationBatches: defineTable({
     rsvpIds: v.array(v.id("rsvps")),
-    personPhoneHashes: v.array(v.string()),
+    person: v.object({
+      clerkUserIds: v.array(v.string()),
+      phoneHashes: v.array(v.string()),
+    }),
+    smsLogRsvpIds: v.array(v.id("rsvps")),
+    smsLogCursor: v.optional(v.object({ phoneHash: v.string(), afterCreationTime: v.number() })),
+    attempts: v.number(),
+    scheduledAt: v.number(),
     createdAt: v.number(),
-  }),
+  }).index("by_scheduled_at", ["scheduledAt"]),
+
+  // An RSVP waiting in a batch, so writes that find it by phone can tell.
+  pendingRsvpAnonymizations: defineTable({
+    rsvpId: v.id("rsvps"),
+    batchId: v.id("rsvpAnonymizationBatches"),
+  }).index("by_rsvp", ["rsvpId"]),
 });

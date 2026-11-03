@@ -22,6 +22,7 @@ import type * as contactSync from "../contactSync.js";
 import type * as contacts from "../contacts.js";
 import type * as credentials from "../credentials.js";
 import type * as credentialsNode from "../credentialsNode.js";
+import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dashboardPreferences from "../dashboardPreferences.js";
 import type * as devUtils from "../devUtils.js";
@@ -154,6 +155,7 @@ declare const fullApi: ApiFromModules<{
   contacts: typeof contacts;
   credentials: typeof credentials;
   credentialsNode: typeof credentialsNode;
+  crons: typeof crons;
   dashboard: typeof dashboard;
   dashboardPreferences: typeof dashboardPreferences;
   devUtils: typeof devUtils;

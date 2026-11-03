@@ -29,6 +29,7 @@ import {
   deleteRsvpFromAggregate,
   insertRsvpIntoAggregate,
 } from "./lib/rsvpAggregate";
+import { finishPendingAnonymization, isPendingAnonymization } from "./lib/rsvpAnonymization";
 import { AUTOMATIC_APPROVAL_ACTOR, applyApprovalStatusTransition } from "./lib/rsvpApproval";
 import { formatRsvpConfirmationMessage } from "./lib/rsvpConfirmationMessages";
 import {
@@ -763,7 +764,10 @@ export const submitGuestRequest = mutation({
         queryBuilder.eq("eventId", args.eventId).eq("guestPhoneHash", phoneHash),
       )
       .collect();
-    const existing = existingGuestRsvps.find((rsvp) => isGuestClerkUserId(rsvp.clerkUserId));
+    const existing = await finishPendingAnonymization(
+      ctx,
+      existingGuestRsvps.find((rsvp) => isGuestClerkUserId(rsvp.clerkUserId)) ?? null,
+    );
     const existingOrganizerSmsPreference = await resolveSmsOrganizerPreference(ctx, {
       clerkUserId: guestClerkUserId,
       event,
@@ -1253,13 +1257,16 @@ async function claimGuestRsvpsForPhone(
       )
       .collect(),
   ]);
-  const guestRsvps = [
-    ...new Map(candidateCollections.flat().map((rsvp) => [rsvp._id, rsvp])).values(),
-  ].filter(
-    (rsvp) =>
-      rsvp.clerkUserId !== clerkUserId &&
-      (isGuestClerkUserId(rsvp.clerkUserId) || rsvp.smsPhoneHash === phoneHash),
-  );
+  const guestRsvps: Doc<"rsvps">[] = [];
+  for (const rsvp of new Map(
+    candidateCollections.flat().map((rsvp) => [rsvp._id, rsvp]),
+  ).values()) {
+    if (rsvp.clerkUserId === clerkUserId) continue;
+    if (!isGuestClerkUserId(rsvp.clerkUserId) && rsvp.smsPhoneHash !== phoneHash) continue;
+    // A deleted account's RSVP waiting for anonymization is not the claimant's.
+    if (await isPendingAnonymization(ctx, rsvp._id)) continue;
+    guestRsvps.push(rsvp);
+  }
 
   let pairedCount = 0;
   let mergedCount = 0;

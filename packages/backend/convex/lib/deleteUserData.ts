@@ -1,10 +1,14 @@
-import { internal } from "../_generated/api";
 import type { Doc, Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { refreshContactProfile, removeContactEvent } from "./contactRecords";
 import { buildGuestClerkUserId } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
-import { anonymizeRsvp, MAX_RSVPS_ANONYMIZED_PER_TRANSACTION } from "./rsvpAnonymization";
+import {
+  anonymizeRsvps,
+  MAX_RSVPS_ANONYMIZED_PER_TRANSACTION,
+  type RsvpAnonymizationPerson,
+  scheduleRsvpAnonymization,
+} from "./rsvpAnonymization";
 
 async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<TableNames> }>) {
   for (const documentId of new Set(documents.map((document) => document._id)))
@@ -18,8 +22,10 @@ async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<
  * rsvps trigger, so partners mirroring it purge their copy.
  *
  * The first MAX_RSVPS_ANONYMIZED_PER_TRANSACTION RSVPs are anonymized here; the
- * rest go to rsvpAnonymizationBatches, which name each RSVP by id and carry the
- * phone hashes, so the batches need nothing this deletion removes.
+ * rest, and SMS recipient rows beyond one page, go to rsvpAnonymizationBatches.
+ * A batch names each RSVP by id and carries the identities and phone hashes, so
+ * it needs nothing this deletion removes. Until it runs, writes that find a
+ * pending RSVP by phone anonymize it first, and guest claims skip it.
  */
 export async function deleteUserData(context: MutationCtx, clerkUserId: string) {
   const user = await context.db
@@ -126,23 +132,27 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
         .collect()),
     );
   }
-  const personPhoneHashes = [...phoneHashes];
-  for (const rsvp of heldRsvps.slice(0, MAX_RSVPS_ANONYMIZED_PER_TRANSACTION)) {
-    await anonymizeRsvp(context, rsvp, { personPhoneHashes });
-  }
+  const person: RsvpAnonymizationPerson = {
+    clerkUserIds: [...identityIds],
+    phoneHashes: [...phoneHashes],
+  };
+  const heldRsvpIds = heldRsvps.map((rsvp) => rsvp._id);
+  const { remainingWork } = await anonymizeRsvps(context, {
+    rsvpIds: heldRsvpIds.slice(0, MAX_RSVPS_ANONYMIZED_PER_TRANSACTION),
+    person,
+    smsLogRsvpIds: [],
+  });
+  if (remainingWork) await scheduleRsvpAnonymization(context, remainingWork);
   for (
     let batchStart = MAX_RSVPS_ANONYMIZED_PER_TRANSACTION;
-    batchStart < heldRsvps.length;
+    batchStart < heldRsvpIds.length;
     batchStart += MAX_RSVPS_ANONYMIZED_PER_TRANSACTION
   ) {
-    const batchId = await context.db.insert("rsvpAnonymizationBatches", {
-      rsvpIds: heldRsvps
-        .slice(batchStart, batchStart + MAX_RSVPS_ANONYMIZED_PER_TRANSACTION)
-        .map((rsvp) => rsvp._id),
-      personPhoneHashes,
-      createdAt: Date.now(),
+    await scheduleRsvpAnonymization(context, {
+      rsvpIds: heldRsvpIds.slice(batchStart, batchStart + MAX_RSVPS_ANONYMIZED_PER_TRANSACTION),
+      person,
+      smsLogRsvpIds: [],
     });
-    await context.scheduler.runAfter(0, internal.rsvpAnonymizationBatches.run, { batchId });
   }
 
   for (const identityId of identityIds) {

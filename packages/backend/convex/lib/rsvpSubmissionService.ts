@@ -10,6 +10,7 @@ import {
 import { createProfileValuesAndWorkspaceGrantsForSocialProfiles } from "./profileValueRecords";
 import { resolveEventMessageBaseUrl } from "./publicBaseUrl";
 import { insertRsvpIntoAggregate, updateRsvpInAggregate } from "./rsvpAggregate";
+import { finishPendingAnonymization } from "./rsvpAnonymization";
 import { tryAutoApproveRsvp } from "./rsvpApproval";
 import { formatRsvpConfirmationMessage } from "./rsvpConfirmationMessages";
 import { resolveApprovalStatus } from "./rsvpStatus";
@@ -69,12 +70,15 @@ async function findExistingRsvp(
   input: SharedRsvpSubmissionInput,
 ): Promise<Doc<"rsvps"> | null> {
   if (input.submissionOrigin === "sms" && input.smsPhoneHash) {
-    const associatedRsvp = await ctx.db
-      .query("rsvps")
-      .withIndex("by_event_smsPhoneHash", (queryBuilder) =>
-        queryBuilder.eq("eventId", input.event._id).eq("smsPhoneHash", input.smsPhoneHash),
-      )
-      .first();
+    const associatedRsvp = await finishPendingAnonymization(
+      ctx,
+      await ctx.db
+        .query("rsvps")
+        .withIndex("by_event_smsPhoneHash", (queryBuilder) =>
+          queryBuilder.eq("eventId", input.event._id).eq("smsPhoneHash", input.smsPhoneHash),
+        )
+        .first(),
+    );
     if (associatedRsvp) return associatedRsvp;
   }
   if (input.guestPhoneHash && isGuestClerkUserId(input.clerkUserId)) {
@@ -84,15 +88,21 @@ async function findExistingRsvp(
         queryBuilder.eq("eventId", input.event._id).eq("guestPhoneHash", input.guestPhoneHash),
       )
       .collect();
-    return matchingRsvps.find((rsvp) => rsvp.clerkUserId === input.clerkUserId) ?? null;
+    return await finishPendingAnonymization(
+      ctx,
+      matchingRsvps.find((rsvp) => rsvp.clerkUserId === input.clerkUserId) ?? null,
+    );
   }
 
-  return await ctx.db
-    .query("rsvps")
-    .withIndex("by_event_user", (queryBuilder) =>
-      queryBuilder.eq("eventId", input.event._id).eq("clerkUserId", input.clerkUserId),
-    )
-    .unique();
+  return await finishPendingAnonymization(
+    ctx,
+    await ctx.db
+      .query("rsvps")
+      .withIndex("by_event_user", (queryBuilder) =>
+        queryBuilder.eq("eventId", input.event._id).eq("clerkUserId", input.clerkUserId),
+      )
+      .unique(),
+  );
 }
 
 async function upsertGuestContact(
