@@ -36,6 +36,14 @@ const PUBLIC_EVENT_FIELDS = [
   "status",
 ] as const satisfies readonly (keyof Doc<"events">)[];
 
+export function isRsvpAnonymization(change: RsvpChange): boolean {
+  return (
+    change.operation === "update" &&
+    change.oldDoc?.anonymizedAt === undefined &&
+    change.newDoc?.anonymizedAt !== undefined
+  );
+}
+
 function isPublishedEvent(event: Doc<"events">): boolean {
   // Legacy events created before the lifecycle field are treated as published.
   return event.lifecycle !== "draft";
@@ -51,6 +59,9 @@ export function determineRsvpWebhookEventType(change: {
   }
   if (change.operation === "delete") {
     return "rsvp.deleted";
+  }
+  if (isRsvpAnonymization(change)) {
+    return "rsvp.updated";
   }
 
   const oldRsvp = change.oldDoc;
@@ -239,6 +250,11 @@ function resolveEventWebhookOrigin(
   return { type: "app" };
 }
 
+// "now" schedules each delivery's first attempt. "queued" leaves it in
+// webhookDispatchQueue for webhookDeliveries.dispatchQueuedDeliveries, which the
+// caller schedules once.
+type FirstAttempt = "now" | "queued";
+
 async function enqueueDeliveries(
   ctx: MutationCtx,
   {
@@ -248,6 +264,7 @@ async function enqueueDeliveries(
     payloadWithoutDeliveryId,
     eventId,
     rsvpId,
+    firstAttempt,
   }: {
     workspace: Doc<"workspaces">;
     endpoints: Doc<"webhookEndpoints">[];
@@ -255,6 +272,7 @@ async function enqueueDeliveries(
     payloadWithoutDeliveryId: Record<string, unknown>;
     eventId?: Doc<"events">["_id"];
     rsvpId?: Doc<"rsvps">["_id"];
+    firstAttempt: FirstAttempt;
   },
 ) {
   const now = Date.now();
@@ -271,13 +289,46 @@ async function enqueueDeliveries(
       attemptCount: 0,
       occurredAt: now,
     });
-    await ctx.scheduler.runAfter(0, internal.webhookDispatch.attemptDelivery, { deliveryId });
+    if (firstAttempt === "queued") {
+      await ctx.db.insert("webhookDispatchQueue", { deliveryId });
+    } else {
+      await ctx.scheduler.runAfter(0, internal.webhookDispatch.attemptDelivery, { deliveryId });
+    }
   }
 }
 
+// The rsvps trigger's emission. An anonymization's erasure notice is left to
+// enqueueErasureNotices, which the anonymization calls itself.
 export async function enqueueRsvpWebhookDeliveries(
   ctx: MutationCtx,
   change: RsvpChange,
+): Promise<void> {
+  if (isRsvpAnonymization(change)) return;
+  await emitRsvpChange(ctx, change, "now");
+}
+
+/**
+ * Enqueues the erasure notice of each RSVP one transaction anonymized. A
+ * transaction can anonymize 100 RSVPs for a workspace with any number of
+ * endpoints, and Convex allows 1,000 scheduled functions per mutation, so the
+ * notices wait in webhookDispatchQueue and the transaction schedules one
+ * dispatcher, which schedules their attempts a page per transaction.
+ */
+export async function enqueueErasureNotices(
+  ctx: MutationCtx,
+  anonymizations: Array<{ oldDoc: Doc<"rsvps">; newDoc: Doc<"rsvps"> }>,
+): Promise<void> {
+  if (anonymizations.length === 0) return;
+  for (const anonymization of anonymizations) {
+    await emitRsvpChange(ctx, { operation: "update", ...anonymization }, "queued");
+  }
+  await ctx.scheduler.runAfter(0, internal.webhookDeliveries.dispatchQueuedDeliveries, {});
+}
+
+async function emitRsvpChange(
+  ctx: MutationCtx,
+  change: RsvpChange,
+  firstAttempt: FirstAttempt,
 ): Promise<void> {
   const eventType = determineRsvpWebhookEventType(change);
   if (!eventType) {
@@ -306,6 +357,9 @@ export async function enqueueRsvpWebhookDeliveries(
     return;
   }
 
+  // An erasure notice tells mirrors to drop the person: the anonymized row
+  // resolves to null identity fields and no ticket.
+  const isErasure = isRsvpAnonymization(change);
   const identity = await resolveRsvpIdentity(ctx, rsvp);
   const ticket = await buildRsvpTicketSnapshot(ctx, event, rsvp);
   const previousRsvp = change.operation === "update" ? change.oldDoc : null;
@@ -335,6 +389,7 @@ export async function enqueueRsvpWebhookDeliveries(
             changes: {
               previousApprovalStatus: resolveApprovalStatus(previousRsvp),
               previousAttendanceStatus: previousRsvp.attendanceStatus ?? null,
+              ...(isErasure ? { reason: "erasure" } : {}),
             },
           }
         : {}),
@@ -348,6 +403,7 @@ export async function enqueueRsvpWebhookDeliveries(
     payloadWithoutDeliveryId,
     eventId: event._id,
     rsvpId: rsvp._id,
+    firstAttempt,
   });
 }
 
@@ -412,5 +468,6 @@ export async function enqueueEventWebhookDeliveries(
     eventType,
     payloadWithoutDeliveryId,
     eventId: event._id,
+    firstAttempt: "now",
   });
 }

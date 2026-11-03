@@ -160,6 +160,38 @@ export interface ApiRsvpWriteInput {
   smsConsentIpAddress?: string;
 }
 
+/**
+ * Body of POST /api/v1/erasures. Send at least one selector. Coucou anonymizes
+ * only the RSVPs the calling API client sent, so a broad selector is safe.
+ */
+export interface ApiErasureInput {
+  /** E.164 phone the partner sent; selects every RSVP it sent for that person. */
+  phone?: string;
+  /** Coucou RSVP ids the partner stored from its POST responses (at most 100). */
+  rsvpIds?: string[];
+}
+
+export interface ApiErasure {
+  /**
+   * "partial" when more of this client's RSVPs matched than one request anonymizes
+   * (50). Repeat the same request until the status is "completed".
+   */
+  status: "completed" | "partial";
+  /**
+   * RSVPs this request anonymized: they stay with their event, list, statuses and
+   * party size, with no name, phone or other trace of the person. Empty on a
+   * repeat or for an unknown person.
+   */
+  anonymizedRsvpIds: string[];
+  /** RSVPs this client updated but cannot be shown to have created; Coucou keeps them. */
+  retainedRsvpIds: string[];
+  completedAt: number;
+}
+
+export interface ApiErasureResponse {
+  erasure: ApiErasure;
+}
+
 /** The plaintext HTTP body of every webhook delivery (payload is inside, encrypted). */
 export interface CoucouWebhookEnvelope {
   apiVersion: string;
@@ -193,7 +225,10 @@ export interface CoucouWebhookRsvpSnapshot {
 }
 
 export interface CoucouWebhookIdentity {
-  /** Normalized E.164, or null for legacy guests recorded before phone persistence. */
+  /**
+   * Normalized E.164, or null for legacy guests recorded before phone persistence.
+   * Every identity field except isGuest is null once an erasure anonymized the RSVP.
+   */
   phone: string | null;
   /** SHA-256 hex of the normalized E.164 phone number — always present when known. */
   phoneHash: string | null;

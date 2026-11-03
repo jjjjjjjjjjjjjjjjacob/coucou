@@ -164,6 +164,7 @@ http.route({
 });
 http.route({ pathPrefix: "/api/v1/rsvps/", method: "PATCH", handler: apiV1.handleRsvpPatch });
 http.route({ pathPrefix: "/api/v1/rsvps/", method: "DELETE", handler: apiV1.handleRsvpDelete });
+http.route({ path: "/api/v1/erasures", method: "POST", handler: apiV1.handleErasureCreate });
 http.route({ path: "/webhooks/twilio/status", method: "POST", handler: handleDeliveryStatus });
 http.route({ path: "/webhooks/twilio/opt-out", method: "POST", handler: handleOptOut });
 http.route({ path: "/webhooks/twilio/incoming", method: "POST", handler: handleIncomingSms });

@@ -3688,7 +3688,10 @@ export const processIncomingSmsReply = internalMutation({
         phoneNumber: phoneResolution.normalizedPhoneNumber,
         now: receivedAt,
       });
-      await ctx.db.patch(existingDestinationRsvp._id, { smsPhoneHash: phoneResolution.phoneHash });
+      await ctx.db.patch(existingDestinationRsvp._id, {
+        smsPhoneHash: phoneResolution.phoneHash,
+        personSubmittedAt: receivedAt,
+      });
       const existingStatus = resolveApprovalStatus(existingDestinationRsvp);
       const responseMessage = formatSmsMessageForSite(
         targetEvent.siteKey,

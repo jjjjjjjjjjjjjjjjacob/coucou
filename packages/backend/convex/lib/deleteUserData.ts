@@ -1,44 +1,114 @@
-import type { Doc, Id, TableNames } from "../_generated/dataModel";
+import type { Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { refreshContactProfile, removeContactEvent } from "./contactRecords";
+import { eraseContact, removeContactEvent } from "./contactRecords";
 import { buildGuestClerkUserId } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
-import { deleteRsvpFromAggregate } from "./rsvpAggregate";
+import {
+  type AnonymizationCtx,
+  anonymizeHeldRsvps,
+  type RsvpAnonymizationPerson,
+} from "./rsvpAnonymization";
+
+const DELETED_ACCOUNT_CONTACT_NAME = "Deleted account";
 
 async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<TableNames> }>) {
   for (const documentId of new Set(documents.map((document) => document._id)))
     await context.db.delete(documentId);
 }
 
-async function deleteUserRsvp(context: MutationCtx, rsvp: Doc<"rsvps">) {
-  const [approvals, redemptions, handoffs, aliases] = await Promise.all([
-    context.db
-      .query("approvals")
-      .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", rsvp.eventId))
-      .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("rsvpId"), rsvp._id))
-      .collect(),
-    context.db
-      .query("redemptions")
-      .withIndex("by_event_user", (queryBuilder) =>
-        queryBuilder.eq("eventId", rsvp.eventId).eq("clerkUserId", rsvp.clerkUserId),
+// A phone another account holds belongs to that account now, so the deletion
+// leaves its records alone.
+async function findRemovablePhoneHashes(
+  context: MutationCtx,
+  phoneHashes: Iterable<string>,
+  identityIds: ReadonlySet<string>,
+) {
+  const removablePhoneHashes = new Set<string>();
+  for (const phoneHash of phoneHashes) {
+    const matchingUsers = await context.db
+      .query("users")
+      .withIndex("by_phoneHash", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
+      .collect();
+    if (
+      matchingUsers.some(
+        (matchingUser) => matchingUser.clerkUserId && !identityIds.has(matchingUser.clerkUserId),
       )
-      .collect(),
-    context.db
-      .query("rsvpGuestHandoffs")
-      .withIndex("by_rsvp", (queryBuilder) => queryBuilder.eq("rsvpId", rsvp._id))
-      .collect(),
-    context.db
-      .query("rsvpIdentityAliases")
-      .withIndex("by_canonical", (queryBuilder) => queryBuilder.eq("canonicalRsvpId", rsvp._id))
-      .collect(),
-  ]);
-  await deleteDocuments(context, [...approvals, ...redemptions, ...handoffs, ...aliases]);
-  await deleteRsvpFromAggregate(context, rsvp);
-  await context.db.delete(rsvp._id);
+    )
+      continue;
+    removablePhoneHashes.add(phoneHash);
+  }
+  return removablePhoneHashes;
 }
 
-/** Remove the account's RSVP and preference state, including its former guest identity. */
-export async function deleteUserData(context: MutationCtx, clerkUserId: string) {
+// Removes the contact events the person's identities hold and erases every
+// contact those identities or the removable phones reach.
+async function eraseContactsReachingPerson(
+  context: MutationCtx,
+  identityIds: ReadonlySet<string>,
+  removablePhoneHashes: ReadonlySet<string>,
+) {
+  const contactIds = new Set<Id<"workspaceContacts">>();
+  for (const identityId of identityIds) {
+    const [contactEvents, contactIdentities] = await Promise.all([
+      context.db
+        .query("contactEvents")
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+        .collect(),
+      context.db
+        .query("workspaceContactIdentities")
+        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+        .collect(),
+    ]);
+    for (const contactEvent of contactEvents) await removeContactEvent(context, contactEvent);
+    for (const contactIdentity of contactIdentities) contactIds.add(contactIdentity.contactId);
+    await deleteDocuments(context, contactIdentities);
+  }
+  for (const phoneHash of removablePhoneHashes) {
+    const contacts = await context.db
+      .query("workspaceContacts")
+      .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
+      .collect();
+    for (const contact of contacts) contactIds.add(contact._id);
+  }
+  for (const contactId of contactIds) {
+    const contact = await context.db.get(contactId);
+    // Another account holds this phone now, so the row is that person's.
+    if (contact?.phoneHash && !removablePhoneHashes.has(contact.phoneHash)) continue;
+    await eraseContact(context, contactId, identityIds, DELETED_ACCOUNT_CONTACT_NAME);
+  }
+}
+
+/**
+ * The batch that blanks a deleted account's RSVPs beyond the first 100 calls
+ * this after its last page. Until then those RSVPs named the person, so a
+ * write that synced one, such as a host edit, rebuilt a contact through
+ * ensureContact; a sync that runs after the row is blanked finds an anonymized
+ * row and builds nothing.
+ */
+export async function eraseContactsRebuiltBeforeBlanking(
+  context: MutationCtx,
+  person: RsvpAnonymizationPerson,
+) {
+  const identityIds = new Set(person.clerkUserIds);
+  await eraseContactsReachingPerson(
+    context,
+    identityIds,
+    await findRemovablePhoneHashes(context, person.phoneHashes, identityIds),
+  );
+}
+
+/**
+ * Remove the account's preference and profile state, including its former guest
+ * identity, and anonymize every RSVP it holds: Coucou-direct and partner-created
+ * alike. Each anonymized RSVP sends granted endpoints an rsvp.updated erasure
+ * notice, so partners mirroring it purge their copy.
+ *
+ * Up to 100 RSVP rows are blanked in this transaction, so nothing can find the
+ * person through them once it commits. The records hung off the RSVPs, and SMS
+ * recipient rows beyond one page, are cleaned up by rsvpAnonymizationBatches; a
+ * person with more RSVPs has the rest blanked by that batch, seconds later.
+ */
+export async function deleteUserData(context: AnonymizationCtx, clerkUserId: string) {
   const user = await context.db
     .query("users")
     .withIndex("by_clerkUserId", (queryBuilder) => queryBuilder.eq("clerkUserId", clerkUserId))
@@ -87,21 +157,8 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
       if (contact?.phoneHash) phoneHashes.add(contact.phoneHash);
     }
   }
-  const removablePhoneHashes = new Set<string>();
-  for (const phoneHash of phoneHashes) {
-    const matchingUsers = await context.db
-      .query("users")
-      .withIndex("by_phoneHash", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
-      .collect();
-    if (
-      matchingUsers.some(
-        (matchingUser) => matchingUser.clerkUserId && !identityIds.has(matchingUser.clerkUserId),
-      )
-    )
-      continue;
-    removablePhoneHashes.add(phoneHash);
-    identityIds.add(buildGuestClerkUserId(phoneHash));
-  }
+  const removablePhoneHashes = await findRemovablePhoneHashes(context, phoneHashes, identityIds);
+  for (const phoneHash of removablePhoneHashes) identityIds.add(buildGuestClerkUserId(phoneHash));
 
   // A queued guest notification can contain the phone directly, so deleting its
   // profile alone would not prevent it from being sent after account deletion.
@@ -132,62 +189,45 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
       await context.scheduler.cancel(scheduledFunction._id);
   }
 
+  // identityIds holds the account, its aliases and the guest identity of each of
+  // its phones, so this reaches partner-created and Coucou-direct RSVPs alike.
+  await anonymizeHeldRsvps(context, {
+    clerkUserIds: [...identityIds],
+    phoneHashes: [...phoneHashes],
+  });
+
   for (const identityId of identityIds) {
-    const [
-      rsvps,
-      consent,
-      profiles,
-      socialProfiles,
-      values,
-      grants,
-      memberships,
-      snapshots,
-      contactEvents,
-      contactIdentities,
-    ] = await Promise.all([
-      context.db
-        .query("rsvps")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-      context.db
-        .query("userSmsOrganizerPreferences")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-      context.db
-        .query("profiles")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-      context.db
-        .query("userSocialProfiles")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-      context.db
-        .query("profileFieldValues")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-      context.db
-        .query("workspaceProfileValueGrants")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-      context.db
-        .query("orgMemberships")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-      context.db
-        .query("rsvpSocialProfiles")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-      context.db
-        .query("contactEvents")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-      context.db
-        .query("workspaceContactIdentities")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect(),
-    ]);
-    for (const rsvp of rsvps) await deleteUserRsvp(context, rsvp);
-    for (const contactEvent of contactEvents) await removeContactEvent(context, contactEvent);
+    const [consent, profiles, socialProfiles, values, grants, memberships, snapshots] =
+      await Promise.all([
+        context.db
+          .query("userSmsOrganizerPreferences")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+          .collect(),
+        context.db
+          .query("profiles")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+          .collect(),
+        context.db
+          .query("userSocialProfiles")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+          .collect(),
+        context.db
+          .query("profileFieldValues")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+          .collect(),
+        context.db
+          .query("workspaceProfileValueGrants")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+          .collect(),
+        context.db
+          .query("orgMemberships")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+          .collect(),
+        context.db
+          .query("rsvpSocialProfiles")
+          .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
+          .collect(),
+      ]);
     await deleteDocuments(context, [
       ...consent,
       ...profiles,
@@ -195,17 +235,20 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
       ...values,
       ...grants,
       ...memberships,
-      ...snapshots,
-      ...contactIdentities,
     ]);
+    // One snapshot per RSVP and platform. Its trigger's contact sync would only
+    // rebuild a contact event for an RSVP this deletion anonymizes.
+    for (const snapshot of snapshots) await context.untriggeredDb.delete(snapshot._id);
+    // A guest profile's trigger syncs its contact through ensureContact, which
+    // would give the contact back the identity this deletion erases.
     const guestProfiles = await context.db
       .query("workspaceGuestProfiles")
       .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("clerkUserId"), identityId))
       .collect();
-    await deleteDocuments(context, guestProfiles);
+    for (const guestProfile of guestProfiles) await context.untriggeredDb.delete(guestProfile._id);
   }
   for (const phoneHash of removablePhoneHashes) {
-    const [handoffs, guestContacts, sessions, guestProfiles, contacts] = await Promise.all([
+    const [handoffs, guestContacts, sessions, guestProfiles] = await Promise.all([
       context.db
         .query("rsvpGuestHandoffs")
         .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
@@ -222,33 +265,15 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
         .query("workspaceGuestProfiles")
         .filter((queryBuilder) => queryBuilder.eq(queryBuilder.field("guestPhoneHash"), phoneHash))
         .collect(),
-      context.db
-        .query("workspaceContacts")
-        .withIndex("by_phone", (queryBuilder) => queryBuilder.eq("phoneHash", phoneHash))
-        .collect(),
     ]);
-    await deleteDocuments(context, [...handoffs, ...guestContacts, ...sessions, ...guestProfiles]);
-    // Historical delivery records remain, but must not act as a subscription or profile prefill.
-    for (const contact of contacts) {
-      await context.db.patch(contact._id, {
-        clerkUserIds: contact.clerkUserIds.filter((identityId) => !identityIds.has(identityId)),
-        primaryClerkUserId: undefined,
-        smsConsent: false,
-        consentUpdatedAt: Date.now(),
-        name: "Deleted account",
-        normalizedName: "deleted account",
-        detailReference: undefined,
-        searchAliases: [],
-        firstName: undefined,
-        lastName: undefined,
-        imageUrl: undefined,
-        notes: undefined,
-        invitedByNames: [],
-      });
-      await refreshContactProfile(context, contact._id);
-    }
+    await deleteDocuments(context, [...handoffs, ...guestContacts, ...sessions]);
+    for (const guestProfile of guestProfiles) await context.untriggeredDb.delete(guestProfile._id);
   }
-  await deleteDocuments(context, [...aliases, ...(ownAlias ? [ownAlias] : [])]);
-  if (user) await context.db.delete(user._id);
+  await eraseContactsReachingPerson(context, identityIds, removablePhoneHashes);
+  // Their triggers' contact sync rebuilds contacts from the RSVPs still under
+  // these ids: the ones beyond the first 100, which the batch is about to blank.
+  for (const alias of new Set([...aliases, ...(ownAlias ? [ownAlias] : [])].map(({ _id }) => _id)))
+    await context.untriggeredDb.delete(alias);
+  if (user) await context.untriggeredDb.delete(user._id);
   return { deleted: Boolean(user) };
 }

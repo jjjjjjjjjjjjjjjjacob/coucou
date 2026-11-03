@@ -569,6 +569,14 @@ export default defineSchema({
     attendanceStatus: v.optional(v.string()), // 'yes' | 'no' | 'maybe'
     ticketViewedAt: v.optional(v.number()),
     apiClientId: v.optional(v.id("apiClients")), // set when created/updated via the partner API
+    // The API client that inserted the row. Partner erasure is keyed on it.
+    createdByApiClientId: v.optional(v.id("apiClients")),
+    // Set when the person submits to or edits an existing row through Coucou (form,
+    // signed-in app or text). Partner erasure keeps a row the person gave Coucou directly.
+    personSubmittedAt: v.optional(v.number()),
+    // Set when an erasure stripped the person from the row (lib/rsvpAnonymization.ts).
+    // The row stays for the host's counts; nothing may attach a person to it again.
+    anonymizedAt: v.optional(v.number()),
     webhookOriginApiClientId: v.optional(v.id("apiClients")),
     webhookOriginMutationId: v.optional(v.string()),
     createdAt: v.number(),
@@ -594,13 +602,16 @@ export default defineSchema({
     }),
 
   // A retired RSVP ID can still be found after a same-event identity collision.
-  // This is intentionally separate from immutable audit/webhook payloads, whose
-  // original IDs and JSON snapshots are never rewritten.
+  // Audit entries and webhook payloads keep the IDs they were written with;
+  // anonymization finds them through this table and redacts or deletes them.
   rsvpIdentityAliases: defineTable({
     retiredRsvpId: v.id("rsvps"),
     canonicalRsvpId: v.id("rsvps"),
     retiredClerkUserId: v.string(),
     canonicalClerkUserId: v.string(),
+    // The retired row's creating and last-writing API clients, so partner
+    // erasure can report a merged row to the keys that wrote the retired one.
+    retiredApiClientIds: v.optional(v.array(v.id("apiClients"))),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -692,7 +703,8 @@ export default defineSchema({
   })
     .index("by_user", ["clerkUserId"])
     .index("by_user_field", ["clerkUserId", "fieldKey"])
-    .index("by_user_field_value", ["clerkUserId", "fieldKey", "normalizedValue"]),
+    .index("by_user_field_value", ["clerkUserId", "fieldKey", "normalizedValue"])
+    .index("by_source_rsvp", ["sourceRsvpId"]),
 
   workspaceProfileValueGrants: defineTable({
     workspaceId: v.optional(v.id("workspaces")),
@@ -729,7 +741,8 @@ export default defineSchema({
       "fieldKey",
       "profileFieldValueId",
     ])
-    .index("by_profile_value", ["profileFieldValueId"]),
+    .index("by_profile_value", ["profileFieldValueId"])
+    .index("by_source_rsvp", ["sourceRsvpId"]),
 
   rsvpSocialProfiles: defineTable({
     eventId: v.id("events"),
@@ -914,7 +927,9 @@ export default defineSchema({
     .index("by_text_blast", ["textBlastId"])
     .index("by_phone", ["phoneHash"])
     .index("by_reply_action", ["replyActionId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_source_rsvp", ["sourceRsvpId"])
+    .index("by_destination_rsvp", ["destinationRsvpId"]),
 
   smsCodeClaims: defineTable({
     normalizedCode: v.string(),
@@ -1011,7 +1026,8 @@ export default defineSchema({
   })
     .index("by_provider_message", ["providerMessageId"])
     .index("by_phone", ["phoneHash"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_destination_rsvp", ["destinationRsvpId"]),
 
   smsConversationThreads: defineTable({
     workspaceId: v.optional(v.id("workspaces")),
@@ -1264,7 +1280,15 @@ export default defineSchema({
     occurredAt: v.number(),
   })
     .index("by_endpoint", ["endpointId", "occurredAt"])
-    .index("by_workspace", ["workspaceId", "occurredAt"]),
+    .index("by_workspace", ["workspaceId", "occurredAt"])
+    .index("by_rsvp", ["rsvpId"]),
+
+  // Pending deliveries whose first attempt webhookDeliveries.dispatchQueuedDeliveries
+  // has not scheduled yet. Erasure notices wait here, so a transaction that
+  // anonymizes many RSVPs does not schedule one attempt per RSVP per endpoint.
+  webhookDispatchQueue: defineTable({
+    deliveryId: v.id("webhookDeliveries"),
+  }),
 
   // Durable phoneHash → plaintext E.164 map for guest identity in partner webhooks.
   // Guest RSVPs only persist a phone hash; partner integrations need the real number
@@ -1291,5 +1315,29 @@ export default defineSchema({
     .index("by_at", ["at"])
     .index("by_actor", ["actorClerkUserId"])
     .index("by_action", ["action"])
-    .index("by_workspace", ["workspaceId"]),
+    .index("by_workspace", ["workspaceId"])
+    .index("by_target", ["targetId"]),
+
+  // Anonymization work left for later transactions. The RSVP rows are blanked
+  // when the erasure or deletion decides to anonymize them; a batch holds what
+  // is hung off them (cleanupRsvpIds), SMS recipient rows beyond one page, and
+  // for an account deletion with more RSVPs than one transaction blanks, the
+  // identities whose remaining RSVPs it blanks next. Fields match
+  // RsvpAnonymizationWork. Each row is deleted once its work is done, so the
+  // identities and phone hashes outlive it by no more. attempts counts the runs
+  // scheduled since the last progress; the crons.ts sweep reruns a row whose
+  // run has not finished.
+  rsvpAnonymizationBatches: defineTable({
+    blankHeldRsvps: v.boolean(),
+    cleanupRsvpIds: v.array(v.id("rsvps")),
+    person: v.object({
+      clerkUserIds: v.array(v.string()),
+      phoneHashes: v.array(v.string()),
+    }),
+    smsLogRsvpIds: v.array(v.id("rsvps")),
+    smsLogCursor: v.optional(v.object({ phoneHash: v.string(), afterCreationTime: v.number() })),
+    attempts: v.number(),
+    scheduledAt: v.number(),
+    createdAt: v.number(),
+  }).index("by_scheduled_at", ["scheduledAt"]),
 });

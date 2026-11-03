@@ -340,6 +340,29 @@ describe("guestDirectory.listGuestDirectoryPaginated", () => {
     expect(result.people.every((person) => person.hasPhone === false)).toBe(true);
   });
 
+  it("leaves anonymized RSVPs out of the people it lists", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend);
+    const eventId = await seedEvent(testBackend, "Erased Event", -86_400_000);
+    await seedRsvp(testBackend, { eventId, clerkUserId: "user_kept", userName: "Kept Person" });
+    const anonymizedRsvpId = await seedRsvp(testBackend, {
+      eventId,
+      clerkUserId: "user_erased",
+    });
+    await testBackend.run(async (databaseContext) => {
+      await databaseContext.db.patch(anonymizedRsvpId, {
+        clerkUserId: `anonymized-${anonymizedRsvpId}`,
+        userName: undefined,
+        anonymizedAt: Date.now(),
+      });
+    });
+
+    const hostBackend = testBackend.withIdentity(createHostIdentity("host_1"));
+    const result = await listDirectory(hostBackend);
+
+    expect(result.people.map((person) => person.personKey)).toEqual(["user:user_kept"]);
+  });
+
   it("computes and filters by rsvpedToLatestEvent", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend);
