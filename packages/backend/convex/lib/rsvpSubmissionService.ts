@@ -292,14 +292,17 @@ export async function submitRsvpThroughSharedService(
 
   await upsertGuestContact(ctx, input, now);
   if (existingRsvp?.listKey === input.listKey) {
-    if (input.smsConsent && existingRsvp.smsConsent !== true) {
-      await ctx.db.patch(existingRsvp._id, {
-        smsConsent: true,
-        smsConsentIpAddress: input.smsConsentIpAddress,
-        smsConsentTimestamp: now,
-        updatedAt: now,
-      });
-    }
+    await ctx.db.patch(existingRsvp._id, {
+      personSubmittedAt: now,
+      ...(input.smsConsent && existingRsvp.smsConsent !== true
+        ? {
+            smsConsent: true,
+            smsConsentIpAddress: input.smsConsentIpAddress,
+            smsConsentTimestamp: now,
+            updatedAt: now,
+          }
+        : {}),
+    });
     if (input.smsConsent) {
       await upsertSmsOrganizerPreference(ctx, {
         clerkUserId: input.clerkUserId,
@@ -362,6 +365,7 @@ export async function submitRsvpThroughSharedService(
       listKey: input.listKey,
       ticketStatus: "not-issued",
       userName,
+      personSubmittedAt: now,
       guestPhoneHash: input.guestPhoneHash ?? existingRsvp.guestPhoneHash,
       guestPhoneObfuscated: input.guestPhoneObfuscated ?? existingRsvp.guestPhoneObfuscated,
       shareContact: true,

@@ -135,7 +135,8 @@ triggers.register("listCredentials", async (ctx, change) => {
 });
 
 // Register trigger for rsvps table - emits partner webhook deliveries for
-// every RSVP change, regardless of which mutation performed it.
+// every RSVP change, regardless of which mutation performed it. An
+// anonymization enqueues its erasure notice itself (enqueueErasureNotices).
 triggers.register("rsvps", async (ctx, change) => {
   await enqueueRsvpWebhookDeliveries(ctx, change);
   const rsvp = change.newDoc ?? change.oldDoc;
@@ -262,9 +263,15 @@ triggers.register("users", async (ctx, change) => {
   }
 });
 
-// Create custom mutation wrappers that enable triggers
-export const mutation = customMutation(rawMutation, customCtx(triggers.wrapDB));
-export const internalMutation = customMutation(rawInternalMutation, customCtx(triggers.wrapDB));
+// Create custom mutation wrappers that enable triggers. untriggeredDb is the
+// database under them, for cleanup writes whose triggers would only re-sync
+// records that no longer name anyone.
+const withTriggers = customCtx((ctx: MutationCtx) => ({
+  db: triggers.wrapDB(ctx).db,
+  untriggeredDb: ctx.db,
+}));
+export const mutation = customMutation(rawMutation, withTriggers);
+export const internalMutation = customMutation(rawInternalMutation, withTriggers);
 
 // Queries don't need triggers - they're read-only
 export const query = rawQuery;

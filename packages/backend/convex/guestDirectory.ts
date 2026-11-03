@@ -235,7 +235,8 @@ async function aggregatePersonsFromRsvps(
         .collect();
     }),
   );
-  const scopedRsvps = rsvpCollections.flat();
+  // Anonymized RSVPs count toward their event but belong to no person.
+  const scopedRsvps = rsvpCollections.flat().filter((rsvp) => rsvp.anonymizedAt === undefined);
   if (scopedRsvps.length > MAX_WORKSPACE_RSVPS_FOR_DIRECTORY) {
     throw new Error(
       `Guest directory supports up to ${MAX_WORKSPACE_RSVPS_FOR_DIRECTORY} RSVPs per workspace`,

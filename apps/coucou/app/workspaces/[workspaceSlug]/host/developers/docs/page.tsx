@@ -103,7 +103,8 @@ function DocList({ items }: { items: ReactNode[] }) {
 
 const WEBHOOK_EVENT_TYPE_DESCRIPTIONS: Record<CoucouWebhookEventType, string> = {
   "rsvp.created": "An RSVP is submitted — via a coucou client, the guest flow, a host, or this API",
-  "rsvp.updated": "List, party size, name, or guest-to-account claim changes",
+  "rsvp.updated":
+    "List, party size, name, or guest-to-account claim changes, or an erasure anonymizes the RSVP",
   "rsvp.approved": "A host approves an RSVP",
   "rsvp.denied": "A host denies an RSVP",
   "rsvp.attendance_updated": "The guest's yes / no / maybe answer changes",
@@ -182,6 +183,22 @@ Content-Type: application/json
   "note": "optional",
   "smsConsent": true,
   "smsConsentIpAddress": "203.0.113.42"
+}`;
+
+const EXAMPLE_ERASURE_REQUEST = `POST /api/v1/erasures
+Authorization: Bearer coucou_sk_…
+Content-Type: application/json
+
+{ "phone": "+15551234567", "rsvpIds": ["jh7…"] }
+
+200 OK
+{
+  "erasure": {
+    "status": "completed",
+    "anonymizedRsvpIds": ["jh7…"],
+    "retainedRsvpIds": [],
+    "completedAt": 1753000000000
+  }
 }`;
 
 const EXAMPLE_UPDATE_EVENT_REQUEST = `PATCH /api/v1/events/abc123
@@ -602,9 +619,69 @@ function PartnerApiDocumentation({
             <EndpointHeading method="DELETE" path="/rsvps/{rsvpId}" scope="rsvps:write" />
             <DocParagraph>
               Soft cancel — sets <InlineCode>attendanceStatus: "no"</InlineCode>. The RSVP row is
-              kept so hosts retain visibility and counts stay consistent; there is no hard delete
-              via the API.
+              kept so hosts retain visibility and counts stay consistent. To delete a person&apos;s
+              data, use <InlineCode>POST /erasures</InlineCode>.
             </DocParagraph>
+          </div>
+
+          <div className="space-y-2">
+            <EndpointHeading method="POST" path="/erasures" scope="rsvps:write" />
+            <DocParagraph>
+              Anonymizes the RSVPs this key sent for one person, and deletes the records Coucou kept
+              only because of them. Call it when a person deletes their account with you. The RSVP
+              stays for the host&apos;s counts, with nothing on it that names the person.
+            </DocParagraph>
+            <CodeBlock code={EXAMPLE_ERASURE_REQUEST} />
+            <DocList
+              items={[
+                <>
+                  Send <InlineCode>phone</InlineCode>, <InlineCode>rsvpIds</InlineCode> (at most
+                  100, from your POST responses), or both.
+                </>,
+                <>
+                  Only RSVPs this key created are anonymized. RSVPs other keys created, text or form
+                  RSVPs the person gave Coucou directly, RSVPs the person later submitted or edited
+                  through Coucou, and RSVPs from before creators were recorded with no{" "}
+                  <InlineCode>rsvp.created</InlineCode> notice from this key stay. The ones this key
+                  created or updated are listed in <InlineCode>retainedRsvpIds</InlineCode>. Ids
+                  that are not yours are ignored.
+                </>,
+                <>
+                  Stays on the RSVP: its event, list, approval status, attendance answer, party
+                  size, ticket status and check-in, source and API keys. The ticket gets a new code,
+                  and API responses and notices show no ticket.
+                </>,
+                <>
+                  Removed: the name, phone, account link, note, custom fields, invited-by, SMS
+                  consent, the ticket code, hand-off links, social handles, stored webhook payloads,
+                  queued SMS, the RSVP copies in its audit entries and its id in SMS logs. Once no
+                  other RSVP needs them, also the workspace SMS preference, organizer notes, contact
+                  entry and guest phone record.
+                </>,
+                <>
+                  Kept: a Coucou account matched by phone, the SMS opt-out list, sent-SMS logs, and
+                  an audit entry with no name or phone.
+                </>,
+                <>
+                  <strong>Idempotent and synchronous:</strong> a repeat or an unknown phone returns
+                  200 with empty lists. One request anonymizes at most 50 RSVPs; when more match,{" "}
+                  <InlineCode>status</InlineCode> is <InlineCode>"partial"</InlineCode> and you
+                  repeat the request until it is <InlineCode>"completed"</InlineCode>.
+                </>,
+                <>
+                  Each anonymized RSVP emits <InlineCode>rsvp.updated</InlineCode> with null
+                  identity fields and <InlineCode>changes.reason: "erasure"</InlineCode>. Subscribe
+                  to <InlineCode>rsvp.updated</InlineCode> to receive it; erasure never emits{" "}
+                  <InlineCode>rsvp.deleted</InlineCode>.
+                </>,
+                <>
+                  When a person deletes their Coucou account, Coucou anonymizes all of their RSVPs,
+                  including those partners sent, and sends the same{" "}
+                  <InlineCode>rsvp.updated</InlineCode> erasure notice for each. Drop the person
+                  from your copy when you receive it.
+                </>,
+              ]}
+            />
           </div>
         </div>
       </PageCard>

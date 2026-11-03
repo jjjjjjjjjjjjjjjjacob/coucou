@@ -411,6 +411,78 @@ export async function refreshContactProfile(ctx: MutationCtx, contactId: Id<"wor
   });
 }
 
+/**
+ * Erases a person's contact row once none of its events is left, and the rows
+ * merged into it. Text-blast delivery history points at a row, so a row with
+ * deliveries stays as `erasedName` with nothing that names or reaches the
+ * person, not even the phone hash; any other row is deleted.
+ */
+export async function eraseContact(
+  ctx: MutationCtx,
+  contactId: Id<"workspaceContacts">,
+  personClerkUserIds: ReadonlySet<string>,
+  erasedName: string,
+) {
+  const contact = await ctx.db.get(contactId);
+  if (!contact) return;
+  const mergedContacts = await ctx.db
+    .query("workspaceContacts")
+    .withIndex("by_workspace_name", (builder) =>
+      builder.eq("workspaceId", contact.workspaceId).eq("mergedInto", contact._id),
+    )
+    .collect();
+  for (const mergedContact of mergedContacts)
+    await eraseContact(ctx, mergedContact._id, personClerkUserIds, erasedName);
+  const remainingContactEvent = await ctx.db
+    .query("contactEvents")
+    .withIndex("by_contact_event", (builder) => builder.eq("contactId", contact._id))
+    .first();
+  if (remainingContactEvent) return;
+
+  // Recomputes tags and default-list facets now that the guest profiles are gone.
+  await refreshContactProfile(ctx, contact._id);
+  const [contactIdentities, textDelivery] = await Promise.all([
+    ctx.db
+      .query("workspaceContactIdentities")
+      .withIndex("by_contact", (builder) => builder.eq("contactId", contact._id))
+      .collect(),
+    ctx.db
+      .query("contactDeliveries")
+      .withIndex("by_contact", (builder) => builder.eq("contactId", contact._id))
+      .first(),
+  ]);
+  if (!textDelivery) {
+    for (const identity of contactIdentities) await ctx.db.delete(identity._id);
+    await ctx.db.delete(contact._id);
+    return;
+  }
+  for (const identity of contactIdentities)
+    if (personClerkUserIds.has(identity.clerkUserId)) await ctx.db.delete(identity._id);
+  const normalizedName = erasedName.toLocaleLowerCase();
+  await ctx.db.patch(contact._id, {
+    personKey: `erased:${contact._id}`,
+    clerkUserIds: contact.clerkUserIds.filter(
+      (clerkUserId) => !personClerkUserIds.has(clerkUserId),
+    ),
+    primaryClerkUserId: undefined,
+    detailReference: undefined,
+    phoneHash: undefined,
+    phoneNumber: undefined,
+    name: erasedName,
+    normalizedName,
+    firstName: undefined,
+    lastName: undefined,
+    imageUrl: undefined,
+    notes: undefined,
+    searchText: normalizedName,
+    searchAliases: [],
+    invitedByNames: [],
+    smsConsent: false,
+    consentUpdatedAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+}
+
 export async function removeContactEvent(ctx: MutationCtx, relationship: Doc<"contactEvents">) {
   await ctx.db.delete(relationship._id);
   if (relationship.listKey)
@@ -482,7 +554,8 @@ export async function syncContactRsvp(ctx: MutationCtx, rsvpId: Id<"rsvps">) {
     .first();
   const rsvp = await ctx.db.get(rsvpId);
   const event = rsvp ? await ctx.db.get(rsvp.eventId) : null;
-  if (!rsvp || !event) {
+  // An anonymized RSVP names nobody, so it has no place in the contact directory.
+  if (!rsvp || !event || rsvp.anonymizedAt !== undefined) {
     if (previous) await removeContactEvent(ctx, previous);
     return;
   }

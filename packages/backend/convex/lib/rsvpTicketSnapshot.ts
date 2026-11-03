@@ -15,7 +15,8 @@ export async function buildRsvpTicketSnapshot(
   event: Doc<"events">,
   rsvp: Doc<"rsvps">,
 ): Promise<RsvpTicketSnapshot | null> {
-  if (resolveApprovalStatus(rsvp) !== "approved") {
+  // An anonymized RSVP's ticket carries a code nobody was sent; partners never see it.
+  if (rsvp.anonymizedAt !== undefined || resolveApprovalStatus(rsvp) !== "approved") {
     return null;
   }
 

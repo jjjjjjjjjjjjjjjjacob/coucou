@@ -920,6 +920,7 @@ export const createRsvpFromApiClient = internalMutation({
       approvalStatus: "pending",
       attendanceStatus: sanitizeAttendanceStatus(args.attendanceStatus),
       apiClientId: args.apiClientId,
+      createdByApiClientId: args.apiClientId,
       webhookOriginApiClientId: args.apiClientId,
       webhookOriginMutationId: crypto.randomUUID(),
       createdAt: now,

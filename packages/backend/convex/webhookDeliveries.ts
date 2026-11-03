@@ -17,6 +17,32 @@ const RETRY_BACKOFF_MS = [
   2 * 60 * 60 * 1000,
 ] as const;
 
+// Each run schedules this many first attempts, well under Convex's 1,000
+// scheduled functions per mutation, and schedules itself for the rest.
+const QUEUED_DELIVERIES_DISPATCHED_PER_RUN = 500;
+
+// Every transaction that queues deliveries schedules a run, crons.ts runs one
+// every 10 minutes, and any run drains the whole queue, so a run that finds it
+// empty has nothing to do. Removing a row and scheduling its attempt commit
+// together, so no delivery is sent twice.
+export const dispatchQueuedDeliveries = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const queuedDeliveries = await ctx.db
+      .query("webhookDispatchQueue")
+      .take(QUEUED_DELIVERIES_DISPATCHED_PER_RUN + 1);
+    for (const queuedDelivery of queuedDeliveries.slice(0, QUEUED_DELIVERIES_DISPATCHED_PER_RUN)) {
+      await ctx.db.delete(queuedDelivery._id);
+      await ctx.scheduler.runAfter(0, internal.webhookDispatch.attemptDelivery, {
+        deliveryId: queuedDelivery.deliveryId,
+      });
+    }
+    if (queuedDeliveries.length > QUEUED_DELIVERIES_DISPATCHED_PER_RUN) {
+      await ctx.scheduler.runAfter(0, internal.webhookDeliveries.dispatchQueuedDeliveries, {});
+    }
+  },
+});
+
 export const getDeliveryForDispatch = internalQuery({
   args: {
     deliveryId: v.id("webhookDeliveries"),
