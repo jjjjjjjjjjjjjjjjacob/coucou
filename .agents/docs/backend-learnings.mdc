@@ -59,7 +59,21 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
   `cleanUpAnonymizedRsvps` against all the ids cleaned up, 500 rows at most from a cursor. Keep
   any new person-keyed scan out of the per-RSVP routines and page it the same way. To prove a
   bound, wrap `ctx.db` and count documents read (`countDocumentsRead` in
-  `api-v1-erasure.test.ts`), or count `_scheduled_functions` after the mutation.
+  `api-v1-erasure.test.ts`), or count the `_scheduled_functions` rows one call added
+  (`countFunctionsScheduledBy`); convex-test does not enforce the 1,000 limit.
+- Scheduled functions: Convex rejects a mutation that schedules more than 1,000, and a rejected
+  deletion rolls back whole and fails the same way on every retry. No anonymization
+  transaction may schedule per endpoint or per history row. The erasure notices go through
+  `enqueueErasureNotices` (`lib/webhookEmission.ts`): one `webhookDeliveries` row per granted
+  endpoint plus a `webhookDispatchQueue` row, and one `webhookDeliveries.dispatchQueuedDeliveries`
+  run per transaction, which schedules 500 first attempts per run and reschedules itself. The
+  rsvps trigger skips anonymization changes. Cleanup writes whose triggers only re-sync the
+  anonymized rows' contact records (the ticket re-key, `textBlastRecipients.sourceRsvpIds`,
+  `rsvpSocialProfiles` deletes) go through `ctx.untriggeredDb`, the database under the triggers
+  that `functions.ts` adds to every triggered mutation (`AnonymizationCtx`; an untriggered
+  mutation passes `{ ...ctx, untriggeredDb: ctx.db }`). Measured with 150 RSVPs, tickets,
+  snapshots, 600 recipient rows and 10 endpoints: the deletion schedules 103 functions, a batch
+  run 52, a dispatcher run 501.
 - `buildRsvpTicketSnapshot` returns null for an anonymized RSVP, so partner GETs and webhooks
   never carry the new code. Host readers (`rsvps.listForEvent`, `redemptions.listForEvent`,
   exports) still show it: the code was never sent to anyone, and the host owns the ticket.
@@ -67,28 +81,28 @@ Use when deleting a person's data, or when a cleanup must not let triggers rebui
   rows (`repairTextRsvpAssociations`, `backfillSmsConsentForEvent`).
 - Size: partner erasure blanks and cleans up at most `MAX_RSVPS_ANONYMIZED_PER_TRANSACTION` (50)
   per request and answers `status: "partial"` so the partner repeats it. Account deletion blanks
-  up to 100 (`RSVPS_BLANKED_PER_TRANSACTION`): each blanked row is a triggered write that
-  schedules a contact sync and one webhook attempt per subscribed endpoint, and Convex allows
-  1,000 scheduled functions per mutation. Cleanup is 50 RSVPs per transaction. What is left goes
+  up to 100 (`RSVPS_BLANKED_PER_TRANSACTION`), which bounds its reads and writes; each blanked
+  row schedules one contact sync, whatever the endpoints. Cleanup is 50 RSVPs per transaction. What is left goes
   to a `rsvpAnonymizationBatches` row (an `RsvpAnonymizationWork`: blanked ids to clean up,
   identities, phone hashes, SMS-log ids and cursor, and `blankHeldRsvps` while a deleted account
   still holds unblanked RSVPs; deleted when done), run by `rsvpAnonymizationBatches.run`, which
   reschedules itself until the work is done. With `blankHeldRsvps` a run looks the remaining
   RSVPs up by the person's identities, not by stored ids, so an RSVP made under them while the
   sweep runs is blanked too. The `crons.ts` sweep (`rerunStalled`, every 10 minutes) reruns a
-  batch whose run was scheduled over 10 minutes ago and counts `attempts`; a high count in the
-  logs is a batch that keeps failing.
+  batch whose run was scheduled over 10 minutes ago and counts `attempts`. At the third attempt
+  it opens an `attentionFlags` row (`sourceModule: "rsvpAnonymizationBatches"`, the batch id,
+  never the person) for `/admin/flags`, and keeps retrying so the phone hashes are not left.
 - Callers: `POST /api/v1/erasures` (`convex/partnerErasure.ts`, the calling key's RSVPs only)
   and Coucou account deletion (`lib/deleteUserData.ts`, every RSVP matched by the account, its
   aliases and its phone).
 - The erasure notice is `rsvp.updated` with null identity and `changes.reason: "erasure"`.
-  `enqueueRsvpWebhookDeliveries` emits it for any update that sets `anonymizedAt`
-  (`isRsvpAnonymization`). Account deletion is triggered, so the rsvps trigger sends it.
-  `partnerErasure.ts` is an untriggered internal mutation, a deliberate exception to the
-  trigger choke-point: the contact-sync triggers (`workspaceGuestProfiles` → `syncProfile` →
-  `ensureContact`) would recreate the contact rows it deletes. It passes the change to
-  `enqueueRsvpWebhookDeliveries` itself. The notice goes out when the row is blanked, the
-  moment the identity is gone, not when cleanup finishes. `blankRsvp` deletes stored deliveries
+  `blankRsvps` enqueues it through `enqueueErasureNotices` in both callers, and the rsvps
+  trigger skips any update that sets `anonymizedAt` (`isRsvpAnonymization`), so a new path that
+  sets `anonymizedAt` must go through `blankRsvps`. `partnerErasure.ts` is an untriggered
+  internal mutation, a deliberate exception to the trigger choke-point: the contact-sync
+  triggers (`workspaceGuestProfiles` → `syncProfile` → `ensureContact`) would recreate the
+  contact rows it deletes. The notice is queued when the row is blanked, the moment the
+  identity is gone, not when cleanup finishes. `blankRsvp` deletes stored deliveries
   before the patch, so the notice is the only delivery left.
 - Anonymized rows match no account, phone or merge lookup, so later writes never re-attach a
   person: the partner upsert and the guest form create a new row, and a text-blast reply or

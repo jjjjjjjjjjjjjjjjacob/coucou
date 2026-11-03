@@ -397,7 +397,9 @@ The deletion anonymizes up to 100 RSVPs in its own transaction: the fields liste
 gone from each RSVP row, its ticket has a new code, and its notice is queued, so nothing can
 find or copy the person through those RSVPs once the deletion commits. The other records
 listed above (hand-off links, SMS sessions, audit entries, SMS-log ids and the rest) are
-cleaned up by background batches that start as soon as the deletion commits.
+cleaned up by background batches that start as soon as the deletion commits. Queued erasure
+notices go out 500 deliveries at a time, so with many RSVPs and endpoints the last notices
+arrive a few seconds after the first.
 
 A person with more than 100 RSVPs has the rest anonymized by those batches, 100 per
 transaction, within seconds, so their notices can arrive a little later. A batch finds the
