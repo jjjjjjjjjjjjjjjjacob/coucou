@@ -1311,14 +1311,18 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_target", ["targetId"]),
 
-  // Anonymization work left for later transactions: RSVPs beyond the first
-  // transaction of an account deletion, and SMS recipient rows beyond one page.
-  // Fields match RsvpAnonymizationWork. The identities and phone hashes find
-  // the audit actors and SMS logs; each row is deleted once its work is done,
-  // so no copy outlives it. attempts counts the runs scheduled since the last
-  // progress; the crons.ts sweep reruns a row whose run has not finished.
+  // Anonymization work left for later transactions. The RSVP rows are blanked
+  // when the erasure or deletion decides to anonymize them; a batch holds what
+  // is hung off them (cleanupRsvpIds), SMS recipient rows beyond one page, and
+  // for an account deletion with more RSVPs than one transaction blanks, the
+  // identities whose remaining RSVPs it blanks next. Fields match
+  // RsvpAnonymizationWork. Each row is deleted once its work is done, so the
+  // identities and phone hashes outlive it by no more. attempts counts the runs
+  // scheduled since the last progress; the crons.ts sweep reruns a row whose
+  // run has not finished.
   rsvpAnonymizationBatches: defineTable({
-    rsvpIds: v.array(v.id("rsvps")),
+    blankHeldRsvps: v.boolean(),
+    cleanupRsvpIds: v.array(v.id("rsvps")),
     person: v.object({
       clerkUserIds: v.array(v.string()),
       phoneHashes: v.array(v.string()),
@@ -1329,10 +1333,4 @@ export default defineSchema({
     scheduledAt: v.number(),
     createdAt: v.number(),
   }).index("by_scheduled_at", ["scheduledAt"]),
-
-  // An RSVP waiting in a batch, so writes that find it by phone can tell.
-  pendingRsvpAnonymizations: defineTable({
-    rsvpId: v.id("rsvps"),
-    batchId: v.id("rsvpAnonymizationBatches"),
-  }).index("by_rsvp", ["rsvpId"]),
 });

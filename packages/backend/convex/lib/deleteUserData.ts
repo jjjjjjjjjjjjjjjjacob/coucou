@@ -1,14 +1,9 @@
-import type { Doc, Id, TableNames } from "../_generated/dataModel";
+import type { Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { refreshContactProfile, removeContactEvent } from "./contactRecords";
 import { buildGuestClerkUserId } from "./guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./phoneHash";
-import {
-  anonymizeRsvps,
-  MAX_RSVPS_ANONYMIZED_PER_TRANSACTION,
-  type RsvpAnonymizationPerson,
-  scheduleRsvpAnonymization,
-} from "./rsvpAnonymization";
+import { anonymizeHeldRsvps } from "./rsvpAnonymization";
 
 async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<TableNames> }>) {
   for (const documentId of new Set(documents.map((document) => document._id)))
@@ -21,11 +16,10 @@ async function deleteDocuments(context: MutationCtx, documents: Array<{ _id: Id<
  * alike. Each anonymized RSVP emits an rsvp.updated erasure notice through the
  * rsvps trigger, so partners mirroring it purge their copy.
  *
- * The first MAX_RSVPS_ANONYMIZED_PER_TRANSACTION RSVPs are anonymized here; the
- * rest, and SMS recipient rows beyond one page, go to rsvpAnonymizationBatches.
- * A batch names each RSVP by id and carries the identities and phone hashes, so
- * it needs nothing this deletion removes. Until it runs, writes that find a
- * pending RSVP by phone anonymize it first, and guest claims skip it.
+ * Up to 100 RSVP rows are blanked in this transaction, so nothing can find the
+ * person through them once it commits. The records hung off the RSVPs, and SMS
+ * recipient rows beyond one page, are cleaned up by rsvpAnonymizationBatches; a
+ * person with more RSVPs has the rest blanked by that batch, seconds later.
  */
 export async function deleteUserData(context: MutationCtx, clerkUserId: string) {
   const user = await context.db
@@ -123,37 +117,10 @@ export async function deleteUserData(context: MutationCtx, clerkUserId: string) 
 
   // identityIds holds the account, its aliases and the guest identity of each of
   // its phones, so this reaches partner-created and Coucou-direct RSVPs alike.
-  const heldRsvps: Doc<"rsvps">[] = [];
-  for (const identityId of identityIds) {
-    heldRsvps.push(
-      ...(await context.db
-        .query("rsvps")
-        .withIndex("by_user", (queryBuilder) => queryBuilder.eq("clerkUserId", identityId))
-        .collect()),
-    );
-  }
-  const person: RsvpAnonymizationPerson = {
+  await anonymizeHeldRsvps(context, {
     clerkUserIds: [...identityIds],
     phoneHashes: [...phoneHashes],
-  };
-  const heldRsvpIds = heldRsvps.map((rsvp) => rsvp._id);
-  const { remainingWork } = await anonymizeRsvps(context, {
-    rsvpIds: heldRsvpIds.slice(0, MAX_RSVPS_ANONYMIZED_PER_TRANSACTION),
-    person,
-    smsLogRsvpIds: [],
   });
-  if (remainingWork) await scheduleRsvpAnonymization(context, remainingWork);
-  for (
-    let batchStart = MAX_RSVPS_ANONYMIZED_PER_TRANSACTION;
-    batchStart < heldRsvpIds.length;
-    batchStart += MAX_RSVPS_ANONYMIZED_PER_TRANSACTION
-  ) {
-    await scheduleRsvpAnonymization(context, {
-      rsvpIds: heldRsvpIds.slice(batchStart, batchStart + MAX_RSVPS_ANONYMIZED_PER_TRANSACTION),
-      person,
-      smsLogRsvpIds: [],
-    });
-  }
 
   for (const identityId of identityIds) {
     const [

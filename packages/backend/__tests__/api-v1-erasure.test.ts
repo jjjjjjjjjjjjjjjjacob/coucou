@@ -622,14 +622,97 @@ async function readSmsRecipientState(testBackend: TestBackend, otherRsvpId: Id<"
 }
 
 async function readAnonymizationBatches(testBackend: TestBackend) {
-  return await testBackend.run(async (databaseContext) => ({
-    batches: (await databaseContext.db.query("rsvpAnonymizationBatches").collect()).map(
+  return await testBackend.run(async (databaseContext) =>
+    (await databaseContext.db.query("rsvpAnonymizationBatches").collect()).map(
       ({ _id, _creationTime, createdAt, ...batch }) => ({ batchId: _id, ...batch }),
     ),
-    pendingRsvpIds: (await databaseContext.db.query("pendingRsvpAnonymizations").collect()).map(
-      (pending) => pending.rsvpId,
-    ),
-  }));
+  );
+}
+
+// Stands in for a batch run that failed or has not started yet.
+async function cancelScheduledBatchRuns(testBackend: TestBackend) {
+  await testBackend.run(async (databaseContext) => {
+    for (const scheduledFunction of await databaseContext.db.system
+      .query("_scheduled_functions")
+      .collect()) {
+      if (
+        scheduledFunction.name === "rsvpAnonymizationBatches:run" &&
+        scheduledFunction.state.kind === "pending"
+      ) {
+        await databaseContext.scheduler.cancel(scheduledFunction._id);
+      }
+    }
+  });
+}
+
+// The ids of the RSVPs that still hold any field that names or reaches the person.
+async function readRsvpsHoldingIdentity(testBackend: TestBackend, rsvpIds: Id<"rsvps">[]) {
+  return await testBackend.run(async (databaseContext) => {
+    const rsvpIdsHoldingIdentity: Id<"rsvps">[] = [];
+    for (const rsvpId of rsvpIds) {
+      const rsvp = await databaseContext.db.get(rsvpId);
+      if (!rsvp) continue;
+      const holdsIdentity =
+        rsvp.anonymizedAt === undefined ||
+        !rsvp.clerkUserId.includes(`anonymized-${rsvp._id}`) ||
+        [
+          rsvp.userName,
+          rsvp.guestPhoneHash,
+          rsvp.guestPhoneObfuscated,
+          rsvp.smsPhoneHash,
+          rsvp.note,
+          rsvp.customFieldValues,
+          rsvp.invitedByName,
+          rsvp.smsConsentIpAddress,
+        ].some((value) => value !== undefined);
+      if (holdsIdentity) rsvpIdsHoldingIdentity.push(rsvpId);
+    }
+    return rsvpIdsHoldingIdentity;
+  });
+}
+
+async function seedMember(testBackend: TestBackend) {
+  await testBackend.run(async (databaseContext) => {
+    await databaseContext.db.insert("users", {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+      phone: MEMBER_PHONE,
+      firstName: "Mia",
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    });
+  });
+}
+
+async function countUsers(testBackend: TestBackend) {
+  return await testBackend.run(
+    async (databaseContext) => (await databaseContext.db.query("users").collect()).length,
+  );
+}
+
+async function insertDeniedApproval(testBackend: TestBackend, rsvpId: Id<"rsvps">) {
+  return await testBackend.run(async (databaseContext) => {
+    const rsvp = await databaseContext.db.get(rsvpId);
+    if (!rsvp) throw new Error("Expected the RSVP");
+    return await databaseContext.db.insert("approvals", {
+      eventId: rsvp.eventId,
+      rsvpId,
+      clerkUserId: rsvp.clerkUserId,
+      listKey: rsvp.listKey,
+      decision: "denied",
+      decidedBy: `host_${CLERK_ORGANIZATION_ID}`,
+      decidedAt: FIXED_NOW,
+      denialReason: "Mia was rude at the door",
+    });
+  });
+}
+
+async function readApproval(testBackend: TestBackend, approvalId: Id<"approvals">) {
+  return await testBackend.run(async (databaseContext) => {
+    const approval = await databaseContext.db.get(approvalId);
+    return approval
+      ? { clerkUserId: approval.clerkUserId, denialReason: approval.denialReason ?? null }
+      : null;
+  });
 }
 
 const RETIRED_MEMBER_CLERK_USER_ID = "user_member_retired";
@@ -2449,20 +2532,61 @@ describe("Coucou account deletion", () => {
     expect(auditText).not.toContain(MEMBER_CLERK_USER_ID);
   });
 
-  it("anonymizes RSVPs beyond the first 50 in scheduled batches after the account is gone", async () => {
+  it("blanks every RSVP when the account is deleted and cleans up beyond the first 50 in a batch", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
-    await testBackend.run(async (databaseContext) => {
-      await databaseContext.db.insert("users", {
-        clerkUserId: MEMBER_CLERK_USER_ID,
-        phone: MEMBER_PHONE,
-        firstName: "Mia",
-        createdAt: FIXED_NOW,
-        updatedAt: FIXED_NOW,
-      });
-    });
+    await seedMember(testBackend);
     const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 51, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    const deniedApprovalId = await insertDeniedApproval(testBackend, rsvpIds[50]);
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+
+    const stateAfterDeletion = await readAnonymizationBatches(testBackend);
+    expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([]);
+    expect(await countUsers(testBackend)).toBe(0);
+    expect(stateAfterDeletion).toEqual([
+      {
+        batchId: expect.any(String),
+        blankHeldRsvps: false,
+        cleanupRsvpIds: [rsvpIds[50]],
+        person: {
+          clerkUserIds: [MEMBER_CLERK_USER_ID, `guest:${phoneHash}`],
+          phoneHashes: [phoneHash],
+        },
+        smsLogRsvpIds: [],
+        attempts: 1,
+        scheduledAt: FIXED_NOW,
+      },
+    ]);
+    expect(await readApproval(testBackend, deniedApprovalId)).toEqual({
+      clerkUserId: MEMBER_CLERK_USER_ID,
+      denialReason: "Mia was rude at the door",
+    });
+
+    // The batch runs once here and again from the scheduler; the second run finds nothing to do.
+    await testBackend.mutation(internal.rsvpAnonymizationBatches.run, {
+      batchId: stateAfterDeletion[0].batchId,
+    });
+    await drainScheduledFunctions(testBackend);
+
+    expect(await readApproval(testBackend, deniedApprovalId)).toEqual({
+      clerkUserId: `anonymized-${rsvpIds[50]}`,
+      denialReason: null,
+    });
+    expect(await readAnonymizationBatches(testBackend)).toEqual([]);
+  });
+
+  it("blanks RSVPs beyond the first 100 in a batch that looks them up by the person's identities", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
+    await seedMember(testBackend);
+    const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 101, {
       clerkUserId: MEMBER_CLERK_USER_ID,
     });
 
@@ -2470,56 +2594,67 @@ describe("Coucou account deletion", () => {
       clerkUserId: MEMBER_CLERK_USER_ID,
     });
 
-    const countUsers = async () =>
-      await testBackend.run(
-        async (databaseContext) => (await databaseContext.db.query("users").collect()).length,
-      );
-    const stateAfterDeletion = await readAnonymizationBatches(testBackend);
-    expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(50);
-    expect(await countUsers()).toBe(0);
-    expect(stateAfterDeletion).toEqual({
-      batches: [
-        {
-          batchId: expect.any(String),
-          rsvpIds: [rsvpIds[50]],
-          person: {
-            clerkUserIds: [MEMBER_CLERK_USER_ID, `guest:${phoneHash}`],
-            phoneHashes: [phoneHash],
-          },
-          smsLogRsvpIds: [],
-          attempts: 1,
-          scheduledAt: FIXED_NOW,
+    expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([rsvpIds[100]]);
+    expect(await readAnonymizationBatches(testBackend)).toEqual([
+      {
+        batchId: expect.any(String),
+        blankHeldRsvps: true,
+        cleanupRsvpIds: rsvpIds.slice(50, 100),
+        person: {
+          clerkUserIds: [MEMBER_CLERK_USER_ID, `guest:${phoneHash}`],
+          phoneHashes: [phoneHash],
         },
-      ],
-      pendingRsvpIds: [rsvpIds[50]],
-    });
+        smsLogRsvpIds: [],
+        attempts: 1,
+        scheduledAt: FIXED_NOW,
+      },
+    ]);
 
-    // The batch runs once here and again from the scheduler; the second run finds nothing to do.
-    await testBackend.mutation(internal.rsvpAnonymizationBatches.run, {
-      batchId: stateAfterDeletion.batches[0].batchId,
-    });
     await drainScheduledFunctions(testBackend);
 
-    expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(51);
-    expect(await readAnonymizationBatches(testBackend)).toEqual({
-      batches: [],
-      pendingRsvpIds: [],
+    expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([]);
+    expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(101);
+    expect(await readAnonymizationBatches(testBackend)).toEqual([]);
+  });
+
+  it("schedules one contact sync and one notice per endpoint for each RSVP it blanks, 100 at most", async () => {
+    const testBackend = setupTestBackend();
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    await subscribeWebhookEndpoint(testBackend);
+    await seedMember(testBackend);
+    await insertRsvpsOnNewEvents(testBackend, 150, { clerkUserId: MEMBER_CLERK_USER_ID });
+    const countScheduledFunctionsByName = async () =>
+      await testBackend.run(async (databaseContext) => {
+        const countsByName: Record<string, number> = {};
+        for (const scheduledFunction of await databaseContext.db.system
+          .query("_scheduled_functions")
+          .collect()) {
+          countsByName[scheduledFunction.name] = (countsByName[scheduledFunction.name] ?? 0) + 1;
+        }
+        return countsByName;
+      });
+    expect(await countScheduledFunctionsByName()).toEqual({});
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
     });
+
+    // 100 blanked RSVPs: one contact sync and one erasure notice to the endpoint
+    // each. The other 50 wait for the batch.
+    expect(await countScheduledFunctionsByName()).toEqual({
+      "contactSync:syncRsvp": 100,
+      "contactSync:syncUser": 1,
+      "webhookDispatch:attemptDelivery": 100,
+      "rsvpAnonymizationBatches:run": 1,
+    });
+    await drainScheduledFunctions(testBackend);
   });
 
   it("checks each SMS recipient row once per transaction, at most 500, and finishes the rest in batches", async () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
-    await testBackend.run(async (databaseContext) => {
-      await databaseContext.db.insert("users", {
-        clerkUserId: MEMBER_CLERK_USER_ID,
-        phone: MEMBER_PHONE,
-        firstName: "Mia",
-        createdAt: FIXED_NOW,
-        updatedAt: FIXED_NOW,
-      });
-    });
+    await seedMember(testBackend);
     const personRsvpIds = await insertRsvpsOnNewEvents(testBackend, 50, {
       clerkUserId: MEMBER_CLERK_USER_ID,
     });
@@ -2544,25 +2679,23 @@ describe("Coucou account deletion", () => {
       rowsListingTheOtherRsvp: 1200,
     });
     const afterDeletion = await readAnonymizationBatches(testBackend);
-    expect(afterDeletion).toEqual({
-      batches: [
-        {
-          batchId: expect.any(String),
-          rsvpIds: [],
-          person: {
-            clerkUserIds: [MEMBER_CLERK_USER_ID, `guest:${phoneHash}`],
-            phoneHashes: [phoneHash],
-          },
-          smsLogRsvpIds: personRsvpIds,
-          smsLogCursor: { phoneHash, afterCreationTime: expect.any(Number) },
-          attempts: 1,
-          scheduledAt: FIXED_NOW,
+    expect(afterDeletion).toEqual([
+      {
+        batchId: expect.any(String),
+        blankHeldRsvps: false,
+        cleanupRsvpIds: [],
+        person: {
+          clerkUserIds: [MEMBER_CLERK_USER_ID, `guest:${phoneHash}`],
+          phoneHashes: [phoneHash],
         },
-      ],
-      pendingRsvpIds: [],
-    });
+        smsLogRsvpIds: personRsvpIds,
+        smsLogCursor: { phoneHash, afterCreationTime: expect.any(Number) },
+        attempts: 1,
+        scheduledAt: FIXED_NOW,
+      },
+    ]);
 
-    const batchId = afterDeletion.batches[0].batchId;
+    const batchId = afterDeletion[0].batchId;
     await testBackend.mutation(internal.rsvpAnonymizationBatches.run, { batchId });
     expect(await readSmsRecipientState(testBackend, otherRsvpId)).toEqual({
       rowsListingThePerson: 200,
@@ -2573,10 +2706,7 @@ describe("Coucou account deletion", () => {
       rowsListingThePerson: 0,
       rowsListingTheOtherRsvp: 1200,
     });
-    expect(await readAnonymizationBatches(testBackend)).toEqual({
-      batches: [],
-      pendingRsvpIds: [],
-    });
+    expect(await readAnonymizationBatches(testBackend)).toEqual([]);
     await drainScheduledFunctions(testBackend);
   });
 
@@ -2584,37 +2714,19 @@ describe("Coucou account deletion", () => {
     const testBackend = setupTestBackend();
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
     const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
-    await testBackend.run(async (databaseContext) => {
-      await databaseContext.db.insert("users", {
-        clerkUserId: MEMBER_CLERK_USER_ID,
-        phone: MEMBER_PHONE,
-        firstName: "Mia",
-        createdAt: FIXED_NOW,
-        updatedAt: FIXED_NOW,
-      });
-    });
+    await seedMember(testBackend);
     const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 51, {
       clerkUserId: MEMBER_CLERK_USER_ID,
     });
+    const deniedApprovalId = await insertDeniedApproval(testBackend, rsvpIds[50]);
     await testBackend.mutation(internal.users.deleteFromClerk, {
       clerkUserId: MEMBER_CLERK_USER_ID,
     });
-    // The batch's scheduled run fails, so nothing else will run it.
-    await testBackend.run(async (databaseContext) => {
-      for (const scheduledFunction of await databaseContext.db.system
-        .query("_scheduled_functions")
-        .collect()) {
-        if (
-          scheduledFunction.name === "rsvpAnonymizationBatches:run" &&
-          scheduledFunction.state.kind === "pending"
-        ) {
-          await databaseContext.scheduler.cancel(scheduledFunction._id);
-        }
-      }
-    });
+    await cancelScheduledBatchRuns(testBackend);
     const stalledBatch = {
       batchId: expect.any(String),
-      rsvpIds: [rsvpIds[50]],
+      blankHeldRsvps: false,
+      cleanupRsvpIds: [rsvpIds[50]],
       person: {
         clerkUserIds: [MEMBER_CLERK_USER_ID, `guest:${phoneHash}`],
         phoneHashes: [phoneHash],
@@ -2625,42 +2737,226 @@ describe("Coucou account deletion", () => {
     // Nine minutes on, the run may still be queued, so the sweep leaves the batch alone.
     vi.setSystemTime(FIXED_NOW + 9 * 60 * 1000);
     await testBackend.mutation(internal.rsvpAnonymizationBatches.rerunStalled, {});
-    expect(await readAnonymizationBatches(testBackend)).toEqual({
-      batches: [{ ...stalledBatch, attempts: 1, scheduledAt: FIXED_NOW }],
-      pendingRsvpIds: [rsvpIds[50]],
-    });
+    expect(await readAnonymizationBatches(testBackend)).toEqual([
+      { ...stalledBatch, attempts: 1, scheduledAt: FIXED_NOW },
+    ]);
 
     vi.setSystemTime(FIXED_NOW + 11 * 60 * 1000);
     await testBackend.mutation(internal.rsvpAnonymizationBatches.rerunStalled, {});
-    expect(await readAnonymizationBatches(testBackend)).toEqual({
-      batches: [{ ...stalledBatch, attempts: 2, scheduledAt: FIXED_NOW + 11 * 60 * 1000 }],
-      pendingRsvpIds: [rsvpIds[50]],
+    expect(await readAnonymizationBatches(testBackend)).toEqual([
+      { ...stalledBatch, attempts: 2, scheduledAt: FIXED_NOW + 11 * 60 * 1000 },
+    ]);
+    expect(await readApproval(testBackend, deniedApprovalId)).toEqual({
+      clerkUserId: MEMBER_CLERK_USER_ID,
+      denialReason: "Mia was rude at the door",
     });
-    expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(50);
 
     await drainScheduledFunctions(testBackend);
 
-    expect(await countAnonymizedRsvps(testBackend, rsvpIds)).toBe(51);
-    expect(await readAnonymizationBatches(testBackend)).toEqual({
-      batches: [],
-      pendingRsvpIds: [],
+    expect(await readApproval(testBackend, deniedApprovalId)).toEqual({
+      clerkUserId: `anonymized-${rsvpIds[50]}`,
+      denialReason: null,
     });
+    expect(await readAnonymizationBatches(testBackend)).toEqual([]);
   });
 
-  // 50 RSVPs under the account fill the deletion's own transaction, so the
-  // guest-form RSVP on evt-erase waits in a batch.
-  async function deleteMemberWithPendingGuestRsvp(testBackend: TestBackend) {
+  // The member's 51st RSVP was answered on a source event with a custom field
+  // and an inviter, and a text blast to the member's phone listed it with a
+  // reply action to a target event that asks for the same field. The member
+  // deletes their account, and the batch that cleans up the 51st RSVP's records
+  // has not run, so the recipient row still lists it.
+  async function deleteMemberWithStalledBatchAndReplyAction(testBackend: TestBackend) {
     await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
-    const eventId = await seedEvent(testBackend, "evt-erase");
+    const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
+    await seedMember(testBackend);
+    const rsvpIds = await insertRsvpsOnNewEvents(testBackend, 51, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    const sourceRsvpId = rsvpIds[50];
+    const targetEventId = await seedEvent(testBackend, "evt-target");
     await testBackend.run(async (databaseContext) => {
-      await databaseContext.db.insert("users", {
-        clerkUserId: MEMBER_CLERK_USER_ID,
-        phone: MEMBER_PHONE,
-        firstName: "Mia",
+      const sourceRsvp = await databaseContext.db.get(sourceRsvpId);
+      if (!sourceRsvp) throw new Error("Expected the source RSVP");
+      await databaseContext.db.patch(sourceRsvpId, {
+        smsPhoneHash: phoneHash,
+        customFieldValues: { company: "Acme Records" },
+        invitedByName: "Ivy Inviter",
+      });
+      await databaseContext.db.patch(targetEventId, {
+        customFields: [{ key: "company", label: "Company" }],
+        primaryFieldConfig: { invitedBy: { enabled: true } },
+      });
+      const textBlastId = await databaseContext.db.insert("textBlasts", {
+        eventId: sourceRsvp.eventId,
+        name: "Next party",
+        message: "Reply JOIN for the next one",
+        targetLists: ["ga"],
+        recipientCount: 1,
+        sentCount: 1,
+        failedCount: 0,
+        sentBy: `host_${CLERK_ORGANIZATION_ID}`,
+        status: "sent",
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+      await databaseContext.db.insert("textBlastReplyActions", {
+        textBlastId,
+        replyCode: "JOIN",
+        replyCodeNormalized: "join",
+        targetEventId,
+        targetListKey: "ga",
+        isEnabled: true,
+        createdAt: FIXED_NOW,
+        updatedAt: FIXED_NOW,
+      });
+      await databaseContext.db.insert("textBlastRecipients", {
+        textBlastId,
+        phoneHash,
+        status: "sent",
+        sourceEventIds: [sourceRsvp.eventId],
+        sourceRsvpIds: [sourceRsvpId],
+        sourceListKeys: ["ga"],
+        recipientClerkUserIds: [MEMBER_CLERK_USER_ID],
+        sentAt: FIXED_NOW,
         createdAt: FIXED_NOW,
         updatedAt: FIXED_NOW,
       });
     });
+
+    await testBackend.mutation(internal.users.deleteFromClerk, {
+      clerkUserId: MEMBER_CLERK_USER_ID,
+    });
+    await cancelScheduledBatchRuns(testBackend);
+
+    // Before any batch runs, no RSVP names the member, the 51st included.
+    expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([]);
+    expect((await readAnonymizationBatches(testBackend))[0].cleanupRsvpIds).toEqual([sourceRsvpId]);
+    expect(
+      await testBackend.run(async (databaseContext) =>
+        (await databaseContext.db.query("textBlastRecipients").collect()).map(
+          (recipient) => recipient.sourceRsvpIds,
+        ),
+      ),
+    ).toEqual([[sourceRsvpId]]);
+    return { phoneHash, rsvpIds, targetEventId };
+  }
+
+  async function readEventRsvpIdentities(testBackend: TestBackend, eventId: Id<"events">) {
+    return await testBackend.run(async (databaseContext) =>
+      (
+        await databaseContext.db
+          .query("rsvps")
+          .withIndex("by_event", (queryBuilder) => queryBuilder.eq("eventId", eventId))
+          .collect()
+      ).map((rsvp) => ({
+        clerkUserId: rsvp.clerkUserId,
+        userName: rsvp.userName ?? null,
+        customFieldValues: rsvp.customFieldValues ?? null,
+        invitedByName: rsvp.invitedByName ?? null,
+        smsPhoneHash: rsvp.smsPhoneHash ?? null,
+      })),
+    );
+  }
+
+  it("does not copy the deleted member into an RSVP made by a text-blast reply", async () => {
+    const testBackend = setupTestBackend();
+    const { rsvpIds, targetEventId } =
+      await deleteMemberWithStalledBatchAndReplyAction(testBackend);
+    const replyFromPhone = async () =>
+      await testBackend.mutation(internal.textBlasts.processIncomingSmsReply, {
+        fromPhoneNumber: MEMBER_PHONE,
+        messageBody: "JOIN",
+      });
+    // The reply copies the RSVP it answers; the blanked row has nothing to copy
+    // and no identity to match, so the reply finds no RSVP of the sender.
+    const noSourceRsvp = {
+      shouldRespond: true,
+      status: "error",
+      responseMessage: "We could not find the original RSVP needed for this text reply.",
+    };
+
+    expect(await replyFromPhone()).toEqual(noSourceRsvp);
+    expect(await readEventRsvpIdentities(testBackend, targetEventId)).toEqual([]);
+
+    // After the batch the recipient row no longer lists the RSVP, and the answer is the same.
+    await testBackend.mutation(internal.rsvpAnonymizationBatches.run, {
+      batchId: (await readAnonymizationBatches(testBackend))[0].batchId,
+    });
+    expect(await replyFromPhone()).toEqual(noSourceRsvp);
+    expect(await readEventRsvpIdentities(testBackend, targetEventId)).toEqual([]);
+    expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([]);
+  });
+
+  it("starts a text RSVP after the deletion with nothing prefilled from the deleted member", async () => {
+    const testBackend = setupTestBackend();
+    const { phoneHash, rsvpIds, targetEventId } =
+      await deleteMemberWithStalledBatchAndReplyAction(testBackend);
+    const textFromPhone = async (messageSid: string, body: string) => {
+      await testBackend.mutation(internal.smsCodeRouter.beginInboundReceipt, {
+        providerMessageId: messageSid,
+        fromPhoneNumber: MEMBER_PHONE,
+        toPhoneNumber: "+18449054257",
+        body,
+      });
+      return await testBackend.mutation(internal.smsCodeRouter.processReservedInbound, {
+        providerMessageId: messageSid,
+        fromPhoneNumber: MEMBER_PHONE,
+        messageBody: body,
+      });
+    };
+
+    const codeReply = await textFromPhone("SM_code_after_deletion", "JOIN");
+
+    expect(codeReply).toMatchObject({
+      outcome: "session_pending",
+      targetEventId,
+      responseMessage:
+        "To complete your RSVP, reply with your full name, in that order, separated by commas (1 value).",
+    });
+    expect(
+      await testBackend.run(async (databaseContext) =>
+        (await databaseContext.db.query("smsRsvpSessions").collect()).map((session) => ({
+          clerkUserId: session.clerkUserId,
+          firstName: session.firstName ?? null,
+          lastName: session.lastName ?? null,
+          invitedByName: session.invitedByName ?? null,
+          customFieldValues: session.customFieldValues,
+          socialProfiles: session.socialProfiles,
+        })),
+      ),
+    ).toEqual([
+      {
+        clerkUserId: `guest:${phoneHash}`,
+        firstName: null,
+        lastName: null,
+        invitedByName: null,
+        customFieldValues: {},
+        socialProfiles: [],
+      },
+    ]);
+
+    const nameReply = await textFromPhone("SM_name_after_deletion", "Nia New");
+    await drainScheduledFunctions(testBackend);
+
+    expect(nameReply).toMatchObject({ outcome: "submitted" });
+    expect(await readEventRsvpIdentities(testBackend, targetEventId)).toEqual([
+      {
+        clerkUserId: `guest:${phoneHash}`,
+        userName: "Nia New",
+        customFieldValues: null,
+        invitedByName: null,
+        smsPhoneHash: phoneHash,
+      },
+    ]);
+    expect(await readRsvpsHoldingIdentity(testBackend, rsvpIds)).toEqual([]);
+  });
+
+  // 50 RSVPs under the account fill the deletion's own cleanup, so the
+  // guest-form RSVP on evt-erase is blanked and waits in a batch for cleanup.
+  async function deleteMemberWithGuestRsvpInBatch(testBackend: TestBackend) {
+    await seedWorkspace(testBackend, WORKSPACE_SLUG, CLERK_ORGANIZATION_ID);
+    const eventId = await seedEvent(testBackend, "evt-erase");
+    await seedMember(testBackend);
     await insertRsvpsOnNewEvents(testBackend, 50, { clerkUserId: MEMBER_CLERK_USER_ID });
     await submitCoucouGuestForm(testBackend, eventId, {
       phone: MEMBER_PHONE,
@@ -2677,7 +2973,8 @@ describe("Coucou account deletion", () => {
     await testBackend.mutation(internal.users.deleteFromClerk, {
       clerkUserId: MEMBER_CLERK_USER_ID,
     });
-    expect((await readAnonymizationBatches(testBackend)).pendingRsvpIds).toEqual([guestRsvpId]);
+    expect(await readRsvpsHoldingIdentity(testBackend, [guestRsvpId])).toEqual([]);
+    expect((await readAnonymizationBatches(testBackend))[0].cleanupRsvpIds).toEqual([guestRsvpId]);
     return { eventId, guestRsvpId };
   }
 
@@ -2701,7 +2998,7 @@ describe("Coucou account deletion", () => {
   it("lets the person RSVP again on the guest form before the batch runs, and keeps the new RSVP", async () => {
     const testBackend = setupTestBackend();
     const { phoneHash } = await normalizeAndHashPhoneNumber(MEMBER_PHONE);
-    const { eventId, guestRsvpId } = await deleteMemberWithPendingGuestRsvp(testBackend);
+    const { eventId, guestRsvpId } = await deleteMemberWithGuestRsvpInBatch(testBackend);
 
     await submitCoucouGuestForm(testBackend, eventId, {
       phone: MEMBER_PHONE,
@@ -2725,15 +3022,12 @@ describe("Coucou account deletion", () => {
         anonymizedAt: null,
       },
     ]);
-    expect(await readAnonymizationBatches(testBackend)).toEqual({
-      batches: [],
-      pendingRsvpIds: [],
-    });
+    expect(await readAnonymizationBatches(testBackend)).toEqual([]);
   });
 
-  it("keeps an RSVP waiting for anonymization out of a new account's guest claim", async () => {
+  it("keeps a deleted member's blanked RSVP out of a new account's guest claim", async () => {
     const testBackend = setupTestBackend();
-    const { eventId, guestRsvpId } = await deleteMemberWithPendingGuestRsvp(testBackend);
+    const { eventId, guestRsvpId } = await deleteMemberWithGuestRsvpInBatch(testBackend);
     // The person signs up again with the same phone and RSVPs to the same event.
     const newAccountRsvpId = await testBackend.run(async (databaseContext) => {
       await databaseContext.db.insert("users", {
@@ -2783,10 +3077,7 @@ describe("Coucou account deletion", () => {
     expect(
       (await readAuditEntries(testBackend)).filter((entry) => entry.action === "rsvp.reconciled"),
     ).toEqual([]);
-    expect(await readAnonymizationBatches(testBackend)).toEqual({
-      batches: [],
-      pendingRsvpIds: [],
-    });
+    expect(await readAnonymizationBatches(testBackend)).toEqual([]);
   });
 
   it("clears an audit actor that is an account merged into the deleted one", async () => {

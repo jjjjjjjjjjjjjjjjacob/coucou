@@ -14,9 +14,8 @@ import {
 } from "./lib/guestIdentity";
 import { normalizeAndHashPhoneNumber } from "./lib/phoneHash";
 import {
-  anonymizeRsvps,
+  anonymizeSelectedRsvps,
   MAX_RSVPS_ANONYMIZED_PER_TRANSACTION,
-  scheduleRsvpAnonymization,
 } from "./lib/rsvpAnonymization";
 import { enqueueRsvpWebhookDeliveries } from "./lib/webhookEmission";
 
@@ -526,22 +525,15 @@ export const eraseSubjectForApiClient = internalMutation({
     if (anonymizedRsvps.length > 0) {
       const subject = await buildErasureSubject(ctx, rsvpsToAnonymize);
       await cancelPendingPersonNotifications(ctx, subject);
-      const { anonymizations, remainingWork } = await anonymizeRsvps(
+      const anonymizations = await anonymizeSelectedRsvps(
         ctx,
-        {
-          rsvpIds: anonymizedRsvps.map((rsvp) => rsvp._id),
-          person: {
-            clerkUserIds: [...subject.clerkUserIds],
-            phoneHashes: [...subject.phoneHashes],
-          },
-          smsLogRsvpIds: [],
-        },
+        anonymizedRsvps,
+        { clerkUserIds: [...subject.clerkUserIds], phoneHashes: [...subject.phoneHashes] },
         { erasingApiClientId: apiClient._id },
       );
       for (const anonymization of anonymizations) {
         await enqueueRsvpWebhookDeliveries(ctx, { operation: "update", ...anonymization });
       }
-      if (remainingWork) await scheduleRsvpAnonymization(ctx, remainingWork);
       if (!(await subjectHasRsvpInWorkspace(ctx, subject, scope.workspace))) {
         await eraseWorkspacePersonRecords(ctx, scope, subject);
       }

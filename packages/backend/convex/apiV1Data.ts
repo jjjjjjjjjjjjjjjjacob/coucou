@@ -21,7 +21,6 @@ import {
   insertRsvpIntoAggregate,
   updateRsvpInAggregate,
 } from "./lib/rsvpAggregate";
-import { finishPendingAnonymization } from "./lib/rsvpAnonymization";
 import { tryAutoApproveRsvp } from "./lib/rsvpApproval";
 import { resolveApprovalStatus, sanitizeAttendanceStatus } from "./lib/rsvpStatus";
 import { buildRsvpTicketSnapshot } from "./lib/rsvpTicketSnapshot";
@@ -758,10 +757,7 @@ export const createRsvpFromApiClient = internalMutation({
           queryBuilder.eq("eventId", event._id).eq("guestPhoneHash", phoneHash),
         )
         .collect();
-      existingRsvp = await finishPendingAnonymization(
-        ctx,
-        guestRsvps.find((rsvp) => isGuestClerkUserId(rsvp.clerkUserId)) ?? null,
-      );
+      existingRsvp = guestRsvps.find((rsvp) => isGuestClerkUserId(rsvp.clerkUserId)) ?? null;
     }
 
     if (existingRsvp) {

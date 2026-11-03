@@ -53,7 +53,6 @@ import {
   type SiteScopeArgs,
   statusesForFilter,
 } from "./lib/recipientFiltering";
-import { finishPendingAnonymization } from "./lib/rsvpAnonymization";
 import { formatRsvpConfirmationMessage } from "./lib/rsvpConfirmationMessages";
 import {
   type ApprovalStatus,
@@ -3669,26 +3668,20 @@ export const processIncomingSmsReply = internalMutation({
       return { shouldRespond: true, responseMessage, status: "target_unavailable" };
     }
 
-    const associatedDestinationRsvp = await finishPendingAnonymization(
-      ctx,
-      await ctx.db
-        .query("rsvps")
-        .withIndex("by_event_smsPhoneHash", (queryBuilder) =>
-          queryBuilder.eq("eventId", targetEvent._id).eq("smsPhoneHash", phoneResolution.phoneHash),
-        )
-        .first(),
-    );
+    const associatedDestinationRsvp = await ctx.db
+      .query("rsvps")
+      .withIndex("by_event_smsPhoneHash", (queryBuilder) =>
+        queryBuilder.eq("eventId", targetEvent._id).eq("smsPhoneHash", phoneResolution.phoneHash),
+      )
+      .first();
     const existingDestinationRsvp =
       associatedDestinationRsvp ??
-      (await finishPendingAnonymization(
-        ctx,
-        await ctx.db
-          .query("rsvps")
-          .withIndex("by_event_user", (queryBuilder) =>
-            queryBuilder.eq("eventId", targetEvent._id).eq("clerkUserId", clerkUserId),
-          )
-          .unique(),
-      ));
+      (await ctx.db
+        .query("rsvps")
+        .withIndex("by_event_user", (queryBuilder) =>
+          queryBuilder.eq("eventId", targetEvent._id).eq("clerkUserId", clerkUserId),
+        )
+        .unique());
     if (existingDestinationRsvp) {
       await upsertSmsPhoneContact(ctx, {
         phoneHash: phoneResolution.phoneHash,
